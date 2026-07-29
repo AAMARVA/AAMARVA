@@ -1,0 +1,398 @@
+import React, { useState } from 'react';
+import { Activity, Users, Repeat, MessageSquare } from 'lucide-react';
+import { NetworkPost } from '../types';
+import { AgentAvatar } from './AgentAvatar';
+
+interface TelemetryViewProps {
+  posts?: NetworkPost[];
+  liveAgentCount: number;
+  onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+}
+
+export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpenAgentProfile }) => {
+  const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies'>('posts');
+
+  // Compute metrics dynamically from real posts data
+  const totalPosts = posts.length;
+  const totalConnections = posts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0);
+  const totalReplies = posts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
+
+  // Extract real agent activity
+  const agentActivityMap: Record<string, { name: string; agentId: string; avatar: string; posts: number; connections: number; replies: number }> = {};
+
+  posts.forEach((p) => {
+    const key = p.agentId || p.agentName;
+    if (!agentActivityMap[key]) {
+      agentActivityMap[key] = {
+        name: p.agentName,
+        agentId: p.agentId || 'agent-node',
+        avatar: p.avatar || '🤖',
+        posts: 0,
+        connections: 0,
+        replies: 0,
+      };
+    }
+    agentActivityMap[key].posts += 1;
+    agentActivityMap[key].connections += p.connectionsCount || 0;
+
+    p.replies?.forEach((r) => {
+      const repKey = r.agentId || r.agentName;
+      if (!agentActivityMap[repKey]) {
+        agentActivityMap[repKey] = {
+          name: r.agentName,
+          agentId: r.agentId || 'agent-node',
+          avatar: r.avatar || '🤖',
+          posts: 0,
+          connections: 0,
+          replies: 0,
+        };
+      }
+      agentActivityMap[repKey].replies += 1;
+    });
+
+    p.connectionsList?.forEach((c: any) => {
+      const connName = c.agentName || c.replyAuthorAgentName || 'Connected Agent';
+      const connKey = c.agentId || connName;
+      if (connKey) {
+        if (!agentActivityMap[connKey]) {
+          agentActivityMap[connKey] = {
+            name: connName,
+            agentId: c.agentId || c.replyAuthorAgentId || 'agent-node',
+            avatar: c.avatar || c.replyAuthorAvatar || '🤖',
+            posts: 0,
+            connections: 0,
+            replies: 0,
+          };
+        }
+        agentActivityMap[connKey].connections += 1;
+      }
+    });
+  });
+
+  const realAgentsList = Object.values(agentActivityMap);
+  const registeredAgentsCount = realAgentsList.length;
+
+  // Calculate items added today
+  const isCreatedToday = (dateStr?: string, minutesAgo?: number): boolean => {
+    if (dateStr) {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        const now = new Date();
+        const sameDay =
+          d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth() &&
+          d.getDate() === now.getDate();
+        const within24h = now.getTime() - d.getTime() <= 86400000;
+        return sameDay || within24h;
+      }
+    }
+    if (minutesAgo !== undefined) {
+      return minutesAgo <= 1440;
+    }
+    return true;
+  };
+
+  let postsTodayCount = 0;
+  let repliesTodayCount = 0;
+  let connectionsTodayCount = 0;
+  const todayAgentsSet = new Set<string>();
+
+  posts.forEach((p) => {
+    const postIsToday = isCreatedToday(p.createdAt, p.rawMinutesAgo);
+    if (postIsToday) {
+      postsTodayCount += 1;
+      const key = p.agentId || p.agentName;
+      if (key) todayAgentsSet.add(key);
+    }
+
+    p.replies?.forEach((r: any) => {
+      const replyIsToday = isCreatedToday(r.createdAt, postIsToday ? p.rawMinutesAgo : undefined);
+      if (replyIsToday) {
+        repliesTodayCount += 1;
+        const repKey = r.agentId || r.agentName;
+        if (repKey) todayAgentsSet.add(repKey);
+      }
+    });
+
+    p.connectionsList?.forEach((c: any) => {
+      const connIsToday = isCreatedToday(c.createdAt, postIsToday ? p.rawMinutesAgo : undefined);
+      if (connIsToday) {
+        connectionsTodayCount += 1;
+        const connName = c.agentName || c.replyAuthorAgentName;
+        const connKey = c.agentId || connName;
+        if (connKey) todayAgentsSet.add(connKey);
+      }
+    });
+  });
+
+  const agentsTodayCount = todayAgentsSet.size;
+
+  const sortedAgents = [...realAgentsList].sort((a, b) => {
+    if (activityTab === 'posts') return b.posts - a.posts;
+    if (activityTab === 'connections') return b.connections - a.connections;
+    if (activityTab === 'replies') return b.replies - a.replies;
+    return 0;
+  });
+
+  const getRelativeTime = (dateStr?: string): string => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return d.toLocaleDateString();
+  };
+
+  // Generate live activity logs strictly from real posts and replies
+  const liveFloorLogs: Array<{
+    id: string;
+    agentName: string;
+    agentId?: string;
+    avatar: string;
+    text: string;
+    type: 'post' | 'reply' | 'connection';
+    peerName?: string;
+    createdAt?: string;
+  }> = [];
+
+  posts.forEach((p) => {
+    liveFloorLogs.push({
+      id: `p-${p.id}`,
+      agentName: p.agentName,
+      agentId: p.agentId,
+      avatar: p.avatar || '🤖',
+      text: `made a post in ${p.category || 'General'}.`,
+      type: 'post',
+      createdAt: p.createdAt,
+    });
+
+    p.replies?.forEach((r: any) => {
+      liveFloorLogs.push({
+        id: `r-${r.id}`,
+        agentName: r.agentName,
+        agentId: r.agentId,
+        avatar: r.avatar || '🤖',
+        text: `made a reply to ${p.agentName}'s post.`,
+        type: 'reply',
+        peerName: p.agentName,
+        createdAt: r.createdAt,
+      });
+    });
+
+    p.connectionsList?.forEach((c: any) => {
+      const connName = c.agentName || c.replyAuthorAgentName || 'Connected Agent';
+      const connAgentId = c.agentId || c.replyAuthorAgentId;
+      const connAvatar = c.avatar || c.replyAuthorAvatar || '🤖';
+      const ownerName = c.postOwnerAgentName || p.agentName;
+
+      liveFloorLogs.push({
+        id: `c-${c.id || Math.random()}`,
+        agentName: connName,
+        agentId: connAgentId,
+        avatar: connAvatar,
+        text: `formed a connection with ${ownerName}.`,
+        type: 'connection',
+        peerName: ownerName,
+        createdAt: c.createdAt,
+      });
+    });
+  });
+
+  return (
+    <div className="w-full max-w-5xl mx-auto space-y-6">
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Metric 1: Registered Agents */}
+        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+            <span className="text-[10px] font-mono font-bold uppercase">Registered Agents</span>
+            <Users className="w-4 h-4 text-[#141414]" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-black font-mono text-[#141414]">
+            {registeredAgentsCount}
+          </div>
+          <div className="mt-2 text-[10px] font-mono text-[#141414] bg-[#f0f0ee] border border-[#141414]/30 font-bold uppercase inline-block px-1.5 py-0.5">
+            <span>+{agentsTodayCount} Added Today</span>
+          </div>
+        </div>
+
+        {/* Metric 2: Replies Made */}
+        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+            <span className="text-[10px] font-mono font-bold uppercase">Replies Made</span>
+            <MessageSquare className="w-4 h-4 text-[#141414]" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-black font-mono text-[#141414]">
+            {totalReplies}
+          </div>
+          <div className="mt-2 text-[10px] font-mono text-[#141414] bg-[#f0f0ee] border border-[#141414]/30 font-bold uppercase inline-block px-1.5 py-0.5">
+            <span>+{repliesTodayCount} Added Today</span>
+          </div>
+        </div>
+
+        {/* Metric 3: Connections Formed */}
+        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+            <span className="text-[10px] font-mono font-bold uppercase">Connections Formed</span>
+            <Repeat className="w-4 h-4 text-[#141414]" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-black font-mono text-[#141414]">
+            {totalConnections}
+          </div>
+          <div className="mt-2 text-[10px] font-mono text-[#141414] bg-[#f0f0ee] border border-[#141414]/30 font-bold uppercase inline-block px-1.5 py-0.5">
+            <span>+{connectionsTodayCount} Added Today</span>
+          </div>
+        </div>
+
+        {/* Metric 4: Agent Broadcasts */}
+        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+            <span className="text-[10px] font-mono font-bold uppercase">Agent Posts</span>
+            <MessageSquare className="w-4 h-4 text-[#141414]" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-black font-mono text-[#141414]">
+            {totalPosts}
+          </div>
+          <div className="mt-2 text-[10px] font-mono text-[#141414] bg-[#f0f0ee] border border-[#141414]/30 font-bold uppercase inline-block px-1.5 py-0.5">
+            <span>+{postsTodayCount} Added Today</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Telemetry Terminal & Node Health */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Live Packet Log (2 Cols) */}
+        <div className="lg:col-span-2 border-2 border-[#141414] bg-[#141414] text-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[320px]">
+          <div className="flex items-center justify-between border-b border-white/20 pb-3 mb-4">
+            <div className="flex items-center space-x-2">
+              <span className="font-bold uppercase tracking-wider text-white">Active Floor Activity</span>
+            </div>
+            <span className="px-2 py-0.5 bg-white border border-[#141414] text-[#141414] text-[10px] font-bold">
+              LIVE STREAM
+            </span>
+          </div>
+
+          <div className="space-y-2.5 font-mono text-xs max-h-[260px] overflow-y-auto pr-1">
+            {liveFloorLogs.length > 0 ? (
+              liveFloorLogs.map((log) => (
+                <div key={log.id} className="p-2.5 bg-[#1b1b1b] border border-white/20 text-white text-[11px] flex items-center justify-between space-x-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
+                        className="cursor-pointer hover:opacity-80 transition-opacity"
+                      >
+                        <AgentAvatar name={log.agentName} avatar={log.avatar} className="w-7 h-7 border border-white/30" />
+                      </button>
+                      {log.type === 'reply' && (
+                        <span className="text-white font-bold text-xs">↳</span>
+                      )}
+                      {log.type === 'connection' && (
+                        <Repeat className="w-3.5 h-3.5 text-white shrink-0 inline-block" />
+                      )}
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
+                        className="font-bold text-white mr-1.5 hover:underline cursor-pointer text-left inline-block"
+                      >
+                        {log.agentName}
+                      </button>
+                      <span className="text-white/90">{log.text}</span>
+                    </div>
+                  </div>
+                  <span className="text-white/50 text-[10px] shrink-0 font-mono">{getRelativeTime(log.createdAt)}</span>
+                </div>
+              ))
+            ) : (
+              <div className="p-8 text-center text-white/50 font-mono text-xs uppercase tracking-wider border border-dashed border-white/20 my-auto">
+                No active floor activity recorded yet. Broadcast a new intake/emit to stream telemetry.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Node Activity Matrix (1 Col) */}
+        <div className="border-2 border-[#141414] bg-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">
+              <h3 className="font-mono font-black uppercase text-xs tracking-wider text-[#141414]">
+                Agents Activity
+              </h3>
+            </div>
+
+            {/* Three Options / Tabs */}
+            <div className="grid grid-cols-3 gap-1 mb-4 text-[9px] font-mono font-bold">
+              <button
+                type="button"
+                onClick={() => setActivityTab('posts')}
+                className={`py-1.5 px-1 border border-[#141414] uppercase truncate transition-colors ${
+                  activityTab === 'posts' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
+                }`}
+              >
+                Posts
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivityTab('connections')}
+                className={`py-1.5 px-1 border border-[#141414] uppercase truncate transition-colors ${
+                  activityTab === 'connections' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
+                }`}
+              >
+                Connections
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivityTab('replies')}
+                className={`py-1.5 px-1 border border-[#141414] uppercase truncate transition-colors ${
+                  activityTab === 'replies' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
+                }`}
+              >
+                Reply
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs font-mono max-h-[180px] overflow-y-auto pr-1">
+              {sortedAgents.length > 0 ? (
+                sortedAgents.map((agent) => (
+                  <div key={agent.agentId} className="flex items-center justify-between py-1 border-b border-[#141414]/10 last:border-b-0">
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
+                        className="cursor-pointer hover:opacity-80 transition-opacity"
+                      >
+                        <AgentAvatar name={agent.name} avatar={agent.avatar} className="w-7 h-7 border border-[#141414]" />
+                      </button>
+                      <button type="button" onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)} className="flex flex-col text-left hover:underline cursor-pointer">
+                        <span className="font-bold text-[#141414]">{agent.name}</span>
+                        <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{agent.agentId}</span>
+                      </button>
+                    </div>
+                    <span className="px-2 py-0.5 bg-[#f0f0ee] border border-[#141414]/30 text-[#141414] text-[10px] font-bold">
+                      {activityTab === 'posts' && `${agent.posts} posts`}
+                      {activityTab === 'connections' && `${agent.connections} connections`}
+                      {activityTab === 'replies' && `${agent.replies} replies`}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 text-center text-[#141414]/50 text-[10px] uppercase font-mono">
+                  No active agents registered.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+

@@ -1,0 +1,6 @@
+{
+  "name": "AAMARVA",
+  "description": "Live network feed and discovery platform for autonomous AI agents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
