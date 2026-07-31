@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Activity, Users, Repeat, MessageSquare } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
+import { apiFetch } from '../services/authApi';
 
 interface TelemetryViewProps {
   posts?: NetworkPost[];
@@ -11,6 +12,28 @@ interface TelemetryViewProps {
 
 export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpenAgentProfile }) => {
   const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies'>('posts');
+  const [dbAgentsCount, setDbAgentsCount] = useState<number | null>(null);
+  const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string }[]>([]);
+
+  useEffect(() => {
+    apiFetch('/api/stats')
+      .then(res => {
+        if (res?.data?.agentsCount !== undefined) {
+          setDbAgentsCount(res.data.agentsCount);
+        } else if (res?.agentsCount !== undefined) {
+          setDbAgentsCount(res.agentsCount);
+        }
+      })
+      .catch(err => console.warn('Failed to fetch stats:', err));
+      
+    apiFetch('/api/agents')
+      .then(res => {
+        if (res?.success && res.data) {
+          setSystemAgents(res.data);
+        }
+      })
+      .catch(err => console.warn('Failed to fetch agents:', err));
+  }, []);
 
   // Compute metrics dynamically from real posts data
   const totalPosts = posts.length;
@@ -19,6 +42,18 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
 
   // Extract real agent activity
   const agentActivityMap: Record<string, { name: string; agentId: string; avatar: string; posts: number; connections: number; replies: number }> = {};
+  
+  // Pre-fill with all system agents
+  systemAgents.forEach(a => {
+    agentActivityMap[a.agentId] = {
+      name: a.name || a.agentId,
+      agentId: a.agentId,
+      avatar: a.avatar || '🤖',
+      posts: 0,
+      connections: 0,
+      replies: 0,
+    };
+  });
 
   posts.forEach((p) => {
     const key = p.agentId || p.agentName;
@@ -70,7 +105,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
   });
 
   const realAgentsList = Object.values(agentActivityMap);
-  const registeredAgentsCount = realAgentsList.length;
+  const registeredAgentsCount = dbAgentsCount !== null ? dbAgentsCount : realAgentsList.length;
 
   // Calculate items added today
   const isCreatedToday = (dateStr?: string, minutesAgo?: number): boolean => {
@@ -191,7 +226,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
       const ownerName = c.postOwnerAgentName || p.agentName;
 
       liveFloorLogs.push({
-        id: `c-${c.id || Math.random()}`,
+        id: `c-${c.id || Date.now()}`,
         agentName: connName,
         agentId: connAgentId,
         avatar: connAvatar,
@@ -288,7 +323,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
                         onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
                         className="cursor-pointer hover:opacity-80 transition-opacity"
                       >
-                        <AgentAvatar name={log.agentName} avatar={log.avatar} className="w-7 h-7 border border-white/30" />
+                        <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-7 h-7 border border-white/30" />
                       </button>
                       {log.type === 'reply' && (
                         <span className="text-white font-bold text-xs">↳</span>
@@ -369,7 +404,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
                         onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
                         className="cursor-pointer hover:opacity-80 transition-opacity"
                       >
-                        <AgentAvatar name={agent.name} avatar={agent.avatar} className="w-7 h-7 border border-[#141414]" />
+                        <AgentAvatar name={agent.name} avatar={agent.avatar} id={agent.agentId} className="w-7 h-7 border border-[#141414]" />
                       </button>
                       <button type="button" onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)} className="flex flex-col text-left hover:underline cursor-pointer">
                         <span className="font-bold text-[#141414]">{agent.name}</span>

@@ -31,7 +31,7 @@ export const PostCard: React.FC<PostCardProps> = ({
             className="shrink-0 mt-0.5 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
             title={`View profile for ${post.agentName}`}
           >
-            <AgentAvatar name={post.agentName} avatar={post.avatar} className="w-10 h-10 shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)]" />
+            <AgentAvatar name={post.agentName} avatar={post.avatar} id={post.agentId || post.id} className="w-10 h-10 shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)]" />
           </button>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">

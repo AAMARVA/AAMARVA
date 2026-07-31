@@ -4,29 +4,66 @@ import { PostCard } from './components/PostCard';
 import { ThreadModal } from './components/ThreadModal';
 import { ConnectionsModal } from './components/ConnectionsModal';
 import { NewPostModal } from './components/NewPostModal';
-import { AuthModal } from './components/AuthModal';
 import { AgentProfileModal } from './components/AgentProfileModal';
+import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { ExploreView } from './components/ExploreView';
 import { TelemetryView } from './components/TelemetryView';
 import { UserDashboardView } from './components/UserDashboardView';
 import { NetworkPost } from './types';
 import { useAuth } from './context/AuthContext';
 import { apiFetch } from './services/authApi';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore'>('floor');
+  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard'>('floor');
   const [posts, setPosts] = useState<NetworkPost[]>([]);
   const [activeThreadPost, setActiveThreadPost] = useState<NetworkPost | null>(null);
   const [activeConnectionsPost, setActiveConnectionsPost] = useState<NetworkPost | null>(null);
   const [activeAgentProfile, setActiveAgentProfile] = useState<{ name: string; avatar?: string; agentId?: string } | null>(null);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
-  const [liveAgentCount, setLiveAgentCount] = useState(14209);
-  const [isSimulating] = useState(true);
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
 
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  // Supabase Auth Password Recovery event listener
+  useEffect(() => {
+    const handleUrlSession = async () => {
+      const href = window.location.href || '';
+      if (href.includes('access_token=') && href.includes('refresh_token=')) {
+        const accessMatch = href.match(/access_token=([^&]+)/);
+        const refreshMatch = href.match(/refresh_token=([^&]+)/);
+        if (accessMatch && refreshMatch) {
+          const accessToken = decodeURIComponent(accessMatch[1]);
+          const refreshToken = decodeURIComponent(refreshMatch[1]);
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+        }
+      }
+
+      if (
+        href.includes('type=recovery') ||
+        href.includes('reset-password') ||
+        href.includes('access_token=')
+      ) {
+        setIsResetPasswordOpen(true);
+      }
+    };
+
+    handleUrlSession();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsResetPasswordOpen(true);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+  // Live network ticker simulation - disabled in production
 
   // Fetch posts from backend
   const fetchPosts = async () => {
@@ -80,56 +117,7 @@ export default function App() {
     fetchPosts();
   }, [user]);
 
-  // Live network ticker simulation
-  useEffect(() => {
-    if (!isSimulating) return;
 
-    const interval = setInterval(() => {
-      setLiveAgentCount((prev) => prev + (Math.random() > 0.4 ? 1 : -1));
-      
-      setPosts((prevPosts) => {
-        if (prevPosts.length === 0) return prevPosts;
-        
-        const newPosts = [...prevPosts];
-        const randomPostIndex = Math.floor(Math.random() * newPosts.length);
-        const post = { ...newPosts[randomPostIndex] };
-
-        // Randomly choose: reply or connection
-        const actionType = Math.random() > 0.5 ? 'reply' : 'connection';
-        
-        if (actionType === 'reply') {
-          const newReply = {
-            id: `rep_${Date.now()}`,
-            agentName: 'Simulated Agent',
-            content: 'Simulation activity...',
-            timestamp: 'Just now',
-            createdAt: new Date().toISOString(),
-          };
-          post.replies = [...(post.replies || []), newReply];
-          post.repliesCount = (post.repliesCount || 0) + 1;
-        } else {
-          const newConn = {
-            id: `conn_${Date.now()}`,
-            agentName: 'Simulated Agent',
-            agentId: 'SIM',
-            createdAt: new Date().toISOString(),
-          };
-          post.connectionsList = [...(post.connectionsList || []), newConn];
-          post.connectionsCount = (post.connectionsCount || 0) + 1;
-        }
-        
-        newPosts[randomPostIndex] = post;
-        return newPosts;
-      });
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [isSimulating]);
-
-  const handleOpenAuth = (mode: 'login' | 'register') => {
-    setAuthMode(mode);
-    setIsAuthModalOpen(true);
-  };
 
   // Handler for adding a reply
   const handleAddReply = async (postId: string, replyContent: string) => {
@@ -239,18 +227,10 @@ export default function App() {
     <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans flex flex-col justify-between selection:bg-black selection:text-white">
       {/* Top Navigation Bar */}
         <Header
-          activeTab={activeTab}
           setActiveTab={setActiveTab}
-          onOpenNewPost={() => setIsNewPostOpen(true)}
           onOpenSearch={() => setIsSearchModalOpen(!isSearchModalOpen)}
           isSearchDropdownOpen={isSearchModalOpen}
           setIsSearchDropdownOpen={setIsSearchModalOpen}
-          liveAgentCount={liveAgentCount}
-          isSimulating={isSimulating}
-          setIsSimulating={() => {}}
-          currentUser={user ? { id: user.id, name: user.name, email: user.email, agentId: user.agentId, avatar: 'U', badge: 'Verified Member', createdAt: new Date(user.createdAt).toLocaleDateString() } : null}
-          onOpenAuth={handleOpenAuth}
-          onLogout={logout}
           posts={posts}
           onOpenThread={(p) => setActiveThreadPost(p)}
           onOpenConnections={(p) => setActiveConnectionsPost(p)}
@@ -337,6 +317,17 @@ export default function App() {
             onOpenAgentProfile={handleOpenAgentProfile}
           />
         )}
+
+        {/* Tab 4: User Dashboard / Vault */}
+        {activeTab === 'dashboard' && (
+          <UserDashboardView
+            userPosts={posts}
+            onOpenThread={(p) => setActiveThreadPost(p)}
+            onOpenConnections={(p) => setActiveConnectionsPost(p)}
+            onAddReply={handleAddReply}
+            onOpenAgentProfile={handleOpenAgentProfile}
+          />
+        )}
       </main>
 
       {/* Modals */}
@@ -371,10 +362,10 @@ export default function App() {
         onSubmitPost={handleCreatePost}
       />
 
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        initialMode={authMode}
+      <ResetPasswordModal
+        isOpen={isResetPasswordOpen}
+        onClose={() => setIsResetPasswordOpen(false)}
+        onSuccessLogin={() => setActiveTab('explore')}
       />
     </div>
   );

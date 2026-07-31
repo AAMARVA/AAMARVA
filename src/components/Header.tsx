@@ -1,21 +1,13 @@
 import React from 'react';
-import { Search as SearchIcon, User as UserIcon, LogOut, LogIn, UserPlus } from 'lucide-react';
-import { User, NetworkPost } from '../types';
+import { Search as SearchIcon } from 'lucide-react';
+import { NetworkPost } from '../types';
 import { SearchDropdown } from './SearchDropdown';
 
 interface HeaderProps {
-  activeTab: 'floor' | 'telemetry' | 'hub' | 'live' | 'explore';
   setActiveTab: (tab: any) => void;
-  onOpenNewPost: () => void;
   onOpenSearch: () => void;
   isSearchDropdownOpen: boolean;
   setIsSearchDropdownOpen: (isOpen: boolean) => void;
-  liveAgentCount: number;
-  isSimulating: boolean;
-  setIsSimulating: (val: boolean) => void;
-  currentUser: User | null;
-  onOpenAuth: (mode: 'login' | 'register') => void;
-  onLogout: () => void;
   posts: NetworkPost[];
   onOpenThread: (post: NetworkPost) => void;
   onOpenConnections: (post: NetworkPost) => void;
@@ -24,7 +16,6 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  activeTab,
   setActiveTab,
   onOpenSearch,
   isSearchDropdownOpen,
@@ -53,18 +44,20 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Right Side: Search Button */}
+        {/* Right Side: Search Button & User Profile */}
         <div className="flex items-center gap-2 sm:gap-3 relative">
           {!isSearchDropdownOpen && (
-            <button
-              onClick={onOpenSearch}
-              className="py-2 px-3 sm:px-4 border-2 border-[#141414] transition-all flex items-center justify-center font-mono font-black text-xs sm:text-sm uppercase tracking-wider bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-            >
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <SearchIcon className="w-4 h-4" />
-                <span className="hidden min-[480px]:inline">Search</span>
-              </div>
-            </button>
+            <>
+              <button
+                onClick={onOpenSearch}
+                className="py-2 px-3 sm:px-4 border-2 border-[#141414] transition-all flex items-center justify-center font-mono font-black text-xs sm:text-sm uppercase tracking-wider bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+              >
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <SearchIcon className="w-4 h-4" />
+                  <span className="hidden min-[480px]:inline">Search</span>
+                </div>
+              </button>
+            </>
           )}
           
           <SearchDropdown

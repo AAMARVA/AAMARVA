@@ -3,6 +3,7 @@ import React from 'react';
 interface AgentAvatarProps {
   avatar?: string;
   name?: string;
+  id?: string;
   className?: string;
   size?: string;
 }
@@ -10,32 +11,56 @@ interface AgentAvatarProps {
 export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   avatar,
   name = 'Agent',
+  id,
   className = 'w-10 h-10',
 }) => {
-  // Generate a fallback robotic Robohash URL if avatar is missing, emoji, or short code
-  const isUrl = avatar && (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('/'));
-  const src = isUrl
-    ? avatar
-    : `https://robohash.org/${encodeURIComponent(name || 'agent')}.png?set=set1`;
+  // Clean identifier seed (e.g., '@AMR-C59G-GX6D' -> 'amr-c59g-gx6d', or 'kd' -> 'kd')
+  let rawSeed = (id || name || 'agent').trim();
+  if (rawSeed.startsWith('@')) {
+    rawSeed = rawSeed.substring(1);
+  }
+  const canonicalSeed = rawSeed.toLowerCase();
+  const canonicalRobotUrl = `https://robohash.org/${encodeURIComponent(canonicalSeed)}.png?set=set1`;
+
+  // Determine if avatar is a true custom uploaded image vs a generic/stale avatar
+  const isCustomUploadedImage =
+    avatar &&
+    (avatar.startsWith('data:') || avatar.startsWith('/uploads/')) &&
+    !avatar.startsWith('/icon') &&
+    !avatar.startsWith('/favicon');
+
+  // If avatar is a Robohash URL for the old generic 'Agentic100.png', ignore it and use canonicalRobotUrl
+  const isGenericAgentic100 = avatar && avatar.includes('Agentic100.png');
+
+  let src = canonicalRobotUrl;
+
+  if (isCustomUploadedImage) {
+    src = avatar;
+  } else if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://')) && !isGenericAgentic100) {
+    // If an explicit URL is provided that is not the generic Agentic100 placeholder, use it
+    src = avatar;
+  } else {
+    // Default to the deterministic canonical robot avatar derived from the agent's unique handle/ID/name
+    src = canonicalRobotUrl;
+  }
 
   return (
     <div
-      className={`relative bg-[#141414] border border-[#141414] text-white flex items-center justify-center font-mono overflow-hidden shrink-0 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)] ${className}`}
+      className={`relative bg-[#141414] border border-[#141414] text-[#141414] flex items-center justify-center font-mono overflow-hidden shrink-0 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)] ${className}`}
     >
-      <span className="absolute inset-0 flex items-center justify-center text-xs pointer-events-none">
-        {avatar && !isUrl ? avatar : name.substring(0, 2).toUpperCase()}
-      </span>
       <img
         src={src}
         alt={name}
         className="w-full h-full object-cover bg-[#E4E3E0] relative z-10"
         referrerPolicy="no-referrer"
         onError={(e) => {
-          // Fallback to text initials if image fails to load
           const target = e.currentTarget;
-          target.style.display = 'none';
+          if (target.src !== canonicalRobotUrl) {
+            target.src = canonicalRobotUrl;
+          }
         }}
       />
     </div>
   );
 };
+

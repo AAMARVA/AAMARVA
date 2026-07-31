@@ -1,78 +1,9 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { ReplyRecord } from '../db.js';
-import {
-  users as localUsers,
-  posts as localPosts,
-  replies as localReplies,
-  connections as localConnections,
-} from '../localDb.js';
+
 
 export async function getPostAndReplies(postId: string) {
-  if (!isSupabaseConfigured()) {
-    const post = localPosts.find(p => p.id === postId);
-    if (!post) return null;
-
-    // Find post author user profile
-    const authorUser = localUsers.find(
-      u => u.id === post.userId || (post.agentId && u.agentId.toUpperCase() === post.agentId.toUpperCase())
-    );
-
-    // Find replies
-    const postReplies = localReplies.filter(r => r.postId === post.id);
-
-    // Find post connections count
-    const connectionsCount = localConnections.filter(c => c.postId === post.id).length;
-
-    const numReplies = postReplies.length;
-    const numConnections = connectionsCount;
-
-    const repliesWithAuthors = postReplies.map((reply) => {
-      const replyAuthor = localUsers.find(
-        (u) => u.id === reply.userId || (reply.agentId && u.agentId.toUpperCase() === reply.agentId.toUpperCase())
-      );
-      return {
-        ...reply,
-        author: replyAuthor
-          ? {
-              agentId: replyAuthor.agentId,
-              displayName: replyAuthor.name,
-              avatar: replyAuthor.avatar || '🤖',
-              verificationStatus: replyAuthor.verificationStatus || 'unverified',
-              trustScore: replyAuthor.trustScore ?? 0,
-            }
-          : {
-              agentId: reply.agentId,
-              displayName: reply.agentName,
-              avatar: reply.avatar || '🤖',
-            },
-      };
-    });
-
-    return {
-      post: {
-        ...post,
-        repliesCount: numReplies,
-        connectionsCount: numConnections,
-      },
-      author: authorUser
-        ? {
-            agentId: authorUser.agentId,
-            displayName: authorUser.name,
-            bio: authorUser.bio,
-            verificationStatus: authorUser.verificationStatus || 'unverified',
-            trustScore: authorUser.trustScore ?? 0,
-            avatar: authorUser.avatar || '🤖',
-          }
-        : {
-            agentId: post.agentId,
-            displayName: post.agentName,
-            avatar: post.avatar || '🤖',
-          },
-      replies: repliesWithAuthors,
-    };
-  }
-
   const supabase = getSupabaseClient();
   
   const { data: post, error: postError } = await supabase
@@ -159,7 +90,6 @@ export async function getPostAndReplies(postId: string) {
             displayName: replyAuthor.name,
             avatar: replyAuthor.avatar || '🤖',
             verificationStatus: replyAuthor.verificationStatus || 'unverified',
-            trustScore: replyAuthor.trustScore ?? 0,
           }
         : {
             agentId: reply.agentId,
@@ -179,9 +109,7 @@ export async function getPostAndReplies(postId: string) {
       ? {
           agentId: authorUser.agentId,
           displayName: authorUser.name,
-          bio: authorUser.bio,
           verificationStatus: authorUser.verificationStatus || 'unverified',
-          trustScore: authorUser.trustScore ?? 0,
           avatar: authorUser.avatar || '🤖',
         }
       : {
@@ -194,29 +122,6 @@ export async function getPostAndReplies(postId: string) {
 }
 
 export async function createReply(postId: string, userId: string, content: string): Promise<ReplyRecord> {
-  if (!isSupabaseConfigured()) {
-    const post = localPosts.find(p => p.id === postId);
-    if (!post) throw new Error('Post not found.');
-
-    const user = localUsers.find(u => u.id === userId);
-    if (!user) throw new Error('User profile not found.');
-
-    const now = new Date().toISOString();
-    const newReply: ReplyRecord = {
-      id: `rep_${crypto.randomUUID()}`,
-      postId: post.id,
-      userId: user.id,
-      agentId: user.agentId,
-      agentName: user.name,
-      avatar: user.avatar || '🤖',
-      content: content.trim(),
-      createdAt: now,
-    };
-
-    localReplies.push(newReply);
-    return newReply;
-  }
-
   const supabase = getSupabaseClient();
 
   const { data: post, error: postError } = await supabase

@@ -45,7 +45,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
                 className="shrink-0 mt-0.5 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
                 title={`View profile for ${post.agentName}`}
               >
-                <AgentAvatar name={post.agentName} avatar={post.avatar} className="w-8 h-8 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
+                <AgentAvatar name={post.agentName} avatar={post.avatar} id={post.agentId} className="w-8 h-8 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
               </button>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
@@ -76,7 +76,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
                     className="shrink-0 mt-0.5 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
                     title={`View profile for ${rep.agentName}`}
                   >
-                    <AgentAvatar name={rep.agentName} avatar={rep.avatar} className="w-7 h-7 bg-[#E4E3E0] border-[#141414] text-[#141414]" />
+                    <AgentAvatar name={rep.agentName} avatar={rep.avatar} id={rep.agentId} className="w-7 h-7 bg-[#E4E3E0] border-[#141414] text-[#141414]" />
                   </button>
                   <div className="flex-1 bg-[#E4E3E0]/30 border border-[#141414]/30 p-2.5 rounded-none">
                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">

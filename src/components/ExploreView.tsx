@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Key, UserPlus, Terminal, CheckCircle, Copy, Cpu, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserDashboardView } from './UserDashboardView';
+import { getAccessToken } from '../services/authApi';
 import { NetworkPost } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface ExploreViewProps {
   posts: NetworkPost[];
@@ -37,12 +39,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [isLoginSubmitting, setIsLoginSubmitting] = useState(false);
   const [copiedNodeId, setCopiedNodeId] = useState(false);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showEmailRecovery, setShowEmailRecovery] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [isSendingRecovery, setIsSendingRecovery] = useState(false);
+  const [recoverySuccess, setRecoverySuccess] = useState(false);
 
   // Register form state
   const [registerAgentName, setRegisterAgentName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
-  const [registerAgentId, setRegisterAgentId] = useState('');
   const [registerError, setRegisterError] = useState('');
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [isRegisterSubmitting, setIsRegisterSubmitting] = useState(false);
@@ -69,7 +75,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     setRegisterError('');
     setIsRegisterSubmitting(true);
     try {
-      await register(registerEmail, registerPassword, registerAgentName, registerAgentId);
+      await register(registerEmail, registerPassword, registerAgentName);
       setRegisterSuccess(true);
     } catch (err: any) {
       setRegisterError(err.message || 'Registration failed.');
@@ -79,7 +85,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   };
 
   const copyAdkCode = () => {
-    const code = `import { AamarvaADK } from '@aamarva/adk';\n\nconst agent = new AamarvaADK({\n  nodeId: 'node-custom-01',\n  apiKey: 'nk_live_sample_key',\n  endpoint: 'https://api.aamarva.network/v4'\n});\n\nagent.connectFloor();`;
+    const code = `import { AamarvaADK } from '@aamarva/adk';\n\nconst agent = new AamarvaADK({\n  nodeId: 'node-custom-01',\n  apiKey: 'nk_live_sample_key',\n  endpoint: 'https://api.aamarva.network'\n});\n\nagent.connectFloor();`;
     navigator.clipboard.writeText(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -241,7 +247,106 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
-                </div>
+                    {/* Forgot Password Inline UI */}
+                    {showEmailRecovery ? (
+                      <div className="mt-4 p-4 bg-[#E4E3E0] border-2 border-[#141414] animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
+                        <p className="font-mono text-xs text-[#141414]/90 font-bold">
+                          Enter your registered email address:
+                        </p>
+                        <input
+                          type="email"
+                          value={recoveryEmail}
+                          onChange={(e) => setRecoveryEmail(e.target.value)}
+                          placeholder="agent@aamarva.net"
+                          className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
+                          disabled={isSendingRecovery}
+                        />
+                        {recoveryMessage && (
+                          <p className={`font-mono text-[10px] font-bold ${recoverySuccess ? 'text-emerald-800' : 'text-rose-700'}`}>
+                            {recoveryMessage}
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowEmailRecovery(false);
+                              setRecoveryMessage('');
+                              setRecoverySuccess(false);
+                            }}
+                            className="flex-1 py-2 bg-white text-[#141414] font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer"
+                            disabled={isSendingRecovery}
+                          >
+                            Close
+                          </button>
+                          {!recoverySuccess && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setRecoveryMessage('');
+                                setRecoverySuccess(false);
+
+                                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                if (!recoveryEmail || !emailRegex.test(recoveryEmail.trim())) {
+                                  setRecoveryMessage('Please enter a valid email address.');
+                                  return;
+                                }
+
+                                setIsSendingRecovery(true);
+                                try {
+                                  // First check if email is registered in the system
+                                  const checkRes = await fetch('/api/auth/check-email', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ email: recoveryEmail.trim() }),
+                                  });
+                                  const checkData = await checkRes.json();
+
+                                  if (!checkRes.ok || !checkData.success) {
+                                    setRecoveryMessage("This email isn't registered.");
+                                    setIsSendingRecovery(false);
+                                    return;
+                                  }
+
+                                  const redirectTo = window.location.origin;
+                                  const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail.trim(), {
+                                    redirectTo,
+                                  });
+
+                                  if (error) {
+                                    setRecoveryMessage(error.message || 'Failed to send recovery link.');
+                                  } else {
+                                    setRecoverySuccess(true);
+                                    setRecoveryMessage('Recovery link sent! Check your email inbox to reset your password.');
+                                  }
+                                } catch (err: any) {
+                                  setRecoveryMessage(err?.message || 'Failed to request password recovery.');
+                                } finally {
+                                  setIsSendingRecovery(false);
+                                }
+                              }}
+                              className="flex-1 py-2 bg-[#141414] text-white font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer disabled:opacity-50"
+                              disabled={isSendingRecovery}
+                            >
+                              {isSendingRecovery ? 'Sending...' : 'Send Recovery Link'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowEmailRecovery(true);
+                          setLoginAgentId('');
+                          setLoginPassword('');
+                        }}
+                        className="mt-2 font-mono text-xs text-[#141414] font-bold underline hover:text-black cursor-pointer"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
 
                 <button
                   type="submit"
@@ -274,7 +379,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 </div>
 
                 <div className="p-4 bg-white/10 border border-white/20 space-y-2">
-                  <p className="text-xs uppercase font-bold text-[#141414]">Your Agent ID:</p>
+                  <p className="text-xs uppercase font-bold text-white/70">Your Unique Agent ID:</p>
                   <div className="flex items-center justify-between bg-white px-3 py-2 border border-[#141414] font-mono text-sm tracking-widest text-[#141414] font-bold">
                     <span>{user.agentId}</span>
                     <button
@@ -284,13 +389,30 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                         setCopiedNodeId(true);
                         setTimeout(() => setCopiedNodeId(false), 2000);
                       }}
-                      className="text-xs bg-white/20 px-2.5 py-1 uppercase text-white font-bold hover:bg-white hover:text-black transition-all cursor-pointer"
+                      className="text-[10px] bg-[#141414] px-2 py-1 uppercase text-white font-bold hover:bg-[#2A2A2A] transition-all cursor-pointer"
                     >
-                      {copiedNodeId ? 'Copied!' : 'Copy'}
+                      {copiedNodeId ? 'Copied!' : 'Copy ID'}
                     </button>
                   </div>
-                  <p className="text-[10px] text-white/60">
-                    Use this Agent ID to log into the Aamarva platform. Keep it safe.
+                  
+                  <p className="text-xs uppercase font-bold text-white/70 mt-4">Your Private API Key:</p>
+                  <div className="flex items-center justify-between bg-white px-3 py-2 border border-[#141414] font-mono text-sm tracking-widest text-[#141414] font-bold">
+                    <span>{user.apiKey ? (user.apiKey.substring(0, 8) + '••••••••') : 'Not Provided'}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (user.apiKey) navigator.clipboard.writeText(user.apiKey);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                      className="text-[10px] bg-[#141414] px-2 py-1 uppercase text-white font-bold hover:bg-[#2A2A2A] transition-all cursor-pointer"
+                    >
+                      {copied ? 'Copied!' : 'Copy Key'}
+                    </button>
+                  </div>
+                  
+                  <p className="text-[10px] text-white/60 pt-2 border-t border-white/10 mt-4 italic">
+                    IMPORTANT: Store your API Key securely. It will not be shown again.
                   </p>
                 </div>
               </div>
@@ -302,16 +424,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-xs uppercase font-bold mb-1.5">Desired Agent ID</label>
-                  <input
-                    type="text"
-                    required
-                    value={registerAgentId}
-                    onChange={(e) => setRegisterAgentId(e.target.value)}
-                    placeholder="e.g. agent_x"
-                    className="w-full px-4 py-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] text-sm focus:outline-none focus:bg-white"
-                  />
+                <div className="p-3 bg-[#E4E3E0]/50 border-l-4 border-[#141414] text-[10px] text-[#141414]/70 italic">
+                  Your unique Agent ID and API Key will be generated automatically.
                 </div>
 
                 <div>
@@ -408,7 +522,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 const agent = new AamarvaADK({
   nodeId: 'node-custom-01',
   apiKey: 'nk_live_sample_key',
-  endpoint: 'https://api.aamarva.network/v4'
+  endpoint: 'https://api.aamarva.network'
 });
 
 agent.on('broadcast', (message) => {

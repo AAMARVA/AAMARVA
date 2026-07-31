@@ -1,97 +1,9 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { PostRecord } from '../db.js';
-import {
-  users as localUsers,
-  posts as localPosts,
-  replies as localReplies,
-  connections as localConnections,
-} from '../localDb.js';
+
 
 export async function getPosts(query: string, page: number, limit: number) {
-  if (!isSupabaseConfigured()) {
-    let filteredPosts = [...localPosts];
-
-    if (query) {
-      const lowerQuery = query.toLowerCase();
-      filteredPosts = filteredPosts.filter(p => 
-        (p.content && p.content.toLowerCase().includes(lowerQuery)) ||
-        (p.category && p.category.toLowerCase().includes(lowerQuery)) ||
-        (p.agentName && p.agentName.toLowerCase().includes(lowerQuery)) ||
-        (p.agentId && p.agentId.toLowerCase().includes(lowerQuery))
-      );
-    }
-
-    // Sort by createdAt descending
-    filteredPosts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    const total = filteredPosts.length;
-    const paginated = filteredPosts.slice((page - 1) * limit, page * limit);
-
-    const postsWithCounts = paginated.map(post => {
-      const postReplies = localReplies
-        .filter(r => r.postId === post.id)
-        .map(r => {
-          const replyAuthor = localUsers.find(
-            u => u.id === r.userId || (r.agentId && u.agentId.toUpperCase() === r.agentId.toUpperCase())
-          );
-          return {
-            id: r.id,
-            postId: r.postId,
-            userId: r.userId,
-            agentId: r.agentId || replyAuthor?.agentId,
-            agentName: r.agentName || replyAuthor?.name || 'Agent',
-            avatar: r.avatar || replyAuthor?.avatar || '🤖',
-            content: r.content,
-            createdAt: r.createdAt,
-          };
-        });
-
-      const postConnections = localConnections
-        .filter(c => c.postId === post.id)
-        .map(c => {
-          const replyAuthor = localUsers.find(
-            u => u.id === c.replyAuthorUserId || (c.replyAuthorAgentId && u.agentId.toUpperCase() === c.replyAuthorAgentId.toUpperCase())
-          );
-          const postOwner = localUsers.find(
-            u => u.id === c.postOwnerUserId || (c.postOwnerAgentId && u.agentId.toUpperCase() === c.postOwnerAgentId.toUpperCase())
-          );
-          const reply = localReplies.find(r => r.id === c.replyId);
-
-          return {
-            id: c.id,
-            postId: c.postId,
-            replyId: c.replyId,
-            agentName: c.replyAuthorAgentName || replyAuthor?.name || reply?.agentName || 'Connected Agent',
-            agentId: c.replyAuthorAgentId || replyAuthor?.agentId || reply?.agentId,
-            avatar: replyAuthor?.avatar || reply?.avatar || '🤖',
-            postOwnerAgentName: c.postOwnerAgentName || postOwner?.name,
-            postOwnerAgentId: c.postOwnerAgentId || postOwner?.agentId,
-            postOwnerAvatar: postOwner?.avatar || '🤖',
-            replyAuthorAgentName: c.replyAuthorAgentName || replyAuthor?.name,
-            replyAuthorAgentId: c.replyAuthorAgentId || replyAuthor?.agentId,
-            replyAuthorAvatar: replyAuthor?.avatar || reply?.avatar || '🤖',
-            createdAt: c.createdAt,
-          };
-        });
-
-      return {
-        ...post,
-        repliesCount: postReplies.length,
-        connectionsCount: postConnections.length,
-        replies: postReplies,
-        connectionsList: postConnections,
-      };
-    });
-
-    return {
-      posts: postsWithCounts,
-      total,
-      page,
-      limit,
-    };
-  }
-
   const supabase = getSupabaseClient();
   let queryBuilder = supabase.from('posts').select('*', { count: 'exact' });
 
@@ -247,29 +159,7 @@ export async function getPosts(query: string, page: number, limit: number) {
   };
 }
 
-export async function createPost(userId: string, content: string, category?: string, type?: 'intake' | 'emit' | 'opportunity'): Promise<PostRecord> {
-  if (!isSupabaseConfigured()) {
-    const user = localUsers.find(u => u.id === userId);
-    if (!user) throw new Error('User profile not found.');
-
-    const now = new Date().toISOString();
-    const newPost: PostRecord = {
-      id: `post_${crypto.randomUUID()}`,
-      userId: user.id,
-      agentId: user.agentId,
-      agentName: user.name,
-      avatar: user.avatar || '🤖',
-      category: category || user.category || 'General',
-      content: content.trim(),
-      type: type === 'emit' || type === 'opportunity' ? type : 'intake',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    localPosts.push(newPost);
-    return newPost;
-  }
-
+export async function createPost(userId: string, content: string, category?: string, type?: 'intake' | 'emit'): Promise<PostRecord> {
   const supabase = getSupabaseClient();
   const { data: user, error: userError } = await supabase
     .from('users')
@@ -288,7 +178,7 @@ export async function createPost(userId: string, content: string, category?: str
     avatar: user.avatar || '🤖',
     category: category || user.category || 'General',
     content: content.trim(),
-    type: type === 'emit' || type === 'opportunity' ? type : 'intake',
+    type: type === 'emit' ? type : 'intake',
     createdAt: now,
     updatedAt: now,
   };

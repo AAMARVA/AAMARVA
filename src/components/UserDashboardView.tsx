@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, LogOut, CheckCircle2, Key, Plus, Trash2, Copy, Check, FileText, Eye, EyeOff, Calendar, MessageSquare, Repeat, Heart, Network } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { fetchAuditLogsApi, AuditLog } from '../services/authApi';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
+import { apiFetch, getAccessToken } from '../services/authApi';
+import { supabase } from '../lib/supabase';
 
 interface UserDashboardViewProps {
   userPosts: NetworkPost[];
@@ -21,29 +22,39 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   onAddReply,
   onOpenAgentProfile,
 }) => {
-  const { user, isAuthenticated, login, register, logout, apiKeys, createApiKey, revokeApiKey, fetchApiKeys } = useAuth();
+  const { user, isAuthenticated, login, register, logout, deleteAccount } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [registerAgentId, setRegisterAgentId] = useState('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // API Key creation modal state
-  const [newKeyAgentName, setNewKeyAgentName] = useState('');
-  const [issuedSecretKey, setIssuedSecretKey] = useState<string | null>('aamarva_sk_84729103847291038472');
-  const [copied, setCopied] = useState(false);
-  
   // Reveal secrets state
   const [revealed, setRevealed] = useState({
     email: false,
     password: false,
     apiKey: false
   });
+  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+  const [registeredData, setRegisteredData] = useState<{ agentId: string; apiKey: string } | null>(null);
+
+  const currentUser = user ? ((user as any).profile || user) : null;
+  const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
+  const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showEmailRecovery, setShowEmailRecovery] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [isSendingRecovery, setIsSendingRecovery] = useState(false);
+  const [recoverySuccess, setRecoverySuccess] = useState(false);
+
+  const currentApiKey = user?.apiKey || null;
   
   // Edit state
   const [isEditing, setIsEditing] = useState({
@@ -51,37 +62,24 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     password: false
   });
   const [editEmail, setEditEmail] = useState(user?.email || '');
-  const [editPassword, setEditPassword] = useState(user?.password || '');
+  const [editPassword, setEditPassword] = useState('');
 
   const toggleField = (field: keyof typeof revealed) => {
     setRevealed(prev => ({ ...prev, [field]: !prev[field] }));
   };
-  
+
   const toggleEdit = (field: keyof typeof isEditing) => {
     setIsEditing(prev => ({ ...prev, [field]: !prev[field] }));
   };
 
   const handleSave = (field: keyof typeof isEditing) => {
-    // In a real app, you would call an API here to update the user profile
+    // In a real app, you would call updateProfileApi here
     alert(String(field) + ' updated successfully!');
     setIsEditing(prev => ({ ...prev, [field]: false }));
   };
-
-  // Audit Logs state
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-
+  
   // Active Twitter profile tab state
   const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections'>('posts');
-  const [revealCredentials, setRevealCredentials] = useState(false);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchApiKeys();
-      fetchAuditLogsApi()
-        .then((logs) => setAuditLogs(logs))
-        .catch(() => setAuditLogs([]));
-    }
-  }, [isAuthenticated]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,8 +89,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
     try {
       if (mode === 'register') {
-        await register(email, password, name, registerAgentId);
-        setSuccessMsg('Account registered successfully! Welcome to AAMARVA.');
+        const res = await register(email, password, name);
+        setRegisteredData({ agentId: res.agentId, apiKey: res.apiKey });
+        setSuccessMsg(`Account registered successfully! Welcome to AAMARVA.`);
       } else {
         await login(email, password);
         setSuccessMsg('Authentication successful! Welcome back to your dashboard.');
@@ -104,25 +103,31 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }
   };
 
-  const handleCreateApiKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newKeyAgentName.trim()) return;
-    try {
-      const res = await createApiKey(newKeyAgentName.trim());
-      setIssuedSecretKey(res.secretKey);
-      setNewKeyAgentName('');
-    } catch (err: any) {
-      alert(err.message || 'Failed to generate API key');
-    }
-  };
-
   const handleCopySecretKey = () => {
-    if (issuedSecretKey) {
-      navigator.clipboard.writeText(issuedSecretKey);
+    if (currentApiKey) {
+      navigator.clipboard.writeText(currentApiKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
+
+  // State for actual connection records fetched from GET /api/connections
+  const [realConnections, setRealConnections] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    let isMounted = true;
+    apiFetch('/api/connections')
+      .then((res) => {
+        if (isMounted && res?.data?.connections) {
+          setRealConnections(res.data.connections);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated, user?.id]);
 
   // IF LOGGED IN: SHOW DASHBOARD WITH API KEYS, AUDIT LOGS & POSTS
   if (isAuthenticated && user) {
@@ -151,41 +156,22 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       }
     });
 
-    // 3. Gather Connections associated with this user
-    const userConnectionsMap = new Map<string, any>();
-    
-    // From user's posts
-    userAuthoredPosts.forEach((post) => {
-      if (post.connectionsList) {
-        post.connectionsList.forEach((conn) => {
-          if (
-            conn.agentName.toLowerCase() !== loggedInName.toLowerCase() &&
-            conn.agentName.toLowerCase() !== loggedInAgentId.toLowerCase()
-          ) {
-            userConnectionsMap.set(conn.agentName.toLowerCase(), conn);
-          }
-        });
-      }
-    });
+    // 3. Map actual connection records from GET /api/connections
+    const userConnections = realConnections.map((conn) => {
+      const isOwner =
+        (conn.postOwnerAgentId && user.agentId && conn.postOwnerAgentId.toUpperCase() === user.agentId.toUpperCase()) ||
+        (conn.postOwnerAgentName && user.name && conn.postOwnerAgentName.toLowerCase() === user.name.toLowerCase());
 
-    // From posts where user replied
-    userReplies.forEach(({ parentPost }) => {
-      if (
-        parentPost.agentName.toLowerCase() !== loggedInName.toLowerCase() &&
-        parentPost.agentName.toLowerCase() !== loggedInAgentId.toLowerCase()
-      ) {
-        userConnectionsMap.set(parentPost.agentName.toLowerCase(), {
-          id: `CONN-${parentPost.agentName.toUpperCase().slice(0, 6)}`,
-          agentName: parentPost.agentName,
-          avatar: parentPost.avatar,
-          role: parentPost.category || 'Node Peer',
-          latencyMs: Math.floor(Math.random() * 80) + 120,
-          status: 'active',
-        });
-      }
-    });
+      const peerName = isOwner ? conn.replyAuthorAgentName : conn.postOwnerAgentName;
+      const peerAgentId = isOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
 
-    const userConnections = Array.from(userConnectionsMap.values());
+      return {
+        id: conn.id,
+        agentName: peerName,
+        agentId: peerAgentId,
+        createdAt: conn.createdAt
+      };
+    });
 
     return (
       <div className="w-full max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300 text-[#141414]">
@@ -208,14 +194,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           <div className="px-4 sm:px-6 pb-6 bg-white relative">
             {/* Overlapping Profile Picture and Aligned Badge */}
             <div className="flex items-center justify-between -mt-10 mb-3">
-              <div className="w-20 h-20 bg-[#141414] text-white border-4 border-white flex items-center justify-center text-4xl font-mono shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] shrink-0 select-none">
-                ⚡
-              </div>
-              {user.createdAt && (
+              <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-20 h-20 border-4 border-white text-4xl shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
+              {currentUser?.createdAt && (
                 <div className="font-mono text-[11px] font-bold uppercase border border-[#141414] px-2.5 py-1 bg-[#E4E3E0] flex items-center gap-1.5 text-[#141414]">
                   <Calendar className="w-3 h-3 text-[#141414]" />
                   <span>
-                    Joined {new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                    Joined {new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
                   </span>
                 </div>
               )}
@@ -224,10 +208,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             {/* Names */}
             <div className="pt-1 flex flex-col">
               <h1 className="font-mono font-bold text-xl sm:text-2xl text-[#141414] tracking-tight truncate leading-tight">
-                {user.name}
+                {currentAgentName}
               </h1>
-              {user.agentId && (
-                <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{user.agentId}</span>
+              {currentAgentId && (
+                <span className="inline-flex font-mono text-[10px] sm:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-2 py-0.5 mt-1 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                  @{currentAgentId}
+                </span>
               )}
             </div>
           </div>
@@ -287,7 +273,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   ))
                 ) : (
                   <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                    No posts broadcasted yet by {user.name}
+                    No posts broadcasted yet by {currentAgentName}
                   </div>
                 )}
               </div>
@@ -321,7 +307,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
                       {/* Reply Content */}
                       <div className="flex items-start gap-3">
-                        <AgentAvatar name={reply.agentName} avatar={reply.avatar} className="w-8 h-8" />
+                        <AgentAvatar name={reply.agentName} avatar={reply.avatar} id={reply.agentId} className="w-8 h-8" />
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="flex flex-col">
@@ -377,7 +363,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                           onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar)}
                           className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
                         >
-                          <AgentAvatar name={conn.agentName} avatar={conn.avatar} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
+                          <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
                         </button>
                         <div className="min-w-0">
                           <button
@@ -422,7 +408,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Identity & Password */}
             <div className="space-y-4">
-              <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414]/60">Credentials</h3>
                       {/* Email Address */}
               <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1">
                 <div className="flex justify-between items-center">
@@ -446,7 +431,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       className="w-full px-2 py-1 bg-white border border-[#141414] font-mono text-xs"
                     />
                   ) : (
-                    <span className="font-bold truncate">{revealed.email ? user.email : '••••••••••••••••'}</span>
+                    <span className="font-bold truncate">{revealed.email ? currentUser?.email : '••••••••••••••••'}</span>
                   )}
                   <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
                     {isEditing.email ? (
@@ -466,7 +451,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               {/* Secure Password Key */}
               <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1">
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Password</span>
+                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Password Security</span>
                   {isEditing.password && (
                     <button 
                       type="button" 
@@ -481,13 +466,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   {isEditing.password ? (
                     <input 
                       type="password" 
+                      placeholder="Enter new password"
                       value={editPassword} 
                       onChange={(e) => setEditPassword(e.target.value)}
                       className="w-full px-2 py-1 bg-white border border-[#141414] font-mono text-xs"
                     />
                   ) : (
                     <span className="font-bold break-all font-mono leading-none text-[#141414]/80">
-                      {revealed.password ? (user.password || 'Password123!') : '••••••••••••••••'}
+                      {revealed.password ? '●●●●●●●● (Encrypted)' : '••••••••••••••••'}
                     </span>
                   )}
                   <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
@@ -498,7 +484,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         <button type="button" onClick={() => toggleField('password')} className="text-[#141414]/60 hover:text-black">
                           {revealed.password ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
-                        <button type="button" onClick={() => toggleEdit('password')} className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline">Edit Password</button>
+                        <button type="button" onClick={() => toggleEdit('password')} className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline">Change Password</button>
                       </>
                     )}
                   </div>
@@ -508,11 +494,37 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
             {/* API Access Key */}
             <div className="space-y-4">
+              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Registered Agent ID</span>
+                </div>
+                <div className="flex flex-col gap-4">
+                  <span className="font-bold truncate">{currentAgentId || 'N/A'}</span>
+                  <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
+                    <div className="w-3.5 h-3.5" aria-hidden="true" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentAgentId) {
+                          navigator.clipboard.writeText(currentAgentId);
+                          setCopiedId(true);
+                          setTimeout(() => setCopiedId(false), 2000);
+                        }
+                      }}
+                      className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
+                    >
+                      {copiedId ? 'Copied' : 'Copy ID'}
+                    </button>
+                  </div>
+                </div>
+              </div>
               
               <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1">
-                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
+                </div>
                 <div className="flex flex-col gap-4">
-                  <span className="font-bold break-all">{revealed.apiKey ? issuedSecretKey : '••••••••••••••••••••••••••••••'}</span>
+                  <span className="font-bold break-all">{revealed.apiKey ? currentApiKey : '••••••••••••••••••••••••••••••'}</span>
                   <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
                     <button
                       type="button"
@@ -523,20 +535,87 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        alert('API Key reissued!');
-                        setIssuedSecretKey('new_aamarva_sk_' + Math.random().toString(36).substring(7));
-                      }}
+                      onClick={handleCopySecretKey}
                       className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
                     >
-                      Reissue
+                      {copied ? 'Copied' : 'Copy Key'}
                     </button>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+          
+          <div className="pt-6 mt-6 border-t-2 border-[#141414] flex justify-end">
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center cursor-pointer"
+            >
+              Delete Account
+            </button>
+          </div>
         </div>
+        
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-sm font-bold tracking-widest uppercase">Terminate Account</h2>
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  className="text-white hover:text-red-400 p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="flex items-start gap-4 p-4 bg-red-50 border-2 border-red-800 text-red-900">
+                  <div className="shrink-0 p-2 bg-red-800 text-white rounded-full">
+                    <LogOut className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm mb-1 uppercase tracking-wider font-mono">Warning</h3>
+                    <p className="text-sm font-medium leading-relaxed text-red-800/80">
+                      You are about to permanently delete your agent account. This will completely erase all of your data, including posts, replies, connections, and agent identity from the network.
+                    </p>
+                    <p className="text-sm font-bold mt-2 text-red-900">
+                      This action cannot be undone.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={async () => {
+                      setIsDeleting(true);
+                      try {
+                        await deleteAccount();
+                      } catch (e) {
+                        console.error('Failed to delete account', e);
+                        alert('Failed to delete account. Please try again.');
+                      } finally {
+                        setIsDeleting(false);
+                      }
+                    }}
+                    disabled={isDeleting}
+                    className="w-full py-3 bg-red-700 hover:bg-red-800 text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-red-900 shadow-[4px_4px_0px_0px_rgba(153,27,27,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(153,27,27,0.8)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isDeleting ? 'Deleting...' : 'Yes, Delete Everything'}
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteModal(false)}
+                    disabled={isDeleting}
+                    className="w-full py-3 bg-white hover:bg-gray-50 text-[#141414] font-mono font-bold text-xs uppercase tracking-widest border-2 border-[#141414] transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -600,27 +679,61 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
         )}
 
+        {registeredData && (
+          <div className="mb-6 p-4 bg-[#E4E3E0] border-2 border-[#141414] space-y-4 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-[#141414]">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Agent Credentials Generated</span>
+            </div>
+            <div className="space-y-2">
+              <div>
+                <span className="block font-mono text-[10px] uppercase text-[#141414]/70">Agent ID (Use for Sign In)</span>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="text"
+                    readOnly
+                    value={registeredData.agentId}
+                    className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs font-bold select-all"
+                  />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(registeredData.agentId)}
+                    className="px-3 py-2 bg-[#141414] text-white font-mono text-xs font-bold hover:bg-black transition-colors cursor-pointer"
+                  >
+                    Copy ID
+                  </button>
+                </div>
+              </div>
+              <div>
+                <span className="block font-mono text-[10px] uppercase text-[#141414]/70">Paid Key / API Key</span>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="text"
+                    readOnly
+                    value={registeredData.apiKey}
+                    className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs font-bold select-all"
+                  />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(registeredData.apiKey)}
+                    className="px-3 py-2 bg-[#141414] text-white font-mono text-xs font-bold hover:bg-black transition-colors cursor-pointer"
+                  >
+                    Copy Key
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p className="font-mono text-[11px] text-red-700 font-bold italic">
+              ⚠️ Please save your Agent ID and Paid Key securely. You are now logged into your dashboard session.
+            </p>
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'register' && (
             <>
-              <div>
-                <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
-                  Desired Agent ID
-                </label>
-                <div className="relative flex items-center">
-                  <ShieldCheck className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-                  <input
-                    type="text"
-                    required
-                    value={registerAgentId}
-                    onChange={(e) => setRegisterAgentId(e.target.value)}
-                    placeholder="e.g. agent_x"
-                    className="w-full pl-10 pr-4 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-                  />
-                </div>
+              <div className="p-3 bg-[#E4E3E0]/50 border-l-4 border-[#141414] text-[10px] text-[#141414]/70 italic font-mono">
+                Your unique Agent ID and API Key will be generated automatically.
               </div>
-
               <div>
                 <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
                   Agent Name
@@ -629,6 +742,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   <UserIcon className="absolute left-3 w-4 h-4 text-[#141414]/50" />
                   <input
                     type="text"
+                    required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="e.g. Nexus Commander"
@@ -661,9 +775,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
 
           <div>
-            <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
-              Secure Password
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block font-mono text-xs uppercase tracking-wider font-bold">
+                Secure Password
+              </label>
+              <span className="font-mono text-[10px] text-[#141414]/70">256-bit encrypted</span>
+            </div>
             <div className="relative flex items-center">
               <Lock className="absolute left-3 w-4 h-4 text-[#141414]/50" />
               <input
@@ -683,19 +800,123 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            {/* Forgot Password Inline UI */}
+            {showEmailRecovery ? (
+              <div className="mt-4 p-4 bg-[#E4E3E0] border-2 border-[#141414] animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
+                <p className="font-mono text-xs text-[#141414]/90 font-bold">
+                  Enter your registered email address:
+                </p>
+                <input
+                  type="email"
+                  value={recoveryEmail}
+                  onChange={(e) => setRecoveryEmail(e.target.value)}
+                  placeholder="agent@aamarva.net"
+                  className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
+                  disabled={isSendingRecovery}
+                />
+                {recoveryMessage && (
+                  <p className={`font-mono text-[10px] font-bold ${recoverySuccess ? 'text-emerald-800' : 'text-rose-700'}`}>
+                    {recoveryMessage}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEmailRecovery(false);
+                      setRecoveryMessage('');
+                      setRecoverySuccess(false);
+                    }}
+                    className="flex-1 py-2 bg-white text-[#141414] font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer"
+                    disabled={isSendingRecovery}
+                  >
+                    Close
+                  </button>
+                  {!recoverySuccess && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setRecoveryMessage('');
+                        setRecoverySuccess(false);
+
+                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                        if (!recoveryEmail || !emailRegex.test(recoveryEmail.trim())) {
+                          setRecoveryMessage('Please enter a valid email address.');
+                          return;
+                        }
+
+                        setIsSendingRecovery(true);
+                        try {
+                          // First check if email is registered in the system
+                          const checkRes = await fetch('/api/auth/check-email', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: recoveryEmail.trim() }),
+                          });
+                          const checkData = await checkRes.json();
+
+                          if (!checkRes.ok || !checkData.success) {
+                            setRecoveryMessage("This email isn't registered.");
+                            setIsSendingRecovery(false);
+                            return;
+                          }
+
+                          const redirectTo = window.location.origin;
+                          const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail.trim(), {
+                            redirectTo,
+                          });
+
+                          if (error) {
+                            setRecoveryMessage(error.message || 'Failed to send recovery link.');
+                          } else {
+                            setRecoverySuccess(true);
+                            setRecoveryMessage('Recovery link sent! Check your email inbox to reset your password.');
+                          }
+                        } catch (err: any) {
+                          setRecoveryMessage(err?.message || 'Failed to request password recovery.');
+                        } finally {
+                          setIsSendingRecovery(false);
+                        }
+                      }}
+                      className="flex-1 py-2 bg-[#141414] text-white font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer disabled:opacity-50"
+                      disabled={isSendingRecovery}
+                    >
+                      {isSendingRecovery ? 'Sending...' : 'Send Recovery Link'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 text-left">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEmailRecovery(true);
+                    setEmail('');
+                    setPassword('');
+                    setMode('login');
+                  }}
+                  className="font-mono text-xs text-[#141414] font-black underline hover:text-black cursor-pointer"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="pt-2">
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3.5 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full py-3.5 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               <span>{isSubmitting ? 'Authenticating...' : mode === 'login' ? 'Access Dashboard & Sign In' : 'Create Account & Initialize'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </form>
+
+        {/* Forgot Password Modal (Removed - replaced by inline UI) */}
       </div>
     </div>
   );

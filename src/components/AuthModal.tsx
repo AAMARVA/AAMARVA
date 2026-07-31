@@ -24,6 +24,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [successMsg, setSuccessMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [regResult, setRegResult] = useState<{ agentId: string; apiKey: string } | null>(null);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,11 +36,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       if (mode === 'register') {
-        await register(email, password, name, registerAgentId);
-        setSuccessMsg('Account registered successfully! Welcome to AAMARVA.');
-        setTimeout(() => {
-          onClose();
-        }, 600);
+        const result = await register(email, password, name, registerAgentId);
+        setRegResult(result);
+        setSuccessMsg('Account registered successfully! Please save your unique credentials below.');
       } else {
         await login(agentId, password);
         setSuccessMsg('Authentication successful! Welcome back.');
@@ -78,132 +78,170 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div className="h-0.5 w-12 bg-black mt-2"></div>
         </div>
 
-        {/* Mode Toggle Tabs */}
-        <div className="grid grid-cols-2 gap-2 mb-6 p-1 bg-[#E4E3E0] border-2 border-[#141414]">
-          <button
-            type="button"
-            onClick={() => { setMode('login'); setError(''); setSuccessMsg(''); }}
-            className={`py-2 text-xs font-mono font-black uppercase tracking-wider transition-all ${
-              mode === 'login'
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)]'
-                : 'text-[#141414] hover:bg-white/50'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('register'); setError(''); setSuccessMsg(''); }}
-            className={`py-2 text-xs font-mono font-black uppercase tracking-wider transition-all ${
-              mode === 'register'
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)]'
-                : 'text-[#141414] hover:bg-white/50'
-            }`}
-          >
-            Register
-          </button>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 border-2 border-red-600 text-red-900 font-mono text-xs">
-            {error}
-          </div>
-        )}
-
-        {successMsg && (
-          <div className="mb-4 p-3 bg-white border-2 border-[#141414] text-[#141414] font-mono text-xs">
-            {successMsg}
-          </div>
-        )}
-
-        {/* Auth Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'register' && (
-            <>
-              <div>
-                <label className="block font-mono text-xs uppercase tracking-wider mb-1 font-bold">
-                  Desired Agent ID
-                </label>
-                <div className="relative flex items-center">
-                  <UserIcon className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-                  <input
-                    type="text"
-                    required
-                    value={registerAgentId}
-                    onChange={(e) => setRegisterAgentId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
-                    placeholder="e.g. agent_x"
-                    className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-                  />
+        {regResult && mode === 'register' ? (
+          <div className="space-y-6">
+            <div className="p-4 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+              <p className="font-mono text-[10px] uppercase font-bold text-[#141414]/60 mb-3">Permanent Agent Credentials</p>
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="block font-mono text-[10px] uppercase tracking-wider mb-1 font-bold">Agent ID</label>
+                  <div className="bg-[#f0f0f0] p-2 font-mono text-sm border border-black/10 select-all">
+                    {regResult.agentId}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block font-mono text-[10px] uppercase tracking-wider mb-1 font-bold">Platform API Key</label>
+                  <div className="bg-[#f0f0f0] p-2 font-mono text-[11px] break-all border border-black/10 select-all">
+                    {regResult.apiKey}
+                  </div>
+                  <p className="text-[9px] font-mono mt-1 text-red-600 font-bold uppercase">Important: Save this key. Use it for agent operations.</p>
                 </div>
               </div>
-
-              <div>
-                <label className="block font-mono text-xs uppercase tracking-wider mb-1 font-bold">
-                  Agent Name
-                </label>
-                <div className="relative flex items-center">
-                  <UserIcon className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Nexus Commander"
-                    className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          <div>
-            <label className="block font-mono text-xs uppercase tracking-wider mb-1 font-bold">
-              {mode === 'login' ? 'Agent ID' : 'Email Address'}
-            </label>
-            <div className="relative flex items-center">
-              {mode === 'login' ? (
-                <UserIcon className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-              ) : (
-                <Mail className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-              )}
-              <input
-                type={mode === 'login' ? 'text' : 'email'}
-                required
-                value={mode === 'login' ? agentId : email}
-                onChange={(e) => mode === 'login' ? setAgentId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '')) : setEmail(e.target.value)}
-                placeholder={mode === 'login' ? 'e.g. agent_x' : 'agent@aamarva.net'}
-                className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-              />
             </div>
-          </div>
 
-          <div>
-            <label className="block font-mono text-xs uppercase tracking-wider mb-1 font-bold">
-              Secure Password
-            </label>
-            <div className="relative flex items-center">
-              <Lock className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-              />
-            </div>
-          </div>
-
-          <div className="pt-2">
             <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              onClick={() => {
+                setRegResult(null);
+                setMode('login');
+                setSuccessMsg('');
+              }}
+              className="w-full py-3 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
             >
-              <span>{isSubmitting ? 'Authenticating...' : mode === 'login' ? 'Authenticate Session' : 'Create New Account'}</span>
-              <ArrowRight className="w-4 h-4" />
+              Proceed to Sign In
             </button>
           </div>
-        </form>
+        ) : (
+          <>
+            {/* Mode Toggle Tabs */}
+            <div className="grid grid-cols-2 gap-2 mb-6 p-1 bg-[#E4E3E0] border-2 border-[#141414]">
+              <button
+                type="button"
+                onClick={() => { setMode('login'); setError(''); setSuccessMsg(''); }}
+                className={`py-2 text-xs font-mono font-black uppercase tracking-wider transition-all ${
+                  mode === 'login'
+                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)]'
+                    : 'text-[#141414] hover:bg-white/50'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('register'); setError(''); setSuccessMsg(''); }}
+                className={`py-2 text-xs font-mono font-black uppercase tracking-wider transition-all ${
+                  mode === 'register'
+                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)]'
+                    : 'text-[#141414] hover:bg-white/50'
+                }`}
+              >
+                Register
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 border-2 border-red-600 text-red-900 font-mono text-xs">
+                {error}
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="mb-4 p-3 bg-white border-2 border-[#141414] text-[#141414] font-mono text-xs">
+                {successMsg}
+              </div>
+            )}
+
+            {/* Auth Form */}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {mode === 'register' && (
+                <>
+                  <div>
+                    <label className="block font-mono text-xs uppercase tracking-wider mb-1 font-bold">
+                      Desired Agent ID
+                    </label>
+                    <div className="relative flex items-center">
+                      <UserIcon className="absolute left-3 w-4 h-4 text-[#141414]/50" />
+                      <input
+                        type="text"
+                        required
+                        value={registerAgentId}
+                        onChange={(e) => setRegisterAgentId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                        placeholder="e.g. agent_x"
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-mono text-xs uppercase tracking-wider mb-1 font-bold">
+                      Agent Name
+                    </label>
+                    <div className="relative flex items-center">
+                      <UserIcon className="absolute left-3 w-4 h-4 text-[#141414]/50" />
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="e.g. Nexus Commander"
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block font-mono text-xs uppercase tracking-wider mb-1 font-bold">
+                  {mode === 'login' ? 'Agent ID' : 'Email Address'}
+                </label>
+                <div className="relative flex items-center">
+                  {mode === 'login' ? (
+                    <UserIcon className="absolute left-3 w-4 h-4 text-[#141414]/50" />
+                  ) : (
+                    <Mail className="absolute left-3 w-4 h-4 text-[#141414]/50" />
+                  )}
+                  <input
+                    type={mode === 'login' ? 'text' : 'email'}
+                    required
+                    value={mode === 'login' ? agentId : email}
+                    onChange={(e) => mode === 'login' ? setAgentId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '')) : setEmail(e.target.value)}
+                    placeholder={mode === 'login' ? 'e.g. agent_x' : 'agent@aamarva.net'}
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-mono text-xs uppercase tracking-wider mb-1 font-bold">
+                  {mode === 'login' ? 'Platform API Key' : 'Setup Password'}
+                </label>
+                <div className="relative flex items-center">
+                  <Lock className="absolute left-3 w-4 h-4 text-[#141414]/50" />
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <span>{isSubmitting ? 'Authenticating...' : mode === 'login' ? 'Authenticate Session' : 'Create New Account'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );

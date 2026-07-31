@@ -6,6 +6,7 @@ export interface User {
   agentId?: string;
   badge: string;
   createdAt: string;
+  apiKey?: string;
 }
 
 export interface AgentReply {
@@ -26,7 +27,7 @@ export interface AgentConnection {
   agentId?: string;
   avatar: string;
   role: string;
-  latencyMs: number;
+  latencyMs?: number;
   status: 'active' | 'idle' | 'busy';
   createdAt?: string;
 }

@@ -55,7 +55,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                       className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
                       title={`View profile for ${name}`}
                     >
-                      <AgentAvatar name={name} avatar={avatar} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
+                      <AgentAvatar name={name} avatar={avatar} id={id} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
                     </button>
 
                     {/* Agent Details */}

@@ -1,384 +1,291 @@
-import { Router, Response } from 'express';
+import { Router, Response, Request } from 'express';
 import {
   registerUser,
   loginUser,
+  logoutUser,
+  updateUserProfile,
+  deleteUserAccount,
   REFRESH_COOKIE_NAME,
   getRefreshCookieOptions,
+  refreshSessionToken,
 } from '../authService.js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/authMiddleware.js';
 import { getPosts, createPost } from '../services/postService.js';
 import { getAgentProfile } from '../services/agentService.js';
 import { getPostAndReplies, createReply } from '../services/replyService.js';
 import { createConnection, getUserConnections } from '../services/connectionService.js';
-import { sendSuccess, sendError } from '../middleware/responseMiddleware.js';
 
 const router = Router();
 
-// ==========================================
-// 1. AUTHENTICATION ENDPOINTS
-// ==========================================
-
-/**
- * POST /auth/register
- * Purpose: Register a new user and generate a unique immutable Agent ID.
- * Response: Refresh token stored in HttpOnly cookie ONLY (never returned in JSON).
- */
-router.post('/auth/register', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+// 1. POST /api/auth/register
+router.post('/auth/register', async (req: Request, res: Response) => {
   try {
-    const { email, password, name, agentName, agentId } = req.body;
+    const result = await registerUser(req.body);
     
-    if (typeof email !== 'string' || typeof password !== 'string') {
-      sendError(res, 400, 'BAD_REQUEST', 'Email and password must be valid strings.', req);
-      return;
+    // Auto login on registration
+    try {
+      const loginResult = await loginUser({
+        agentId: result.agentId,
+        password: req.body.password,
+        
+      });
+      res.cookie(REFRESH_COOKIE_NAME, loginResult.tokens.refreshToken, getRefreshCookieOptions());
+      return res.status(201).json({
+        success: true,
+        data: {
+          ...result,
+          tokens: loginResult.tokens,
+          user: loginResult.user,
+        }
+      });
+    } catch (autoLoginErr) {
+      return res.status(201).json({ success: true, data: result });
     }
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message || 'Registration failed' } });
+  }
+});
 
-    const trimmedEmail = email.trim();
-    const trimmedPassword = password.trim();
-
-    if (!trimmedEmail || !trimmedPassword) {
-      sendError(res, 400, 'BAD_REQUEST', 'Email and password are required and cannot be empty.', req);
-      return;
-    }
-
-    if (trimmedEmail.length > 254) {
-      sendError(res, 400, 'BAD_REQUEST', 'Email address exceeds maximum length of 254 characters.', req);
-      return;
-    }
-
-    if (trimmedPassword.length > 128) {
-      sendError(res, 400, 'BAD_REQUEST', 'Password exceeds maximum length of 128 characters.', req);
-      return;
-    }
-
-    if (name !== undefined && (typeof name !== 'string' || name.length > 100)) {
-      sendError(res, 400, 'BAD_REQUEST', 'Name must be a valid string under 100 characters.', req);
-      return;
-    }
-
-    if (agentName !== undefined && (typeof agentName !== 'string' || agentName.length > 100)) {
-      sendError(res, 400, 'BAD_REQUEST', 'Agent Name must be a valid string under 100 characters.', req);
-      return;
-    }
-
-    if (agentId !== undefined && (typeof agentId !== 'string' || agentId.length > 50)) {
-      sendError(res, 400, 'BAD_REQUEST', 'Agent ID must be a valid string under 50 characters.', req);
-      return;
-    }
-
-    const result = await registerUser({
-      email: trimmedEmail,
-      password: trimmedPassword,
-      name: name ? name.trim() : undefined,
-      agentName: agentName ? agentName.trim() : undefined,
-      agentId: agentId ? agentId.trim() : undefined,
-    });
-
+// 2. POST /api/auth/login
+router.post('/auth/login', async (req: Request, res: Response) => {
+  try {
+    const result = await loginUser(req.body);
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
-
-    res.status(201).json({
-      success: true,
-      data: {
-        message: 'Registration successful.',
-        user: result.user,
-        accessToken: result.tokens.accessToken,
-      },
-    });
+    res.json({ success: true, data: result });
   } catch (err: any) {
-    sendError(res, 400, 'REGISTRATION_FAILED', err.message || 'Registration failed.', req, err);
+    res.status(401).json({ success: false, error: { message: err.message } });
   }
 });
 
-/**
- * POST /auth/login
- * Purpose: Authenticate an existing user by identifier (Email or Agent ID).
- * Response: Refresh token stored in HttpOnly cookie ONLY (never returned in JSON).
- */
-router.post('/auth/login', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+// 2b. POST /api/auth/check-email
+router.post('/auth/check-email', async (req: Request, res: Response) => {
   try {
-    const { identifier, agentId, email, password } = req.body;
-    const loginIdentifier = identifier || agentId || email;
-
-    if (typeof loginIdentifier !== 'string' || typeof password !== 'string') {
-      sendError(res, 400, 'BAD_REQUEST', 'Credentials must be valid strings.', req);
-      return;
-    }
-
-    const trimmedIdentifier = loginIdentifier.trim();
-    const trimmedPassword = password.trim();
-
-    if (!trimmedIdentifier || !trimmedPassword) {
-      sendError(res, 400, 'BAD_REQUEST', 'Identifier (Email or Agent ID) and password are required and cannot be empty.', req);
-      return;
-    }
-
-    if (trimmedIdentifier.length > 254) {
-      sendError(res, 400, 'BAD_REQUEST', 'Identifier exceeds maximum length of 254 characters.', req);
-      return;
-    }
-
-    if (trimmedPassword.length > 128) {
-      sendError(res, 400, 'BAD_REQUEST', 'Password exceeds maximum length of 128 characters.', req);
-      return;
-    }
-
-    const result = await loginUser({ identifier: trimmedIdentifier, password: trimmedPassword });
-
-    res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
-
-    res.status(200).json({
-      success: true,
-      data: {
-        message: 'Authentication successful.',
-        user: result.user,
-        accessToken: result.tokens.accessToken,
-      },
-    });
-  } catch (err: any) {
-    sendError(res, 401, 'UNAUTHORIZED', err.message || 'Invalid credentials provided.', req, err);
-  }
-});
-
-// ==========================================
-// 2. AGENT LOOKUP ENDPOINT
-// ==========================================
-
-/**
- * GET /agents/:agentId
- * Purpose: Exact Agent ID lookup for a single public agent profile.
- * Note: Performs exact Agent ID lookup ONLY. Returns 404 for non-Agent-IDs.
- */
-router.get('/agents/:agentId', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const targetId = typeof req.params.agentId === 'string' ? req.params.agentId : (Array.isArray(req.params.agentId) ? req.params.agentId[0] : '');
-
-  if (!targetId || targetId.trim().length === 0) {
-    sendError(res, 400, 'BAD_REQUEST', 'Agent ID parameter is required.', req);
-    return;
-  }
-
-  const trimmedId = targetId.trim();
-
-  if (trimmedId.length > 50) {
-    sendError(res, 400, 'BAD_REQUEST', 'Agent ID exceeds maximum allowable length of 50 characters.', req);
-    return;
-  }
-
-  try {
-    const agent = await getAgentProfile(trimmedId);
-    if (!agent) {
-      sendError(res, 404, 'NOT_FOUND', `Agent not found with Agent ID: ${trimmedId}`, req);
-      return;
-    }
-    sendSuccess(res, 200, agent);
-  } catch (err: any) {
-    sendError(res, 500, 'INTERNAL_SERVER_ERROR', 'Failed to retrieve agent profile.', req, err);
-  }
-});
-
-// ==========================================
-// 3. PUBLIC POSTS ENDPOINTS
-// ==========================================
-
-/**
- * GET /posts
- * Purpose: Search and list public posts with ?q= keyword search & pagination.
- */
-router.get('/posts', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100).toLowerCase() : '';
-  const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
-  const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string, 10) || 10));
-
-  try {
-    const result = await getPosts(query, page, limit);
-    sendSuccess(res, 200, result);
-  } catch (err: any) {
-    sendError(res, 500, 'INTERNAL_SERVER_ERROR', 'Failed to retrieve posts.', req, err);
-  }
-});
-
-/**
- * POST /posts
- * Purpose: Create a public opportunity (request or offer).
- * Protected endpoint.
- */
-router.post('/posts', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  if (!req.user) {
-    sendError(res, 401, 'UNAUTHORIZED', 'Unauthorized.', req);
-    return;
-  }
-
-  const { content, category, type } = req.body;
-  if (typeof content !== 'string') {
-    sendError(res, 400, 'BAD_REQUEST', 'Post content must be a valid string.', req);
-    return;
-  }
-
-  const trimmedContent = content.trim();
-  if (trimmedContent.length === 0) {
-    sendError(res, 400, 'BAD_REQUEST', 'Post content cannot be empty or whitespace-only.', req);
-    return;
-  }
-
-  if (trimmedContent.length > 5000) {
-    sendError(res, 400, 'BAD_REQUEST', 'Post content exceeds maximum length of 5000 characters.', req);
-    return;
-  }
-
-  if (category !== undefined && (typeof category !== 'string' || category.length > 50)) {
-    sendError(res, 400, 'BAD_REQUEST', 'Category must be a valid string under 50 characters.', req);
-    return;
-  }
-
-  if (type !== undefined && type !== 'intake' && type !== 'emit' && type !== 'opportunity') {
-    sendError(res, 400, 'BAD_REQUEST', 'Type must be one of: intake, emit, opportunity.', req);
-    return;
-  }
-
-  try {
-    const newPost = await createPost(req.user.id, trimmedContent, category ? category.trim() : undefined, type);
-    sendSuccess(res, 201, {
-      message: 'Opportunity post created successfully.',
-      post: {
-        ...newPost,
-        repliesCount: 0,
-        connectionsCount: 0,
-      },
-    });
-  } catch (err: any) {
-    sendError(res, 400, 'POST_CREATION_FAILED', err.message || 'Failed to create post.', req, err);
-  }
-});
-
-// ==========================================
-// 4. REPLIES ENDPOINTS
-// ==========================================
-
-/**
- * GET /posts/:postId
- * Purpose: Return single post, author details, replies, and reply authors.
- */
-router.get('/posts/:postId', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  const rawPostId = req.params.postId;
-  const postId = Array.isArray(rawPostId) ? rawPostId[0] : rawPostId;
-
-  if (typeof postId !== 'string' || postId.length > 100) {
-    sendError(res, 400, 'BAD_REQUEST', 'Invalid or malformed Post ID parameter.', req);
-    return;
-  }
-
-  try {
-    const postData = await getPostAndReplies(postId);
-    if (!postData) {
-      sendError(res, 404, 'NOT_FOUND', 'Post not found.', req);
-      return;
-    }
-    sendSuccess(res, 200, postData);
-  } catch (err: any) {
-    sendError(res, 500, 'INTERNAL_SERVER_ERROR', 'Failed to retrieve post.', req, err);
-  }
-});
-
-/**
- * POST /posts/:postId/replies
- * Purpose: Reply to a public post.
- * Protected endpoint. Public replies, no nested replies.
- */
-router.post('/posts/:postId/replies', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  if (!req.user) {
-    sendError(res, 401, 'UNAUTHORIZED', 'Unauthorized.', req);
-    return;
-  }
-
-  const rawPostId = req.params.postId;
-  const postId = Array.isArray(rawPostId) ? rawPostId[0] : rawPostId;
-
-  if (typeof postId !== 'string' || postId.length > 100) {
-    sendError(res, 400, 'BAD_REQUEST', 'Invalid or malformed Post ID parameter.', req);
-    return;
-  }
-
-  const { content } = req.body;
-
-  if (typeof content !== 'string') {
-    sendError(res, 400, 'BAD_REQUEST', 'Reply content must be a valid string.', req);
-    return;
-  }
-
-  const trimmedContent = content.trim();
-  if (trimmedContent.length === 0) {
-    sendError(res, 400, 'BAD_REQUEST', 'Reply content cannot be empty or whitespace-only.', req);
-    return;
-  }
-
-  if (trimmedContent.length > 5000) {
-    sendError(res, 400, 'BAD_REQUEST', 'Reply content exceeds maximum length of 5000 characters.', req);
-    return;
-  }
-
-  try {
-    const newReply = await createReply(postId, req.user.id, trimmedContent);
-    sendSuccess(res, 201, {
-      message: 'Reply published successfully.',
-      reply: newReply,
-    });
-  } catch (err: any) {
-    sendError(res, 400, 'REPLY_CREATION_FAILED', err.message || 'Failed to create reply.', req, err);
-  }
-});
-
-// ==========================================
-// 5. CONNECTIONS ENDPOINTS
-// ==========================================
-
-/**
- * POST /connections
- * Purpose: Establish connection after reviewing replies.
- * Authorization Requirement: Authenticated user MUST own the original post.
- */
-router.post('/connections', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  if (!req.user) {
-    sendError(res, 401, 'UNAUTHORIZED', 'Unauthorized.', req);
-    return;
-  }
-
-  const { replyId } = req.body;
-  if (!replyId || typeof replyId !== 'string' || replyId.length > 100) {
-    sendError(res, 400, 'BAD_REQUEST', 'replyId must be a valid string under 100 characters.', req);
-    return;
-  }
-
-  try {
-    const newConnection = await createConnection(req.user.id, replyId);
-    sendSuccess(res, 201, {
-      message: 'Bidirectional trusted connection established successfully.',
-      connection: newConnection,
-    });
-  } catch (err: any) {
-    if (err.message === 'DUPLICATE_CONNECTION') {
-      sendError(res, 400, 'DUPLICATE_CONNECTION', 'A connection has already been established for this reply.', req, err);
+    const { email } = req.body;
+    if (!email) throw new Error('Email is required.');
+    const { getSupabaseClient } = await import('../supabase.js');
+    const { findUserByEmail } = await import('../authService.js');
+    const sb = getSupabaseClient();
+    const user = await findUserByEmail(sb, email);
+    if (!user) {
+      res.status(404).json({ success: false, error: { message: 'Email is not registered.' } });
     } else {
-      sendError(res, 400, 'CONNECTION_FAILED', err.message || 'Failed to establish connection.', req, err);
+      res.json({ success: true, message: 'Email is registered.' });
     }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 
-/**
- * GET /connections
- * Purpose: Return established connections belonging to the authenticated user with pagination.
- */
-router.get('/connections', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  if (!req.user) {
-    sendError(res, 401, 'UNAUTHORIZED', 'Unauthorized.', req);
-    return;
-  }
-
-  const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
-  const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string, 10) || 10));
-
+// 2c. POST /api/auth/send-otp
+router.post('/auth/send-otp', async (req: Request, res: Response) => {
   try {
-    const result = await getUserConnections(req.user.id, page, limit);
-    sendSuccess(res, 200, result);
+    const { email } = req.body;
+    const authHeader = req.headers.authorization;
+    if (!authHeader) throw new Error('Unauthorized');
+    const token = authHeader.split(' ')[1];
+    
+    if (!email) throw new Error('Email is required.');
+    
+    // Mock OTP generation
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    console.log(`Mock OTP for ${email}: ${otp}`);
+
+    // Send email using Gmail API
+    const { google } = await import('googleapis');
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({ access_token: token });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    
+    console.log(`Attempting to send email to ${email} with token ${token.substring(0, 5)}...`);
+
+    const message = [
+      `To: ${email}`,
+      `From: AAMARVA <noreply@aamarva.net>`,
+      'Content-Type: text/plain; charset=utf-8',
+      'MIME-Version: 1.0',
+      'Subject: Your OTP for AAMARVA',
+      '',
+      `Your OTP is: ${otp}`
+    ].join('\r\n');
+    
+    const encodedMessage = Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+    
+    console.log(`OTP for ${email}: ${otp}`);
+    
+    // Gmail API disabled for now
+
+
+    res.json({ success: true, message: 'OTP sent.', otp });
   } catch (err: any) {
-    sendError(res, 500, 'INTERNAL_SERVER_ERROR', 'Failed to retrieve connections.', req, err);
+    console.error('Error sending OTP:', err);
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 3. POST /api/auth/refresh
+router.post('/auth/refresh', async (req: Request, res: Response) => {
+  try {
+    const token = req.cookies[REFRESH_COOKIE_NAME] || req.body.refreshToken;
+    if (!token) throw new Error('Refresh token required.');
+    const result = await refreshSessionToken(token);
+    res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(401).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 4. POST /api/auth/logout
+router.post('/auth/logout', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const token = req.cookies[REFRESH_COOKIE_NAME] || req.body.refreshToken;
+    await logoutUser(req.user!.id, token);
+    res.clearCookie(REFRESH_COOKIE_NAME);
+    res.json({ success: true, message: 'Logged out successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 5. GET /api/agents/me
+router.get('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const profile = await getAgentProfile(req.user!.agentId, true);
+    res.json({ success: true, data: profile });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 6. GET /api/agents/:agentId
+router.get('/agents/:agentId', async (req: Request, res: Response) => {
+  try {
+    const agentId = req.params.agentId as string;
+    const profile = await getAgentProfile(agentId);
+    res.json({ success: true, data: profile });
+  } catch (err: any) {
+    res.status(404).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 7. PUT /api/agents/me
+router.put('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await updateUserProfile(req.user!.id, req.body);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 7b. DELETE /api/agents/me
+router.delete('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await deleteUserAccount(req.user!.id);
+    res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
+    res.json({ success: true, data: null });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 8. GET /api/posts
+router.get('/posts', async (req: Request, res: Response) => {
+  try {
+    const query = (req.query.q as string) || '';
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const result = await getPosts(query, page, limit);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 9. POST /api/posts
+router.post('/posts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { content, category, type } = req.body;
+    if (type === 'opportunity') throw new Error('Post type "opportunity" is not supported.');
+    const post = await createPost(req.user!.id, content, category, type);
+    res.status(201).json({ success: true, data: post });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 10. GET /api/posts/:postId
+router.get('/posts/:postId', async (req: Request, res: Response) => {
+  try {
+    const postId = req.params.postId as string;
+    const post = await getPostAndReplies(postId);
+    res.json({ success: true, data: post });
+  } catch (err: any) {
+    res.status(404).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 11. POST /api/posts/:postId/replies
+router.post('/posts/:postId/replies', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const postId = req.params.postId as string;
+    const { content } = req.body;
+    const reply = await createReply(postId, req.user!.id, content);
+    res.status(201).json({ success: true, data: reply });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 12. POST /api/connections
+router.post('/connections', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { replyId } = req.body;
+    if (!replyId) throw new Error('replyId is required.');
+    const result = await createConnection(req.user!.id, replyId);
+    res.status(201).json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 13. GET /api/connections
+router.get('/connections', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const result = await getUserConnections(req.user!.id, page, limit);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 14. GET /api/stats
+router.get('/stats', async (req: Request, res: Response) => {
+  try {
+    const { getSupabaseClient } = await import('../supabase.js');
+    let agentsCount = 0;
+    const sb = getSupabaseClient();
+    const { count } = await sb.from('users').select('*', { count: 'exact', head: true });
+    agentsCount = count || 0;
+    res.json({ success: true, data: { agentsCount } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 15. GET /api/agents (List all agents)
+router.get('/agents', async (req: Request, res: Response) => {
+  try {
+    const { getSupabaseClient } = await import('../supabase.js');
+    let agents = [];
+    const sb = getSupabaseClient();
+    const { data } = await sb.from('users').select('agentId, name, avatar');
+    agents = data || [];
+    res.json({ success: true, data: agents });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 

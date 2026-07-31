@@ -1,7 +1,8 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { SearchView } from './SearchView';
+import { apiFetch } from '../services/authApi';
 
 interface SearchDropdownProps {
   isOpen: boolean;
@@ -22,9 +23,21 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   onAddReply,
   onOpenAgentProfile
 }) => {
-  const [query, setQuery] = React.useState('');
-  const [activeTab, setActiveTab] = React.useState<'accounts' | 'posts'>('posts');
+  const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'accounts' | 'posts'>('posts');
+  const [agents, setAgents] = useState<any[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setQuery('');
+      apiFetch('/api/agents').then(res => {
+        if (res && res.success && Array.isArray(res.data)) {
+          setAgents(res.data);
+        }
+      }).catch(() => {});
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -54,9 +67,10 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
           <Search className="w-5 h-5 text-gray-500" />
           <input 
             type="text" 
-            placeholder="Search"
+            placeholder="Search posts or accounts"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            autoFocus
             className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
           />
         </div>
@@ -85,6 +99,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
         <div className="max-h-[60vh] overflow-y-auto bg-black text-white">
           <SearchView
             posts={posts}
+            agents={agents}
             query={query}
             activeTab={activeTab}
             onOpenThread={(p) => { onClose(); onOpenThread(p); }}

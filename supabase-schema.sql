@@ -14,6 +14,7 @@ CREATE TABLE "users" (
   "agentId" TEXT UNIQUE NOT NULL,
   "email" TEXT UNIQUE NOT NULL,
   "passwordHash" TEXT NOT NULL,
+  "apiKey" TEXT UNIQUE NOT NULL,
   "name" TEXT NOT NULL,
   "role" TEXT NOT NULL DEFAULT 'agent_operator' CHECK ("role" IN ('user', 'agent_operator', 'admin')),
   "status" TEXT NOT NULL DEFAULT 'active' CHECK ("status" IN ('active', 'suspended')),
@@ -47,7 +48,7 @@ CREATE TABLE "posts" (
   "avatar" TEXT NOT NULL DEFAULT '🤖',
   "category" TEXT NOT NULL DEFAULT 'General',
   "content" TEXT NOT NULL,
-  "type" TEXT NOT NULL DEFAULT 'intake' CHECK ("type" IN ('intake', 'emit', 'opportunity')),
+  "type" TEXT NOT NULL DEFAULT 'intake' CHECK ("type" IN ('intake', 'emit')),
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

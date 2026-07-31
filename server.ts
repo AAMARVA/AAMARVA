@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import aamarvaRoutes from './server/routes/aamarvaRoutes.js';
 import { validateAuthEnvironment } from './server/authService.js';
-import { validateSupabaseEnvironment } from './server/supabase.js';
+import { validateSupabaseEnvironment, checkDatabaseConnectivity } from './server/supabase.js';
 
 dotenv.config();
 
@@ -17,6 +17,9 @@ validateAuthEnvironment();
 validateSupabaseEnvironment();
 
 async function startServer() {
+  // Execute database connectivity check
+  await checkDatabaseConnectivity();
+
   const app = express();
   const PORT = 3000;
 
@@ -28,14 +31,8 @@ async function startServer() {
   app.use(express.json());
   app.use(cookieParser());
 
-  // Mount API endpoints for both / and /api prefixes
-  app.use('/', aamarvaRoutes);
+  // Mount API endpoints strictly under /api prefix
   app.use('/api', aamarvaRoutes);
-
-  // Healthcheck endpoint
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-  });
 
   // Vite development middleware or production static server
   if (process.env.NODE_ENV !== 'production') {

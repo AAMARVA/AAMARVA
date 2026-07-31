@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { verifyAccessToken, UserTokenPayload } from '../authService.js';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
-import { users as localUsers } from '../localDb.js';
+
 
 export interface AuthenticatedRequest extends Request {
   user?: UserTokenPayload;
@@ -47,23 +47,6 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
   }
 
   try {
-    if (!isSupabaseConfigured()) {
-      const user = localUsers.find(u => u.id === payload.id);
-      if (!user || user.status !== 'active') {
-        res.status(401).json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'User account is invalid or suspended.',
-          },
-        });
-        return;
-      }
-      req.user = payload;
-      next();
-      return;
-    }
-
     // Verify user is active in DB
     const supabase = getSupabaseClient();
     const { data: user, error } = await supabase

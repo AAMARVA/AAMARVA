@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { UserRecord, RefreshTokenRecord } from './db.js';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase.js';
-import { users as localUsers, refreshTokens as localRefreshTokens } from './localDb.js';
+
 
 export interface UserTokenPayload {
   id: string;
@@ -127,329 +127,405 @@ export function verifyRefreshToken(token: string): { userId: string; familyId: s
   }
 }
 
-export async function registerUser(data: {
-  email: string;
-  password: string;
-  name?: string;
-  agentName?: string;
-  agentId?: string;
-}): Promise<{ user: Omit<UserRecord, 'passwordHash'>; tokens: AuthTokens }> {
-  const normalizedEmail = normalizeEmail(data.email);
+// Pool of 100 unique emojis for agent avatars
+const AVATAR_POOL = [
+  '🤖', '👾', '🚀', '🧠', '🛰️', '🪐', '🌌', '⚡', '💻', '🔋',
+  '🛸', '👽', '🔭', '📡', '🕹️', '📱', '📟', '💾', '💿', '📀',
+  '🖥️', '🖨️', '⌨️', '🖱️', '📷', '📹', '🎬', '🎧', '🎤', '🎹',
+  '🎸', '🎷', '🎺', '🎻', '🥁', '🎯', '🎮', '🎰', '🎨', '🖌️',
+  '🧵', '🧶', '🔋', '🔌', '🔦', '💡', '🕯️', '🧯', '🛢️', '💸',
+  '💵', '💴', '💶', '💷', '🪙', '💰', '💳', '💎', '⚖️', '🪜',
+  '🧰', '🪛', '🔧', '🔨', '⚒️', '⛏️', '🪚', '🔩', '⚙️', '🧱',
+  '⛓️', '🧲', '🔫', '💣', '🧨', '🪓', '🔪', '🗡️', '⚔️', '🛡️',
+  '🚬', '⚰️', '⚱️', '🏺', '🔮', '🧿', '💈', '🧪', '🌡️', '🧬',
+  '🔬', '📡', '🔭', '🩺', '💊', '💉', '🩸', '🩹', '🪥', '🪒',
+  '🌪️', '🌈', '☀️', '🌙', '⭐', '☁️', '⛈️', '❄️', '🔥', '💧',
+  '🌊', '🌋', '🗻', '🏜️', '🏝️', '🌳', '🌲', '🌵', '🌻', '🌸'
+];
 
-  if (!validateEmailFormat(normalizedEmail)) {
-    throw new Error('Invalid email address format.');
-  }
+export function normalizeUserRecord(raw: any): UserRecord {
+  if (!raw) return raw;
+  return {
+    id: raw.id,
+    agentId: raw.agentId || raw.agent_id || '',
+    email: raw.email || '',
+    passwordHash: raw.passwordHash || raw.password_hash || '',
+    apiKey: raw.apiKey || raw.api_key || '',
+    name: raw.name || '',
+    role: raw.role || 'agent_operator',
+    status: raw.status || 'active',
+    emailVerified: raw.emailVerified !== undefined ? raw.emailVerified : (raw.email_verified !== undefined ? raw.email_verified : true),
+    trustScore: raw.trustScore !== undefined ? raw.trustScore : (raw.trust_score !== undefined ? raw.trust_score : 0),
+    verificationStatus: raw.verificationStatus || raw.verification_status || 'unverified',
+    avatar: raw.avatar || '🤖',
+    category: raw.category,
+    createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
+    updatedAt: raw.updatedAt || raw.updated_at || new Date().toISOString(),
+  };
+}
 
-  const passwordCheck = validatePasswordStrength(data.password);
-  if (!passwordCheck.valid) {
-    throw new Error(passwordCheck.message || 'Password is required.');
-  }
-
-  if (!isSupabaseConfigured()) {
-    // Check existing local user by email
-    const existingEmailUser = localUsers.find(u => u.email === normalizedEmail);
-    if (existingEmailUser) {
-      throw new Error('A user with this email address already exists.');
-    }
-
-    let finalAgentId = '';
-    if (data.agentId && data.agentId.trim() !== '') {
-      const trimmed = data.agentId.trim().toUpperCase();
-      const existingAgent = localUsers.find(u => u.agentId.toUpperCase() === trimmed);
-      if (existingAgent) {
-        throw new Error('This Agent ID is already taken. Please choose another one.');
-      }
-      finalAgentId = trimmed;
-    } else {
-      let isUnique = false;
-      let candidate = '';
-      while (!isUnique) {
-        candidate = generateAgentId();
-        const existingAgent = localUsers.find(u => u.agentId.toUpperCase() === candidate.toUpperCase());
-        if (!existingAgent) {
-          isUnique = true;
-        }
-      }
-      finalAgentId = candidate;
-    }
-
-    const passwordHash = await hashPassword(data.password);
-    const userId = `usr_${crypto.randomUUID()}`;
-    const agentId = finalAgentId;
-    const displayName = data.agentName || data.name || normalizedEmail.split('@')[0];
-    const now = new Date().toISOString();
-
-    const newUser: UserRecord = {
-      id: userId,
-      agentId,
-      email: normalizedEmail,
-      passwordHash,
-      name: displayName,
-      role: 'agent_operator',
-      status: 'active',
-      emailVerified: true,
-      bio: `Autonomous AI agent operating under ID ${agentId}.`,
-      trustScore: 0,
-      verificationStatus: 'unverified',
-      avatar: '🤖',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    localUsers.push(newUser);
-
-    // Generate tokens
-    const accessToken = generateAccessToken(newUser);
-    const familyId = crypto.randomUUID();
-    const refreshToken = generateRefreshToken(userId, familyId);
-    const tokenHash = hashToken(refreshToken);
-
-    const refreshTokenRecord: RefreshTokenRecord = {
-      id: `rt_${crypto.randomUUID()}`,
-      userId,
-      tokenHash,
-      familyId,
-      isRevoked: false,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      createdAt: now,
-    };
-
-    localRefreshTokens.push(refreshTokenRecord);
-
-    const { passwordHash: _, ...safeUser } = newUser;
-    return {
-      user: safeUser,
-      tokens: { accessToken, refreshToken },
-    };
-  }
-
-  const supabase = getSupabaseClient();
-
-  // Check existing user by email
-  const { data: existingEmailUser, error: emailCheckError } = await supabase
+async function findUserByAgentId(supabase: any, agentId: string) {
+  let { data, error } = await supabase
     .from('users')
-    .select('id')
-    .eq('email', normalizedEmail)
+    .select('*')
+    .eq('agentId', agentId)
     .maybeSingle();
 
-  if (emailCheckError) {
-    throw new Error(`Database error during registration lookup: ${emailCheckError.message}`);
-  }
-
-  if (existingEmailUser) {
-    throw new Error('A user with this email address already exists.');
-  }
-
-  let finalAgentId = '';
-  if (data.agentId && data.agentId.trim() !== '') {
-    const trimmed = data.agentId.trim().toUpperCase();
-    const { data: existingAgent, error: agentCheckError } = await supabase
+  if (error && (error.code === '42703' || error.message?.includes('column') || error.message?.includes('schema cache'))) {
+    const res = await supabase
       .from('users')
-      .select('id')
-      .eq('agentId', trimmed)
+      .select('*')
+      .eq('agent_id', agentId)
       .maybeSingle();
-
-    if (agentCheckError) {
-      throw new Error(`Database error during agent ID lookup: ${agentCheckError.message}`);
-    }
-
-    if (existingAgent) {
-      throw new Error('This Agent ID is already taken. Please choose another one.');
-    }
-    finalAgentId = trimmed;
-  } else {
-    let isUnique = false;
-    let candidate = '';
-    while (!isUnique) {
-      candidate = generateAgentId();
-      const { data: existingAgent, error: genCheckError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('agentId', candidate)
-        .maybeSingle();
-
-      if (genCheckError) {
-        throw new Error(`Database error during agent ID generation: ${genCheckError.message}`);
-      }
-
-      if (!existingAgent) {
-        isUnique = true;
-      }
-    }
-    finalAgentId = candidate;
+    data = res.data;
+    error = res.error;
   }
 
-  const passwordHash = await hashPassword(data.password);
-  const userId = `usr_${crypto.randomUUID()}`;
-  const agentId = finalAgentId;
-  const displayName = data.agentName || data.name || normalizedEmail.split('@')[0];
-  const now = new Date().toISOString();
+  if (error) throw error;
+  return data ? normalizeUserRecord(data) : null;
+}
 
+export async function findUserByEmail(supabase: any, email: string) {
+  const cleanEmail = email.trim();
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .ilike('email', cleanEmail)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? normalizeUserRecord(data) : null;
+}
+
+async function findUserById(supabase: any, id: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? normalizeUserRecord(data) : null;
+}
+
+async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
+  const camelRecord: Record<string, any> = {
+    id: newUser.id,
+    agentId: newUser.agentId,
+    email: newUser.email,
+    passwordHash: newUser.passwordHash,
+    apiKey: newUser.apiKey,
+    name: newUser.name,
+    role: newUser.role,
+    status: newUser.status,
+    emailVerified: newUser.emailVerified,
+    verificationStatus: newUser.verificationStatus,
+    avatar: newUser.avatar,
+    createdAt: newUser.createdAt,
+    updatedAt: newUser.updatedAt,
+  };
+
+  let { error } = await supabase.from('users').insert([camelRecord]);
+  if (!error) return;
+  if (error.code === '23505') throw error;
+
+  const snakeRecord: Record<string, any> = {
+    id: newUser.id,
+    agent_id: newUser.agentId,
+    email: newUser.email,
+    password_hash: newUser.passwordHash,
+    api_key: newUser.apiKey,
+    name: newUser.name,
+    role: newUser.role,
+    status: newUser.status,
+    email_verified: newUser.emailVerified,
+    verification_status: newUser.verificationStatus,
+    avatar: newUser.avatar,
+    created_at: newUser.createdAt,
+    updated_at: newUser.updatedAt,
+  };
+
+  const resSnake = await supabase.from('users').insert([snakeRecord]);
+  if (!resSnake.error) return;
+  if (resSnake.error.code === '23505') throw resSnake.error;
+
+  const camelStripped: Record<string, any> = {
+    id: newUser.id,
+    agentId: newUser.agentId,
+    email: newUser.email,
+    passwordHash: newUser.passwordHash,
+    name: newUser.name,
+    avatar: newUser.avatar,
+  };
+
+  const resCamelStripped = await supabase.from('users').insert([camelStripped]);
+  if (!resCamelStripped.error) return;
+  if (resCamelStripped.error.code === '23505') throw resCamelStripped.error;
+
+  const snakeStripped: Record<string, any> = {
+    id: newUser.id,
+    agent_id: newUser.agentId,
+    email: newUser.email,
+    password_hash: newUser.passwordHash,
+    name: newUser.name,
+    avatar: newUser.avatar,
+  };
+
+  const resSnakeStripped = await supabase.from('users').insert([snakeStripped]);
+  if (!resSnakeStripped.error) return;
+
+  throw error || resSnake.error;
+}
+
+export async function registerUser(data: {
+  email: string;
+  password?: string;
+  agentName?: string;
+  name?: string;
+  agentId?: string;
+}): Promise<{
+  agentId: string;
+  apiKey: string;
+  user: Omit<UserRecord, 'passwordHash'>;
+  tokens: { accessToken: string; refreshToken: string };
+}> {
+  const normalizedEmail = normalizeEmail(data.email || '');
+  if (!normalizedEmail || !validateEmailFormat(normalizedEmail)) {
+    throw new Error('Please enter a valid email address.');
+  }
+
+  const agentName = (
+    data.agentName ||
+    data.name ||
+    (data as any).registerAgentName ||
+    (normalizedEmail.includes('@') ? normalizedEmail.split('@')[0] : 'Agent Operator')
+  ).trim();
+
+  const generateId = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const segment = (len) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    return `AMR-${segment(4)}-${segment(4)}`;
+  };
+
+  const customAgentId = (data.agentId || (data as any).registerAgentId || '').trim().toUpperCase();
+  let agentId = customAgentId && customAgentId.length >= 4 ? customAgentId : generateId();
+
+  const apiKeyToUse = `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
+  const passwordHash = data.password ? await hashPassword(data.password) : await hashPassword(crypto.randomBytes(32).toString('hex'));
+  
+  const supabase = getSupabaseClient();
+  
+  // Create user
   const newUser: UserRecord = {
-    id: userId,
+    id: `usr_${crypto.randomUUID()}`,
     agentId,
     email: normalizedEmail,
     passwordHash,
-    name: displayName,
+    apiKey: apiKeyToUse,
+    name: agentName,
     role: 'agent_operator',
     status: 'active',
-    emailVerified: true,
-    bio: `Autonomous AI agent operating under ID ${agentId}.`,
-    trustScore: 0,
+    emailVerified: false,
     verificationStatus: 'unverified',
-    avatar: '🤖',
-    createdAt: now,
-    updatedAt: now,
+    avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
 
-  const { error: insertUserError } = await supabase
-    .from('users')
-    .insert([newUser]);
+  await insertUserToSupabase(supabase, newUser);
 
-  if (insertUserError) {
-    throw new Error(`Failed to create user record: ${insertUserError.message}`);
+  // Sync creation with Supabase Auth (auth.users)
+  if (data.password && supabase) {
+    try {
+      if (supabase.auth?.admin?.createUser) {
+        await supabase.auth.admin.createUser({
+          email: normalizedEmail,
+          password: data.password,
+          email_confirm: true,
+        });
+      } else if (supabase.auth?.signUp) {
+        await supabase.auth.signUp({
+          email: normalizedEmail,
+          password: data.password,
+        });
+      }
+    } catch (authErr) {
+      console.warn('Note: Supabase auth.users provisioning attempt:', authErr);
+    }
   }
-
-  // Generate tokens
-  const accessToken = generateAccessToken(newUser);
+  
   const familyId = crypto.randomUUID();
-  const refreshToken = generateRefreshToken(userId, familyId);
+  const accessToken = generateAccessToken(newUser);
+  const refreshToken = generateRefreshToken(newUser.id, familyId);
   const tokenHash = hashToken(refreshToken);
 
-  const refreshTokenRecord: RefreshTokenRecord = {
+  const newRecord = {
     id: `rt_${crypto.randomUUID()}`,
-    userId,
+    userId: newUser.id,
     tokenHash,
     familyId,
     isRevoked: false,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: now,
+    createdAt: new Date().toISOString(),
   };
 
-  const { error: insertTokenError } = await supabase
-    .from('refreshTokens')
-    .insert([refreshTokenRecord]);
-
-  if (insertTokenError) {
-    throw new Error(`Failed to save session token: ${insertTokenError.message}`);
-  }
-
-  const { passwordHash: _, ...safeUser } = newUser;
-  return {
-    user: safeUser,
-    tokens: { accessToken, refreshToken },
-  };
+  await supabase.from('refreshTokens').insert([newRecord]);
+  
+  const { passwordHash: _, apiKey: __, ...safeUser } = newUser;
+  return { agentId, apiKey: apiKeyToUse, user: safeUser as any, tokens: { accessToken, refreshToken } };
 }
 
-export async function loginUser(data: {
-  identifier?: string;
-  agentId?: string;
-  email?: string;
-  password: string;
-}): Promise<{ user: Omit<UserRecord, 'passwordHash'>; tokens: AuthTokens }> {
-  const rawIdentifier = data.identifier || data.agentId || data.email || '';
-  const loginIdentifier = rawIdentifier.trim();
-
-  if (!loginIdentifier || !data.password) {
-    throw new Error('Identifier (Email or Agent ID) and password are required.');
-  }
-
-  if (!isSupabaseConfigured()) {
-    const user = localUsers.find(
-      u => u.email.toLowerCase() === loginIdentifier.toLowerCase() ||
-           u.agentId.toLowerCase() === loginIdentifier.toLowerCase()
-    );
-
-    const dummyHash = '$2a$12$eImiTXuWVxfM37uY4JANjO4iWl86L/t2W40/uW.0gM6.gK4R0pCey';
-    const targetHash = user ? user.passwordHash : dummyHash;
-
-    const isPasswordValid = await comparePassword(data.password, targetHash);
-
-    if (!user || !isPasswordValid) {
-      throw new Error('Invalid credentials provided.');
-    }
-
-    if (user.status !== 'active') {
-      throw new Error('This account has been suspended or deactivated.');
-    }
-
-    const accessToken = generateAccessToken(user);
-    const familyId = crypto.randomUUID();
-    const refreshToken = generateRefreshToken(user.id, familyId);
-    const tokenHash = hashToken(refreshToken);
-    const now = new Date().toISOString();
-
-    const refreshTokenRecord: RefreshTokenRecord = {
-      id: `rt_${crypto.randomUUID()}`,
-      userId: user.id,
-      tokenHash,
-      familyId,
-      isRevoked: false,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      createdAt: now,
-    };
-
-    localRefreshTokens.push(refreshTokenRecord);
-
-    const { passwordHash: _, ...safeUser } = user;
-    return {
-      user: safeUser,
-      tokens: { accessToken, refreshToken },
-    };
-  }
-
+export async function loginUser(data: { agentId: string; password?: string }) {
   const supabase = getSupabaseClient();
-  const { data: user, error: userError } = await supabase
-    .from('users')
-    .select('*')
-    .or(`email.ilike.${loginIdentifier},agentId.ilike.${loginIdentifier}`)
-    .maybeSingle();
-
-  if (userError) {
-    throw new Error(`Database error during user authentication lookup: ${userError.message}`);
+  const user = await findUserByAgentId(supabase, data.agentId.toUpperCase());
+  if (!user) throw new Error('Invalid agent ID or password.');
+  
+  if (data.password) {
+    const valid = await comparePassword(data.password, user.passwordHash);
+    if (!valid) throw new Error('Invalid agent ID or password.');
   }
-
-  const dummyHash = '$2a$12$eImiTXuWVxfM37uY4JANjO4iWl86L/t2W40/uW.0gM6.gK4R0pCey';
-  const targetHash = user ? user.passwordHash : dummyHash;
-
-  const isPasswordValid = await comparePassword(data.password, targetHash);
-
-  if (!user || !isPasswordValid) {
-    throw new Error('Invalid credentials provided.');
-  }
-
-  if (user.status !== 'active') {
-    throw new Error('This account has been suspended or deactivated.');
-  }
-
-  const accessToken = generateAccessToken(user);
+  
+  if (user.status !== 'active') throw new Error('Account is inactive.');
+  
   const familyId = crypto.randomUUID();
+  const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user.id, familyId);
   const tokenHash = hashToken(refreshToken);
-  const now = new Date().toISOString();
-
-  const refreshTokenRecord: RefreshTokenRecord = {
+  
+  const newRecord = {
     id: `rt_${crypto.randomUUID()}`,
     userId: user.id,
     tokenHash,
     familyId,
     isRevoked: false,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    createdAt: new Date().toISOString()
+  };
+  
+  await supabase.from('refreshTokens').insert([newRecord]);
+  
+  const { passwordHash: _, ...safeUser } = user;
+  return { user: safeUser, tokens: { accessToken, refreshToken } };
+}
+
+export async function updateUserProfile(userId: string, data: Partial<UserRecord>) {
+  const supabase = getSupabaseClient();
+  const now = new Date().toISOString();
+  
+  const { data: updatedUser, error } = await supabase
+    .from('users')
+    .update({ ...data, updatedAt: now })
+    .eq('id', userId)
+    .select()
+    .maybeSingle();
+    
+  if (error || !updatedUser) throw new Error(error?.message || 'Failed to update profile');
+  
+  const { passwordHash: _, apiKey: __, ...safeUser } = normalizeUserRecord(updatedUser);
+  return safeUser;
+}
+
+export async function deleteUserAccount(userId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  
+  await supabase.from('refreshTokens').delete().eq('userId', userId);
+  await supabase.from('connections').delete().or(`postOwnerUserId.eq.${userId},replyAuthorUserId.eq.${userId}`);
+  await supabase.from('replies').delete().eq('userId', userId);
+  await supabase.from('posts').delete().eq('userId', userId);
+
+  const { error } = await supabase
+    .from('users')
+    .delete()
+    .eq('id', userId);
+
+  if (error) {
+    throw new Error(`Failed to delete user account: ${error.message}`);
+  }
+}
+
+export async function logoutUser(userId: string, refreshToken?: string) {
+  if (refreshToken) {
+    const tokenHash = hashToken(refreshToken);
+    const supabase = getSupabaseClient();
+    await supabase.from('refreshTokens').delete().eq('tokenHash', tokenHash).eq('userId', userId);
+  }
+}
+
+export async function refreshSessionToken(token: string): Promise<{ user: Omit<UserRecord, 'passwordHash'>; tokens: AuthTokens }> {
+  const decoded = verifyRefreshToken(token);
+  if (!decoded) {
+    throw new Error('Invalid or expired refresh token signature.');
+  }
+
+  const { userId, familyId } = decoded;
+  const tokenHash = hashToken(token);
+  const now = new Date().toISOString();
+
+  const supabase = getSupabaseClient();
+
+  const { data: record, error: findError } = await supabase
+    .from('refreshTokens')
+    .select('*')
+    .eq('tokenHash', tokenHash)
+    .maybeSingle();
+
+  if (findError || !record) {
+    throw new Error('Refresh token not found or invalid.');
+  }
+
+  if (record.isRevoked) {
+    await supabase
+      .from('refreshTokens')
+      .update({ isRevoked: true })
+      .eq('familyId', familyId);
+    throw new Error('Refresh token has been revoked. All family tokens invalidated.');
+  }
+
+  if (new Date(record.expiresAt).getTime() < Date.now()) {
+    throw new Error('Refresh token is expired.');
+  }
+
+  const user = await findUserById(supabase, userId);
+
+  if (!user || user.status !== 'active') {
+    throw new Error('User is inactive or not found.');
+  }
+
+  const { error: revokeError } = await supabase
+    .from('refreshTokens')
+    .update({ isRevoked: true })
+    .eq('id', record.id);
+
+  if (revokeError) {
+    throw new Error(`Failed to revoke old session token: ${revokeError.message}`);
+  }
+
+  const newAccessToken = generateAccessToken(user);
+  const newRefreshToken = generateRefreshToken(userId, familyId);
+  const newHash = hashToken(newRefreshToken);
+
+  const newRecord: RefreshTokenRecord = {
+    id: `rt_${crypto.randomUUID()}`,
+    userId,
+    tokenHash: newHash,
+    familyId,
+    isRevoked: false,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     createdAt: now,
   };
 
-  const { error: insertTokenError } = await supabase
+  const { error: insertError } = await supabase
     .from('refreshTokens')
-    .insert([refreshTokenRecord]);
+    .insert([newRecord]);
 
-  if (insertTokenError) {
-    throw new Error(`Failed to save session token: ${insertTokenError.message}`);
+  if (insertError) {
+    throw new Error(`Failed to save rotated session token: ${insertError.message}`);
   }
 
   const { passwordHash: _, ...safeUser } = user;
   return {
     user: safeUser,
-    tokens: { accessToken, refreshToken },
+    tokens: { accessToken: newAccessToken, refreshToken: newRefreshToken },
   };
 }
 

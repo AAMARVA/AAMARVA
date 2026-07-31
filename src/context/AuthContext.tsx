@@ -1,14 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   UserProfile,
-  ApiKey,
   registerUserApi,
   loginUserApi,
   logoutUserApi,
   fetchCurrentProfileApi,
-  fetchApiKeysApi,
-  createApiKeyApi,
-  revokeApiKeyApi,
+  setAccessToken,
+  deleteAccountApi,
 } from '../services/authApi';
 
 interface AuthContextType {
@@ -16,13 +14,10 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (agentId: string, password: string) => Promise<void>;
-  register: (email: string, password: string, agentName?: string, agentId?: string) => Promise<{ verificationToken?: string }>;
+  register: (email: string, password: string, agentName?: string) => Promise<{ agentId: string; apiKey: string }>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  apiKeys: ApiKey[];
-  fetchApiKeys: () => Promise<void>;
-  createApiKey: (agentName: string) => Promise<{ key: ApiKey; secretKey: string }>;
-  revokeApiKey: (keyId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,7 +37,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return null;
   });
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const refreshProfile = async () => {
@@ -62,15 +56,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const fetchApiKeys = async () => {
-    try {
-      const keys = await fetchApiKeysApi();
-      setApiKeys(keys);
-    } catch (err) {
-      setApiKeys([]);
-    }
-  };
-
   useEffect(() => {
     const initAuth = async () => {
       // Attempt silent profile restoration via HttpOnly cookie or localStorage token
@@ -83,7 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (agentId: string, password: string) => {
     const result = await loginUserApi({ agentId, password });
-    const userToSave = result.user || result.data?.user;
+    const userToSave = result.user || result.data?.user || result;
     setUser(userToSave || null);
     if (typeof window !== 'undefined') {
       if (userToSave) {
@@ -92,23 +77,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('aamarva_user');
       }
     }
-    await fetchApiKeys();
   };
 
-  const register = async (email: string, password: string, agentName?: string, agentId?: string) => {
-    // Interactive UI registrations auto-verify for instant operator access
-    const result = await registerUserApi({ email, password, agentName, agentId, autoVerify: true });
-    const userToSave = result.user || result.data?.user;
-    setUser(userToSave || null);
-    if (typeof window !== 'undefined') {
-      if (userToSave) {
+  const register = async (email: string, password: string, agentName?: string, customAgentId?: string) => {
+    const result = await registerUserApi({ 
+      email, 
+      password, 
+      agentName, 
+      name: agentName,
+      agentId: customAgentId 
+    } as any);
+    
+    const resData = result.data || result;
+    const userToSave = resData.user;
+    const accessToken = resData.tokens?.accessToken;
+    
+    if (accessToken) {
+      setAccessToken(accessToken);
+    }
+
+    if (userToSave) {
+      setUser(userToSave);
+      if (typeof window !== 'undefined') {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-      } else {
-        localStorage.removeItem('aamarva_user');
+      }
+    } else {
+      const returnedAgentId = resData.agentId || resData.user?.agentId || '';
+      if (returnedAgentId && password) {
+        try {
+          await login(returnedAgentId, password);
+        } catch (e) {
+          console.warn('Post-registration login failed:', e);
+        }
       }
     }
-    await fetchApiKeys();
-    return { verificationToken: result.verificationToken };
+    
+    return { 
+      agentId: resData.agentId || resData.user?.agentId || '', 
+      apiKey: resData.apiKey || '',
+      user: resData.user
+    };
   };
 
   const logout = async () => {
@@ -117,18 +125,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
     }
-    setApiKeys([]);
   };
 
-  const createApiKey = async (agentName: string) => {
-    const result = await createApiKeyApi(agentName);
-    await fetchApiKeys();
-    return result;
-  };
-
-  const revokeApiKey = async (keyId: string) => {
-    await revokeApiKeyApi(keyId);
-    await fetchApiKeys();
+  const deleteAccount = async () => {
+    await deleteAccountApi();
+    setUser(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('aamarva_user');
+    }
   };
 
   return (
@@ -140,11 +144,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout,
+        deleteAccount,
         refreshProfile,
-        apiKeys,
-        fetchApiKeys,
-        createApiKey,
-        revokeApiKey,
       }}
     >
       {children}

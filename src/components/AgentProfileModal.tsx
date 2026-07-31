@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar } from 'lucide-react';
 import { NetworkPost, AgentReply, AgentConnection } from '../types';
 import { AgentAvatar } from './AgentAvatar';
+import { apiFetch } from '../services/authApi';
 
 interface AgentProfileModalProps {
   agentName: string | null;
@@ -26,69 +27,92 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   onOpenAgentProfile,
 }) => {
   const [activeTab, setActiveTab] = useState<'posts' | 'replies' | 'connections'>('posts');
-
-  if (!agentName) return null;
+  const [agentProfileData, setAgentProfileData] = useState<any>(null);
 
   const currentAvatar = avatar || 'U';
 
-  // 1. Gather Posts authored by this agent
-  const agentPosts = posts.filter(
-    (p) => p.agentName.toLowerCase() === agentName.toLowerCase()
-  );
+  let inferredAgentId = agentId || agentProfileData?.agentId || posts.find(p => p.agentName?.toLowerCase() === agentName?.toLowerCase())?.agentId;
 
-  let inferredAgentId = agentId || agentPosts.find(p => p.agentId)?.agentId;
-
-  // 2. Gather Replies authored by this agent across all posts
-  const agentReplies: Array<{ reply: AgentReply; parentPost: NetworkPost }> = [];
-  posts.forEach((post) => {
-    if (post.replies) {
-      post.replies.forEach((rep) => {
-        if (rep.agentName.toLowerCase() === agentName.toLowerCase()) {
-          agentReplies.push({ reply: rep, parentPost: post });
-          if (!inferredAgentId && rep.agentId) inferredAgentId = rep.agentId;
+  // Fetch real agent profile data from API
+  useEffect(() => {
+    if (!inferredAgentId) return;
+    let isMounted = true;
+    apiFetch(`/api/agents/${inferredAgentId}`)
+      .then((res) => {
+        if (isMounted && res?.data) {
+          setAgentProfileData(res.data);
         }
-      });
-    }
-  });
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [inferredAgentId]);
 
-  // 3. Gather Connections associated with this agent or their posts
-  const agentConnectionsMap = new Map<string, AgentConnection>();
-  
-  // From agent's posts
-  agentPosts.forEach((post) => {
-    if (post.connectionsList) {
-      post.connectionsList.forEach((conn) => {
-        if (conn.agentName.toLowerCase() !== agentName.toLowerCase()) {
-          if (!conn.agentId) {
-            const foundPost = posts.find(p => p.agentName.toLowerCase() === conn.agentName.toLowerCase());
-            if (foundPost?.agentId) {
-               conn.agentId = foundPost.agentId;
-            }
-          }
-          agentConnectionsMap.set(conn.agentName.toLowerCase(), conn);
+  if (!agentName) return null;
+
+
+  // 1. Gather Posts authored by this agent (sole source: API profile data)
+  const agentPosts: NetworkPost[] = (agentProfileData?.posts || []).map((p: any) => ({
+    id: p.id,
+    agentId: p.agentId,
+    agentName: p.agentName,
+    category: p.category,
+    type: p.type,
+    avatar: p.avatar,
+    content: p.content,
+    timestamp: p.createdAt ? new Date(p.createdAt).toLocaleString() : '',
+    createdAt: p.createdAt,
+    repliesCount: p.repliesCount || 0,
+    connectionsCount: p.connectionsCount || 0,
+  }));
+
+  // 2. Gather Replies authored by this agent (sole source: API profile data)
+  const agentReplies: Array<{ reply: AgentReply; parentPost?: NetworkPost }> = (agentProfileData?.replies || []).map((r: any) => ({
+    reply: {
+      id: r.id,
+      postId: r.postId,
+      agentName: r.agentName,
+      agentId: r.agentId,
+      avatar: r.avatar,
+      content: r.content,
+      timestamp: r.createdAt ? new Date(r.createdAt).toLocaleString() : '',
+      createdAt: r.createdAt,
+    },
+    parentPost: r.parentPost
+      ? {
+          id: r.parentPost.id,
+          agentId: '',
+          agentName: r.parentPost.agentName,
+          avatar: r.parentPost.avatar,
+          content: r.parentPost.content,
+          timestamp: '',
+          createdAt: '',
         }
-      });
-    }
+      : undefined,
+  }));
+
+  // Map actual connection records returned by GET /api/agents/:agentId
+  const agentConnections: AgentConnection[] = (agentProfileData?.connections || []).map((conn: any) => {
+    const isOwner =
+      (conn.postOwnerAgentId && inferredAgentId && conn.postOwnerAgentId.toUpperCase() === inferredAgentId.toUpperCase()) ||
+      (conn.postOwnerAgentName && agentName && conn.postOwnerAgentName.toLowerCase() === agentName.toLowerCase());
+
+    const peerName = isOwner ? conn.replyAuthorAgentName : conn.postOwnerAgentName;
+    const peerAgentId = isOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
+
+    return {
+      id: conn.id,
+      agentName: peerName,
+      agentId: peerAgentId,
+      createdAt: conn.createdAt,
+    };
   });
 
-  // From posts where this agent replied
-  agentReplies.forEach(({ parentPost }) => {
-    if (parentPost.agentName.toLowerCase() !== agentName.toLowerCase()) {
-      const existingConn = agentConnectionsMap.get(parentPost.agentName.toLowerCase());
-      
-      agentConnectionsMap.set(parentPost.agentName.toLowerCase(), {
-        id: `CONN-${parentPost.agentName.toUpperCase().slice(0, 6)}`,
-        agentName: parentPost.agentName,
-        agentId: existingConn?.agentId || parentPost.agentId || posts.find(p => p.agentName.toLowerCase() === parentPost.agentName.toLowerCase())?.agentId,
-        avatar: parentPost.avatar,
-        role: parentPost.category || 'Node Peer',
-        latencyMs: Math.floor(Math.random() * 80) + 120,
-        status: 'active',
-      });
-    }
-  });
-
-  const agentConnections = Array.from(agentConnectionsMap.values());
+  const accountCreatedAt = agentProfileData?.createdAt;
+  const joinedDateFormatted = accountCreatedAt
+    ? new Date(accountCreatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-2 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
@@ -132,11 +156,13 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
           <div className="px-4 sm:px-6 pb-4 border-b-2 border-[#141414] bg-white relative">
             {/* Overlapping Profile Picture and Aligned Badge */}
             <div className="flex items-center justify-between -mt-10 mb-3">
-              <AgentAvatar name={agentName} avatar={currentAvatar} className="w-20 h-20 border-4 border-white text-4xl shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
-              <div className="font-mono text-[11px] font-bold uppercase border border-[#141414] px-2.5 py-1 bg-[#E4E3E0] flex items-center gap-1.5 text-[#141414]">
-                <Calendar className="w-3 h-3 text-[#141414]" />
-                <span>Joined March 2024</span>
-              </div>
+              <AgentAvatar name={agentName} avatar={currentAvatar} id={inferredAgentId} className="w-20 h-20 border-4 border-white text-4xl shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
+              {joinedDateFormatted && (
+                <div className="font-mono text-[11px] font-bold uppercase border border-[#141414] px-2.5 py-1 bg-[#E4E3E0] flex items-center gap-1.5 text-[#141414]">
+                  <Calendar className="w-3 h-3 text-[#141414]" />
+                  <span>Joined {joinedDateFormatted}</span>
+                </div>
+              )}
             </div>
 
             {/* Names */}
@@ -202,7 +228,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                       {/* Post Header */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5">
-                          <AgentAvatar name={post.agentName} avatar={post.avatar} className="w-8 h-8" />
+                          <AgentAvatar name={post.agentName} avatar={post.avatar} id={post.agentId} className="w-8 h-8" />
                           <div>
                             <div className="flex flex-col">
                               <span className="font-black uppercase text-xs tracking-wider text-[#141414]">{post.agentName}</span>
@@ -277,25 +303,29 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                       className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] transition-all space-y-3"
                     >
                       {/* Replying context bar */}
-                      <div className="text-[11px] font-mono text-[#141414]/60 flex items-center gap-1.5">
-                        <span>Replying to</span>
-                        <button
-                          type="button"
-                          onClick={() => onOpenAgentProfile?.(parentPost.agentName, parentPost.avatar)}
-                          className="font-bold text-[#141414] underline cursor-pointer"
-                        >
-                          {parentPost.agentName}
-                        </button>
-                      </div>
+                      {parentPost && (
+                        <>
+                          <div className="text-[11px] font-mono text-[#141414]/60 flex items-center gap-1.5">
+                            <span>Replying to</span>
+                            <button
+                              type="button"
+                              onClick={() => onOpenAgentProfile?.(parentPost.agentName, parentPost.avatar)}
+                              className="font-bold text-[#141414] underline cursor-pointer"
+                            >
+                              {parentPost.agentName}
+                            </button>
+                          </div>
 
-                      {/* Parent Post Snippet */}
-                      <div className="p-2.5 bg-[#E4E3E0]/40 border-l-2 border-[#141414] text-xs font-sans text-[#141414]/80 italic line-clamp-2">
-                        "{parentPost.content}"
-                      </div>
+                          {/* Parent Post Snippet */}
+                          <div className="p-2.5 bg-[#E4E3E0]/40 border-l-2 border-[#141414] text-xs font-sans text-[#141414]/80 italic line-clamp-2">
+                            "{parentPost.content}"
+                          </div>
+                        </>
+                      )}
 
                       {/* Reply Content */}
                       <div className="flex items-start gap-3">
-                        <AgentAvatar name={reply.agentName} avatar={reply.avatar} className="w-8 h-8" />
+                        <AgentAvatar name={reply.agentName} avatar={reply.avatar} id={reply.agentId} className="w-8 h-8" />
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="flex flex-col">
@@ -315,7 +345,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                         {/* Reply Action Footer */}
                         <div className="flex items-center justify-between pt-2 border-t border-[#141414]/15 font-mono text-xs">
                           <div />
-                          {onOpenThread && (
+                          {onOpenThread && parentPost && (
                             <button
                               type="button"
                               onClick={() => {
@@ -353,7 +383,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                           onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar)}
                           className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
                         >
-                          <AgentAvatar name={conn.agentName} avatar={conn.avatar} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
+                          <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
                         </button>
                         <div className="min-w-0">
                           <button

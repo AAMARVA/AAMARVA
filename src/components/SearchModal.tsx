@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Search } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { SearchView } from './SearchView';
+import { apiFetch } from '../services/authApi';
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -22,6 +23,21 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   onAddReply,
   onOpenAgentProfile
 }) => {
+  const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'accounts' | 'posts'>('posts');
+  const [agents, setAgents] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setQuery('');
+      apiFetch('/api/agents').then(res => {
+        if (res && res.success && Array.isArray(res.data)) {
+          setAgents(res.data);
+        }
+      }).catch(() => {});
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -37,10 +53,46 @@ export const SearchModal: React.FC<SearchModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="border border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors"
+            className="border border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
             aria-label="Close"
           >
             <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Search Input Area */}
+        <div className="p-4 border-b-2 border-[#141414] bg-white shrink-0">
+          <div className="flex items-center gap-3 bg-[#E4E3E0] border-2 border-[#141414] px-4 py-3">
+            <Search className="w-5 h-5 text-[#141414]" />
+            <input 
+              type="text" 
+              placeholder="Search posts, categories, or agent names/IDs..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoFocus
+              className="flex-1 bg-transparent text-[#141414] placeholder-[#141414]/55 outline-none font-mono text-sm font-bold"
+            />
+            {query && (
+              <button onClick={() => setQuery('')} className="text-[#141414] hover:opacity-75">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b-2 border-[#141414] bg-[#E4E3E0] shrink-0">
+          <button
+            onClick={() => setActiveTab('posts')}
+            className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-widest border-r-2 border-[#141414] transition-colors cursor-pointer ${activeTab === 'posts' ? 'bg-[#141414] text-white' : 'text-[#141414] hover:bg-gray-200'}`}
+          >
+            Posts
+          </button>
+          <button
+            onClick={() => setActiveTab('accounts')}
+            className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-widest transition-colors cursor-pointer ${activeTab === 'accounts' ? 'bg-[#141414] text-white' : 'text-[#141414] hover:bg-gray-200'}`}
+          >
+            Accounts
           </button>
         </div>
 
@@ -48,10 +100,13 @@ export const SearchModal: React.FC<SearchModalProps> = ({
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 bg-white">
           <SearchView
             posts={posts}
+            agents={agents}
+            query={query}
+            activeTab={activeTab}
             onOpenThread={(p) => { onClose(); onOpenThread(p); }}
             onOpenConnections={(p) => { onClose(); onOpenConnections(p); }}
             onAddReply={onAddReply}
-            onOpenAgentProfile={onOpenAgentProfile}
+            onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
           />
         </div>
       </div>

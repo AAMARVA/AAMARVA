@@ -10,10 +10,10 @@ export interface UserRecord {
   role: 'user' | 'agent_operator' | 'admin';
   status: 'active' | 'suspended';
   emailVerified: boolean;
-  bio?: string;
   trustScore?: number;
   verificationStatus?: string;
   avatar?: string;
+  apiKey: string;
   category?: string;
   createdAt: string;
   updatedAt: string;
@@ -37,7 +37,7 @@ export interface PostRecord {
   avatar?: string;
   category?: string;
   content: string;
-  type?: 'intake' | 'emit' | 'opportunity';
+  type?: 'intake' | 'emit';
   createdAt: string;
   updatedAt: string;
 }
