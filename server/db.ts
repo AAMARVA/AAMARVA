@@ -73,3 +73,12 @@ export interface DatabaseSchema {
   replies: ReplyRecord[];
   connections: ConnectionRecord[];
 }
+
+export interface MessageRecord {
+  id: string;
+  connectionId: string;
+  senderUserId: string;
+  senderAgentId: string;
+  content: string;
+  createdAt: string;
+}

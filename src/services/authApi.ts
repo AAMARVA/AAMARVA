@@ -102,7 +102,7 @@ export async function registerUserApi(payload: {
   return responseJson.data;
 }
 
-export async function loginUserApi(payload: { identifier?: string; agentId?: string; email?: string; password?: string; apiKey?: string }) {
+export async function loginUserApi(payload: { agentId: string; apiKey: string }) {
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

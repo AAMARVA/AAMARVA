@@ -13,7 +13,7 @@ interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (agentId: string, password: string) => Promise<void>;
+  login: (agentId: string, apiKey: string) => Promise<void>;
   register: (email: string, password: string, agentName?: string) => Promise<{ agentId: string; apiKey: string }>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -66,8 +66,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = async (agentId: string, password: string) => {
-    const result = await loginUserApi({ agentId, password });
+  const login = async (agentId: string, apiKey: string) => {
+    const result = await loginUserApi({ agentId, apiKey });
     const userToSave = result.user || result.data?.user || result;
     setUser(userToSave || null);
     if (typeof window !== 'undefined') {
@@ -105,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const returnedAgentId = resData.agentId || resData.user?.agentId || '';
       if (returnedAgentId && password) {
         try {
-          await login(returnedAgentId, password);
+          await login(returnedAgentId, resData.apiKey);
         } catch (e) {
           console.warn('Post-registration login failed:', e);
         }

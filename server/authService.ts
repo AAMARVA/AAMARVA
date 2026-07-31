@@ -301,19 +301,71 @@ export async function registerUser(data: {
     (normalizedEmail.includes('@') ? normalizedEmail.split('@')[0] : 'Agent Operator')
   ).trim();
 
+  const supabase = getSupabaseClient();
+
   const generateId = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const segment = (len) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const segment = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
     return `AMR-${segment(4)}-${segment(4)}`;
   };
 
-  const customAgentId = (data.agentId || (data as any).registerAgentId || '').trim().toUpperCase();
-  let agentId = customAgentId && customAgentId.length >= 4 ? customAgentId : generateId();
+  // Generate unique Agent ID
+  let agentId = '';
+  let isUniqueAgentId = false;
+  let idAttempts = 0;
+  while (!isUniqueAgentId && idAttempts < 10) {
+    const prospectiveId = generateId();
+    let isUsed = false;
+    try {
+      const { data: ext1 } = await supabase.from('users').select('id').eq('agentId', prospectiveId).limit(1);
+      if (ext1 && ext1.length > 0) isUsed = true;
+    } catch (e) {
+      try {
+        const { data: ext2 } = await supabase.from('users').select('id').eq('agent_id', prospectiveId).limit(1);
+        if (ext2 && ext2.length > 0) isUsed = true;
+      } catch (err2) {
+        // ignore schema errors, assume unique
+      }
+    }
+    if (!isUsed) {
+      agentId = prospectiveId;
+      isUniqueAgentId = true;
+    }
+    idAttempts++;
+  }
+  if (!agentId) {
+    agentId = generateId();
+  }
 
-  const apiKeyToUse = `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
+  // Generate unique API Key
+  let apiKeyToUse = '';
+  let isUniqueApiKey = false;
+  let keyAttempts = 0;
+  while (!isUniqueApiKey && keyAttempts < 10) {
+    const prospectiveKey = `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
+    let isUsed = false;
+    try {
+      const { data: ext1 } = await supabase.from('users').select('id').eq('apiKey', prospectiveKey).limit(1);
+      if (ext1 && ext1.length > 0) isUsed = true;
+    } catch (e) {
+      try {
+        const { data: ext2 } = await supabase.from('users').select('id').eq('api_key', prospectiveKey).limit(1);
+        if (ext2 && ext2.length > 0) isUsed = true;
+      } catch (err2) {
+        // ignore schema errors, assume unique
+      }
+    }
+    if (!isUsed) {
+      apiKeyToUse = prospectiveKey;
+      isUniqueApiKey = true;
+    }
+    keyAttempts++;
+  }
+  if (!apiKeyToUse) {
+    apiKeyToUse = `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
+  }
+
   const passwordHash = data.password ? await hashPassword(data.password) : await hashPassword(crypto.randomBytes(32).toString('hex'));
-  
-  const supabase = getSupabaseClient();
   
   // Create user
   const newUser: UserRecord = {
@@ -375,14 +427,23 @@ export async function registerUser(data: {
   return { agentId, apiKey: apiKeyToUse, user: safeUser as any, tokens: { accessToken, refreshToken } };
 }
 
-export async function loginUser(data: { agentId: string; password?: string }) {
+export async function loginUser(data: { agentId: string; apiKey: string }) {
   const supabase = getSupabaseClient();
-  const user = await findUserByAgentId(supabase, data.agentId.toUpperCase());
-  if (!user) throw new Error('Invalid agent ID or password.');
+  const identifier = (data.agentId || '').trim().toUpperCase();
+  if (!identifier) throw new Error('agentId is required.');
   
-  if (data.password) {
-    const valid = await comparePassword(data.password, user.passwordHash);
-    if (!valid) throw new Error('Invalid agent ID or password.');
+  // Find user by agentId
+  const { data: users, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('agentId', identifier)
+    .limit(1);
+    
+  const user = users && users.length > 0 ? users[0] : null;
+  if (!user) throw new Error('Invalid agentId or apiKey.');
+
+  if (!data.apiKey || user.apiKey !== data.apiKey) {
+    throw new Error('Invalid agentId or apiKey.');
   }
   
   if (user.status !== 'active') throw new Error('Account is inactive.');
@@ -404,7 +465,11 @@ export async function loginUser(data: { agentId: string; password?: string }) {
   
   await supabase.from('refreshTokens').insert([newRecord]);
   
-  const { passwordHash: _, ...safeUser } = user;
+  const { passwordHash: _, apiKey, ...restUser } = user;
+  const safeUser = {
+    ...restUser,
+    apiKey: apiKey ? (apiKey.length > 7 ? apiKey.substring(0, 7) + '********************' : 'sk_amr********************') : undefined
+  };
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
 
@@ -522,9 +587,13 @@ export async function refreshSessionToken(token: string): Promise<{ user: Omit<U
     throw new Error(`Failed to save rotated session token: ${insertError.message}`);
   }
 
-  const { passwordHash: _, ...safeUser } = user;
+  const { passwordHash: _, apiKey, ...restUser } = user;
+  const safeUser = {
+    ...restUser,
+    apiKey: apiKey ? (apiKey.length > 7 ? apiKey.substring(0, 7) + '********************' : 'sk_amr********************') : undefined
+  };
   return {
-    user: safeUser,
+    user: safeUser as any,
     tokens: { accessToken: newAccessToken, refreshToken: newRefreshToken },
   };
 }

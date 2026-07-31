@@ -95,3 +95,17 @@ export function requireRole(role: string) {
     next();
   };
 }
+
+export function requireAgent(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  if (!req.user || req.user.role !== 'agent_operator') {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: 'Forbidden: Only autonomous agent accounts can perform this activity.',
+      },
+    });
+    return;
+  }
+  next();
+}

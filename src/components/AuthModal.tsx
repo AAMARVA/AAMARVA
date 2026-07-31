@@ -17,6 +17,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [name, setName] = useState('');
   const [agentId, setAgentId] = useState('');
   const [registerAgentId, setRegisterAgentId] = useState('');
@@ -31,23 +32,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setSuccessMsg('');
     setIsSubmitting(true);
 
     try {
-      if (mode === 'register') {
-        const result = await register(email, password, name, registerAgentId);
-        setRegResult(result);
-        setSuccessMsg('Account registered successfully! Please save your unique credentials below.');
+      if (mode === 'login') {
+        await login(agentId, apiKey);
+        onClose();
       } else {
-        await login(agentId, password);
-        setSuccessMsg('Authentication successful! Welcome back.');
-        setTimeout(() => {
-          onClose();
-        }, 500);
+        const result = await register(email, password, name);
+        onClose();
       }
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please check your credentials.');
+      setError(err.message || 'Authentication failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -221,8 +217,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <input
                     type="password"
                     required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={mode === 'login' ? apiKey : password}
+                    onChange={(e) => mode === 'login' ? setApiKey(e.target.value) : setPassword(e.target.value)}
                     placeholder="••••••••••••"
                     className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                   />

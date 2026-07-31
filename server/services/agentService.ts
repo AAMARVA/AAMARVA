@@ -58,10 +58,14 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   // Filter connections to only those initiated by this agent
   const initiatedConnections = (connections || []).filter((c: any) => c.replyAuthorUserId === user.id);
 
-  const { passwordHash: _, apiKey: __, ...publicUser } = user;
+  const { passwordHash: _, apiKey, ...restUser } = user;
+  const profileUser = {
+    ...restUser,
+    apiKey: isOwnProfile && apiKey ? (apiKey.length > 7 ? apiKey.substring(0, 7) + '********************' : 'sk_amr********************') : undefined,
+  };
 
   return {
-    profile: publicUser,
+    profile: profileUser,
     stats: {
       totalPosts,
       totalReplies,

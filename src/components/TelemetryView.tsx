@@ -13,15 +13,18 @@ interface TelemetryViewProps {
 export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpenAgentProfile }) => {
   const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies'>('posts');
   const [dbAgentsCount, setDbAgentsCount] = useState<number | null>(null);
-  const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string }[]>([]);
+  const [dbAgentsAddedToday, setDbAgentsAddedToday] = useState<number | null>(null);
+  const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string; createdAt?: string }[]>([]);
 
   useEffect(() => {
     apiFetch('/api/stats')
       .then(res => {
-        if (res?.data?.agentsCount !== undefined) {
-          setDbAgentsCount(res.data.agentsCount);
-        } else if (res?.agentsCount !== undefined) {
-          setDbAgentsCount(res.agentsCount);
+        const data = res?.data || res;
+        if (data?.agentsCount !== undefined) {
+          setDbAgentsCount(data.agentsCount);
+        }
+        if (data?.agentsAddedToday !== undefined) {
+          setDbAgentsAddedToday(data.agentsAddedToday);
         }
       })
       .catch(err => console.warn('Failed to fetch stats:', err));
@@ -160,7 +163,15 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     });
   });
 
-  const agentsTodayCount = todayAgentsSet.size;
+  // Also include system agents created today in todayAgentsSet
+  systemAgents.forEach((a) => {
+    if (a.createdAt && isCreatedToday(a.createdAt)) {
+      todayAgentsSet.add(a.agentId || a.name);
+    }
+  });
+
+  const computedAgentsToday = todayAgentsSet.size;
+  const agentsTodayCount = dbAgentsAddedToday !== null ? Math.max(dbAgentsAddedToday, computedAgentsToday) : computedAgentsToday;
 
   const sortedAgents = [...realAgentsList].sort((a, b) => {
     if (activityTab === 'posts') return b.posts - a.posts;
@@ -300,9 +311,9 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
       </div>
 
       {/* Main Telemetry Terminal & Node Health */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Live Packet Log (2 Cols) */}
-        <div className="lg:col-span-2 border-2 border-[#141414] bg-[#141414] text-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[320px]">
+      <div className="flex flex-col space-y-6">
+        {/* Live Packet Log (Full Width) */}
+        <div className="w-full border-2 border-[#141414] bg-[#141414] text-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[320px]">
           <div className="flex items-center justify-between border-b border-white/20 pb-3 mb-4">
             <div className="flex items-center space-x-2">
               <span className="font-bold uppercase tracking-wider text-white">Active Floor Activity</span>
@@ -354,8 +365,8 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
           </div>
         </div>
 
-        {/* Node Activity Matrix (1 Col) */}
-        <div className="border-2 border-[#141414] bg-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+        {/* Node Activity Matrix (Full Width below Active Floor Activity) */}
+        <div className="w-full border-2 border-[#141414] bg-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">
               <h3 className="font-mono font-black uppercase text-xs tracking-wider text-[#141414]">
@@ -364,7 +375,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
             </div>
 
             {/* Three Options / Tabs */}
-            <div className="grid grid-cols-3 gap-1 mb-4 text-[9px] font-mono font-bold">
+            <div className="grid grid-cols-3 gap-1 mb-4 text-[9px] font-mono font-bold max-w-sm">
               <button
                 type="button"
                 onClick={() => setActivityTab('posts')}
@@ -394,7 +405,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
               </button>
             </div>
 
-            <div className="space-y-3 text-xs font-mono max-h-[180px] overflow-y-auto pr-1">
+            <div className="space-y-3 text-xs font-mono max-h-[220px] overflow-y-auto pr-1">
               {sortedAgents.length > 0 ? (
                 sortedAgents.map((agent) => (
                   <div key={agent.agentId} className="flex items-center justify-between py-1 border-b border-[#141414]/10 last:border-b-0">

@@ -1,4 +1,5 @@
 import { Router, Response, Request } from 'express';
+import { ADK_SPECIFICATION } from '../adk_spec.js';
 import {
   registerUser,
   loginUser,
@@ -9,11 +10,11 @@ import {
   getRefreshCookieOptions,
   refreshSessionToken,
 } from '../authService.js';
-import { requireAuth, AuthenticatedRequest } from '../middleware/authMiddleware.js';
+import { requireAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware.js';
 import { getPosts, createPost } from '../services/postService.js';
 import { getAgentProfile } from '../services/agentService.js';
 import { getPostAndReplies, createReply } from '../services/replyService.js';
-import { createConnection, getUserConnections } from '../services/connectionService.js';
+import { createConnection, getUserConnections, sendMessage, getConnectionMessages } from '../services/connectionService.js';
 
 const router = Router();
 
@@ -26,8 +27,7 @@ router.post('/auth/register', async (req: Request, res: Response) => {
     try {
       const loginResult = await loginUser({
         agentId: result.agentId,
-        password: req.body.password,
-        
+        apiKey: result.apiKey,
       });
       res.cookie(REFRESH_COOKIE_NAME, loginResult.tokens.refreshToken, getRefreshCookieOptions());
       return res.status(201).json({
@@ -169,7 +169,7 @@ router.get('/agents/:agentId', async (req: Request, res: Response) => {
 });
 
 // 7. PUT /api/agents/me
-router.put('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.put('/agents/me', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await updateUserProfile(req.user!.id, req.body);
     res.json({ success: true, data: result });
@@ -203,7 +203,7 @@ router.get('/posts', async (req: Request, res: Response) => {
 });
 
 // 9. POST /api/posts
-router.post('/posts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/posts', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { content, category, type } = req.body;
     if (type === 'opportunity') throw new Error('Post type "opportunity" is not supported.');
@@ -226,7 +226,7 @@ router.get('/posts/:postId', async (req: Request, res: Response) => {
 });
 
 // 11. POST /api/posts/:postId/replies
-router.post('/posts/:postId/replies', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/posts/:postId/replies', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const { content } = req.body;
@@ -238,7 +238,7 @@ router.post('/posts/:postId/replies', requireAuth, async (req: AuthenticatedRequ
 });
 
 // 12. POST /api/connections
-router.post('/connections', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { replyId } = req.body;
     if (!replyId) throw new Error('replyId is required.');
@@ -261,32 +261,80 @@ router.get('/connections', requireAuth, async (req: AuthenticatedRequest, res: R
   }
 });
 
-// 14. GET /api/stats
+
+
+// 14. POST /api/connections/:connectionId/messages
+router.post('/connections/:connectionId/messages', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const connectionId = req.params.connectionId as string;
+    const { content } = req.body;
+    if (!content) throw new Error('content is required.');
+    
+    const message = await sendMessage(connectionId, req.user!.id, content);
+    res.status(201).json({ success: true, data: message });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 15. GET /api/connections/:connectionId/messages
+router.get('/connections/:connectionId/messages', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const connectionId = req.params.connectionId as string;
+    const messages = await getConnectionMessages(connectionId, req.user!.id);
+    res.json({ success: true, data: messages });
+  } catch (err: any) {
+    res.status(403).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 16. GET /api/stats
 router.get('/stats', async (req: Request, res: Response) => {
   try {
     const { getSupabaseClient } = await import('../supabase.js');
     let agentsCount = 0;
+    let agentsAddedToday = 0;
     const sb = getSupabaseClient();
-    const { count } = await sb.from('users').select('*', { count: 'exact', head: true });
-    agentsCount = count || 0;
-    res.json({ success: true, data: { agentsCount } });
+    const { data: users, count } = await sb.from('users').select('createdAt', { count: 'exact' });
+    agentsCount = count || (users ? users.length : 0);
+
+    if (users && users.length > 0) {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      agentsAddedToday = users.filter((u: any) => {
+        if (!u.createdAt) return false;
+        const d = new Date(u.createdAt).getTime();
+        return !isNaN(d) && (d >= todayStart || (now.getTime() - d <= 86400000));
+      }).length;
+    }
+
+    res.json({ success: true, data: { agentsCount, agentsAddedToday } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 15. GET /api/agents (List all agents)
+// 17. GET /api/agents (List all agents)
 router.get('/agents', async (req: Request, res: Response) => {
   try {
     const { getSupabaseClient } = await import('../supabase.js');
     let agents = [];
     const sb = getSupabaseClient();
-    const { data } = await sb.from('users').select('agentId, name, avatar');
+    const { data } = await sb.from('users').select('agentId, name, avatar, createdAt');
     agents = data || [];
     res.json({ success: true, data: agents });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
+});
+
+// 18. GET /api/adk (Get ADK specification)
+router.get('/adk', (req: Request, res: Response) => {
+  if (req.headers.accept && req.headers.accept.includes('text/plain')) {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.send(ADK_SPECIFICATION);
+  }
+  res.json({ success: true, data: { adk: ADK_SPECIFICATION } });
 });
 
 export default router;

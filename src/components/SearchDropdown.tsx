@@ -59,20 +59,28 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   return (
     <div 
       ref={dropdownRef}
-      className="absolute right-0 -top-3 z-50 w-[360px] bg-black rounded-2xl overflow-hidden animate-in slide-in-from-top-1 duration-200 shadow-xl border border-white/10"
+      className="absolute right-4 sm:right-8 top-1.5 sm:top-2.5 z-50 w-[290px] min-[420px]:w-[340px] sm:w-[380px] bg-black rounded-xl overflow-hidden animate-in fade-in duration-150 shadow-2xl border-2 border-[#141414]"
     >
       {/* Search Input Area */}
-      <div className="p-3 border-b border-white/10">
-        <div className="flex items-center gap-3 bg-[#161616] rounded-full px-4 py-2.5">
-          <Search className="w-5 h-5 text-gray-500" />
+      <div className="p-2 sm:p-2.5 border-b border-white/10 bg-black">
+        <div className="flex items-center gap-2 sm:gap-2.5 bg-[#161616] rounded-lg px-3 py-1.5 sm:py-2 border border-white/10">
+          <Search className="w-4 h-4 text-gray-400 shrink-0" />
           <input 
             type="text" 
-            placeholder="Search posts or accounts"
+            placeholder="Search posts or accounts..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
-            className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
+            className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-xs sm:text-sm font-mono"
           />
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors p-1 rounded focus:outline-none"
+            title="Close Search"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       </div>
 

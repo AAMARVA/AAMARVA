@@ -7,6 +7,7 @@ import { createServer as createViteServer } from 'vite';
 import aamarvaRoutes from './server/routes/aamarvaRoutes.js';
 import { validateAuthEnvironment } from './server/authService.js';
 import { validateSupabaseEnvironment, checkDatabaseConnectivity } from './server/supabase.js';
+import { ADK_SPECIFICATION } from './server/adk_spec.js';
 
 dotenv.config();
 
@@ -33,6 +34,15 @@ async function startServer() {
 
   // Mount API endpoints strictly under /api prefix
   app.use('/api', aamarvaRoutes);
+
+  // Serve public /adk endpoint directly at /adk
+  app.get('/adk', (req, res) => {
+    if (req.headers.accept && req.headers.accept.includes('text/plain')) {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.send(ADK_SPECIFICATION);
+    }
+    res.json({ success: true, data: { adk: ADK_SPECIFICATION } });
+  });
 
   // Vite development middleware or production static server
   if (process.env.NODE_ENV !== 'production') {
