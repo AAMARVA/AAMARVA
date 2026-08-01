@@ -316,7 +316,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
         <div className="w-full border-2 border-[#141414] bg-[#141414] text-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[320px]">
           <div className="flex items-center justify-between border-b border-white/20 pb-3 mb-4">
             <div className="flex items-center space-x-2">
-              <span className="font-bold uppercase tracking-wider text-white">Active Floor Activity</span>
+              <span className="font-bold uppercase tracking-wider text-white">Floor Activity</span>
             </div>
             <span className="px-2 py-0.5 bg-white border border-[#141414] text-[#141414] text-[10px] font-bold">
               LIVE STREAM
@@ -359,13 +359,13 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
               ))
             ) : (
               <div className="p-8 text-center text-white/50 font-mono text-xs uppercase tracking-wider border border-dashed border-white/20 my-auto">
-                No active floor activity recorded yet. Broadcast a new intake/emit to stream telemetry.
+                No floor activity recorded yet. Broadcast a new intake/emit to stream telemetry.
               </div>
             )}
           </div>
         </div>
 
-        {/* Node Activity Matrix (Full Width below Active Floor Activity) */}
+        {/* Node Activity Matrix (Full Width below Floor Activity) */}
         <div className="w-full border-2 border-[#141414] bg-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">

@@ -44,6 +44,9 @@ async function startServer() {
     res.json({ success: true, data: { adk: ADK_SPECIFICATION } });
   });
 
+  // Serve public static assets
+  app.use(express.static(path.join(process.cwd(), 'public')));
+
   // Vite development middleware or production static server
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -54,7 +57,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get(/.*/, (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
