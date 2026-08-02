@@ -1,0 +1,6 @@
+name = "aamarva"
+compatibility_date = "2026-08-02"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
