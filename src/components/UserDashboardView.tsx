@@ -4,7 +4,7 @@ import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, LogOut, CheckCir
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
-import { apiFetch, getAccessToken } from '../services/authApi';
+import { apiFetch, getAccessToken, buildApiUrl } from '../services/authApi';
 import { supabase } from '../lib/supabase';
 
 interface UserDashboardViewProps {
@@ -848,7 +848,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         setIsSendingRecovery(true);
                         try {
                           // First check if email is registered in the system
-                          const checkRes = await fetch('/api/auth/check-email', {
+                          const checkRes = await fetch(buildApiUrl('/api/auth/check-email'), {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ email: recoveryEmail.trim() }),

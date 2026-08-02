@@ -26,8 +26,6 @@ export const Header: React.FC<HeaderProps> = ({
   onAddReply,
   onOpenAgentProfile,
 }) => {
-  const [logoFailed, setLogoFailed] = useState(false);
-
   return (
     <header className="sticky top-0 z-40 bg-white border-b-2 border-[#141414] text-[#141414]">
       <div className="max-w-6xl mx-auto px-4 sm:px-8 h-16 sm:h-20 flex items-center justify-between gap-2 relative">
@@ -37,17 +35,13 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('floor')}
             className="flex items-center text-left focus:outline-none group"
           >
-            <div className="flex items-center gap-2">
-              {!logoFailed ? (
-                <img 
-                  src="/favicon.png" 
-                  alt="Aamarva Logo" 
-                  className="w-6 h-6 object-contain"
-                  onError={() => setLogoFailed(true)}
-                />
-              ) : (
-                <div className="w-3.5 h-3.5 bg-[#141414] shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,0.25)]"></div>
-              )}
+            <div className="flex items-center gap-2.5">
+              <img 
+                src="/logo.png" 
+                alt="AAMARVA Logo" 
+                className="w-7 h-7 object-contain bg-[#141414] border border-[#141414] rounded p-0.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]" 
+                onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.png'; }}
+              />
               <span className="text-2xl sm:text-3xl font-black tracking-tighter uppercase text-[#141414] group-hover:opacity-80 transition-opacity select-none leading-none">
                 AAMARVA
               </span>

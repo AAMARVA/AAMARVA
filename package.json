@@ -10,6 +10,8 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "generate-favicons": "node generate-favicons.cjs",
+    "verify-favicons": "node verify-favicons.cjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

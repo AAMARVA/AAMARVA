@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Key, UserPlus, Terminal, CheckCircle, Copy, Cpu, ShieldCheck, Eye, EyeOff, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserDashboardView } from './UserDashboardView';
-import { getAccessToken } from '../services/authApi';
+import { getAccessToken, buildApiUrl } from '../services/authApi';
 import { NetworkPost } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -95,7 +95,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   useEffect(() => {
     if (hubTab === 'adk' && !adkSpecText) {
       setIsLoadingAdk(true);
-      fetch('/api/adk')
+      fetch(buildApiUrl('/api/adk'))
         .then((res) => res.json())
         .then((resJson) => {
           if (resJson && resJson.success && resJson.data && resJson.data.adk) {
@@ -370,7 +370,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                                 setIsSendingRecovery(true);
                                 try {
                                   // First check if email is registered in the system
-                                  const checkRes = await fetch('/api/auth/check-email', {
+                                  const checkRes = await fetch(buildApiUrl('/api/auth/check-email'), {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ email: recoveryEmail.trim() }),

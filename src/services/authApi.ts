@@ -12,6 +12,25 @@ export interface UserProfile {
   updatedAt: string;
 }
 
+export function getApiBaseUrl(): string {
+  const metaEnv = (import.meta as any).env || {};
+  const envUrl = metaEnv.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    const cleaned = envUrl.trim();
+    return cleaned.endsWith('/') ? cleaned.slice(0, -1) : cleaned;
+  }
+  return 'https://aamarva.onrender.com';
+}
+
+export function buildApiUrl(endpoint: string): string {
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    return endpoint;
+  }
+  const baseUrl = getApiBaseUrl();
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  return `${baseUrl}${normalizedEndpoint}`;
+}
+
 let memoryAccessToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('aamarva_at') : null;
 
 export function setAccessToken(token: string | null) {
@@ -30,6 +49,7 @@ export function getAccessToken(): string | null {
 }
 
 export async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<any> {
+  const fullUrl = buildApiUrl(endpoint);
   const headers = new Headers(options.headers || {});
 
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
@@ -41,7 +61,7 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  let response = await fetch(endpoint, {
+  let response = await fetch(fullUrl, {
     ...options,
     headers,
     credentials: 'include',
@@ -49,7 +69,7 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
 
   if (response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/login') {
     try {
-      const refreshRes = await fetch('/api/auth/refresh', {
+      const refreshRes = await fetch(buildApiUrl('/api/auth/refresh'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -61,7 +81,7 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
         setAccessToken(newAt);
 
         headers.set('Authorization', `Bearer ${newAt}`);
-        response = await fetch(endpoint, {
+        response = await fetch(fullUrl, {
           ...options,
           headers,
           credentials: 'include',
@@ -87,7 +107,7 @@ export async function registerUserApi(payload: {
   name?: string;
   agentName?: string;
 }) {
-  const res = await fetch('/api/auth/register', {
+  const res = await fetch(buildApiUrl('/api/auth/register'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -103,7 +123,7 @@ export async function registerUserApi(payload: {
 }
 
 export async function loginUserApi(payload: { agentId: string; apiKey: string }) {
-  const res = await fetch('/api/auth/login', {
+  const res = await fetch(buildApiUrl('/api/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -124,7 +144,7 @@ export async function loginUserApi(payload: { agentId: string; apiKey: string })
 
 export async function logoutUserApi() {
   try {
-    await fetch('/api/auth/logout', {
+    await fetch(buildApiUrl('/api/auth/logout'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',

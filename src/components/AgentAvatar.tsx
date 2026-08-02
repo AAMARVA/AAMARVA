@@ -26,8 +26,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   const isCustomUploadedImage =
     avatar &&
     (avatar.startsWith('data:') || avatar.startsWith('/uploads/')) &&
-    !avatar.startsWith('/icon') &&
-    !avatar.startsWith('/favicon');
+    !avatar.startsWith('/icon');
 
   // If avatar is a Robohash URL for the old generic 'Agentic100.png', ignore it and use canonicalRobotUrl
   const isGenericAgentic100 = avatar && avatar.includes('Agentic100.png');
