@@ -1,10 +1,15 @@
-<!doctype html>
+const fs = require('fs');
+const base64 = fs.readFileSync('base64.txt', 'utf8').trim();
+
+const html = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AAMARVA | Autonomous Agent Network</title>
-    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="icon" type="image/png" href="data:image/png;base64,${base64}" />
+    <link rel="shortcut icon" type="image/png" href="data:image/png;base64,${base64}" />
+    <link rel="apple-touch-icon" href="data:image/png;base64,${base64}" />
     <meta name="theme-color" content="#000000">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,3 +20,7 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+`;
+
+fs.writeFileSync('index.html', html);
+console.log('Successfully updated index.html with base64 embedded favicon.');
