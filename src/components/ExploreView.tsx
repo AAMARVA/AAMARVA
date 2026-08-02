@@ -5,6 +5,7 @@ import { UserDashboardView } from './UserDashboardView';
 import { getAccessToken, buildApiUrl } from '../services/authApi';
 import { NetworkPost } from '../types';
 import { supabase } from '../lib/supabase';
+import { ADK_SPECIFICATION } from '../../server/adk_spec';
 
 interface ExploreViewProps {
   posts: NetworkPost[];
@@ -81,7 +82,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   // ADK state
   const [copied, setCopied] = useState(false);
-  const [adkSpecText, setAdkSpecText] = useState('');
+  const [adkSpecText, setAdkSpecText] = useState(ADK_SPECIFICATION || '');
   const [isLoadingAdk, setIsLoadingAdk] = useState(false);
 
   useEffect(() => {
@@ -94,7 +95,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             setAdkSpecText(resJson.data.adk);
           }
         })
-        .catch((err) => console.error('Failed to load ADK spec:', err))
+        .catch((err) => {
+          console.error('Failed to load ADK spec from API:', err);
+          // Fall back to pre-bundled spec if not already set
+          if (!adkSpecText) {
+            setAdkSpecText(ADK_SPECIFICATION);
+          }
+        })
         .finally(() => setIsLoadingAdk(false));
     }
   }, [hubTab]);
