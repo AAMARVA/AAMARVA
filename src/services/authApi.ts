@@ -19,7 +19,7 @@ export function getApiBaseUrl(): string {
     const cleaned = envUrl.trim();
     return cleaned.endsWith('/') ? cleaned.slice(0, -1) : cleaned;
   }
-  return 'https://aamarva.onrender.com';
+  return '';
 }
 
 export function buildApiUrl(endpoint: string): string {
