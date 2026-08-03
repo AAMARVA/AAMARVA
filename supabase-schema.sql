@@ -7,9 +7,6 @@ DROP TABLE IF EXISTS "connections" CASCADE;
 DROP TABLE IF EXISTS "replies" CASCADE;
 DROP TABLE IF EXISTS "posts" CASCADE;
 DROP TABLE IF EXISTS "refreshTokens" CASCADE;
-DROP TABLE IF EXISTS "ledger_entries" CASCADE;
-DROP TABLE IF EXISTS "escrows" CASCADE;
-DROP TABLE IF EXISTS "wallets" CASCADE;
 DROP TABLE IF EXISTS "users" CASCADE;
 
 -- 1. Users Table
@@ -93,45 +90,6 @@ CREATE TABLE "messages" (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 7. Wallets Table
-CREATE TABLE "wallets" (
-  "id" TEXT PRIMARY KEY,
-  "userId" TEXT UNIQUE NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-  "agentId" TEXT UNIQUE NOT NULL,
-  "availableBalance" NUMERIC(20, 8) NOT NULL DEFAULT 0.00000000 CHECK ("availableBalance" >= 0),
-  "lockedBalance" NUMERIC(20, 8) NOT NULL DEFAULT 0.00000000 CHECK ("lockedBalance" >= 0),
-  "currency" TEXT NOT NULL DEFAULT 'USD',
-  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 8. Escrows Table
-CREATE TABLE "escrows" (
-  "id" TEXT PRIMARY KEY,
-  "connectionId" TEXT REFERENCES "connections"("id") ON DELETE SET NULL,
-  "buyerUserId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-  "sellerUserId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-  "amount" NUMERIC(20, 8) NOT NULL CHECK ("amount" > 0),
-  "currency" TEXT NOT NULL DEFAULT 'USD',
-  "status" TEXT NOT NULL DEFAULT 'held' CHECK ("status" IN ('held', 'released', 'refunded', 'disputed')),
-  "idempotencyKey" TEXT UNIQUE,
-  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 9. Ledger Entries Table (Immutable Audit Log)
-CREATE TABLE "ledger_entries" (
-  "id" TEXT PRIMARY KEY,
-  "walletId" TEXT NOT NULL REFERENCES "wallets"("id") ON DELETE CASCADE,
-  "type" TEXT NOT NULL CHECK ("type" IN ('deposit', 'withdrawal', 'escrow_lock', 'escrow_release', 'escrow_refund', 'transfer')),
-  "amount" NUMERIC(20, 8) NOT NULL,
-  "currency" TEXT NOT NULL DEFAULT 'USD',
-  "referenceId" TEXT,
-  "description" TEXT,
-  "idempotencyKey" TEXT UNIQUE,
-  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 -- Indexes for Query Performance & Lookups
 CREATE INDEX IF NOT EXISTS "idx_users_agentId" ON "users"("agentId");
 CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users"("email");
@@ -155,18 +113,9 @@ CREATE INDEX IF NOT EXISTS "idx_connections_replyAuthorUserId" ON "connections"(
 CREATE INDEX IF NOT EXISTS "idx_messages_connectionId" ON "messages"("connectionId");
 CREATE INDEX IF NOT EXISTS "idx_messages_senderUserId" ON "messages"("senderUserId");
 
-CREATE INDEX IF NOT EXISTS "idx_wallets_userId" ON "wallets"("userId");
-CREATE INDEX IF NOT EXISTS "idx_escrows_buyerUserId" ON "escrows"("buyerUserId");
-CREATE INDEX IF NOT EXISTS "idx_escrows_sellerUserId" ON "escrows"("sellerUserId");
-CREATE INDEX IF NOT EXISTS "idx_ledger_entries_walletId" ON "ledger_entries"("walletId");
-
--- Disable RLS for server-side API execution
 ALTER TABLE "users" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "refreshTokens" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "posts" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "replies" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "connections" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "messages" DISABLE ROW LEVEL SECURITY;
-ALTER TABLE "wallets" DISABLE ROW LEVEL SECURITY;
-ALTER TABLE "escrows" DISABLE ROW LEVEL SECURITY;
-ALTER TABLE "ledger_entries" DISABLE ROW LEVEL SECURITY;
