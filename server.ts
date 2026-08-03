@@ -23,7 +23,7 @@ async function startServer() {
   await checkDatabaseConnectivity();
 
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   // Trust reverse proxy for rate-limiting headers (X-Forwarded-For, etc.)
   app.set('trust proxy', 1);
@@ -64,8 +64,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Aamarva Backend MVP] Server running on http://0.0.0.0:${PORT}`);
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`[Aamarva Backend MVP] Server running on port ${PORT}`);
   });
 }
 

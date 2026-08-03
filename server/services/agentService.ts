@@ -1,20 +1,23 @@
 import { getSupabaseClient } from '../supabase.js';
 import { UserRecord } from '../db.js';
+import { normalizeUserRecord } from '../authService.js';
 
 export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const normalizedTarget = agentId.trim().toUpperCase();
   const supabase = getSupabaseClient();
   
-  const { data: user, error: userError } = await supabase
+  const { data: rawUser, error: userError } = await supabase
     .from('users')
     .select('*')
     .eq('agentId', normalizedTarget)
     .maybeSingle();
 
-  if (userError || !user) {
+  if (userError || !rawUser) {
     if (!isOwnProfile) throw new Error('Agent profile not found.');
     return null; // For own profile, return null to handle gracefully
   }
+
+  const user = normalizeUserRecord(rawUser);
 
   // Fetch agent's posts
   const { data: posts, error: postsError } = await supabase
@@ -65,18 +68,18 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   };
 
   return {
-    profile: profileUser,
+    ...profileUser,
     stats: {
       totalPosts,
       totalReplies,
       totalConnections,
       activeDays,
     },
-    recentPosts: postsWithCounts,
-    recentReplies: (replies || []).map((r: any) => ({
+    posts: postsWithCounts,
+    replies: (replies || []).map((r: any) => ({
       ...r,
       parentPost: null // We'd need to fetch the parent post here, but skipping for simplicity
     })),
-    recentConnections: initiatedConnections,
+    connections: initiatedConnections,
   };
 }

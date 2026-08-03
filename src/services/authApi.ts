@@ -18,12 +18,19 @@ export function buildApiUrl(endpoint: string): string {
     return endpoint;
   }
   
-  // Ensure we start with a slash
+  const metaEnv = (import.meta as any).env || {};
+  const baseUrl = metaEnv.VITE_API_URL;
+  
+  if (!baseUrl || typeof baseUrl !== 'string' || baseUrl.trim() === '') {
+    // Fallback to relative URLs in development/preview if VITE_API_URL is missing
+    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    return normalizedEndpoint;
+  }
+
+  const cleanedBase = baseUrl.trim().endsWith('/') ? baseUrl.trim().slice(0, -1) : baseUrl.trim();
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   
-  // In this environment, we always want to hit the local backend
-  // We can just return the relative path which will be resolved by the browser to the current origin
-  return normalizedEndpoint;
+  return `${cleanedBase}${normalizedEndpoint}`;
 }
 
 let memoryAccessToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('aamarva_at') : null;
@@ -213,14 +220,7 @@ export async function deleteAccountApi() {
 
 export async function fetchCurrentProfileApi(): Promise<UserProfile> {
   const res = await apiFetch('/api/agents/me');
-  const data = res.data;
-  if (data && data.profile) {
-    return {
-      ...data.profile,
-      stats: data.stats,
-    };
-  }
-  return data;
+  return res.data;
 }
 
 export async function updateProfileApi(updates: any): Promise<UserProfile> {

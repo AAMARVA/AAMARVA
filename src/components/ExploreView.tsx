@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Key, UserPlus, Terminal, CheckCircle, Copy, Cpu, ShieldCheck, Eye, EyeOff, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserDashboardView } from './UserDashboardView';
-import { getAccessToken, buildApiUrl } from '../services/authApi';
+import { apiFetch, getAccessToken, buildApiUrl } from '../services/authApi';
 import { NetworkPost } from '../types';
 import { supabase } from '../lib/supabase';
 import { ADK_SPECIFICATION } from '../../server/adk_spec';
@@ -89,8 +89,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   useEffect(() => {
     if (hubTab === 'adk') {
       setIsLoadingAdk(true);
-      fetch('/api/adk')
-        .then((res) => res.json())
+      apiFetch('/api/adk')
         .then((resJson) => {
           if (resJson && resJson.success && resJson.data && resJson.data.adk) {
             setAdkSpecText(resJson.data.adk);

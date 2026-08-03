@@ -2,8 +2,10 @@ services:
   - type: web
     name: aamarva
     runtime: node
-    buildCommand: npm install && npm run build
+    buildCommand: npm install
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
+      - key: VITE_API_URL
+        value: https://aamarva.onrender.com

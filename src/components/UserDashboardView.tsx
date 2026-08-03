@@ -80,7 +80,26 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   };
   
   // Active Twitter profile tab state
-  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections'>('posts');
+  // Wallet & Marketplace state
+  const [wallet, setWallet] = useState<any>(null);
+  const [isLoadingWallet, setIsLoadingWallet] = useState(false);
+
+  const fetchWallet = async () => {
+    if (!isAuthenticated) return;
+    setIsLoadingWallet(true);
+    try {
+      const res = await apiFetch('/api/wallets/me');
+      if (res?.success) setWallet(res.data);
+    } catch (e) {} finally {
+      setIsLoadingWallet(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWallet();
+  }, [isAuthenticated]);
+
+  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections' | 'wallet'>('posts');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -259,13 +278,24 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer ${
+              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
                 activeProfileTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               Connections ({userConnections.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveProfileTab('wallet')}
+              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer ${
+                activeProfileTab === 'wallet'
+                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
+                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
+              }`}
+            >
+              Wallet
             </button>
           </div>
 
@@ -398,6 +428,66 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     No linked node connections recorded for {user.name}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* 4. WALLET TAB */}
+            {activeProfileTab === 'wallet' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                    <p className="text-[10px] font-mono uppercase font-bold text-[#141414]/60">Available Balance</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-black font-mono text-[#141414]">${wallet?.availableBalance?.toFixed(2) || '0.00'}</span>
+                      <span className="text-[10px] font-mono font-bold text-[#141414]/40 uppercase tracking-widest">{wallet?.currency || 'USD'}</span>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-[#E4E3E0]/30 border-2 border-[#141414]/10">
+                    <p className="text-[10px] font-mono uppercase font-bold text-[#141414]/40">Locked (Escrow)</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-xl font-black font-mono text-[#141414]/40">${wallet?.lockedBalance?.toFixed(2) || '0.00'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const res = await apiFetch('/api/wallets/deposit', {
+                          method: 'POST',
+                          body: JSON.stringify({ amount: 100, description: 'Direct Deposit for Testing' })
+                        });
+                        if (res?.success) fetchWallet();
+                      } catch (e) {}
+                    }}
+                    className="flex-1 py-3 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] hover:bg-[#2A2A2A] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.5)] cursor-pointer"
+                  >
+                    Deposit $100
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const res = await apiFetch('/api/wallets/withdraw', {
+                          method: 'POST',
+                          body: JSON.stringify({ amount: 100, description: 'Direct Withdrawal' })
+                        });
+                        if (res?.success) fetchWallet();
+                      } catch (e) {}
+                    }}
+                    className="flex-1 py-3 bg-white text-[#141414] font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer"
+                  >
+                    Withdraw $100
+                  </button>
+                </div>
+
+                <div className="pt-6 border-t border-[#141414]/10">
+                  <h3 className="text-xs font-mono font-black uppercase tracking-widest mb-4">Marketplace Activity</h3>
+                  <div className="p-10 border-2 border-dashed border-[#141414]/10 flex flex-col items-center justify-center text-center opacity-50 bg-[#E4E3E0]/5">
+                    <p className="font-mono text-[10px] font-bold uppercase tracking-widest">No active marketplace transactions</p>
+                    <p className="font-mono text-[9px] mt-1 max-w-[200px] mx-auto">Connect with other agents on the floor to initiate trade or release escrow.</p>
+                  </div>
+                </div>
               </div>
             )}
           </div>

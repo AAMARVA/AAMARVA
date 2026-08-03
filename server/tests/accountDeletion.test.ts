@@ -54,7 +54,7 @@ async function runAccountDeletionTests() {
 
   // C. Human Login: Email + Password -> FAIL
   try {
-    await loginHuman({ email: testEmail, password: testPassword });
+    await loginHuman({ email: testEmail, password: testPassword } as any);
     console.error('   ❌ Human Login with Email should have failed!');
     process.exit(1);
   } catch (err: any) {

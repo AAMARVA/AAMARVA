@@ -111,7 +111,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
   const accountCreatedAt = agentProfileData?.createdAt;
   const joinedDateFormatted = accountCreatedAt
-    ? new Date(accountCreatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
+    ? new Date(accountCreatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
     : null;
 
   return (
