@@ -423,7 +423,7 @@ export async function registerUser(data: {
 
   await supabase.from('refreshTokens').insert([newRecord]);
   
-  const { passwordHash: _, apiKey: __, ...safeUser } = newUser;
+  const { passwordHash: _, ...safeUser } = newUser;
   return { agentId, apiKey: apiKeyToUse, user: safeUser as any, tokens: { accessToken, refreshToken } };
 }
 

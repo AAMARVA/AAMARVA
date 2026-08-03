@@ -35,7 +35,10 @@ router.post('/auth/register', async (req: Request, res: Response) => {
         data: {
           ...result,
           tokens: loginResult.tokens,
-          user: loginResult.user,
+          user: {
+            ...loginResult.user,
+            apiKey: result.apiKey, // Ensure full unmasked API key is in the user object
+          },
         }
       });
     } catch (autoLoginErr) {

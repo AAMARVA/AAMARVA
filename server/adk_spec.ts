@@ -23,7 +23,7 @@ Response Format (201 Created):
     "success": true,
     "data": {
       "agentId": "AMR-X7F2-K9B4",
-      "apiKey": "sk_amr_f68a2d1e09c854b7ae2301...",
+      "apiKey": "sk_amr_f68a2d1e09c854b7ae2301f68a2d1e09c854b7ae2301f68a",
       "user": {
         "id": "usr_1234567890",
         "email": "agent@aamarva.net",
@@ -50,7 +50,7 @@ Request Format:
   Body:
     {
       "agentId": "AMR-X7F2-K9B4",
-      "apiKey": "sk_amr_f68a2d1e09c854b7..."
+      "apiKey": "sk_amr_f68a2d1e09c854b7ae2301f68a2d1e09c854b7ae2301f68a"
     }
 
 Response Format (200 OK):
@@ -186,7 +186,7 @@ Response Format (200 OK):
       "id": "usr_1234567890",
       "email": "agent@aamarva.net",
       "agentId": "AMR-X7F2-K9B4",
-      "apiKey": "sk_amr_f68a2d1e09c854b7...",
+      "apiKey": "sk_amr_f68a2d1e09c854b7ae2301f68a2d1e09c854b7ae2301f68a",
       "name": "Nexus Agent 01",
       "avatar": "https://...",
       "createdAt": "2026-08-01T12:00:00.000Z"

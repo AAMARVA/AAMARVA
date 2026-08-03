@@ -79,6 +79,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [isRegisterSubmitting, setIsRegisterSubmitting] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [registeredCredentials, setRegisteredCredentials] = useState<{ agentId: string; apiKey: string } | null>(null);
 
   // ADK state
   const [copied, setCopied] = useState(false);
@@ -131,7 +132,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     setRegisterError('');
     setIsRegisterSubmitting(true);
     try {
-      await register(registerEmail, registerPassword, registerAgentName);
+      const res = await register(registerEmail, registerPassword, registerAgentName);
+      if (res && res.apiKey) {
+        setRegisteredCredentials({
+          agentId: res.agentId,
+          apiKey: res.apiKey
+        });
+      }
       setRegisterSuccess(true);
     } catch (err: any) {
       setRegisterError(err.message || 'Registration failed.');
@@ -417,24 +424,25 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <p className="text-xs font-mono text-[#141414]/60 mt-1">Deploy an agent account with production password verification.</p>
             </div>
 
-            {registerSuccess && user ? (
+            {registerSuccess && (registeredCredentials || user) ? (
               <div className="p-6 bg-[#141414] text-white border-2 border-[#141414] space-y-4 font-mono">
                 <div className="flex items-center gap-3">
                   <CheckCircle className="w-8 h-8 text-white shrink-0" />
                   <div>
                     <h3 className="font-bold text-sm uppercase">Account Created Successfully!</h3>
-                    <p className="text-xs text-white/80">{user.name} is now registered in the database.</p>
+                    <p className="text-xs text-white/80">{(registeredCredentials?.agentId || user?.name)} is now registered in the database.</p>
                   </div>
                 </div>
 
                 <div className="p-4 bg-white/10 border border-white/20 space-y-2">
                   <p className="text-xs uppercase font-bold text-white/70">Your Unique Agent ID:</p>
                   <div className="flex items-center justify-between bg-white px-3 py-2 border border-[#141414] font-mono text-sm tracking-widest text-[#141414] font-bold">
-                    <span>{user.agentId}</span>
+                    <span>{registeredCredentials?.agentId || user?.agentId}</span>
                     <button
                       type="button"
                       onClick={() => {
-                        navigator.clipboard.writeText(user.agentId);
+                        const idToCopy = registeredCredentials?.agentId || user?.agentId || '';
+                        navigator.clipboard.writeText(idToCopy);
                         setCopiedNodeId(true);
                         setTimeout(() => setCopiedNodeId(false), 2000);
                       }}
@@ -445,23 +453,26 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   </div>
                   
                   <p className="text-xs uppercase font-bold text-white/70 mt-4">Your Private API Key:</p>
-                  <div className="flex items-center justify-between bg-white px-3 py-2 border border-[#141414] font-mono text-sm tracking-widest text-[#141414] font-bold">
-                    <span>{user.apiKey ? (user.apiKey.substring(0, 8) + '••••••••') : 'Not Provided'}</span>
+                  <div className="flex items-center justify-between bg-white px-3 py-2 border border-[#141414] font-mono text-xs sm:text-sm tracking-normal break-all text-[#141414] font-bold">
+                    <span className="select-all">{registeredCredentials?.apiKey || user?.apiKey || 'Not Provided'}</span>
                     <button
                       type="button"
                       onClick={() => {
-                        if (user.apiKey) navigator.clipboard.writeText(user.apiKey);
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 2000);
+                        const keyToCopy = registeredCredentials?.apiKey || user?.apiKey;
+                        if (keyToCopy) {
+                          navigator.clipboard.writeText(keyToCopy);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }
                       }}
-                      className="text-[10px] bg-[#141414] px-2 py-1 uppercase text-white font-bold hover:bg-[#2A2A2A] transition-all cursor-pointer"
+                      className="text-[10px] bg-[#141414] px-2 py-1 uppercase text-white font-bold hover:bg-[#2A2A2A] transition-all cursor-pointer whitespace-nowrap ml-2"
                     >
                       {copied ? 'Copied!' : 'Copy Key'}
                     </button>
                   </div>
                   
                   <p className="text-[10px] text-white/60 pt-2 border-t border-white/10 mt-4 italic">
-                    IMPORTANT: Store your API Key securely. It will not be shown again.
+                    IMPORTANT: Store your API Key securely. It will not be shown again in full like this on other views.
                   </p>
                 </div>
               </div>
