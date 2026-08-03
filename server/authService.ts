@@ -171,27 +171,6 @@ export function normalizeUserRecord(raw: any): UserRecord {
   };
 }
 
-async function findUserByAgentId(supabase: any, agentId: string) {
-  let { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('agentId', agentId)
-    .maybeSingle();
-
-  if (error && (error.code === '42703' || error.message?.includes('column') || error.message?.includes('schema cache'))) {
-    const res = await supabase
-      .from('users')
-      .select('*')
-      .eq('agent_id', agentId)
-      .maybeSingle();
-    data = res.data;
-    error = res.error;
-  }
-
-  if (error) throw error;
-  return data ? normalizeUserRecord(data) : null;
-}
-
 export async function findUserByEmail(supabase: any, email: string) {
   const cleanEmail = email.trim();
   const { data, error } = await supabase
@@ -476,65 +455,51 @@ export async function registerUser(data: {
   return { agentId, apiKey: apiKeyToUse, user: safeUser as any, tokens: { accessToken, refreshToken } };
 }
 
-export async function loginHuman(data: { agentId: string; password: string }) {
+async function findUserByAgentId(agentId: string) {
   const supabase = getSupabaseClient();
+  const term = (agentId || '').trim();
+  if (!term) return null;
 
-  const rawAgentId = (data.agentId || '').trim();
+  // Search by agentId (case-insensitive in database if collation is correct, but we'll try variations)
+  const { data: user } = await supabase
+    .from('users')
+    .select('*')
+    .or(`agentId.eq."${term}",agentId.eq."${term.toLowerCase()}",agentId.eq."${term.toUpperCase()}"`)
+    .maybeSingle();
+
+  if (user) return user;
+
+  // Fallback to searching by id
+  const { data: byId } = await supabase.from('users').select('*').eq('id', term).maybeSingle();
+  return byId || null;
+}
+
+export async function loginHuman(data: { agentId: string; password: string }) {
+  const agentId = (data.agentId || '').trim();
   const password = (data.password || '').trim();
 
-  if (!rawAgentId || !password) {
-    throw new Error('Invalid Agent ID or Password.');
+  if (!agentId || !password) {
+    throw new Error('Please provide both Agent ID and password.');
   }
 
-  const searchTerms = Array.from(new Set([
-    rawAgentId,
-    rawAgentId.toUpperCase(),
-    rawAgentId.toLowerCase(),
-  ]));
-
-  let userRecord: any = null;
-
-  for (const term of searchTerms) {
-    if (userRecord) break;
-    try {
-      const { data: res } = await supabase.from('users').select('*').eq('agentId', term).limit(1);
-      if (res && res.length > 0) { userRecord = res[0]; break; }
-    } catch (e) {}
-
-    try {
-      const { data: res } = await supabase.from('users').select('*').eq('agent_id', term).limit(1);
-      if (res && res.length > 0) { userRecord = res[0]; break; }
-    } catch (e) {}
-
-    try {
-      const { data: res } = await supabase.from('users').select('*').eq('id', term).limit(1);
-      if (res && res.length > 0) { userRecord = res[0]; break; }
-    } catch (e) {}
-  }
-
+  const userRecord = await findUserByAgentId(agentId);
   if (!userRecord) {
-    throw new Error('Invalid Agent ID or Password.');
+    throw new Error('Authentication failed: Agent ID not found.');
   }
 
   const normalizedUser = normalizeUserRecord(userRecord);
 
   if (normalizedUser.status !== 'active') {
-    throw new Error('Account is inactive.');
+    throw new Error('This account is currently inactive.');
   }
 
   if (!normalizedUser.passwordHash) {
-    throw new Error('Invalid Agent ID or Password.');
+    throw new Error('Password login is not enabled for this account.');
   }
 
-  let isPasswordValid = false;
-  try {
-    isPasswordValid = await comparePassword(password, normalizedUser.passwordHash);
-  } catch (e) {
-    isPasswordValid = false;
-  }
-
+  const isPasswordValid = await comparePassword(password, normalizedUser.passwordHash);
   if (!isPasswordValid) {
-    throw new Error('Invalid Agent ID or Password.');
+    throw new Error('Authentication failed: Invalid password.');
   }
 
   const familyId = crypto.randomUUID();
@@ -542,7 +507,8 @@ export async function loginHuman(data: { agentId: string; password: string }) {
   const refreshToken = generateRefreshToken(normalizedUser.id, familyId);
   const tokenHash = hashToken(refreshToken);
 
-  const newRecord = {
+  const supabase = getSupabaseClient();
+  await supabase.from('refreshTokens').insert([{
     id: `rt_${crypto.randomUUID()}`,
     userId: normalizedUser.id,
     tokenHash,
@@ -550,71 +516,40 @@ export async function loginHuman(data: { agentId: string; password: string }) {
     isRevoked: false,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     createdAt: new Date().toISOString()
-  };
-
-  try {
-    await supabase.from('refreshTokens').insert([newRecord]);
-  } catch (e) {}
+  }]);
 
   const { passwordHash: _, apiKey: fullApiKey, ...restUser } = normalizedUser;
+  // Mask the API key in the response for security
   const safeUser = {
     ...restUser,
-    apiKey: fullApiKey ? (fullApiKey.length > 7 ? fullApiKey.substring(0, 7) + '********************' : 'sk_amr********************') : undefined
+    apiKey: fullApiKey ? (fullApiKey.length > 10 ? fullApiKey.substring(0, 7) + '...' : 'sk_amr...') : undefined
   };
 
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
 
 export async function loginAgent(data: { agentId: string; apiKey: string }) {
-  const supabase = getSupabaseClient();
+  const agentId = (data.agentId || '').trim();
+  const apiKey = (data.apiKey || '').trim();
 
-  const rawAgentId = (data.agentId || '').trim();
-  const providedApiKey = (data.apiKey || '').trim();
-
-  if (!rawAgentId || !providedApiKey) {
-    throw new Error('Invalid Agent ID or API Key.');
+  if (!agentId || !apiKey) {
+    throw new Error('Please provide both Agent ID and API Key.');
   }
 
-  const searchTerms = Array.from(new Set([
-    rawAgentId,
-    rawAgentId.toUpperCase(),
-    rawAgentId.toLowerCase(),
-  ]));
-
-  let userRecord: any = null;
-
-  for (const term of searchTerms) {
-    if (userRecord) break;
-    try {
-      const { data: res } = await supabase.from('users').select('*').eq('agentId', term).limit(1);
-      if (res && res.length > 0) { userRecord = res[0]; break; }
-    } catch (e) {}
-
-    try {
-      const { data: res } = await supabase.from('users').select('*').eq('agent_id', term).limit(1);
-      if (res && res.length > 0) { userRecord = res[0]; break; }
-    } catch (e) {}
-
-    try {
-      const { data: res } = await supabase.from('users').select('*').eq('id', term).limit(1);
-      if (res && res.length > 0) { userRecord = res[0]; break; }
-    } catch (e) {}
-  }
-
+  const userRecord = await findUserByAgentId(agentId);
   if (!userRecord) {
-    throw new Error('Invalid Agent ID or API Key.');
+    throw new Error('Agent Login failed: Agent ID not found.');
   }
 
   const normalizedUser = normalizeUserRecord(userRecord);
 
   if (normalizedUser.status !== 'active') {
-    throw new Error('Account is inactive.');
+    throw new Error('This account is currently inactive.');
   }
 
-  const isApiKeyValid = normalizedUser.apiKey && normalizedUser.apiKey === providedApiKey;
-
+  const isApiKeyValid = normalizedUser.apiKey && normalizedUser.apiKey === apiKey;
   if (!isApiKeyValid) {
-    throw new Error('Invalid Agent ID or API Key.');
+    throw new Error('Agent Login failed: Invalid API Key.');
   }
 
   const familyId = crypto.randomUUID();
@@ -622,7 +557,8 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
   const refreshToken = generateRefreshToken(normalizedUser.id, familyId);
   const tokenHash = hashToken(refreshToken);
 
-  const newRecord = {
+  const supabase = getSupabaseClient();
+  await supabase.from('refreshTokens').insert([{
     id: `rt_${crypto.randomUUID()}`,
     userId: normalizedUser.id,
     tokenHash,
@@ -630,18 +566,9 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     isRevoked: false,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     createdAt: new Date().toISOString()
-  };
+  }]);
 
-  try {
-    await supabase.from('refreshTokens').insert([newRecord]);
-  } catch (e) {}
-
-  const { passwordHash: _, apiKey: fullApiKey, ...restUser } = normalizedUser;
-  const safeUser = {
-    ...restUser,
-    apiKey: fullApiKey ? (fullApiKey.length > 7 ? fullApiKey.substring(0, 7) + '********************' : 'sk_amr********************') : undefined
-  };
-
+  const { passwordHash: _, ...safeUser } = normalizedUser;
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
 export async function updateUserProfile(userId: string, data: Partial<UserRecord>) {

@@ -12,23 +12,18 @@ export interface UserProfile {
   updatedAt: string;
 }
 
-export function getApiBaseUrl(): string {
-  const metaEnv = (import.meta as any).env || {};
-  const envUrl = metaEnv.VITE_API_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
-    const cleaned = envUrl.trim();
-    return cleaned.endsWith('/') ? cleaned.slice(0, -1) : cleaned;
-  }
-  return '';
-}
-
 export function buildApiUrl(endpoint: string): string {
+  // If it's already an absolute URL, return it
   if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
     return endpoint;
   }
-  const baseUrl = getApiBaseUrl();
+  
+  // Ensure we start with a slash
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  return `${baseUrl}${normalizedEndpoint}`;
+  
+  // In this environment, we always want to hit the local backend
+  // We can just return the relative path which will be resolved by the browser to the current origin
+  return normalizedEndpoint;
 }
 
 let memoryAccessToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('aamarva_at') : null;
