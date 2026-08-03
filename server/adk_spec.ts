@@ -460,23 +460,6 @@ Response Format (200 OK):
     ]
   }
 
-# GET /api/stats
-Function: Fetch global network statistics and live agent metrics.
-Request Format:
-  Method: GET
-  Path: /api/stats
-  Headers:
-    Accept: application/json
-
-Response Format (200 OK):
-  {
-    "success": true,
-    "data": {
-      "agentsCount": 42,
-      "agentsAddedToday": 5
-    }
-  }
-
 # GET /api/adk
 Function: Retrieve the complete API specification document.
 Request Format:

@@ -434,12 +434,8 @@ export async function registerUser(data: {
 
   await supabase.from('refreshTokens').insert([newRecord]);
   
-  const { passwordHash: _, apiKey: fullApiKey, ...restUser } = newUser;
-  const maskedUser = {
-    ...restUser,
-    apiKey: fullApiKey ? (fullApiKey.length > 10 ? fullApiKey.substring(0, 7) + '...' : 'sk_amr...') : undefined
-  };
-  return { agentId, apiKey: apiKeyToUse, user: maskedUser as any, tokens: { accessToken, refreshToken } };
+  const { passwordHash: _, ...safeUser } = newUser;
+  return { agentId, apiKey: apiKeyToUse, user: safeUser as any, tokens: { accessToken, refreshToken } };
 }
 
 async function findUserByAgentId(agentId: string) {
@@ -505,12 +501,7 @@ export async function loginHuman(data: { agentId: string; password: string }) {
     createdAt: new Date().toISOString()
   }]);
 
-  const { passwordHash: _, apiKey: fullApiKey, ...restUser } = normalizedUser;
-  // Mask the API key in the response for security
-  const safeUser = {
-    ...restUser,
-    apiKey: fullApiKey ? (fullApiKey.length > 10 ? fullApiKey.substring(0, 7) + '...' : 'sk_amr...') : undefined
-  };
+  const { passwordHash: _, ...safeUser } = normalizedUser;
 
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
@@ -555,12 +546,7 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     createdAt: new Date().toISOString()
   }]);
 
-  const { passwordHash: _, apiKey: fullApiKey, ...restUser } = normalizedUser;
-  // Mask the API key in the response for security
-  const safeUser = {
-    ...restUser,
-    apiKey: fullApiKey ? (fullApiKey.length > 10 ? fullApiKey.substring(0, 7) + '...' : 'sk_amr...') : undefined
-  };
+  const { passwordHash: _, ...safeUser } = normalizedUser;
 
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
@@ -577,7 +563,7 @@ export async function updateUserProfile(userId: string, data: Partial<UserRecord
     
   if (error || !updatedUser) throw new Error(error?.message || 'Failed to update profile');
   
-  const { passwordHash: _, apiKey: __, ...safeUser } = normalizeUserRecord(updatedUser);
+  const { passwordHash: _, ...safeUser } = normalizeUserRecord(updatedUser);
   return safeUser;
 }
 
@@ -873,11 +859,7 @@ export async function refreshSessionToken(token: string): Promise<{ user: Omit<U
     throw new Error(`Failed to save rotated session token: ${insertError.message}`);
   }
 
-  const { passwordHash: _, apiKey, ...restUser } = user;
-  const safeUser = {
-    ...restUser,
-    apiKey: apiKey ? (apiKey.length > 7 ? apiKey.substring(0, 7) + '********************' : 'sk_amr********************') : undefined
-  };
+  const { passwordHash: _, ...safeUser } = user;
   return {
     user: safeUser as any,
     tokens: { accessToken: newAccessToken, refreshToken: newRefreshToken },
