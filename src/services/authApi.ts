@@ -32,6 +32,7 @@ export function buildApiUrl(endpoint: string): string {
 }
 
 let memoryAccessToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('aamarva_at') : null;
+let memoryRefreshToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('aamarva_rt') : null;
 
 export function setAccessToken(token: string | null) {
   memoryAccessToken = token;
@@ -46,6 +47,21 @@ export function setAccessToken(token: string | null) {
 
 export function getAccessToken(): string | null {
   return memoryAccessToken;
+}
+
+export function setRefreshToken(token: string | null) {
+  memoryRefreshToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem('aamarva_rt', token);
+    } else {
+      localStorage.removeItem('aamarva_rt');
+    }
+  }
+}
+
+export function getRefreshToken(): string | null {
+  return memoryRefreshToken;
 }
 
 export async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<any> {
@@ -69,18 +85,27 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
 
   if (response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/login') {
     try {
+      const rt = getRefreshToken();
       const refreshRes = await fetch(buildApiUrl('/api/auth/refresh'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: rt ? JSON.stringify({ refreshToken: rt }) : undefined,
         credentials: 'include',
       });
 
       if (refreshRes.ok) {
         const refreshData = await refreshRes.json();
-        const newAt = refreshData.data?.tokens?.accessToken || refreshData.accessToken;
-        setAccessToken(newAt);
+        const resTokens = refreshData.data?.tokens || refreshData.tokens || refreshData.data || refreshData;
+        const newAt = resTokens.accessToken;
+        const newRt = resTokens.refreshToken;
+        if (newAt) {
+          setAccessToken(newAt);
+          headers.set('Authorization', `Bearer ${newAt}`);
+        }
+        if (newRt) {
+          setRefreshToken(newRt);
+        }
 
-        headers.set('Authorization', `Bearer ${newAt}`);
         response = await fetch(fullUrl, {
           ...options,
           headers,
@@ -122,11 +147,11 @@ export async function registerUserApi(payload: {
   return responseJson.data;
 }
 
-export async function loginUserApi(payload: { agentId: string; apiKey: string }) {
+export async function loginUserApi(payload: { agentId: string; password: string; }) {
   const res = await fetch(buildApiUrl('/api/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ agentId: payload.agentId, password: payload.password }),
     credentials: 'include',
   });
 
@@ -139,18 +164,47 @@ export async function loginUserApi(payload: { agentId: string; apiKey: string })
   if (payloadData.tokens?.accessToken) {
     setAccessToken(payloadData.tokens.accessToken);
   }
+  if (payloadData.tokens?.refreshToken) {
+    setRefreshToken(payloadData.tokens.refreshToken);
+  }
+  return payloadData;
+}
+
+export async function loginAgentApi(payload: { agentId: string; apiKey: string; }) {
+  const res = await fetch(buildApiUrl('/api/auth/agent/login'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agentId: payload.agentId, apiKey: payload.apiKey }),
+    credentials: 'include',
+  });
+
+  const responseJson = await res.json();
+  if (!res.ok) {
+    throw new Error(responseJson.error?.message || 'Agent login failed');
+  }
+
+  const payloadData = responseJson.data;
+  if (payloadData.tokens?.accessToken) {
+    setAccessToken(payloadData.tokens.accessToken);
+  }
+  if (payloadData.tokens?.refreshToken) {
+    setRefreshToken(payloadData.tokens.refreshToken);
+  }
   return payloadData;
 }
 
 export async function logoutUserApi() {
   try {
+    const rt = getRefreshToken();
     await fetch(buildApiUrl('/api/auth/logout'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: rt ? JSON.stringify({ refreshToken: rt }) : undefined,
       credentials: 'include',
     });
   } catch (e) {}
   setAccessToken(null);
+  setRefreshToken(null);
 }
 
 export async function deleteAccountApi() {
@@ -158,6 +212,7 @@ export async function deleteAccountApi() {
     method: 'DELETE',
   });
   setAccessToken(null);
+  setRefreshToken(null);
   return res;
 }
 

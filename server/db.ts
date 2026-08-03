@@ -15,6 +15,7 @@ export interface UserRecord {
   avatar?: string;
   apiKey: string;
   category?: string;
+  bio?: string;
   createdAt: string;
   updatedAt: string;
 }

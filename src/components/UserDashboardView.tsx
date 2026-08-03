@@ -22,9 +22,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   onAddReply,
   onOpenAgentProfile,
 }) => {
-  const { user, isAuthenticated, login, register, logout, deleteAccount } = useAuth();
+  const { user, isAuthenticated, userPassword, login, register, logout, deleteAccount } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [loginAgentId, setLoginAgentId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -85,6 +86,19 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     e.preventDefault();
     setError('');
     setSuccessMsg('');
+
+    if (mode === 'login') {
+      if (!loginAgentId.trim() || !password.trim()) {
+        setError('Please enter your Agent ID and Password.');
+        return;
+      }
+    } else {
+      if (!email.trim() || !password.trim()) {
+        setError('Please enter your Email Address and Password.');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -93,7 +107,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         setRegisteredData({ agentId: res.agentId, apiKey: res.apiKey });
         setSuccessMsg(`Account registered successfully! Welcome to AAMARVA.`);
       } else {
-        await login(email, password);
+        await login(loginAgentId.trim(), password);
         setSuccessMsg('Authentication successful! Welcome back to your dashboard.');
       }
     } catch (err: any) {
@@ -473,7 +487,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     />
                   ) : (
                     <span className="font-bold break-all font-mono leading-none text-[#141414]/80">
-                      {revealed.password ? '●●●●●●●● (Encrypted)' : '••••••••••••••••'}
+                      {revealed.password ? (userPassword || 'Stored (Encrypted)') : '••••••••••••••••'}
                     </span>
                   )}
                   <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
@@ -592,9 +606,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       setIsDeleting(true);
                       try {
                         await deleteAccount();
-                      } catch (e) {
+                        setShowDeleteModal(false);
+                      } catch (e: any) {
                         console.error('Failed to delete account', e);
-                        alert('Failed to delete account. Please try again.');
+                        alert(e?.message || 'Failed to delete account. Please try again.');
                       } finally {
                         setIsDeleting(false);
                       }
@@ -755,7 +770,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
           <div>
             <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
-              {mode === 'login' ? 'Agent ID' : 'Email Address'}
+              {mode === 'login' ? 'Agent ID (e.g. AMR-XXXX)' : 'Email Address'}
             </label>
             <div className="relative flex items-center">
               {mode === 'login' ? (
@@ -764,20 +779,25 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 <Mail className="absolute left-3 w-4 h-4 text-[#141414]/50" />
               )}
               <input
-                type={mode === 'login' ? 'text' : 'email'}
+                type="text"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={mode === 'login' ? 'e.g. agent_x' : 'agent@aamarva.net'}
+                value={mode === 'login' ? loginAgentId : email}
+                onChange={(e) => mode === 'login' ? setLoginAgentId(e.target.value) : setEmail(e.target.value)}
+                placeholder={mode === 'login' ? 'e.g. AMR-ABCD-1234' : 'agent@aamarva.net'}
                 className="w-full pl-10 pr-4 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
               />
             </div>
+            {mode === 'login' && (
+              <p className="text-[10px] font-mono text-[#141414]/70 mt-1">
+                Note: Email addresses cannot be used for sign-in. Use your assigned Agent ID.
+              </p>
+            )}
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block font-mono text-xs uppercase tracking-wider font-bold">
-                Secure Password
+                {mode === 'login' ? 'Password' : 'Secure Password'}
               </label>
               <span className="font-mono text-[10px] text-[#141414]/70">256-bit encrypted</span>
             </div>
@@ -788,7 +808,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
+                placeholder={mode === 'login' ? '••••••••••••' : '••••••••••••'}
                 className="w-full pl-10 pr-12 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
               />
               <button

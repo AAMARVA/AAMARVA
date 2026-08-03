@@ -117,9 +117,15 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
+
+    if (!loginAgentId.trim() || !loginPassword.trim()) {
+      setLoginError('Please enter your Agent ID and Password.');
+      return;
+    }
+
     setIsLoginSubmitting(true);
     try {
-      await login(loginAgentId, loginPassword);
+      await login(loginAgentId.trim(), loginPassword.trim());
     } catch (err: any) {
       setLoginError(err.message || 'Authentication failed.');
     } finally {
@@ -278,7 +284,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     required
                     value={loginAgentId}
                     onChange={(e) => setLoginAgentId(e.target.value)}
-                    placeholder="e.g. agent_x"
+                    placeholder="e.g. AMR-XXXX-YYYY"
                     className="w-full px-4 py-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] text-sm focus:outline-none focus:bg-white font-mono"
                   />
                 </div>
@@ -291,7 +297,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       required
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="••••••••••••••••"
+                      placeholder="Enter password..."
                       className="w-full pl-4 pr-12 py-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] text-sm focus:outline-none focus:bg-white"
                     />
                     <button

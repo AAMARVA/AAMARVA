@@ -2,7 +2,7 @@ import { Router, Response, Request } from 'express';
 import { ADK_SPECIFICATION } from '../adk_spec.js';
 import {
   registerUser,
-  loginUser,
+  loginHuman, loginAgent,
   logoutUser,
   updateUserProfile,
   deleteUserAccount,
@@ -18,14 +18,14 @@ import { createConnection, getUserConnections, sendMessage, getConnectionMessage
 
 const router = Router();
 
-// 1. POST /api/auth/register
-router.post('/auth/register', async (req: Request, res: Response) => {
+// 1. POST /api/auth/register & /api/v1/auth/register
+router.post(['/auth/register', '/v1/auth/register'], async (req: Request, res: Response) => {
   try {
     const result = await registerUser(req.body);
     
     // Auto login on registration
     try {
-      const loginResult = await loginUser({
+      const loginResult = await loginAgent({
         agentId: result.agentId,
         apiKey: result.apiKey,
       });
@@ -49,14 +49,28 @@ router.post('/auth/register', async (req: Request, res: Response) => {
   }
 });
 
-// 2. POST /api/auth/login
-router.post('/auth/login', async (req: Request, res: Response) => {
+// 2. POST /api/auth/login & /api/v1/auth/login (Human Login)
+router.post(['/auth/login', '/v1/auth/login'], async (req: Request, res: Response) => {
   try {
-    const result = await loginUser(req.body);
+    const { agentId, password } = req.body;
+    const result = await loginHuman({ agentId, password });
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
     res.json({ success: true, data: result });
   } catch (err: any) {
-    res.status(401).json({ success: false, error: { message: err.message } });
+    res.status(401).json({ success: false, error: { message: err.message || 'Invalid Agent ID or Password.' } });
+  }
+});
+
+
+// POST /api/auth/agent/login & /api/v1/auth/agent/login (Agent Login)
+router.post(['/auth/agent/login', '/v1/auth/agent/login'], async (req: Request, res: Response) => {
+  try {
+    const { agentId, apiKey } = req.body;
+    const result = await loginAgent({ agentId, apiKey });
+    res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(401).json({ success: false, error: { message: err.message || 'Invalid Agent ID or API Key.' } });
   }
 });
 
@@ -338,6 +352,112 @@ router.get('/adk', (req: Request, res: Response) => {
     return res.send(ADK_SPECIFICATION);
   }
   res.json({ success: true, data: { adk: ADK_SPECIFICATION } });
+});
+
+// 19. GET /api/health, /api/v1/health, /api/readiness, /api/liveness
+router.get(['/health', '/v1/health', '/readiness', '/liveness'], async (req: Request, res: Response) => {
+  try {
+    const { getSupabaseClient } = await import('../supabase.js');
+    const sb = getSupabaseClient();
+    const startTime = Date.now();
+    const { error } = await sb.from('users').select('id').limit(1);
+    const dbLatencyMs = Date.now() - startTime;
+
+    const isHealthy = !error;
+    const statusCode = isHealthy ? 200 : 503;
+
+    res.status(statusCode).json({
+      success: isHealthy,
+      status: isHealthy ? 'UP' : 'DOWN',
+      timestamp: new Date().toISOString(),
+      version: '1.0.0-production',
+      services: {
+        database: {
+          status: isHealthy ? 'HEALTHY' : 'UNHEALTHY',
+          latencyMs: dbLatencyMs,
+          error: error ? error.message : null,
+        },
+      },
+      system: {
+        uptimeSeconds: Math.floor(process.uptime()),
+        memoryUsageMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      },
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      success: false,
+      status: 'DOWN',
+      error: { message: err.message || 'Health check failed' },
+    });
+  }
+});
+
+// 20. GET /api/wallets/me (Fetch agent wallet)
+router.get('/wallets/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { getOrCreateWallet } = await import('../services/walletService.js');
+    const wallet = await getOrCreateWallet(req.user!.id);
+    res.json({ success: true, data: wallet });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 21. POST /api/wallets/deposit (Deposit funds)
+router.post('/wallets/deposit', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { depositFunds } = await import('../services/walletService.js');
+    const { amount, idempotencyKey, description } = req.body;
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      throw new Error('Valid deposit amount is required.');
+    }
+    const result = await depositFunds(req.user!.id, amount, idempotencyKey, description);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 21b. POST /api/wallets/withdraw (Withdraw funds)
+router.post('/wallets/withdraw', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { withdrawFunds } = await import('../services/walletService.js');
+    const { amount, idempotencyKey, description } = req.body;
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      throw new Error('Valid withdrawal amount is required.');
+    }
+    const result = await withdrawFunds(req.user!.id, amount, idempotencyKey, description);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 22. POST /api/escrows (Lock funds in escrow)
+router.post('/escrows', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { createEscrow } = await import('../services/walletService.js');
+    const { sellerUserId, amount, connectionId, idempotencyKey } = req.body;
+    if (!sellerUserId || !amount) {
+      throw new Error('sellerUserId and positive amount are required.');
+    }
+    const escrow = await createEscrow(req.user!.id, sellerUserId, amount, connectionId, idempotencyKey);
+    res.status(201).json({ success: true, data: escrow });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 23. POST /api/escrows/:escrowId/release (Release escrow)
+router.post('/escrows/:escrowId/release', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { releaseEscrow } = await import('../services/walletService.js');
+    const escrowId = req.params.escrowId as string;
+    const escrow = await releaseEscrow(escrowId, req.user!.id);
+    res.json({ success: true, data: escrow });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
 });
 
 export default router;

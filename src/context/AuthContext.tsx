@@ -3,9 +3,11 @@ import {
   UserProfile,
   registerUserApi,
   loginUserApi,
+  loginAgentApi,
   logoutUserApi,
   fetchCurrentProfileApi,
   setAccessToken,
+  setRefreshToken,
   deleteAccountApi,
 } from '../services/authApi';
 
@@ -13,7 +15,9 @@ interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (agentId: string, apiKey: string) => Promise<void>;
+  userPassword?: string | null;
+  login: (agentId: string, credential: string) => Promise<void>;
+  loginAgent: (agentId: string, apiKey: string) => Promise<void>;
   register: (email: string, password: string, agentName?: string) => Promise<{ agentId: string; apiKey: string }>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -34,6 +38,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Failed to parse aamarva_user from localStorage:', err);
         localStorage.removeItem('aamarva_user');
       }
+    }
+    return null;
+  });
+  const [userPassword, setUserPassword] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('aamarva_user_password') || null;
     }
     return null;
   });
@@ -66,15 +76,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = async (agentId: string, apiKey: string) => {
-    const result = await loginUserApi({ agentId, apiKey });
+  const login = async (agentId: string, credential: string) => {
+    const result = await loginUserApi({ agentId, password: credential });
     const userToSave = result.user || result.data?.user || result;
     setUser(userToSave || null);
+    setUserPassword(credential);
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
+        localStorage.setItem('aamarva_user_password', credential);
       } else {
         localStorage.removeItem('aamarva_user');
+        localStorage.removeItem('aamarva_user_password');
+      }
+    }
+  };
+
+  const loginAgent = async (agentId: string, apiKey: string) => {
+    const result = await loginAgentApi({ agentId, apiKey });
+    const userToSave = result.user || result.data?.user || result;
+    setUser(userToSave || null);
+    setUserPassword(apiKey);
+    if (typeof window !== 'undefined') {
+      if (userToSave) {
+        localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
+        localStorage.setItem('aamarva_user_password', apiKey);
+      } else {
+        localStorage.removeItem('aamarva_user');
+        localStorage.removeItem('aamarva_user_password');
       }
     }
   };
@@ -91,9 +120,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const resData = result.data || result;
     const userToSave = resData.user;
     const accessToken = resData.tokens?.accessToken;
+    const refreshToken = resData.tokens?.refreshToken;
     
     if (accessToken) {
       setAccessToken(accessToken);
+    }
+    if (refreshToken) {
+      setRefreshToken(refreshToken);
+    }
+
+    setUserPassword(password);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('aamarva_user_password', password);
     }
 
     if (userToSave) {
@@ -105,7 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const returnedAgentId = resData.agentId || resData.user?.agentId || '';
       if (returnedAgentId && password) {
         try {
-          await login(returnedAgentId, resData.apiKey);
+          await login(returnedAgentId, password);
         } catch (e) {
           console.warn('Post-registration login failed:', e);
         }
@@ -122,16 +160,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     await logoutUserApi();
     setUser(null);
+    setUserPassword(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
+      localStorage.removeItem('aamarva_user_password');
     }
   };
 
   const deleteAccount = async () => {
     await deleteAccountApi();
     setUser(null);
+    setUserPassword(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
+      localStorage.removeItem('aamarva_user_password');
+      localStorage.removeItem('aamarva_at');
+      localStorage.removeItem('aamarva_rt');
     }
   };
 
@@ -141,7 +185,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isAuthenticated: !!user,
         isLoading,
+        userPassword,
         login,
+        loginAgent,
         register,
         logout,
         deleteAccount,

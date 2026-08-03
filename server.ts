@@ -8,6 +8,7 @@ import aamarvaRoutes from './server/routes/aamarvaRoutes.js';
 import { validateAuthEnvironment } from './server/authService.js';
 import { validateSupabaseEnvironment, checkDatabaseConnectivity } from './server/supabase.js';
 import { ADK_SPECIFICATION } from './server/adk_spec.js';
+import { observabilityMiddleware } from './server/middleware/observabilityMiddleware.js';
 
 dotenv.config();
 
@@ -28,6 +29,7 @@ async function startServer() {
   app.set('trust proxy', 1);
 
   // Security and core middleware
+  app.use(observabilityMiddleware);
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json());
   app.use(cookieParser());
