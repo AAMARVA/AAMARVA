@@ -4,19 +4,13 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
+import './server/config.js'; 
 import aamarvaRoutes from './server/routes/aamarvaRoutes.js';
-import { validateAuthEnvironment } from './server/authService.js';
-import { validateSupabaseEnvironment, checkDatabaseConnectivity } from './server/supabase.js';
+import { checkDatabaseConnectivity } from './server/supabase.js';
 import { ADK_SPECIFICATION } from './server/adk_spec.js';
 import { observabilityMiddleware } from './server/middleware/observabilityMiddleware.js';
 
 dotenv.config();
-
-// Validate required JWT environment variables (throws Error if missing)
-validateAuthEnvironment();
-
-// Validate required Supabase environment variables (throws Error if missing)
-validateSupabaseEnvironment();
 
 async function startServer() {
   // Execute database connectivity check

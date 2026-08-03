@@ -17,23 +17,6 @@ export function isSupabaseConfigured(): boolean {
   return configured;
 }
 
-export function validateSupabaseEnvironment(): void {
-  const missing: string[] = [];
-  if (!process.env.SUPABASE_URL || process.env.SUPABASE_URL.trim() === '') {
-    missing.push('SUPABASE_URL');
-  }
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY.trim() === '') {
-    missing.push('SUPABASE_SERVICE_ROLE_KEY');
-  }
-
-  if (missing.length > 0) {
-    console.warn(
-      `⚠️ WARNING: Missing required Supabase environment configuration variables: [${missing.join(', ')}].\n` +
-      `The server is starting, but database operations will use an in-memory fallback until these are configured.`
-    );
-  }
-}
-
 let supabaseClient: any = null;
 
 export function getSupabaseClient() {

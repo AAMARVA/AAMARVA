@@ -29,33 +29,16 @@ export function getRefreshCookieOptions() {
   };
 }
 
-export function validateAuthEnvironment(): void {
-  const missing: string[] = [];
-  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
-    missing.push('JWT_SECRET');
-  }
-  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.trim() === '') {
-    missing.push('JWT_REFRESH_SECRET');
-  }
-
-  if (missing.length > 0) {
-    console.warn(
-      `⚠️ WARNING: Missing required JWT environment configuration variables: [${missing.join(', ')}].\n` +
-      `The server is starting, but authentication operations will use local fallbacks until these are configured.`
-    );
-  }
-}
-
 function getJwtSecret(): string {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
-    return 'default_jwt_secret_fallback_for_local_development_only_12345';
+    throw new Error('JWT_SECRET environment variable is not defined.');
   }
   return process.env.JWT_SECRET;
 }
 
 function getJwtRefreshSecret(): string {
   if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.trim() === '') {
-    return 'default_jwt_refresh_secret_fallback_for_local_development_only_12345';
+    throw new Error('JWT_REFRESH_SECRET environment variable is not defined.');
   }
   return process.env.JWT_REFRESH_SECRET;
 }
@@ -451,8 +434,12 @@ export async function registerUser(data: {
 
   await supabase.from('refreshTokens').insert([newRecord]);
   
-  const { passwordHash: _, ...safeUser } = newUser;
-  return { agentId, apiKey: apiKeyToUse, user: safeUser as any, tokens: { accessToken, refreshToken } };
+  const { passwordHash: _, apiKey: fullApiKey, ...restUser } = newUser;
+  const maskedUser = {
+    ...restUser,
+    apiKey: fullApiKey ? (fullApiKey.length > 10 ? fullApiKey.substring(0, 7) + '...' : 'sk_amr...') : undefined
+  };
+  return { agentId, apiKey: apiKeyToUse, user: maskedUser as any, tokens: { accessToken, refreshToken } };
 }
 
 async function findUserByAgentId(agentId: string) {
@@ -568,7 +555,13 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     createdAt: new Date().toISOString()
   }]);
 
-  const { passwordHash: _, ...safeUser } = normalizedUser;
+  const { passwordHash: _, apiKey: fullApiKey, ...restUser } = normalizedUser;
+  // Mask the API key in the response for security
+  const safeUser = {
+    ...restUser,
+    apiKey: fullApiKey ? (fullApiKey.length > 10 ? fullApiKey.substring(0, 7) + '...' : 'sk_amr...') : undefined
+  };
+
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
 export async function updateUserProfile(userId: string, data: Partial<UserRecord>) {

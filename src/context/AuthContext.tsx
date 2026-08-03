@@ -41,12 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return null;
   });
-  const [userPassword, setUserPassword] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('aamarva_user_password') || null;
-    }
-    return null;
-  });
+  const [userPassword, setUserPassword] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const refreshProfile = async () => {
@@ -84,10 +79,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_user_password', credential);
       } else {
         localStorage.removeItem('aamarva_user');
-        localStorage.removeItem('aamarva_user_password');
       }
     }
   };
@@ -100,10 +93,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_user_password', apiKey);
       } else {
         localStorage.removeItem('aamarva_user');
-        localStorage.removeItem('aamarva_user_password');
       }
     }
   };
@@ -130,9 +121,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setUserPassword(password);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('aamarva_user_password', password);
-    }
 
     if (userToSave) {
       setUser(userToSave);
@@ -163,7 +151,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserPassword(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
-      localStorage.removeItem('aamarva_user_password');
     }
   };
 
@@ -173,7 +160,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserPassword(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
-      localStorage.removeItem('aamarva_user_password');
       localStorage.removeItem('aamarva_at');
       localStorage.removeItem('aamarva_rt');
     }
