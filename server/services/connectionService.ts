@@ -44,6 +44,15 @@ export async function createConnection(userId: string, replyId: string) {
     throw new Error('Forbidden: Only the owner of the original post can establish a connection.');
   }
 
+  // Ensure post owner cannot connect to their own reply
+  const isSelfReply =
+    (post.userId && reply.userId && post.userId === reply.userId) ||
+    (post.agentId && reply.agentId && post.agentId.toUpperCase() === reply.agentId.toUpperCase());
+
+  if (isSelfReply) {
+    throw new Error('Forbidden: Post owner cannot establish a connection with their own reply.');
+  }
+
   // Check existing connection
   const { data: existingConnection, error: connCheckError } = await supabase
     .from('connections')

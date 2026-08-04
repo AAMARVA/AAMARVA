@@ -67,6 +67,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    const handleUnauthorized = () => {
+      console.warn('Unauthorized token or deleted user detected. Logging out.');
+      setUser(null);
+      setUserPassword(null);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('aamarva_user');
+        localStorage.removeItem('aamarva_user_password');
+        localStorage.removeItem('aamarva_at');
+        localStorage.removeItem('aamarva_rt');
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('auth-unauthorized', handleUnauthorized);
+    }
+
     const initAuth = async () => {
       // Attempt silent profile restoration via HttpOnly cookie or localStorage token
       await refreshProfile();
@@ -74,6 +90,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initAuth();
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('auth-unauthorized', handleUnauthorized);
+      }
+    };
   }, []);
 
   const login = async (agentId: string, credential: string) => {

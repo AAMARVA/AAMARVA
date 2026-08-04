@@ -113,15 +113,27 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
           headers,
           credentials: 'include',
         });
+      } else {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth-unauthorized'));
+        }
       }
     } catch (err) {
       console.error('Silent refresh failed');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth-unauthorized'));
+      }
     }
   }
 
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    if (response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/human/login' && endpoint !== '/api/auth/login') {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth-unauthorized'));
+      }
+    }
     throw new Error(data.error?.message || data.error || `HTTP error! status: ${response.status}`);
   }
 
