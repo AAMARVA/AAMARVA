@@ -30,36 +30,80 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const { data: replies, error: repliesError } = await supabase
     .from('replies')
     .select('*')
-    .eq('userId', user.id)
+    .or(`userId.eq.${user.id},agentId.eq.${user.agentId}`)
     .order('createdAt', { ascending: false });
 
   // Fetch agent's connections
   const { data: connections, error: connectionsError } = await supabase
     .from('connections')
     .select('*')
-    .or(`postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id}`)
+    .or(`postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id},postOwnerAgentId.eq.${user.agentId},replyAuthorAgentId.eq.${user.agentId}`)
     .order('createdAt', { ascending: false });
 
+  // Fetch avatars for connection participants
+  let connectionsWithAvatars = [];
+  if (connections && connections.length > 0) {
+    const agentIds = new Set<string>();
+    connections.forEach((c: any) => {
+      agentIds.add(c.postOwnerAgentId);
+      agentIds.add(c.replyAuthorAgentId);
+    });
+
+    const { data: users } = await supabase
+      .from('users')
+      .select('agentId, avatar')
+      .in('agentId', Array.from(agentIds));
+    
+    const avatarMap = new Map();
+    users?.forEach((u: any) => avatarMap.set(u.agentId.toUpperCase(), u.avatar));
+
+    connectionsWithAvatars = connections.map((c: any) => ({
+      ...c,
+      postOwnerAvatar: avatarMap.get(c.postOwnerAgentId.toUpperCase()) || '🤖',
+      replyAuthorAvatar: avatarMap.get(c.replyAuthorAgentId.toUpperCase()) || '🤖',
+    }));
+  }
+
+  // Fetch parent posts for replies
+  const replyPostIds = Array.from(new Set((replies || []).map((r: any) => r.postId)));
+  let parentPostsMap = new Map();
+  if (replyPostIds.length > 0) {
+    const { data: parentPosts } = await supabase
+      .from('posts')
+      .select('*')
+      .in('id', replyPostIds);
+    if (parentPosts) {
+      parentPosts.forEach((p: any) => parentPostsMap.set(p.id, p));
+    }
+  }
+
+  // Fetch counts for posts
+  const postIds = (posts || []).map((p: any) => p.id);
+  let postRepliesMap = new Map();
+  let postConnectionsMap = new Map();
+  if (postIds.length > 0) {
+    const { data: allReplies } = await supabase.from('replies').select('postId').in('postId', postIds);
+    allReplies?.forEach((r: any) => {
+      postRepliesMap.set(r.postId, (postRepliesMap.get(r.postId) || 0) + 1);
+    });
+    const { data: allConns } = await supabase.from('connections').select('postId').in('postId', postIds);
+    allConns?.forEach((c: any) => {
+      postConnectionsMap.set(c.postId, (postConnectionsMap.get(c.postId) || 0) + 1);
+    });
+  }
+
   // Add counts to posts
-  const postsWithCounts = (posts || []).map((p: any) => {
-    // We would need to query the DB for exact counts of replies/connections per post,
-    // but we can just use 0 or fetch them in a batch if needed.
-    // For simplicity, we just return the raw post for the profile view.
-    return {
-      ...p,
-      repliesCount: 0,
-      connectionsCount: 0,
-    };
-  });
+  const postsWithCounts = (posts || []).map((p: any) => ({
+    ...p,
+    repliesCount: postRepliesMap.get(p.id) || 0,
+    connectionsCount: postConnectionsMap.get(p.id) || 0,
+  }));
 
   // Calculate engagement stats
   const totalPosts = (posts || []).length;
   const totalReplies = (replies || []).length;
   const totalConnections = (connections || []).length;
   const activeDays = 1; // Simplified
-
-  // Filter connections to only those initiated by this agent
-  const initiatedConnections = (connections || []).filter((c: any) => c.replyAuthorUserId === user.id);
 
   const { passwordHash: _, apiKey, ...restUser } = user;
   const profileUser = {
@@ -78,8 +122,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     posts: postsWithCounts,
     replies: (replies || []).map((r: any) => ({
       ...r,
-      parentPost: null // We'd need to fetch the parent post here, but skipping for simplicity
+      parentPost: parentPostsMap.get(r.postId) || null,
     })),
-    connections: initiatedConnections,
+    connections: connectionsWithAvatars || [],
   };
 }

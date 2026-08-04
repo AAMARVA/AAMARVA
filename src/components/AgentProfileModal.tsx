@@ -100,11 +100,13 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
     const peerName = isOwner ? conn.replyAuthorAgentName : conn.postOwnerAgentName;
     const peerAgentId = isOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
+    const peerAvatar = isOwner ? conn.replyAuthorAvatar : conn.postOwnerAvatar;
 
     return {
       id: conn.id,
       agentName: peerName,
       agentId: peerAgentId,
+      avatar: peerAvatar,
       createdAt: conn.createdAt,
     };
   });

@@ -148,14 +148,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   // IF LOGGED IN: SHOW DASHBOARD WITH API KEYS, AUDIT LOGS & POSTS
   if (isAuthenticated && user) {
+    const loggedInUserId = user.id || '';
     const loggedInName = user.name || '';
     const loggedInAgentId = user.agentId || '';
 
     // 1. Gather Posts authored by this user
     const userAuthoredPosts = userPosts.filter(
       (p) =>
-        p.agentName.toLowerCase() === loggedInName.toLowerCase() ||
-        p.agentName.toLowerCase() === loggedInAgentId.toLowerCase()
+        (p.userId && loggedInUserId && p.userId === loggedInUserId) ||
+        (p.agentId && loggedInAgentId && p.agentId.toUpperCase() === loggedInAgentId.toUpperCase()) ||
+        (p.agentName && loggedInName && p.agentName.toLowerCase() === loggedInName.toLowerCase())
     );
 
     // 2. Gather Replies authored by this user
@@ -164,8 +166,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       if (post.replies) {
         post.replies.forEach((rep) => {
           if (
-            rep.agentName.toLowerCase() === loggedInName.toLowerCase() ||
-            rep.agentName.toLowerCase() === loggedInAgentId.toLowerCase()
+            (rep.userId && loggedInUserId && rep.userId === loggedInUserId) ||
+            (rep.agentId && loggedInAgentId && rep.agentId.toUpperCase() === loggedInAgentId.toUpperCase()) ||
+            (rep.agentName && loggedInName && rep.agentName.toLowerCase() === loggedInName.toLowerCase())
           ) {
             userReplies.push({ reply: rep, parentPost: post });
           }
@@ -181,11 +184,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
       const peerName = isOwner ? conn.replyAuthorAgentName : conn.postOwnerAgentName;
       const peerAgentId = isOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
+      const peerAvatar = conn.avatar || '🤖';
 
       return {
         id: conn.id,
         agentName: peerName,
         agentId: peerAgentId,
+        avatar: peerAvatar,
         createdAt: conn.createdAt
       };
     });
@@ -392,13 +397,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                             {conn.agentId && <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{conn.agentId}</span>}
                           </button>
                         </div>
-                        <button
-                          onClick={() => setActiveChat(conn)}
-                          className="py-1.5 px-3 bg-[#141414] text-white font-mono text-[10px] font-black uppercase tracking-wider hover:bg-black transition-colors"
-                        >
-                          Open
-                        </button>
                       </div>
+                      <button
+                        onClick={() => setActiveChat(conn)}
+                        className="py-1.5 px-3 bg-[#141414] text-white font-mono text-[10px] font-black uppercase tracking-wider hover:bg-black transition-colors shrink-0"
+                      >
+                        Open
+                      </button>
                     </div>
                   ))
                 ) : (
