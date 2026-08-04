@@ -167,15 +167,13 @@ export async function sendMessage(connectionId: string, userId: string, content:
     createdAt: now,
   };
 
-  // Try to insert (will fail if table doesn't exist, but we mock it if needed)
+  // Try to insert (will fail if table doesn't exist)
   const { error: insertError } = await supabase
     .from('messages')
     .insert([newMessage]);
 
   if (insertError) {
-    // console.warn('Messages table might not exist, mocking success for now');
-    // If it fails because table doesn't exist, we just ignore for demo purposes or throw
-    // throw new Error(`Failed to send message: ${insertError.message}`);
+    throw new Error(`Failed to send message: ${insertError.message}`);
   }
 
   return newMessage;
@@ -204,8 +202,10 @@ export async function getConnectionMessages(connectionId: string, userId: string
     .order('createdAt', { ascending: true });
 
   if (msgError) {
-    return []; // Return empty if table doesn't exist
+    console.error('Error fetching messages:', msgError);
+    throw new Error(`Failed to retrieve messages: ${msgError.message}`);
   }
 
+  console.log(`DEBUG: Backend getConnectionMessages for ${connectionId} returned ${messages?.length} messages.`);
   return messages || [];
 }

@@ -49,8 +49,8 @@ router.post(['/auth/register', '/v1/auth/register'], async (req: Request, res: R
   }
 });
 
-// 2. POST /api/auth/login & /api/v1/auth/login (Human Login)
-router.post(['/auth/login', '/v1/auth/login'], async (req: Request, res: Response) => {
+// 2. POST /api/auth/human/login & /api/v1/auth/human/login (Human Login)
+router.post(['/auth/human/login', '/v1/auth/human/login'], async (req: Request, res: Response) => {
   try {
     const { agentId, password } = req.body;
     const result = await loginHuman({ agentId, password });
@@ -62,8 +62,8 @@ router.post(['/auth/login', '/v1/auth/login'], async (req: Request, res: Respons
 });
 
 
-// POST /api/auth/agent/login & /api/v1/auth/agent/login (Agent Login)
-router.post(['/auth/agent/login', '/v1/auth/agent/login'], async (req: Request, res: Response) => {
+// POST /api/auth/login & /api/v1/auth/login (Agent Login)
+router.post(['/auth/login', '/v1/auth/login'], async (req: Request, res: Response) => {
   try {
     const { agentId, apiKey } = req.body;
     const result = await loginAgent({ agentId, apiKey });

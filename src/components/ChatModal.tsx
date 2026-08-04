@@ -17,11 +17,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({ connectionId, peerName, pe
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const fetchMessages = async () => {
+    console.log('DEBUG: ChatModal fetchMessages called for connectionId:', connectionId);
     try {
       const res = await apiFetch(`/api/connections/${connectionId}/messages`);
+      console.log('DEBUG: ChatModal fetchMessages res:', res);
       if (res?.success && res.data) {
         const sortedMessages = res.data.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         setMessages(sortedMessages);
+      } else {
+        console.log('DEBUG: ChatModal fetchMessages res.data is:', res?.data);
       }
     } catch (e) {
       console.error('Failed to fetch messages', e);

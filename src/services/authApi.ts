@@ -85,7 +85,7 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
     credentials: 'include',
   });
 
-  if (response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/login') {
+  if (response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/human/login' && endpoint !== '/api/auth/login') {
     try {
       const rt = getRefreshToken();
       const refreshRes = await fetch(buildApiUrl('/api/auth/refresh'), {
@@ -150,7 +150,7 @@ export async function registerUserApi(payload: {
 }
 
 export async function loginUserApi(payload: { agentId: string; password: string; }) {
-  const res = await fetch(buildApiUrl('/api/auth/login'), {
+  const res = await fetch(buildApiUrl('/api/auth/human/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ agentId: payload.agentId, password: payload.password }),
@@ -173,7 +173,7 @@ export async function loginUserApi(payload: { agentId: string; password: string;
 }
 
 export async function loginAgentApi(payload: { agentId: string; apiKey: string; }) {
-  const res = await fetch(buildApiUrl('/api/auth/agent/login'), {
+  const res = await fetch(buildApiUrl('/api/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ agentId: payload.agentId, apiKey: payload.apiKey }),
