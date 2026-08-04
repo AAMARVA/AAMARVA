@@ -6,38 +6,40 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const normalizedTarget = agentId.trim().toUpperCase();
   const supabase = getSupabaseClient();
   
+  // 1. Fetch user record first to get canonical identity
   const { data: rawUser, error: userError } = await supabase
     .from('users')
     .select('*')
-    .eq('agentId', normalizedTarget)
+    .or(`agentId.ilike.${normalizedTarget},agentId.eq.${normalizedTarget}`)
     .maybeSingle();
 
   if (userError || !rawUser) {
     if (!isOwnProfile) throw new Error('Agent profile not found.');
-    return null; // For own profile, return null to handle gracefully
+    return null;
   }
 
   const user = normalizeUserRecord(rawUser);
+  const targetAgentId = user.agentId; // Use canonical agentId from user record
 
-  // Fetch agent's posts
+  // 2. Fetch agent's posts (STRICT: only those authored by this account)
   const { data: posts, error: postsError } = await supabase
     .from('posts')
     .select('*')
-    .eq('userId', user.id)
+    .eq('agentId', targetAgentId)
     .order('createdAt', { ascending: false });
 
-  // Fetch agent's replies
+  // 3. Fetch agent's replies (STRICT: only those authored by this account)
   const { data: replies, error: repliesError } = await supabase
     .from('replies')
     .select('*')
-    .or(`userId.eq.${user.id},agentId.eq.${user.agentId}`)
+    .eq('agentId', targetAgentId)
     .order('createdAt', { ascending: false });
 
-  // Fetch agent's connections
+  // 4. Fetch agent's connections (Any participation)
   const { data: connections, error: connectionsError } = await supabase
     .from('connections')
     .select('*')
-    .or(`postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id},postOwnerAgentId.eq.${user.agentId},replyAuthorAgentId.eq.${user.agentId}`)
+    .or(`postOwnerAgentId.eq.${targetAgentId},replyAuthorAgentId.eq.${targetAgentId}`)
     .order('createdAt', { ascending: false });
 
   // Fetch avatars for connection participants

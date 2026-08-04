@@ -130,10 +130,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   // State for actual connection records fetched from GET /api/connections
   const [realConnections, setRealConnections] = useState<any[]>([]);
+  const [agentProfileData, setAgentProfileData] = useState<any>(null);
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
     let isMounted = true;
+    
+    // Fetch connections
     apiFetch('/api/connections')
       .then((res) => {
         if (isMounted && res?.data?.connections) {
@@ -141,6 +144,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         }
       })
       .catch(() => {});
+
+    // Fetch full profile data (posts, replies, connections)
+    apiFetch('/api/agents/me')
+      .then((res) => {
+        if (isMounted && res?.data) {
+          setAgentProfileData(res.data);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       isMounted = false;
     };
@@ -148,43 +161,55 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   // IF LOGGED IN: SHOW DASHBOARD WITH API KEYS, AUDIT LOGS & POSTS
   if (isAuthenticated && user) {
-    const loggedInUserId = user.id || '';
-    const loggedInName = user.name || '';
     const loggedInAgentId = user.agentId || '';
 
-    // 1. Gather Posts authored by this user
-    const userAuthoredPosts = userPosts.filter(
-      (p) =>
-        (p.userId && loggedInUserId && p.userId === loggedInUserId) ||
-        (p.agentId && loggedInAgentId && p.agentId.toUpperCase() === loggedInAgentId.toUpperCase()) ||
-        (p.agentName && loggedInName && p.agentName.toLowerCase() === loggedInName.toLowerCase())
-    );
+    // 1. Gather Posts authored by this user (Strict source: API)
+    const userAuthoredPosts: NetworkPost[] = (agentProfileData?.posts || []).map((p: any) => ({
+      id: p.id,
+      agentId: p.agentId,
+      agentName: p.agentName,
+      category: p.category,
+      type: p.type,
+      avatar: p.avatar,
+      content: p.content,
+      timestamp: p.createdAt ? new Date(p.createdAt).toLocaleString() : '',
+      createdAt: p.createdAt,
+      repliesCount: p.repliesCount || 0,
+      connectionsCount: p.connectionsCount || 0,
+    }));
 
-    // 2. Gather Replies authored by this user
-    const userReplies: Array<{ reply: any; parentPost: NetworkPost }> = [];
-    userPosts.forEach((post) => {
-      if (post.replies) {
-        post.replies.forEach((rep) => {
-          if (
-            (rep.userId && loggedInUserId && rep.userId === loggedInUserId) ||
-            (rep.agentId && loggedInAgentId && rep.agentId.toUpperCase() === loggedInAgentId.toUpperCase()) ||
-            (rep.agentName && loggedInName && rep.agentName.toLowerCase() === loggedInName.toLowerCase())
-          ) {
-            userReplies.push({ reply: rep, parentPost: post });
-          }
-        });
-      }
-    });
+    // 2. Gather Replies authored by this user (Strict source: API)
+    const userReplies: Array<{ reply: any; parentPost: NetworkPost }> = (agentProfileData?.replies || []).map((r: any) => ({
+      reply: {
+        id: r.id,
+        postId: r.postId,
+        agentName: r.agentName,
+        agentId: r.agentId,
+        avatar: r.avatar,
+        content: r.content,
+        timestamp: r.createdAt ? new Date(r.createdAt).toLocaleString() : '',
+        createdAt: r.createdAt,
+      },
+      parentPost: r.parentPost ? {
+        id: r.parentPost.id,
+        agentName: r.parentPost.agentName,
+        avatar: r.parentPost.avatar,
+        content: r.parentPost.content,
+        agentId: '',
+        timestamp: '',
+        createdAt: '',
+      } : undefined
+    }));
 
-    // 3. Map actual connection records from GET /api/connections
-    const userConnections = realConnections.map((conn) => {
+    // 3. Map actual connection records from GET /api/connections (or profile data)
+    const currentConnections = agentProfileData?.connections || realConnections;
+    const userConnections = currentConnections.map((conn: any) => {
       const isOwner =
-        (conn.postOwnerAgentId && user.agentId && conn.postOwnerAgentId.toUpperCase() === user.agentId.toUpperCase()) ||
-        (conn.postOwnerAgentName && user.name && conn.postOwnerAgentName.toLowerCase() === user.name.toLowerCase());
+        (conn.postOwnerAgentId && loggedInAgentId && conn.postOwnerAgentId.toUpperCase() === loggedInAgentId.toUpperCase());
 
       const peerName = isOwner ? conn.replyAuthorAgentName : conn.postOwnerAgentName;
       const peerAgentId = isOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
-      const peerAvatar = conn.avatar || '🤖';
+      const peerAvatar = isOwner ? conn.replyAuthorAvatar : conn.postOwnerAvatar || conn.avatar || '🤖';
 
       return {
         id: conn.id,
