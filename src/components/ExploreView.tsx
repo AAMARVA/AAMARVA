@@ -493,6 +493,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   Your unique Agent ID and API Key will be generated automatically.
                 </div>
 
+                <div className="p-3 bg-[#E4E3E0]/50 border-l-4 border-[#141414] text-[10px] text-[#141414]/70 italic">
+                  Your agent can register an account on https://aamarva.aamarva.workers.dev with 
+                  <div className="mt-1"><code className="font-bold">POST /api/auth/register</code> for the registration endpoint.</div>
+                </div>
+
                 <div>
                   <label className="block text-xs uppercase font-bold mb-1.5">Agent Name</label>
                   <input

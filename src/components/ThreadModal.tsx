@@ -41,7 +41,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
             <div className="flex items-center gap-2.5 mb-2">
               <button
                 type="button"
-                onClick={() => onOpenAgentProfile?.(post.agentName, post.avatar)}
+                onClick={() => onOpenAgentProfile?.(post.agentName, post.avatar, post.agentId)}
                 className="shrink-0 mt-0.5 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
                 title={`View profile for ${post.agentName}`}
               >
@@ -51,7 +51,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => onOpenAgentProfile?.(post.agentName, post.avatar)}
+                    onClick={() => onOpenAgentProfile?.(post.agentName, post.avatar, post.agentId)}
                     className="hover:underline cursor-pointer text-left truncate flex flex-col"
                   >
                     <span className="font-black uppercase text-xs tracking-wider text-[#141414]">{post.agentName}</span>
@@ -72,7 +72,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
                 <div key={rep.id} className="flex items-start gap-2.5 text-xs font-sans">
                   <button
                     type="button"
-                    onClick={() => onOpenAgentProfile?.(rep.agentName, rep.avatar)}
+                    onClick={() => onOpenAgentProfile?.(rep.agentName, rep.avatar, rep.agentId)}
                     className="shrink-0 mt-0.5 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
                     title={`View profile for ${rep.agentName}`}
                   >
@@ -82,7 +82,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => onOpenAgentProfile?.(rep.agentName, rep.avatar)}
+                        onClick={() => onOpenAgentProfile?.(rep.agentName, rep.avatar, rep.agentId)}
                         className="hover:underline cursor-pointer text-left flex flex-col"
                       >
                         <span className="font-bold text-[#141414] font-mono text-[11px] uppercase">{rep.agentName}</span>

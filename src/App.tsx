@@ -220,7 +220,21 @@ export default function App() {
   };
 
   const handleOpenAgentProfile = (name: string, avatar?: string, agentId?: string) => {
+    setActiveThreadPost(null);
+    setActiveConnectionsPost(null);
     setActiveAgentProfile({ name, avatar, agentId });
+  };
+
+  const handleOpenThread = (post: NetworkPost) => {
+    setActiveAgentProfile(null);
+    setActiveConnectionsPost(null);
+    setActiveThreadPost(post);
+  };
+
+  const handleOpenConnections = (post: NetworkPost) => {
+    setActiveAgentProfile(null);
+    setActiveThreadPost(null);
+    setActiveConnectionsPost(post);
   };
 
   return (
@@ -232,8 +246,8 @@ export default function App() {
           isSearchDropdownOpen={isSearchModalOpen}
           setIsSearchDropdownOpen={setIsSearchModalOpen}
           posts={posts}
-          onOpenThread={(p) => setActiveThreadPost(p)}
-          onOpenConnections={(p) => setActiveConnectionsPost(p)}
+          onOpenThread={handleOpenThread}
+          onOpenConnections={handleOpenConnections}
           onAddReply={handleAddReply}
           onOpenAgentProfile={handleOpenAgentProfile}
         />
@@ -287,8 +301,8 @@ export default function App() {
               <PostCard
                 key={post.id}
                 post={post}
-                onOpenThread={(p) => setActiveThreadPost(p)}
-                onOpenConnections={(p) => setActiveConnectionsPost(p)}
+                onOpenThread={handleOpenThread}
+                onOpenConnections={handleOpenConnections}
                 onAddReply={handleAddReply}
                 onOpenAgentProfile={handleOpenAgentProfile}
               />
@@ -311,8 +325,8 @@ export default function App() {
         {(activeTab === 'explore' || activeTab === 'hub') && (
           <ExploreView
             posts={posts}
-            onOpenThread={(p) => setActiveThreadPost(p)}
-            onOpenConnections={(p) => setActiveConnectionsPost(p)}
+            onOpenThread={handleOpenThread}
+            onOpenConnections={handleOpenConnections}
             onAddReply={handleAddReply}
             onOpenAgentProfile={handleOpenAgentProfile}
           />
@@ -322,8 +336,8 @@ export default function App() {
         {activeTab === 'dashboard' && (
           <UserDashboardView
             userPosts={posts}
-            onOpenThread={(p) => setActiveThreadPost(p)}
-            onOpenConnections={(p) => setActiveConnectionsPost(p)}
+            onOpenThread={handleOpenThread}
+            onOpenConnections={handleOpenConnections}
             onAddReply={handleAddReply}
             onOpenAgentProfile={handleOpenAgentProfile}
           />
@@ -337,8 +351,8 @@ export default function App() {
         avatar={activeAgentProfile?.avatar}
         posts={posts}
         onClose={() => setActiveAgentProfile(null)}
-        onOpenThread={(p) => setActiveThreadPost(p)}
-        onOpenConnections={(p) => setActiveConnectionsPost(p)}
+        onOpenThread={handleOpenThread}
+        onOpenConnections={handleOpenConnections}
         onOpenAgentProfile={handleOpenAgentProfile}
         onAddReply={handleAddReply}
       />

@@ -3,7 +3,7 @@ import { UserRecord } from '../db.js';
 import { normalizeUserRecord } from '../authService.js';
 
 export async function getAgentProfile(agentId: string, isOwnProfile = false) {
-  const normalizedTarget = agentId.trim().toUpperCase();
+  const normalizedTarget = agentId.trim().replace(/^@/, '').toUpperCase();
   const supabase = getSupabaseClient();
   
   // 1. Fetch user record first to get canonical identity

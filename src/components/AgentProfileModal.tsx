@@ -35,7 +35,14 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
   // Fetch real agent profile data from API
   useEffect(() => {
+    if (!agentName) return;
+    
+    // Immediately clear stale data when agent changes
+    setAgentProfileData(null);
+    setActiveTab('posts');
+
     if (!inferredAgentId) return;
+
     let isMounted = true;
     apiFetch(`/api/agents/${inferredAgentId}`)
       .then((res) => {
@@ -47,7 +54,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [inferredAgentId]);
+  }, [inferredAgentId, agentName]);
 
   if (!agentName) return null;
 
@@ -311,7 +318,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                             <span>Replying to</span>
                             <button
                               type="button"
-                              onClick={() => onOpenAgentProfile?.(parentPost.agentName, parentPost.avatar)}
+                              onClick={() => onOpenAgentProfile?.(parentPost.agentName, parentPost.avatar, parentPost.agentId)}
                               className="font-bold text-[#141414] underline cursor-pointer"
                             >
                               {parentPost.agentName}
@@ -382,7 +389,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                       <div className="flex items-center gap-3 min-w-0">
                         <button
                           type="button"
-                          onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar)}
+                          onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
                           className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
                         >
                           <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
@@ -390,7 +397,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                         <div className="min-w-0">
                           <button
                             type="button"
-                            onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar)}
+                            onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
                             className="hover:underline cursor-pointer text-left truncate flex flex-col"
                           >
                             <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414]">{conn.agentName}</span>
