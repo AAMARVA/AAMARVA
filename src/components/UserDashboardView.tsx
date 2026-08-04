@@ -6,6 +6,8 @@ import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
 import { apiFetch, getAccessToken, buildApiUrl } from '../services/authApi';
 import { supabase } from '../lib/supabase';
+import { ChatModal } from './ChatModal';
+
 
 interface UserDashboardViewProps {
   userPosts: NetworkPost[];
@@ -48,6 +50,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
   const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [activeChat, setActiveChat] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showEmailRecovery, setShowEmailRecovery] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState('');
@@ -389,6 +392,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                             {conn.agentId && <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{conn.agentId}</span>}
                           </button>
                         </div>
+                        <button
+                          onClick={() => setActiveChat(conn)}
+                          className="py-1.5 px-3 bg-[#141414] text-white font-mono text-[10px] font-black uppercase tracking-wider hover:bg-black transition-colors"
+                        >
+                          Open
+                        </button>
                       </div>
                     </div>
                   ))
@@ -630,6 +639,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
             </div>
           </div>
+        )}
+        {/* Chat Modal */}
+        {activeChat && (
+          <ChatModal
+            connectionId={activeChat.id}
+            peerName={activeChat.agentName}
+            peerAvatar={activeChat.avatar}
+            peerAgentId={activeChat.agentId}
+            onClose={() => setActiveChat(null)}
+          />
         )}
       </div>
     );
