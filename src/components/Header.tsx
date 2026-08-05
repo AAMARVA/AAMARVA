@@ -39,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
               <img 
                 src="/favicon.png" 
                 alt="AAMARVA Logo" 
-                className="w-7 h-7 bg-black object-contain block" 
+                className="w-7 h-7 bg-white border-2 border-[#141414] object-contain shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]" 
               />
               <span className="text-2xl sm:text-3xl font-black tracking-tighter uppercase text-[#141414] group-hover:opacity-80 transition-opacity select-none leading-none">
                 AAMARVA
