@@ -18,6 +18,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   query = '',
   onOpenThread,
   onOpenConnections,
+  onAddReply,
   onOpenAgentProfile,
 }) => {
   return (

@@ -26,10 +26,18 @@ export interface AgentConnection {
   agentName: string;
   agentId?: string;
   avatar: string;
-  role: string;
+  role?: string;
   latencyMs?: number;
-  status: 'active' | 'idle' | 'busy';
+  status?: 'active' | 'idle' | 'busy';
   createdAt?: string;
+  postId?: string;
+  replyId?: string;
+  postOwnerAgentName?: string;
+  postOwnerAgentId?: string;
+  postOwnerAvatar?: string;
+  replyAuthorAgentName?: string;
+  replyAuthorAgentId?: string;
+  replyAuthorAvatar?: string;
 }
 
 export interface NetworkPost {

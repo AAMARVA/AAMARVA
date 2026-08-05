@@ -168,9 +168,68 @@ export async function getUserConnections(userId: string, page: number, limit: nu
     throw new Error(`Failed to retrieve user connections: ${queryError.message}`);
   }
 
+  const connections = userConnections || [];
+  const total = count || 0;
+
+  if (connections.length === 0) {
+    return {
+      connections: [],
+      total,
+      page,
+      limit,
+    };
+  }
+
+  // Fetch unique agent IDs to get avatars
+  const agentIds = new Set<string>();
+  connections.forEach((c: any) => {
+    if (c.postOwnerAgentId) agentIds.add(c.postOwnerAgentId.toUpperCase());
+    if (c.replyAuthorAgentId) agentIds.add(c.replyAuthorAgentId.toUpperCase());
+  });
+
+  let users: any[] = [];
+  if (agentIds.size > 0) {
+    const { data: userData } = await supabase
+      .from('users')
+      .select('agentId, name, avatar')
+      .in('agentId', Array.from(agentIds));
+    users = userData || [];
+  }
+
+  const mappedConnections = connections.map((c: any) => {
+    const replyAuthor = users.find(u => u.agentId.toUpperCase() === c.replyAuthorAgentId.toUpperCase());
+    const postOwner = users.find(u => u.agentId.toUpperCase() === c.postOwnerAgentId.toUpperCase());
+
+    const isUserPostOwner = c.postOwnerUserId === userId;
+    
+    const peerName = isUserPostOwner 
+      ? (c.replyAuthorAgentName || replyAuthor?.name || 'Guest Agent')
+      : (c.postOwnerAgentName || postOwner?.name || 'Host Agent');
+      
+    const peerAgentId = isUserPostOwner ? c.replyAuthorAgentId : c.postOwnerAgentId;
+    const peerAvatar = isUserPostOwner ? (replyAuthor?.avatar || '🤖') : (postOwner?.avatar || '🤖');
+
+    return {
+      id: c.id,
+      postId: c.postId,
+      replyId: c.replyId,
+      agentName: peerName,
+      agentId: peerAgentId,
+      avatar: peerAvatar,
+      isHost: isUserPostOwner,
+      postOwnerAgentName: c.postOwnerAgentName || postOwner?.name || 'Host Agent',
+      postOwnerAgentId: c.postOwnerAgentId,
+      postOwnerAvatar: postOwner?.avatar || '🤖',
+      replyAuthorAgentName: c.replyAuthorAgentName || replyAuthor?.name,
+      replyAuthorAgentId: c.replyAuthorAgentId,
+      replyAuthorAvatar: replyAuthor?.avatar || '🤖',
+      createdAt: c.createdAt,
+    };
+  });
+
   return {
-    connections: userConnections || [],
-    total: count || 0,
+    connections: mappedConnections,
+    total,
     page,
     limit,
   };
@@ -242,10 +301,25 @@ export async function getConnectionMessages(connectionId: string, userId: string
     .maybeSingle();
 
   if (connError || !connection) throw new Error('Connection not found.');
-  
-  // Check access
-  if (connection.postOwnerUserId !== userId && connection.replyAuthorUserId !== userId) {
-    throw new Error('Forbidden: Not a participant of this connection.');
+
+  // Verify participant access
+  const { data: currentUser } = await supabase
+    .from('users')
+    .select('agentId')
+    .eq('id', userId)
+    .maybeSingle();
+
+  const currentAgentId = currentUser?.agentId;
+  const isParticipant =
+    connection.postOwnerUserId === userId ||
+    connection.replyAuthorUserId === userId ||
+    (currentAgentId && (
+      (connection.postOwnerAgentId && connection.postOwnerAgentId.toLowerCase() === currentAgentId.toLowerCase()) ||
+      (connection.replyAuthorAgentId && connection.replyAuthorAgentId.toLowerCase() === currentAgentId.toLowerCase())
+    ));
+
+  if (!isParticipant) {
+    throw new Error('Forbidden: You are not a participant in this conversation.');
   }
 
   let dbMessages: any[] = [];
@@ -265,10 +339,8 @@ export async function getConnectionMessages(connectionId: string, userId: string
     console.warn("⚠️ Exception caught while querying messages table, falling back to in-memory store. Error:", err.message || err);
   }
 
-  // To prevent duplicates if the table DOES exist but is partially synced, merge them gracefully
-  const dbMsgIds = new Set(dbMessages.map(m => m.id));
-  
   // Combine db messages with any temporary in-memory ones for this connection
+  const dbMsgIds = new Set(dbMessages.map(m => m.id));
   const combined = [...dbMessages];
   const memMsgs = inMemoryMessagesFallback.filter(m => m.connectionId === connectionId);
   memMsgs.forEach(m => {
@@ -277,5 +349,102 @@ export async function getConnectionMessages(connectionId: string, userId: string
     }
   });
 
+  // If no stored messages found, construct initial messages from the original post and reply
+  if (combined.length === 0 && connection.postId && connection.replyId) {
+    try {
+      const { data: post } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('id', connection.postId)
+        .maybeSingle();
+
+      const { data: reply } = await supabase
+        .from('replies')
+        .select('*')
+        .eq('id', connection.replyId)
+        .maybeSingle();
+
+      if (post && post.content) {
+        combined.push({
+          id: `msg_post_${connection.id}`,
+          connectionId: connection.id,
+          senderUserId: connection.postOwnerUserId,
+          senderAgentId: connection.postOwnerAgentId,
+          content: post.content,
+          createdAt: post.createdAt || connection.createdAt,
+        });
+      }
+
+      if (reply && reply.content) {
+        combined.push({
+          id: `msg_reply_${connection.id}`,
+          connectionId: connection.id,
+          senderUserId: connection.replyAuthorUserId || connection.postOwnerUserId,
+          senderAgentId: connection.replyAuthorAgentId,
+          content: reply.content,
+          createdAt: reply.createdAt || connection.createdAt,
+        });
+      }
+    } catch (fallbackErr) {
+      console.warn("Error synthesizing fallback connection messages:", fallbackErr);
+    }
+  }
+
   return combined.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+}
+
+export async function deleteConnection(connectionId: string, userId: string) {
+  const supabase = getSupabaseClient();
+
+  const { data: connection, error: connError } = await supabase
+    .from('connections')
+    .select('*')
+    .eq('id', connectionId)
+    .maybeSingle();
+
+  if (connError || !connection) {
+    throw new Error('Connection not found.');
+  }
+
+  // Verify participant access
+  const { data: currentUser } = await supabase
+    .from('users')
+    .select('agentId')
+    .eq('id', userId)
+    .maybeSingle();
+
+  const currentAgentId = currentUser?.agentId;
+  const isParticipant =
+    connection.postOwnerUserId === userId ||
+    connection.replyAuthorUserId === userId ||
+    (currentAgentId && (
+      (connection.postOwnerAgentId && connection.postOwnerAgentId.toLowerCase() === currentAgentId.toLowerCase()) ||
+      (connection.replyAuthorAgentId && connection.replyAuthorAgentId.toLowerCase() === currentAgentId.toLowerCase())
+    ));
+
+  if (!isParticipant) {
+    throw new Error('Forbidden: You are not a participant in this connection.');
+  }
+
+  // Delete messages associated with connection
+  await supabase.from('messages').delete().eq('connectionId', connectionId);
+
+  // Delete connection record
+  const { error: deleteError } = await supabase
+    .from('connections')
+    .delete()
+    .eq('id', connectionId);
+
+  if (deleteError) {
+    throw new Error(`Failed to delete connection: ${deleteError.message}`);
+  }
+
+  // Clean up in-memory fallback
+  for (let i = inMemoryMessagesFallback.length - 1; i >= 0; i--) {
+    if (inMemoryMessagesFallback[i].connectionId === connectionId) {
+      inMemoryMessagesFallback.splice(i, 1);
+    }
+  }
+
+  return { success: true, message: 'Connection removed successfully.' };
 }

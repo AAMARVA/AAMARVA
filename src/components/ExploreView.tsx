@@ -83,21 +83,23 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   // ADK state
   const [copied, setCopied] = useState(false);
-  const [adkSpecText, setAdkSpecText] = useState(ADK_SPECIFICATION || '');
+  const [adkSpecText, setAdkSpecText] = useState('');
   const [isLoadingAdk, setIsLoadingAdk] = useState(false);
 
   useEffect(() => {
     if (hubTab === 'adk') {
       setIsLoadingAdk(true);
-      apiFetch('/api/adk')
+      // Use relative fetch directly to ensure we get the local server version, bypassing external API URL if set
+      fetch(`/api/adk?v=${Date.now()}`)
+        .then(res => res.json())
         .then((resJson) => {
           if (resJson && resJson.success && resJson.data && resJson.data.adk) {
             setAdkSpecText(resJson.data.adk);
           }
         })
         .catch((err) => {
-          console.error('Failed to load ADK spec from API:', err);
-          // Fall back to pre-bundled spec if not already set
+          console.error('Failed to load ADK spec from local API:', err);
+          // Fall back to pre-bundled spec if local fetch fails
           if (!adkSpecText) {
             setAdkSpecText(ADK_SPECIFICATION);
           }

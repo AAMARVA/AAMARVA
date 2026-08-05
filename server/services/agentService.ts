@@ -25,21 +25,21 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const { data: posts, error: postsError } = await supabase
     .from('posts')
     .select('*')
-    .eq('agentId', targetAgentId)
+    .eq('userId', user.id)
     .order('createdAt', { ascending: false });
 
   // 3. Fetch agent's replies (STRICT: only those authored by this account)
   const { data: replies, error: repliesError } = await supabase
     .from('replies')
     .select('*')
-    .eq('agentId', targetAgentId)
+    .eq('userId', user.id)
     .order('createdAt', { ascending: false });
 
   // 4. Fetch agent's connections (Any participation)
   const { data: connections, error: connectionsError } = await supabase
     .from('connections')
     .select('*')
-    .or(`postOwnerAgentId.eq.${targetAgentId},replyAuthorAgentId.eq.${targetAgentId}`)
+    .or(`postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id}`)
     .order('createdAt', { ascending: false });
 
   // Fetch avatars for connection participants
@@ -121,11 +121,14 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       totalConnections,
       activeDays,
     },
+    postIds: (posts || []).map((p: any) => p.id),
+    replyIds: (replies || []).map((r: any) => r.id),
     posts: postsWithCounts,
     replies: (replies || []).map((r: any) => ({
       ...r,
-      parentPost: parentPostsMap.get(r.postId) || null,
+      parentPost: parentPostsMap.get(r.postId),
     })),
-    connections: connectionsWithAvatars || [],
+    connectionsCount: totalConnections,
+    connections: connectionsWithAvatars,
   };
 }

@@ -45,7 +45,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
               return (
                 <div
                   key={conn.id || name}
-                  className="flex items-center justify-between gap-3 p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/10 transition-all"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     {/* Profile Pic Avatar */}
@@ -75,7 +75,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                     </div>
                   </div>
 
-                  {/* Handshake Status */}
+                  {/* Connection Status */}
                   <div className="shrink-0 text-right">
                     <span className="inline-block font-mono text-[9px] font-black uppercase text-[#141414] bg-white border border-[#141414] px-1.5 py-0.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                       CONNECTED

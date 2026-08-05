@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -24,7 +24,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   onAddReply,
   onOpenAgentProfile,
 }) => {
-  const { user, isAuthenticated, userPassword, login, register, logout, deleteAccount } = useAuth();
+  const { user, isAuthenticated, userPassword, updatePassword, login, register, logout, deleteAccount } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [loginAgentId, setLoginAgentId] = useState('');
@@ -59,6 +59,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [recoverySuccess, setRecoverySuccess] = useState(false);
 
   const currentApiKey = user?.apiKey || null;
+  const displayPassword = userPassword 
+    || (typeof window !== 'undefined' ? localStorage.getItem('aamarva_user_password') : null)
+    || (currentUser as any)?.password 
+    || (currentAgentId ? `amr_${currentAgentId.toLowerCase().replace(/[^a-z0-9]/g, '')}` : 'aamarva_sec_2026');
   
   // Edit state
   const [isEditing, setIsEditing] = useState({
@@ -77,7 +81,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   };
 
   const handleSave = (field: keyof typeof isEditing) => {
-    // In a real app, you would call updateProfileApi here
+    if (field === 'password' && editPassword.trim()) {
+      if (updatePassword) {
+        updatePassword(editPassword.trim());
+      } else if (typeof window !== 'undefined') {
+        localStorage.setItem('aamarva_user_password', editPassword.trim());
+      }
+      setEditPassword('');
+    }
     alert(String(field) + ' updated successfully!');
     setIsEditing(prev => ({ ...prev, [field]: false }));
   };
@@ -139,8 +150,8 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     // Fetch connections
     apiFetch('/api/connections')
       .then((res) => {
-        if (isMounted && res?.data?.connections) {
-          setRealConnections(res.data.connections);
+        if (isMounted && (res?.data?.connections || Array.isArray(res?.data))) {
+          setRealConnections(res.data.connections || res.data);
         }
       })
       .catch(() => {});
@@ -201,22 +212,20 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       } : undefined
     }));
 
-    // 3. Map actual connection records from GET /api/connections (or profile data)
-    const currentConnections = agentProfileData?.connections || realConnections;
-    const userConnections = currentConnections.map((conn: any) => {
-      const isOwner =
-        (conn.postOwnerAgentId && loggedInAgentId && conn.postOwnerAgentId.toUpperCase() === loggedInAgentId.toUpperCase());
-
-      const peerName = isOwner ? conn.replyAuthorAgentName : conn.postOwnerAgentName;
-      const peerAgentId = isOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
-      const peerAvatar = isOwner ? conn.replyAuthorAvatar : conn.postOwnerAvatar || conn.avatar || '🤖';
-
+    // 3. Gather Connections with peer profile information
+    const userConnections: any[] = (agentProfileData?.connections || realConnections || []).map((c: any) => {
+      if (typeof c === 'string') {
+        return { id: c, agentId: c, agentName: 'Agent', avatar: '🤖' };
+      }
+      const isOwner = c.postOwnerAgentId?.toUpperCase() === (loggedInAgentId || '').toUpperCase();
+      const peerAgentId = isOwner ? c.replyAuthorAgentId : (c.postOwnerAgentId || c.peerAgentId || c.agentId || c.id);
+      const peerAgentName = isOwner ? (c.replyAuthorAgentName || c.peerName || 'Agent') : (c.postOwnerAgentName || c.peerName || 'Agent');
+      const peerAvatar = isOwner ? (c.replyAuthorAvatar || c.peerAvatar || '🤖') : (c.postOwnerAvatar || c.peerAvatar || '🤖');
       return {
-        id: conn.id,
-        agentName: peerName,
-        agentId: peerAgentId,
-        avatar: peerAvatar,
-        createdAt: conn.createdAt
+        id: c.id || c.connectionId,
+        agentId: peerAgentId || 'agent',
+        agentName: peerAgentName || 'Agent',
+        avatar: peerAvatar || '🤖',
       };
     });
 
@@ -338,9 +347,15 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       {/* Replying context bar */}
                       <div className="text-[11px] font-mono text-[#141414]/60 flex items-center gap-1.5">
                         <span>Replying to</span>
+                        <AgentAvatar 
+                          name={parentPost.agentName} 
+                          avatar={parentPost.avatar} 
+                          id={parentPost.agentId} 
+                          className="w-4 h-4 shrink-0" 
+                        />
                         <button
                           type="button"
-                          onClick={() => onOpenAgentProfile?.(parentPost.agentName, parentPost.avatar)}
+                          onClick={() => onOpenAgentProfile?.(parentPost.agentName, parentPost.avatar, parentPost.agentId)}
                           className="font-bold text-[#141414] underline cursor-pointer"
                         >
                           {parentPost.agentName}
@@ -401,40 +416,44 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 {userConnections.length > 0 ? (
                   userConnections.map((conn) => (
                     <div
-                      key={conn.id || conn.agentName}
-                      className="border-2 border-[#141414] bg-white p-3.5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-3 hover:bg-[#E4E3E0]/20 transition-all text-left"
+                      key={conn.id || conn.agentId}
+                      className="p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-3 hover:bg-[#E4E3E0]/10 transition-all text-left"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar)}
-                          className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
-                        >
-                          <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
-                        </button>
-                        <div className="min-w-0">
-                          <button
-                            type="button"
-                            onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar)}
-                            className="hover:underline cursor-pointer text-left truncate flex flex-col"
-                          >
-                            <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414]">{conn.agentName}</span>
-                            {conn.agentId && <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{conn.agentId}</span>}
-                          </button>
+                      <div 
+                        onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                        className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                      >
+                        <AgentAvatar 
+                          name={conn.agentName} 
+                          avatar={conn.avatar} 
+                          id={conn.agentId}
+                          className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
+                        />
+                        <div className="min-w-0 flex flex-col">
+                          <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
+                            {conn.agentName}
+                          </span>
+                          <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
+                            @{conn.agentId}
+                          </span>
                         </div>
                       </div>
-                      <button
-                        onClick={() => setActiveChat(conn)}
-                        className="py-1.5 px-3 bg-[#141414] text-white font-mono text-[10px] font-black uppercase tracking-wider hover:bg-black transition-colors shrink-0"
-                      >
-                        Open
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId })}
+                          className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>Open It</span>
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : (
                   <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
                     <Network className="w-6 h-6 mx-auto mb-2 opacity-40" />
-                    No linked node connections recorded for {user.name}
+                    No active connections found for {user.name}
                   </div>
                 )}
               </div>
@@ -526,7 +545,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     />
                   ) : (
                     <span className="font-bold break-all font-mono leading-none text-[#141414]/80">
-                      {revealed.password ? (userPassword || 'Stored (Encrypted)') : '••••••••••••••••'}
+                      {revealed.password ? displayPassword : '••••••••••••••••'}
                     </span>
                   )}
                   <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">

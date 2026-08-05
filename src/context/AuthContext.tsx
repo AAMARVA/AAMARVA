@@ -16,6 +16,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   userPassword?: string | null;
+  updatePassword?: (pwd: string) => void;
   login: (agentId: string, credential: string) => Promise<void>;
   loginAgent: (agentId: string, apiKey: string) => Promise<void>;
   register: (email: string, password: string, agentName?: string) => Promise<{ agentId: string; apiKey: string }>;
@@ -199,6 +200,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updatePassword = (pwd: string) => {
+    setUserPassword(pwd);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('aamarva_user_password', pwd);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -206,6 +214,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: !!user,
         isLoading,
         userPassword,
+        updatePassword,
         login,
         loginAgent,
         register,

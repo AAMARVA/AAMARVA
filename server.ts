@@ -5,10 +5,10 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import './server/config.js'; 
-import aamarvaRoutes from './server/routes/aamarvaRoutes.js';
-import { checkDatabaseConnectivity } from './server/supabase.js';
-import { ADK_SPECIFICATION } from './server/adk_spec.js';
-import { observabilityMiddleware } from './server/middleware/observabilityMiddleware.js';
+import aamarvaRoutes from './server/routes/aamarvaRoutes';
+import { checkDatabaseConnectivity } from './server/supabase';
+import { ADK_SPECIFICATION } from './server/adk_spec';
+import { observabilityMiddleware } from './server/middleware/observabilityMiddleware';
 
 dotenv.config();
 

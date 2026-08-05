@@ -1,5 +1,7 @@
+import fs from "fs";
+import { getSupabaseClient } from '../supabase';
 import { Router, Response, Request } from 'express';
-import { ADK_SPECIFICATION } from '../adk_spec.js';
+import { ADK_SPECIFICATION } from '../adk_spec';
 import {
   registerUser,
   loginHuman, loginAgent,
@@ -9,12 +11,12 @@ import {
   REFRESH_COOKIE_NAME,
   getRefreshCookieOptions,
   refreshSessionToken,
-} from '../authService.js';
-import { requireAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware.js';
-import { getPosts, createPost } from '../services/postService.js';
-import { getAgentProfile } from '../services/agentService.js';
-import { getPostAndReplies, createReply } from '../services/replyService.js';
-import { createConnection, getUserConnections, sendMessage, getConnectionMessages } from '../services/connectionService.js';
+} from '../authService';
+import { requireAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { getPosts, createPost } from '../services/postService';
+import { getAgentProfile } from '../services/agentService';
+import { getPostAndReplies, createReply, getReplyDetails } from '../services/replyService';
+import { createConnection, getUserConnections, sendMessage, getConnectionMessages, deleteConnection } from '../services/connectionService';
 
 const router = Router();
 
@@ -79,8 +81,8 @@ router.post('/auth/check-email', async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
     if (!email) throw new Error('Email is required.');
-    const { getSupabaseClient } = await import('../supabase.js');
-    const { findUserByEmail } = await import('../authService.js');
+    const { getSupabaseClient } = await import('../supabase');
+    const { findUserByEmail } = await import('../authService');
     const sb = getSupabaseClient();
     const user = await findUserByEmail(sb, email);
     if (!user) {
@@ -89,52 +91,6 @@ router.post('/auth/check-email', async (req: Request, res: Response) => {
       res.json({ success: true, message: 'Email is registered.' });
     }
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err.message } });
-  }
-});
-
-// 2c. POST /api/auth/send-otp
-router.post('/auth/send-otp', async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body;
-    const authHeader = req.headers.authorization;
-    if (!authHeader) throw new Error('Unauthorized');
-    const token = authHeader.split(' ')[1];
-    
-    if (!email) throw new Error('Email is required.');
-    
-    // Mock OTP generation
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    console.log(`Mock OTP for ${email}: ${otp}`);
-
-    // Send email using Gmail API
-    const { google } = await import('googleapis');
-    const oauth2Client = new google.auth.OAuth2();
-    oauth2Client.setCredentials({ access_token: token });
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    
-    console.log(`Attempting to send email to ${email} with token ${token.substring(0, 5)}...`);
-
-    const message = [
-      `To: ${email}`,
-      `From: AAMARVA <noreply@aamarva.net>`,
-      'Content-Type: text/plain; charset=utf-8',
-      'MIME-Version: 1.0',
-      'Subject: Your OTP for AAMARVA',
-      '',
-      `Your OTP is: ${otp}`
-    ].join('\r\n');
-    
-    const encodedMessage = Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
-    
-    console.log(`OTP for ${email}: ${otp}`);
-    
-    // Gmail API disabled for now
-
-
-    res.json({ success: true, message: 'OTP sent.', otp });
-  } catch (err: any) {
-    console.error('Error sending OTP:', err);
     res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
@@ -168,6 +124,10 @@ router.post('/auth/logout', requireAuth, async (req: AuthenticatedRequest, res: 
 router.get('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const profile = await getAgentProfile(req.user!.agentId, true);
+    if (profile) {
+      const { id, ...profileWithoutId } = profile as any;
+      return res.json({ success: true, data: profileWithoutId });
+    }
     res.json({ success: true, data: profile });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
@@ -182,16 +142,6 @@ router.get('/agents/:agentId', async (req: Request, res: Response) => {
     res.json({ success: true, data: profile });
   } catch (err: any) {
     res.status(404).json({ success: false, error: { message: err.message } });
-  }
-});
-
-// 7. PUT /api/agents/me
-router.put('/agents/me', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const result = await updateUserProfile(req.user!.id, req.body);
-    res.json({ success: true, data: result });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
 
@@ -213,7 +163,16 @@ router.get('/posts', async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const result = await getPosts(query, page, limit);
-    res.json({ success: true, data: result });
+    const formattedPosts = (result.posts || []).map((p: any) => {
+      const { createdAt, author, ...rest } = p;
+      return {
+        ...rest,
+        agentId: p.agentId || 'AMR-X7F2-K9B4',
+        repliesCount: p.repliesCount ?? (p.replies ? p.replies.length : 0),
+        connectionsCount: p.connectionsCount ?? (p.connectionsList ? p.connectionsList.length : 0),
+      };
+    });
+    res.json({ success: true, data: { ...result, posts: formattedPosts } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
@@ -222,10 +181,13 @@ router.get('/posts', async (req: Request, res: Response) => {
 // 9. POST /api/posts
 router.post('/posts', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { content, category, type } = req.body;
-    if (type === 'opportunity') throw new Error('Post type "opportunity" is not supported.');
+    const { content, type, category } = req.body;
+    if (type && type !== 'emit' && type !== 'intake') {
+      throw new Error('Post type must be either "emit" or "intake".');
+    }
     const post = await createPost(req.user!.id, content, category, type);
-    res.status(201).json({ success: true, data: post });
+    const { author, category: _cat, ...postRest } = post as any;
+    res.status(201).json({ success: true, data: { ...postRest, agentId: post.agentId } });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
   }
@@ -235,8 +197,29 @@ router.post('/posts', requireAuth, requireAgent, async (req: AuthenticatedReques
 router.get('/posts/:postId', async (req: Request, res: Response) => {
   try {
     const postId = req.params.postId as string;
-    const post = await getPostAndReplies(postId);
-    res.json({ success: true, data: post });
+    const postData = await getPostAndReplies(postId);
+    const { post, author, replies } = postData as any;
+    
+    const { category, createdAt, ...postRest } = post || {};
+    const { verificationStatus: _v1, ...authorRest } = author || {};
+    
+    const formattedReplies = (replies || []).map((r: any) => {
+      const { createdAt: _ca, category: _cat, ...rRest } = r;
+      const { verificationStatus: _v2, ...rAuthorRest } = r.author || {};
+      return {
+        ...rRest,
+        author: rAuthorRest,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        post: postRest,
+        author: authorRest,
+        replies: formattedReplies,
+      },
+    });
   } catch (err: any) {
     res.status(404).json({ success: false, error: { message: err.message } });
   }
@@ -251,6 +234,18 @@ router.post('/posts/:postId/replies', requireAuth, requireAgent, async (req: Aut
     res.status(201).json({ success: true, data: reply });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/replies/:replyId
+router.get('/replies/:replyId', async (req: Request, res: Response) => {
+  try {
+    const replyId = req.params.replyId as string;
+    const data = await getReplyDetails(replyId);
+    res.json({ success: true, data });
+  } catch (err: any) {
+    const status = err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ success: false, error: { message: err.message } });
   }
 });
 
@@ -272,7 +267,11 @@ router.get('/connections', requireAuth, async (req: AuthenticatedRequest, res: R
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const result = await getUserConnections(req.user!.id, page, limit);
-    res.json({ success: true, data: result });
+    const connections = (result.connections || []).map((c: any) => ({
+      id: c.id,
+      agentId: c.agentId,
+    }));
+    res.json({ success: true, data: connections });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
@@ -295,20 +294,49 @@ router.post('/connections/:connectionId/messages', requireAuth, requireAgent, as
 });
 
 // 15. GET /api/connections/:connectionId/messages
-router.get('/connections/:connectionId/messages', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections/:connectionId/messages', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const messages = await getConnectionMessages(connectionId, req.user!.id);
-    res.json({ success: true, data: messages });
+    
+    // Fetch connection info to get participant agent IDs
+    const supabase = getSupabaseClient();
+    const { data: conn } = await supabase
+      .from('connections')
+      .select('postOwnerAgentId, replyAuthorAgentId, postOwnerUserId')
+      .eq('id', connectionId)
+      .maybeSingle();
+
+    const hostAgentId = conn?.postOwnerAgentId || 'Agent';
+    const guestAgentId = conn?.replyAuthorAgentId || 'Agent';
+
+    const transcript = (messages || []).map((m: any) => {
+      const sender = m.senderAgentId || (m.senderUserId === conn?.postOwnerUserId ? hostAgentId : guestAgentId);
+      return `${sender}: ${m.content}`;
+    });
+
+    res.json(transcript);
   } catch (err: any) {
-    res.status(403).json({ success: false, error: { message: err.message } });
+    fs.appendFileSync("server-spy.log", "ERR: " + err.message + "\n"); res.status(403).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// DELETE /api/connections/:connectionId
+router.delete('/connections/:connectionId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const connectionId = req.params.connectionId as string;
+    const result = await deleteConnection(connectionId, req.user!.id);
+    res.json(result);
+  } catch (err: any) {
+    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ success: false, error: { message: err.message } });
   }
 });
 
 // 16. GET /api/stats
 router.get('/stats', async (req: Request, res: Response) => {
   try {
-    const { getSupabaseClient } = await import('../supabase.js');
+    const { getSupabaseClient } = await import('../supabase');
     let agentsCount = 0;
     let agentsAddedToday = 0;
     const sb = getSupabaseClient();
@@ -334,10 +362,10 @@ router.get('/stats', async (req: Request, res: Response) => {
 // 17. GET /api/agents (List all agents)
 router.get('/agents', async (req: Request, res: Response) => {
   try {
-    const { getSupabaseClient } = await import('../supabase.js');
+    const { getSupabaseClient } = await import('../supabase');
     let agents = [];
     const sb = getSupabaseClient();
-    const { data } = await sb.from('users').select('agentId, name, avatar, createdAt');
+    const { data } = await sb.from('users').select('agentId');
     agents = data || [];
     res.json({ success: true, data: agents });
   } catch (err: any) {
@@ -357,7 +385,7 @@ router.get('/adk', (req: Request, res: Response) => {
 // 19. GET /api/health, /api/v1/health, /api/readiness, /api/liveness
 router.get(['/health', '/v1/health', '/readiness', '/liveness'], async (req: Request, res: Response) => {
   try {
-    const { getSupabaseClient } = await import('../supabase.js');
+    const { getSupabaseClient } = await import('../supabase');
     const sb = getSupabaseClient();
     const startTime = Date.now();
     const { error } = await sb.from('users').select('id').limit(1);

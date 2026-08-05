@@ -43,21 +43,31 @@ export async function getPostAndReplies(postId: string) {
     throw new Error(`Failed to retrieve post replies: ${repliesError.message}`);
   }
 
-  // Find post connections count
-  const { count: connectionsCount, error: connectionsError } = await supabase
+  // Find post connections
+  const { data: postConnections, error: connectionsError } = await supabase
     .from('connections')
-    .select('*', { count: 'exact', head: true })
+    .select('*')
     .eq('postId', post.id);
 
-  const numReplies = postReplies ? postReplies.length : 0;
-  const numConnections = connectionsCount || 0;
+  if (connectionsError) {
+    throw new Error(`Failed to retrieve post connections: ${connectionsError.message}`);
+  }
 
-  // Batch query all reply authors to avoid N+1 queries
+  const numReplies = postReplies ? postReplies.length : 0;
+  const numConnections = postConnections ? postConnections.length : 0;
+
+  // Batch query all reply and connection authors to avoid N+1 queries
   const userIds = new Set<string>();
   const agentIds = new Set<string>();
   postReplies?.forEach(r => {
     if (r.userId) userIds.add(r.userId);
     if (r.agentId) agentIds.add(r.agentId.toUpperCase());
+  });
+  postConnections?.forEach(c => {
+    if (c.replyAuthorUserId) userIds.add(c.replyAuthorUserId);
+    if (c.postOwnerUserId) userIds.add(c.postOwnerUserId);
+    if (c.replyAuthorAgentId) agentIds.add(c.replyAuthorAgentId.toUpperCase());
+    if (c.postOwnerAgentId) agentIds.add(c.postOwnerAgentId.toUpperCase());
   });
 
   let users: any[] = [];
@@ -99,6 +109,43 @@ export async function getPostAndReplies(postId: string) {
     };
   });
 
+  const connectionsWithAuthors = (postConnections || []).map((conn) => {
+    const replyAuthor = users.find(
+      (u) => u.id === conn.replyAuthorUserId || (conn.replyAuthorAgentId && u.agentId.toUpperCase() === conn.replyAuthorAgentId.toUpperCase())
+    );
+    const postOwner = users.find(
+      (u) => u.id === conn.postOwnerUserId || (conn.postOwnerAgentId && u.agentId.toUpperCase() === conn.postOwnerAgentId.toUpperCase())
+    );
+
+    return {
+      ...conn,
+      author: replyAuthor
+        ? {
+            agentId: replyAuthor.agentId,
+            displayName: replyAuthor.name,
+            avatar: replyAuthor.avatar || '🤖',
+            verificationStatus: replyAuthor.verificationStatus || 'unverified',
+          }
+        : {
+            agentId: conn.replyAuthorAgentId,
+            displayName: conn.replyAuthorAgentName,
+            avatar: '🤖',
+          },
+      host: postOwner
+        ? {
+            agentId: postOwner.agentId,
+            displayName: postOwner.name,
+            avatar: postOwner.avatar || '🤖',
+            verificationStatus: postOwner.verificationStatus || 'unverified',
+          }
+        : {
+            agentId: conn.postOwnerAgentId,
+            displayName: conn.postOwnerAgentName,
+            avatar: '🤖',
+          }
+    };
+  });
+
   return {
     post: {
       ...post,
@@ -118,6 +165,7 @@ export async function getPostAndReplies(postId: string) {
           avatar: post.avatar || '🤖',
         },
     replies: repliesWithAuthors,
+    connections: connectionsWithAuthors,
   };
 }
 
@@ -161,5 +209,107 @@ export async function createReply(postId: string, userId: string, content: strin
   }
 
   return newReply;
+}
+
+export async function getReplyDetails(replyId: string) {
+  const supabase = getSupabaseClient();
+
+  const { data: reply, error: replyError } = await supabase
+    .from('replies')
+    .select('*')
+    .eq('id', replyId)
+    .maybeSingle();
+
+  if (replyError || !reply) {
+    throw new Error('Reply not found.');
+  }
+
+  let replyAuthorUser = null;
+  if (reply.userId) {
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', reply.userId)
+      .maybeSingle();
+    replyAuthorUser = data;
+  }
+  if (!replyAuthorUser && reply.agentId) {
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .eq('agentId', reply.agentId)
+      .maybeSingle();
+    replyAuthorUser = data;
+  }
+
+  const replyAuthor = {
+    agentId: replyAuthorUser?.agentId || reply.agentId || 'Agent',
+    displayName: replyAuthorUser?.name || reply.agentName || 'Agent',
+    avatar: replyAuthorUser?.avatar || reply.avatar || '🤖',
+  };
+
+  const { data: post } = await supabase
+    .from('posts')
+    .select('*')
+    .eq('id', reply.postId)
+    .maybeSingle();
+
+  let postData = null;
+
+  if (post) {
+    let postAuthorUser = null;
+    if (post.userId) {
+      const { data } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', post.userId)
+        .maybeSingle();
+      postAuthorUser = data;
+    }
+    if (!postAuthorUser && post.agentId) {
+      const { data } = await supabase
+        .from('users')
+        .select('*')
+        .eq('agentId', post.agentId)
+        .maybeSingle();
+      postAuthorUser = data;
+    }
+
+    const { data: replies } = await supabase
+      .from('replies')
+      .select('id')
+      .eq('postId', post.id);
+
+    const { data: connections } = await supabase
+      .from('connections')
+      .select('id')
+      .eq('postId', post.id);
+
+    const postAuthor = {
+      agentId: postAuthorUser?.agentId || post.agentId || 'Agent',
+      displayName: postAuthorUser?.name || post.agentName || 'Agent',
+      avatar: postAuthorUser?.avatar || post.avatar || '🤖',
+    };
+
+    postData = {
+      id: post.id,
+      content: post.content,
+      type: post.type,
+      agentId: post.agentId,
+      repliesCount: replies ? replies.length : 0,
+      connectionsCount: connections ? connections.length : 0,
+      author: postAuthor,
+    };
+  }
+
+  return {
+    reply: {
+      id: reply.id,
+      postId: reply.postId,
+      content: reply.content,
+      author: replyAuthor,
+    },
+    post: postData,
+  };
 }
 

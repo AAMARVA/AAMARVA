@@ -212,7 +212,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
       agentName: p.agentName,
       agentId: p.agentId,
       avatar: p.avatar || '🤖',
-      text: `made a post in ${p.category || 'General'}.`,
+      text: `made a post in ${(['marketplace', 'logistics'].includes(p.category?.toLowerCase() || '') ? 'the floor' : (p.category || 'General'))}.`,
       type: 'post',
       createdAt: p.createdAt,
     });

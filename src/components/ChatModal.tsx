@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
+import { useAuth } from '../context/AuthContext';
 
 interface ChatModalProps {
   connectionId: string;
@@ -12,21 +13,27 @@ interface ChatModalProps {
 }
 
 export const ChatModal: React.FC<ChatModalProps> = ({ connectionId, peerName, peerAvatar, peerAgentId, onClose }) => {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const fetchMessages = async () => {
     try {
-      const res = await apiFetch(`/api/connections/${connectionId}/messages`);
-      if (res?.success && res.data) {
-        const sortedMessages = res.data.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-        setMessages(sortedMessages);
+      const responseData = await apiFetch(`/api/connections/${connectionId}/messages`);
+      const data = responseData.data || responseData; // Handle both direct array and {success: true, data: [...]}
+      if (Array.isArray(data)) {
+        setMessages(data);
+        setFetchError(null);
+      } else {
+        setFetchError(`Data is not an array: ${JSON.stringify(data)}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to fetch messages', e);
+      setFetchError(`Fetch failed: ${e.message}`);
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); 
     }
   };
 
@@ -38,7 +45,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ connectionId, peerName, pe
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages.length]);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200" id="chat-modal-overlay">
@@ -73,22 +80,43 @@ export const ChatModal: React.FC<ChatModalProps> = ({ connectionId, peerName, pe
           {isLoading ? (
             <div className="text-center font-mono text-xs text-[#141414]/50 py-10">Loading secure logs...</div>
           ) : messages.length > 0 ? (
-            messages.map((msg) => {
-              const isPeer = msg.senderAgentId === peerAgentId;
+            messages.map((line, idx) => {
+              const isString = typeof line === 'string';
+              const match = isString ? line.match(/^([^:]+):\s*([\s\S]*)$/) : null;
+              let senderId = '';
+              let content = line;
+              
+              if (isString) {
+                if (match) {
+                  senderId = match[1];
+                  content = match[2];
+                }
+              } else if (line && typeof line === 'object') {
+                senderId = line.senderAgentId || 'Agent';
+                content = line.content || '';
+              }
+
+              const isCurrentUser = senderId === user?.agentId;
+              const msgAvatar = isCurrentUser ? user?.avatar : peerAvatar;
+              const msgName = isCurrentUser ? (user?.name || senderId) : (peerName || senderId);
+
               return (
-                <div key={msg.id} className={`flex flex-col ${isPeer ? 'items-start' : 'items-end'}`}>
-                  <div className={`p-3 border-2 border-[#141414] max-w-[85%] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)] ${isPeer ? 'bg-white text-[#141414]' : 'bg-[#141414] text-white'}`}>
-                    <p className="text-xs sm:text-sm font-sans whitespace-pre-wrap break-words">{msg.content}</p>
-                    <div className="text-[9px] font-mono opacity-60 mt-1.5 flex justify-end">
-                      {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
+                <div key={idx} className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
+                  <AgentAvatar 
+                    name={msgName} 
+                    avatar={msgAvatar} 
+                    id={senderId} 
+                    className="w-8 h-8 shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]" 
+                  />
+                  <div className={`p-3 border-2 flex-1 max-w-[85%] ${isCurrentUser ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'}`}>
+                    <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words">{content}</p>
                   </div>
                 </div>
               );
             })
           ) : (
             <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/50 uppercase tracking-wider border-2 border-dashed border-[#141414]/20 bg-white" id="no-messages-placeholder">
-              No connection logs recorded
+              {fetchError ? <span className="text-red-500 font-bold">{fetchError}</span> : "No connection logs recorded"}
             </div>
           )}
           <div ref={messagesEndRef} />
