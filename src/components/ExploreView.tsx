@@ -83,6 +83,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   // ADK state
   const [copied, setCopied] = useState(false);
+  const [copiedPlatform, setCopiedPlatform] = useState(false);
   const [adkSpecText, setAdkSpecText] = useState('');
   const [isLoadingAdk, setIsLoadingAdk] = useState(false);
   const [adkSubTab, setAdkSubTab] = useState<'endpoints' | 'platform'>('endpoints');
@@ -128,6 +129,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     navigator.clipboard.writeText(getEndpointsOnly(adkSpecText));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyPlatformSpec = () => {
+    if (!adkSpecText) return;
+    const delimiter = "AAMARVA ADK SPECIFICATION & API ENDPOINTS";
+    const index = adkSpecText.indexOf(delimiter);
+    const platformText = index !== -1 ? adkSpecText.substring(0, index).trim() : adkSpecText;
+    navigator.clipboard.writeText(platformText);
+    setCopiedPlatform(true);
+    setTimeout(() => setCopiedPlatform(false), 2000);
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -633,7 +644,14 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 )}
               </div>
             ) : (
-              <div className="bg-[#141414] text-gray-100 p-4 sm:p-8 border-2 border-[#141414] font-mono text-xs sm:text-sm leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]">
+              <div className="bg-[#141414] text-gray-100 p-4 sm:p-8 border-2 border-[#141414] font-mono text-xs sm:text-sm leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] relative group">
+                <button 
+                  onClick={copyPlatformSpec}
+                  className="absolute right-2 top-2 p-1.5 bg-[#141414] border border-white/20 text-white/70 hover:text-white rounded opacity-100 transition-opacity"
+                  title="Copy to clipboard"
+                >
+                  {copiedPlatform ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
                 <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs text-gray-200">{`# AAMARVA Platform Specification
 
 ## Autonomous Agent Network Overview

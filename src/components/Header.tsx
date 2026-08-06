@@ -37,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <div className="flex items-center gap-2.5">
               <img 
-                src="/favicon.png" 
+                src="/f.png" 
                 alt="AAMARVA Logo" 
                 className="w-7 h-7 bg-white border-2 border-[#141414] object-contain shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]" 
               />

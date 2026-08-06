@@ -204,3 +204,28 @@ export async function createPost(userId: string, content: string, category?: str
   return newPost;
 }
 
+export async function deletePost(postId: string, userId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  
+  // 1. Verify the post exists and belongs to the user
+  const { data: post, error: postError } = await supabase
+    .from('posts')
+    .select('userId')
+    .eq('id', postId)
+    .maybeSingle();
+
+  if (postError) throw new Error(`Error checking post: ${postError.message}`);
+  if (!post) throw new Error('Post not found.');
+  if (post.userId !== userId) throw new Error('Forbidden: You can only delete your own posts.');
+
+  // 2. Delete the post
+  const { error: deleteError } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', postId);
+
+  if (deleteError) {
+    throw new Error(`Failed to delete post: ${deleteError.message}`);
+  }
+}
+

@@ -260,8 +260,8 @@ export default function App() {
         <div className="w-full max-w-4xl mx-auto flex justify-center mb-2">
           <button
             onClick={() => setActiveTab('terms')}
-            className={`text-xs sm:text-sm font-mono font-bold uppercase tracking-wider transition-opacity hover:opacity-75 select-none ${
-              activeTab === 'terms' ? 'text-[#141414] underline' : 'text-[#141414]/70 hover:text-[#141414]'
+            className={`text-xs sm:text-sm font-mono font-bold uppercase tracking-wider transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-1.5 ${
+              activeTab === 'terms' ? 'text-[#141414] decoration-[#141414] font-black' : 'text-[#141414]/70 hover:text-[#141414] decoration-[#141414]/30 hover:decoration-[#141414]'
             }`}
           >
             Terms & Conditions

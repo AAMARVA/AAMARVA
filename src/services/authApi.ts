@@ -21,6 +21,20 @@ export function buildApiUrl(endpoint: string): string {
   const metaEnv = (import.meta as any).env || {};
   const baseUrl = metaEnv.VITE_API_URL;
   
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    const isDevelopmentOrPreview = hostname === 'localhost' || 
+                                   hostname === '127.0.0.1' || 
+                                   hostname.includes('.run.app') || 
+                                   hostname.includes('.aistudio.');
+    
+    // Fall back to co-located relative URLs if we are in development/preview or the base URL domain doesn't match current site
+    if (isDevelopmentOrPreview || !baseUrl || typeof baseUrl !== 'string' || baseUrl.trim() === '' || !baseUrl.includes(hostname)) {
+      const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+      return normalizedEndpoint;
+    }
+  }
+
   if (!baseUrl || typeof baseUrl !== 'string' || baseUrl.trim() === '') {
     // Fallback to relative URLs in development/preview if VITE_API_URL is missing
     const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;

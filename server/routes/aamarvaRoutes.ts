@@ -13,7 +13,7 @@ import {
   refreshSessionToken,
 } from '../authService';
 import { requireAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware';
-import { getPosts, createPost } from '../services/postService';
+import { getPosts, createPost, deletePost } from '../services/postService';
 import { getAgentProfile, getAgentActivityStats } from '../services/agentService';
 import { getPostAndReplies, createReply, getReplyDetails } from '../services/replyService';
 import { createConnection, getUserConnections, sendMessage, getConnectionMessages, deleteConnection } from '../services/connectionService';
@@ -111,7 +111,7 @@ router.post('/auth/check-email', async (req: Request, res: Response) => {
 // 3. POST /api/auth/refresh
 router.post('/auth/refresh', async (req: Request, res: Response) => {
   try {
-    const token = req.cookies[REFRESH_COOKIE_NAME] || req.body.refreshToken;
+    const token = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]) || (req.body && req.body.refreshToken);
     if (!token) throw new Error('Refresh token required.');
     const result = await refreshSessionToken(token);
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
@@ -124,12 +124,21 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
 // 4. POST /api/auth/logout
 router.post('/auth/logout', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const token = req.cookies[REFRESH_COOKIE_NAME] || req.body.refreshToken;
+    const token = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]);
+    console.log('Logout route: calling logoutUser with userId:', req.user?.id);
     await logoutUser(req.user!.id, token);
     res.clearCookie(REFRESH_COOKIE_NAME);
     res.json({ success: true, message: 'Logged out successfully.' });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err.message } });
+    console.error('Logout handler error:', err);
+    console.log('Error keys:', Object.getOwnPropertyNames(err));
+    res.status(500).json({ 
+      success: false, 
+      error: { 
+        message: err.message || 'Unknown logout error',
+        fullError: JSON.stringify(err, Object.getOwnPropertyNames(err))
+      } 
+    });
   }
 });
 
@@ -203,6 +212,18 @@ router.post('/posts', requireAuth, requireAgent, async (req: AuthenticatedReques
     res.status(201).json({ success: true, data: { ...postRest, agentId: post.agentId } });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 9b. DELETE /api/posts/:postId
+router.delete('/posts/:postId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const postId = req.params.postId as string;
+    await deletePost(postId, req.user!.id);
+    res.json({ success: true, message: 'Post deleted successfully.' });
+  } catch (err: any) {
+    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ success: false, error: { message: err.message } });
   }
 });
 

@@ -611,7 +611,6 @@ export async function deleteUserAccount(userId: string): Promise<void> {
             error.message?.includes('does not exist') ||
             error.message?.includes('schema cache')
           ) {
-            console.warn(`[Delete Info] Table ${table} / column ${col} not present in schema: ${error.message}`);
             continue;
           }
           console.error(`[Account Deletion Failure] Table: ${table}, Column: ${col}, Error:`, error);
@@ -631,13 +630,11 @@ export async function deleteUserAccount(userId: string): Promise<void> {
     try {
       const { data, error } = await supabase.from('posts').select('id').eq(col, userId);
       if (error && error.code !== '42703') {
-        console.warn(`[Gather Posts Warning] Column ${col}:`, error.message);
       }
       if (data && Array.isArray(data)) {
         postIds.push(...data.map((p: any) => p.id));
       }
     } catch (e) {
-      console.warn(`[Gather Posts Exception] Column ${col}:`, e);
     }
   }
   postIds = Array.from(new Set(postIds));
@@ -651,7 +648,6 @@ export async function deleteUserAccount(userId: string): Promise<void> {
         replyIds.push(...data.map((r: any) => r.id));
       }
     } catch (e) {
-      console.warn(`[Gather Replies Exception] Column ${col}:`, e);
     }
   }
   if (postIds.length > 0) {
@@ -662,7 +658,6 @@ export async function deleteUserAccount(userId: string): Promise<void> {
           replyIds.push(...data.map((r: any) => r.id));
         }
       } catch (e) {
-        console.warn(`[Gather Replies Exception] Column ${col}:`, e);
       }
     }
   }
@@ -677,7 +672,6 @@ export async function deleteUserAccount(userId: string): Promise<void> {
         connectionIds.push(...data.map((c: any) => c.id));
       }
     } catch (e) {
-      console.warn(`[Gather Connections Exception] Column ${col}:`, e);
     }
   }
   if (postIds.length > 0) {
@@ -688,7 +682,6 @@ export async function deleteUserAccount(userId: string): Promise<void> {
           connectionIds.push(...data.map((c: any) => c.id));
         }
       } catch (e) {
-        console.warn(`[Gather Connections Exception] Column ${col}:`, e);
       }
     }
   }
@@ -700,7 +693,6 @@ export async function deleteUserAccount(userId: string): Promise<void> {
           connectionIds.push(...data.map((c: any) => c.id));
         }
       } catch (e) {
-        console.warn(`[Gather Connections Exception] Column ${col}:`, e);
       }
     }
   }
@@ -781,10 +773,18 @@ export async function deleteUserAccount(userId: string): Promise<void> {
 }
 
 export async function logoutUser(userId: string, refreshToken?: string) {
+  console.log(`[Logout] Attempting logout for user: ${userId}, token present: ${!!refreshToken}`);
   if (refreshToken) {
-    const tokenHash = hashToken(refreshToken);
-    const supabase = getSupabaseClient();
-    await supabase.from('refreshTokens').delete().eq('tokenHash', tokenHash).eq('userId', userId);
+    try {
+      const tokenHash = hashToken(refreshToken);
+      const supabase = getSupabaseClient();
+      await supabase.from('refreshTokens').delete().eq('tokenHash', tokenHash).eq('userId', userId);
+      console.log(`[Logout] Token hash deleted: ${tokenHash}`);
+    } catch (e) {
+      console.error(`[Logout] Error deleting token: ${e}`);
+    }
+  } else {
+    console.log(`[Logout] No refresh token provided for user: ${userId}`);
   }
 }
 
