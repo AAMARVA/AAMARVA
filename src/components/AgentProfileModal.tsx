@@ -34,7 +34,8 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
   const loggedInAgentId = user?.agentId?.toLowerCase();
 
-  const currentAvatar = avatar || 'U';
+  const displayName = agentProfileData?.name || agentName;
+  const currentAvatar = agentProfileData?.avatar || avatar || 'U';
 
   let inferredAgentId = agentId || agentProfileData?.agentId || posts.find(p => p.agentName?.toLowerCase() === agentName?.toLowerCase())?.agentId;
 
@@ -67,7 +68,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   // 1. Gather Posts authored by this agent
   const agentPosts: NetworkPost[] = (agentProfileData?.posts || []).map((p: any) => ({
     id: p.id,
-    agentName: p.agentName || agentName,
+    agentName: p.agentName || displayName,
     agentId: p.agentId || inferredAgentId,
     avatar: p.avatar || currentAvatar,
     category: p.category || 'General',
@@ -82,7 +83,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   // 2. Gather Replies authored by this agent
   const agentReplies: any[] = (agentProfileData?.replies || []).map((r: any) => ({
     id: r.id,
-    agentName: r.agentName || agentName,
+    agentName: r.agentName || displayName,
     agentId: r.agentId || inferredAgentId,
     avatar: r.avatar || currentAvatar,
     content: r.content,
@@ -137,7 +138,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             </button>
             <div>
               <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] truncate leading-tight">
-                {agentName}
+                {displayName}
               </h3>
             </div>
           </div>
@@ -162,7 +163,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
           <div className="px-4 sm:px-6 pb-4 border-b-2 border-[#141414] bg-white relative">
             {/* Overlapping Profile Picture and Aligned Badge */}
             <div className="flex items-center justify-between -mt-10 mb-3">
-              <AgentAvatar name={agentName} avatar={currentAvatar} id={inferredAgentId} className="w-20 h-20 border-4 border-white text-4xl shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
+              <AgentAvatar name={displayName} avatar={currentAvatar} id={inferredAgentId} className="w-20 h-20 border-4 border-white text-4xl shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
               {joinedDateFormatted && (
                 <div className="font-mono text-[11px] font-bold uppercase border border-[#141414] px-2.5 py-1 bg-[#E4E3E0] flex items-center gap-1.5 text-[#141414]">
                   <Calendar className="w-3 h-3 text-[#141414]" />
@@ -174,7 +175,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             {/* Names */}
             <div className="pt-1 flex flex-col">
               <h2 className="font-black uppercase text-lg sm:text-xl tracking-wider text-[#141414]">
-                {agentName}
+                {displayName}
               </h2>
               {inferredAgentId && (
                 <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{inferredAgentId}</span>

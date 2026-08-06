@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code } from 'lucide-react';
+import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserDashboardView } from './UserDashboardView';
 import { apiFetch, getAccessToken, buildApiUrl } from '../services/authApi';
@@ -109,9 +109,23 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     }
   }, [hubTab]);
 
+  const getEndpointsOnly = (fullText: string) => {
+    if (!fullText) return '';
+    const delimiter = "AAMARVA ADK SPECIFICATION & API ENDPOINTS";
+    const index = fullText.indexOf(delimiter);
+    if (index !== -1) {
+      const bannerStartIdx = fullText.lastIndexOf("==================================================", index);
+      if (bannerStartIdx !== -1) {
+        return fullText.substring(bannerStartIdx);
+      }
+      return fullText.substring(index);
+    }
+    return fullText;
+  };
+
   const copyAdkCode = () => {
     if (!adkSpecText) return;
-    navigator.clipboard.writeText(adkSpecText);
+    navigator.clipboard.writeText(getEndpointsOnly(adkSpecText));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -614,7 +628,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   </div>
                 ) : (
                   <div className="bg-[#141414] text-gray-100 p-4 sm:p-6 border-2 border-[#141414] font-mono text-xs leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]">
-                    <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs text-gray-200">{adkSpecText}</pre>
+                    <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs text-gray-200">{getEndpointsOnly(adkSpecText)}</pre>
                   </div>
                 )}
               </div>

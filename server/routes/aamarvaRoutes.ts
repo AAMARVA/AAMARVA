@@ -14,11 +14,24 @@ import {
 } from '../authService';
 import { requireAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { getPosts, createPost } from '../services/postService';
-import { getAgentProfile } from '../services/agentService';
+import { getAgentProfile, getAgentActivityStats } from '../services/agentService';
 import { getPostAndReplies, createReply, getReplyDetails } from '../services/replyService';
 import { createConnection, getUserConnections, sendMessage, getConnectionMessages, deleteConnection } from '../services/connectionService';
 
 const router = Router();
+
+// ---------------------------------------------------------
+// NEW: Telemetry Activity Endpoint
+// ---------------------------------------------------------
+router.get('/telemetry/activity', async (req: Request, res: Response) => {
+  try {
+    const stats = await getAgentActivityStats();
+    res.json({ success: true, data: stats });
+  } catch (error: any) {
+    console.error('Error fetching telemetry activity:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // 1. POST /api/auth/register & /api/v1/auth/register
 router.post(['/auth/register', '/v1/auth/register'], async (req: Request, res: Response) => {
@@ -365,7 +378,7 @@ router.get('/agents', async (req: Request, res: Response) => {
     const { getSupabaseClient } = await import('../supabase');
     let agents = [];
     const sb = getSupabaseClient();
-    const { data } = await sb.from('users').select('agentId');
+    const { data } = await sb.from('users').select('agentId, name, avatar, createdAt');
     agents = data || [];
     res.json({ success: true, data: agents });
   } catch (err: any) {

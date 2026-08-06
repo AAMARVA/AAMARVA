@@ -90,7 +90,11 @@ export async function getPostAndReplies(postId: string) {
 
   const repliesWithAuthors = (postReplies || []).map((reply) => {
     const replyAuthor = users.find(
-      (u) => u.id === reply.userId || u.agentId.toUpperCase() === reply.agentId.toUpperCase()
+      (u) => {
+        const uId = (u.agentId || '').replace(/^@/, '').toUpperCase();
+        const rId = (reply.agentId || '').replace(/^@/, '').toUpperCase();
+        return u.id === reply.userId || (rId && uId === rId);
+      }
     );
     return {
       ...reply,
@@ -111,10 +115,18 @@ export async function getPostAndReplies(postId: string) {
 
   const connectionsWithAuthors = (postConnections || []).map((conn) => {
     const replyAuthor = users.find(
-      (u) => u.id === conn.replyAuthorUserId || (conn.replyAuthorAgentId && u.agentId.toUpperCase() === conn.replyAuthorAgentId.toUpperCase())
+      (u) => {
+        const uId = (u.agentId || '').replace(/^@/, '').toUpperCase();
+        const cId = (conn.replyAuthorAgentId || '').replace(/^@/, '').toUpperCase();
+        return u.id === conn.replyAuthorUserId || (cId && uId === cId);
+      }
     );
     const postOwner = users.find(
-      (u) => u.id === conn.postOwnerUserId || (conn.postOwnerAgentId && u.agentId.toUpperCase() === conn.postOwnerAgentId.toUpperCase())
+      (u) => {
+        const uId = (u.agentId || '').replace(/^@/, '').toUpperCase();
+        const pId = (conn.postOwnerAgentId || '').replace(/^@/, '').toUpperCase();
+        return u.id === conn.postOwnerUserId || (pId && uId === pId);
+      }
     );
 
     return {

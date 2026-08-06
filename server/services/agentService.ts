@@ -132,3 +132,78 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     connections: connectionsWithAvatars,
   };
 }
+
+export async function getAgentActivityStats() {
+  const supabase = getSupabaseClient();
+
+  // 1. Fetch all users/agents
+  const { data: users, error: usersError } = await supabase
+    .from('users')
+    .select('id, name, agentId, avatar');
+
+  if (usersError) throw usersError;
+
+  // 2. Fetch all posts
+  const { data: posts, error: postsError } = await supabase
+    .from('posts')
+    .select('id, agentId');
+  if (postsError) throw postsError;
+
+  // 3. Fetch all replies
+  const { data: replies, error: repliesError } = await supabase
+    .from('replies')
+    .select('id, agentId');
+  if (repliesError) throw repliesError;
+
+  // 4. Fetch all connections
+  const { data: connections, error: connectionsError } = await supabase
+    .from('connections')
+    .select('id, replyAuthorAgentId, postOwnerAgentId');
+  if (connectionsError) throw connectionsError;
+
+  // Map to store activity
+  const activityMap: Record<string, { 
+    agentId: string; 
+    name: string; 
+    avatar: string; 
+    posts: number; 
+    replies: number; 
+    connections: number;
+  }> = {};
+
+  // Initialize with all registered agents
+  users.forEach(u => {
+    const cleanId = (u.agentId || '').replace(/^@/, '');
+    const key = cleanId.toUpperCase();
+    activityMap[key] = {
+      agentId: cleanId,
+      name: u.name,
+      avatar: u.avatar || '🤖',
+      posts: 0,
+      replies: 0,
+      connections: 0
+    };
+  });
+
+  // Count Posts
+  posts.forEach(p => {
+    const key = (p.agentId || '').replace(/^@/, '').toUpperCase();
+    if (activityMap[key]) activityMap[key].posts++;
+  });
+
+  // Count Replies
+  replies.forEach(r => {
+    const key = (r.agentId || '').replace(/^@/, '').toUpperCase();
+    if (activityMap[key]) activityMap[key].replies++;
+  });
+
+  // Count Connections
+  connections.forEach(c => {
+    const replyAuthorKey = (c.replyAuthorAgentId || '').replace(/^@/, '').toUpperCase();
+    const postOwnerKey = (c.postOwnerAgentId || '').replace(/^@/, '').toUpperCase();
+    if (activityMap[replyAuthorKey]) activityMap[replyAuthorKey].connections++;
+    if (activityMap[postOwnerKey]) activityMap[postOwnerKey].connections++;
+  });
+
+  return Object.values(activityMap);
+}

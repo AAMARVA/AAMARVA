@@ -12,6 +12,8 @@ interface TelemetryViewProps {
 
 export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpenAgentProfile }) => {
   const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies'>('posts');
+  const [agentActivity, setAgentActivity] = useState<any[]>([]);
+  const [isLoadingActivity, setIsLoadingActivity] = useState(true);
   const [dbAgentsCount, setDbAgentsCount] = useState<number | null>(null);
   const [dbAgentsAddedToday, setDbAgentsAddedToday] = useState<number | null>(null);
   const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string; createdAt?: string }[]>([]);
@@ -38,77 +40,51 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
       .catch(err => console.warn('Failed to fetch agents:', err));
   }, []);
 
+  useEffect(() => {
+    const fetchActivity = async () => {
+      try {
+        setIsLoadingActivity(true);
+        const response = await fetch('/api/telemetry/activity');
+        const result = await response.json();
+        if (result.success) {
+          setAgentActivity(result.data);
+        }
+      } catch (error) {
+        console.error('Error fetching activity stats:', error);
+      } finally {
+        setIsLoadingActivity(false);
+      }
+    };
+    fetchActivity();
+  }, [posts]);
+
   // Compute metrics dynamically from real posts data
   const totalPosts = posts.length;
   const totalConnections = posts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0);
   const totalReplies = posts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
 
-  // Extract real agent activity
-  const agentActivityMap: Record<string, { name: string; agentId: string; avatar: string; posts: number; connections: number; replies: number }> = {};
-  
-  // Pre-fill with all system agents
+  // Extract real agent activity (Sorted by active tab)
+  const sortedAgents = [...agentActivity].sort((a, b) => {
+    if (activityTab === 'posts') return b.posts - a.posts;
+    if (activityTab === 'connections') return b.connections - a.connections;
+    if (activityTab === 'replies') return b.replies - a.replies;
+    return 0;
+  });
+
+  // Re-define helpers if needed for later use
+  const normalizeId = (id: string) => (id || '').trim().replace(/^@/, '').toUpperCase();
+  const isTechnicalName = (name: string) => !name || name.startsWith('AMR-');
+  const masterNameMap: Record<string, { name: string; avatar: string; agentId: string }> = {};
   systemAgents.forEach(a => {
-    agentActivityMap[a.agentId] = {
-      name: a.name || a.agentId,
-      agentId: a.agentId,
-      avatar: a.avatar || '🤖',
-      posts: 0,
-      connections: 0,
-      replies: 0,
-    };
-  });
-
-  posts.forEach((p) => {
-    const key = p.agentId || p.agentName;
-    if (!agentActivityMap[key]) {
-      agentActivityMap[key] = {
-        name: p.agentName,
-        agentId: p.agentId || 'agent-node',
-        avatar: p.avatar || '🤖',
-        posts: 0,
-        connections: 0,
-        replies: 0,
-      };
+    if (a.agentId) {
+      const canonicalId = normalizeId(a.agentId);
+      if (!masterNameMap[canonicalId] || !masterNameMap[canonicalId].name.startsWith('AMR-')) {
+        masterNameMap[canonicalId] = { name: a.name, avatar: a.avatar, agentId: a.agentId.replace(/^@/, '') };
+      }
     }
-    agentActivityMap[key].posts += 1;
-    agentActivityMap[key].connections += p.connectionsCount || 0;
-
-    p.replies?.forEach((r) => {
-      const repKey = r.agentId || r.agentName;
-      if (!agentActivityMap[repKey]) {
-        agentActivityMap[repKey] = {
-          name: r.agentName,
-          agentId: r.agentId || 'agent-node',
-          avatar: r.avatar || '🤖',
-          posts: 0,
-          connections: 0,
-          replies: 0,
-        };
-      }
-      agentActivityMap[repKey].replies += 1;
-    });
-
-    p.connectionsList?.forEach((c: any) => {
-      const connName = c.agentName || c.replyAuthorAgentName || 'Connected Agent';
-      const connKey = c.agentId || connName;
-      if (connKey) {
-        if (!agentActivityMap[connKey]) {
-          agentActivityMap[connKey] = {
-            name: connName,
-            agentId: c.agentId || c.replyAuthorAgentId || 'agent-node',
-            avatar: c.avatar || c.replyAuthorAvatar || '🤖',
-            posts: 0,
-            connections: 0,
-            replies: 0,
-          };
-        }
-        agentActivityMap[connKey].connections += 1;
-      }
-    });
   });
 
-  const realAgentsList = Object.values(agentActivityMap);
-  const registeredAgentsCount = dbAgentsCount !== null ? dbAgentsCount : realAgentsList.length;
+  const registeredAgentsCount = dbAgentsCount !== null ? dbAgentsCount : sortedAgents.length;
 
   // Calculate items added today
   const isCreatedToday = (dateStr?: string, minutesAgo?: number): boolean => {
@@ -139,16 +115,16 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     const postIsToday = isCreatedToday(p.createdAt, p.rawMinutesAgo);
     if (postIsToday) {
       postsTodayCount += 1;
-      const key = p.agentId || p.agentName;
-      if (key) todayAgentsSet.add(key);
+      const rawKey = p.agentId || p.agentName;
+      if (rawKey) todayAgentsSet.add(rawKey.toUpperCase());
     }
 
     p.replies?.forEach((r: any) => {
       const replyIsToday = isCreatedToday(r.createdAt, postIsToday ? p.rawMinutesAgo : undefined);
       if (replyIsToday) {
         repliesTodayCount += 1;
-        const repKey = r.agentId || r.agentName;
-        if (repKey) todayAgentsSet.add(repKey);
+        const repRawKey = r.agentId || r.agentName;
+        if (repRawKey) todayAgentsSet.add(repRawKey.toUpperCase());
       }
     });
 
@@ -157,8 +133,8 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
       if (connIsToday) {
         connectionsTodayCount += 1;
         const connName = c.agentName || c.replyAuthorAgentName;
-        const connKey = c.agentId || connName;
-        if (connKey) todayAgentsSet.add(connKey);
+        const connRawKey = c.agentId || connName;
+        if (connRawKey) todayAgentsSet.add(connRawKey.toUpperCase());
       }
     });
   });
@@ -166,19 +142,13 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
   // Also include system agents created today in todayAgentsSet
   systemAgents.forEach((a) => {
     if (a.createdAt && isCreatedToday(a.createdAt)) {
-      todayAgentsSet.add(a.agentId || a.name);
+      const key = (a.agentId || a.name).toUpperCase();
+      todayAgentsSet.add(key);
     }
   });
 
   const computedAgentsToday = todayAgentsSet.size;
   const agentsTodayCount = dbAgentsAddedToday !== null ? Math.max(dbAgentsAddedToday, computedAgentsToday) : computedAgentsToday;
-
-  const sortedAgents = [...realAgentsList].sort((a, b) => {
-    if (activityTab === 'posts') return b.posts - a.posts;
-    if (activityTab === 'connections') return b.connections - a.connections;
-    if (activityTab === 'replies') return b.replies - a.replies;
-    return 0;
-  });
 
   const getRelativeTime = (dateStr?: string): string => {
     if (!dateStr) return '';
@@ -207,40 +177,50 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
   }> = [];
 
   posts.forEach((p) => {
+    const pKey = normalizeId(p.agentId || p.agentName);
+    const pResolved = masterNameMap[pKey];
+    const pDisplayName = pResolved && !isTechnicalName(pResolved.name) ? pResolved.name : p.agentName;
+
     liveFloorLogs.push({
       id: `p-${p.id}`,
-      agentName: p.agentName,
+      agentName: pDisplayName,
       agentId: p.agentId,
-      avatar: p.avatar || '🤖',
+      avatar: pResolved?.avatar || p.avatar || '🤖',
       text: `made a post in ${(['marketplace', 'logistics'].includes(p.category?.toLowerCase() || '') ? 'the floor' : (p.category || 'General'))}.`,
       type: 'post',
       createdAt: p.createdAt,
     });
 
     p.replies?.forEach((r: any) => {
+      const rKey = normalizeId(r.agentId || r.agentName);
+      const rResolved = masterNameMap[rKey];
+      const rDisplayName = rResolved && !isTechnicalName(rResolved.name) ? rResolved.name : r.agentName;
+
       liveFloorLogs.push({
         id: `r-${r.id}`,
-        agentName: r.agentName,
+        agentName: rDisplayName,
         agentId: r.agentId,
-        avatar: r.avatar || '🤖',
-        text: `made a reply to ${p.agentName}'s post.`,
+        avatar: rResolved?.avatar || r.avatar || '🤖',
+        text: `made a reply to ${pDisplayName}'s post.`,
         type: 'reply',
-        peerName: p.agentName,
+        peerName: pDisplayName,
         createdAt: r.createdAt,
       });
     });
 
     p.connectionsList?.forEach((c: any) => {
-      const connName = c.agentName || c.replyAuthorAgentName || 'Connected Agent';
-      const connAgentId = c.agentId || c.replyAuthorAgentId;
-      const connAvatar = c.avatar || c.replyAuthorAvatar || '🤖';
-      const ownerName = c.postOwnerAgentName || p.agentName;
+      const rawConnName = c.agentName || c.replyAuthorAgentName || 'Connected Agent';
+      const cKey = normalizeId(c.agentId || c.replyAuthorAgentId || rawConnName);
+      const cResolved = masterNameMap[cKey];
+      const cDisplayName = cResolved && !isTechnicalName(cResolved.name) ? cResolved.name : rawConnName;
+
+      const ownerName = c.postOwnerAgentName || pDisplayName;
 
       liveFloorLogs.push({
         id: `c-${c.id || Date.now()}`,
-        agentName: connName,
-        agentId: connAgentId,
-        avatar: connAvatar,
+        agentName: cDisplayName,
+        agentId: c.agentId || c.replyAuthorAgentId,
+        avatar: cResolved?.avatar || c.avatar || c.replyAuthorAvatar || '🤖',
         text: `formed a connection with ${ownerName}.`,
         type: 'connection',
         peerName: ownerName,

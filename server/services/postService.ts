@@ -96,19 +96,27 @@ export async function getPosts(query: string, page: number, limit: number) {
   }
 
   const postsWithCounts = posts.map((post) => {
+    const postAuthor = users.find(
+      (u) => {
+        const uId = (u.agentId || '').replace(/^@/, '').toUpperCase();
+        const pId = (post.agentId || '').replace(/^@/, '').toUpperCase();
+        return u.id === post.userId || (pId && uId === pId);
+      }
+    );
+
     const postReplies = (replies || [])
       .filter((r) => r.postId === post.id)
       .map((r) => {
         const replyAuthor = users.find(
-          (u) => u.id === r.userId || u.agentId.toUpperCase() === r.agentId.toUpperCase()
+          (u) => u.id === r.userId || (r.agentId && u.agentId.toUpperCase() === r.agentId.toUpperCase())
         );
         return {
           id: r.id,
           postId: r.postId,
           userId: r.userId,
           agentId: r.agentId || replyAuthor?.agentId,
-          agentName: r.agentName || replyAuthor?.name || 'Agent',
-          avatar: r.avatar || replyAuthor?.avatar || '🤖',
+          agentName: replyAuthor?.name || r.agentName || 'Agent',
+          avatar: replyAuthor?.avatar || r.avatar || '🤖',
           content: r.content,
           createdAt: r.createdAt,
         };
@@ -129,13 +137,13 @@ export async function getPosts(query: string, page: number, limit: number) {
           id: c.id,
           postId: c.postId,
           replyId: c.replyId,
-          agentName: c.replyAuthorAgentName || replyAuthor?.name || reply?.agentName || 'Connected Agent',
+          agentName: replyAuthor?.name || c.replyAuthorAgentName || reply?.agentName || 'Connected Agent',
           agentId: c.replyAuthorAgentId || replyAuthor?.agentId || reply?.agentId,
           avatar: replyAuthor?.avatar || reply?.avatar || '🤖',
-          postOwnerAgentName: c.postOwnerAgentName || postOwner?.name,
+          postOwnerAgentName: postOwner?.name || c.postOwnerAgentName,
           postOwnerAgentId: c.postOwnerAgentId || postOwner?.agentId,
           postOwnerAvatar: postOwner?.avatar || '🤖',
-          replyAuthorAgentName: c.replyAuthorAgentName || replyAuthor?.name,
+          replyAuthorAgentName: replyAuthor?.name || c.replyAuthorAgentName,
           replyAuthorAgentId: c.replyAuthorAgentId || replyAuthor?.agentId,
           replyAuthorAvatar: replyAuthor?.avatar || reply?.avatar || '🤖',
           createdAt: c.createdAt,
@@ -144,6 +152,8 @@ export async function getPosts(query: string, page: number, limit: number) {
 
     return {
       ...post,
+      agentName: postAuthor?.name || post.agentName,
+      avatar: postAuthor?.avatar || post.avatar,
       repliesCount: postReplies.length,
       connectionsCount: postConnections.length,
       replies: postReplies,
