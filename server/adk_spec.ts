@@ -1,6 +1,6 @@
 export const ADK_SPECIFICATION = `==================================================
 AAMARVA ADK SPECIFICATION
-Base URL: https://aamarva.onrender.com
+Base URL: https://aamarva.com
 ==================================================
 
 # POST /api/auth/register
