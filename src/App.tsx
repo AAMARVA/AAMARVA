@@ -9,6 +9,7 @@ import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { ExploreView } from './components/ExploreView';
 import { TelemetryView } from './components/TelemetryView';
 import { UserDashboardView } from './components/UserDashboardView';
+import { TermsView } from './components/TermsView';
 import { NetworkPost } from './types';
 import { useAuth } from './context/AuthContext';
 import { apiFetch } from './services/authApi';
@@ -16,7 +17,7 @@ import { supabase } from './lib/supabase';
 
 export default function App() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard'>('floor');
+  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
   const [posts, setPosts] = useState<NetworkPost[]>([]);
   const [activeThreadPost, setActiveThreadPost] = useState<NetworkPost | null>(null);
   const [activeConnectionsPost, setActiveConnectionsPost] = useState<NetworkPost | null>(null);
@@ -254,45 +255,65 @@ export default function App() {
 
 
       {/* Main Content Container */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-5 sm:p-8 flex flex-col">
-        {/* Navigation Options Row */}
-        <div className="sticky top-16 sm:top-20 z-30 bg-[#E4E3E0] py-3 -mt-3 mb-6 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto grid grid-cols-3 gap-2">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-5 sm:px-8 py-3 sm:py-4 flex flex-col">
+        {/* Terms & Conditions Text Link */}
+        <div className="w-full max-w-4xl mx-auto flex justify-center mb-2">
           <button
-            onClick={() => setActiveTab('floor')}
-            className={`px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-black uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 select-none ${
-              (activeTab === 'floor' || activeTab === 'live')
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+            onClick={() => setActiveTab('terms')}
+            className={`text-xs sm:text-sm font-mono font-bold uppercase tracking-wider transition-opacity hover:opacity-75 select-none ${
+              activeTab === 'terms' ? 'text-[#141414] underline' : 'text-[#141414]/70 hover:text-[#141414]'
             }`}
           >
-            <span className={`w-2 h-2 rounded-full shrink-0 ${activeTab === 'floor' || activeTab === 'live' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
-            <span>Floor</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('telemetry')}
-            className={`px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-black uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 select-none ${
-              activeTab === 'telemetry'
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-            }`}
-          >
-            <span className={`w-2 h-2 rounded-full shrink-0 ${activeTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
-            <span>Telemetry</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('hub')}
-            className={`px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-black uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 select-none ${
-              (activeTab === 'hub' || activeTab === 'explore')
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-            }`}
-          >
-            <span className={`w-2 h-2 rounded-full shrink-0 ${(activeTab === 'hub' || activeTab === 'explore') ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
-            <span>Agent Hub</span>
+            Terms & Conditions
           </button>
         </div>
+
+        {/* Navigation Options Row */}
+        <div className="sticky top-16 sm:top-20 z-30 bg-[#E4E3E0] py-2 mb-4 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto flex flex-col gap-2">
+          {/* Three Tabs */}
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => setActiveTab('floor')}
+              className={`px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-black uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 select-none ${
+                (activeTab === 'floor' || activeTab === 'live')
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${activeTab === 'floor' || activeTab === 'live' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
+              <span>Floor</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('telemetry')}
+              className={`px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-black uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 select-none ${
+                activeTab === 'telemetry'
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${activeTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
+              <span>Telemetry</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('hub')}
+              className={`px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-black uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 select-none ${
+                (activeTab === 'hub' || activeTab === 'explore')
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${(activeTab === 'hub' || activeTab === 'explore') ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
+              <span>Agent Hub</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Terms & Conditions View */}
+        {activeTab === 'terms' && (
+          <TermsView />
+        )}
 
         {/* Tab 1: Active Floor (Live Feed) */}
         {(activeTab === 'floor' || activeTab === 'live') && (
