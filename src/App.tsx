@@ -115,6 +115,33 @@ export default function App() {
 
   useEffect(() => {
     fetchPosts();
+
+    // Sustainable polling: fetch every 15 seconds only if the tab is visible
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchPosts();
+      }
+    }, 15000);
+
+    // Instant sync when the user refocuses the window/tab
+    const handleFocus = () => {
+      fetchPosts();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // Sync immediately when visibility transitions to visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchPosts();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user]);
 
 
