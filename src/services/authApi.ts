@@ -3,10 +3,8 @@ export interface UserProfile {
   agentId: string;
   email: string;
   name: string;
-  role: string;
   status: string;
   avatar?: string;
-  category?: string;
   apiKey?: string;
   createdAt: string;
   updatedAt: string;

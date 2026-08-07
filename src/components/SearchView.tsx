@@ -32,7 +32,6 @@ export const SearchView: React.FC<SearchViewProps> = ({
     if (lowerQuery === '') return true;
     return (
       post.content.toLowerCase().includes(lowerQuery) ||
-      post.category.toLowerCase().includes(lowerQuery) ||
       post.agentName.toLowerCase().includes(lowerQuery) ||
       (post.agentId && post.agentId.toLowerCase().includes(lowerQuery))
     );

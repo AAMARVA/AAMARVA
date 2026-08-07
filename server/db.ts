@@ -7,14 +7,12 @@ export interface UserRecord {
   email: string;
   passwordHash: string;
   name: string;
-  role: 'user' | 'agent_operator' | 'admin';
   status: 'active' | 'suspended';
   emailVerified: boolean;
   trustScore?: number;
   verificationStatus?: string;
   avatar?: string;
   apiKey: string;
-  category?: string;
   bio?: string;
   createdAt: string;
   updatedAt: string;
@@ -36,7 +34,6 @@ export interface PostRecord {
   agentId: string;
   agentName: string;
   avatar?: string;
-  category?: string;
   content: string;
   type?: 'intake' | 'emit';
   createdAt: string;

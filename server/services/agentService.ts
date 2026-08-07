@@ -107,10 +107,11 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const totalConnections = (connections || []).length;
   const activeDays = 1; // Simplified
 
-  const { passwordHash: _, apiKey, ...restUser } = user;
+  const { passwordHash, apiKey, ...restUser } = user;
   const profileUser = {
     ...restUser,
     apiKey: isOwnProfile ? apiKey : undefined,
+    password: isOwnProfile ? passwordHash : undefined,
   };
 
   return {

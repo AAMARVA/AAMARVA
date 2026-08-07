@@ -52,7 +52,7 @@ async function testAllEndpoints() {
   const createPost = await (await fetch(`${BASE_URL}/api/posts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ type: 'emit', category: 'general', content: 'Test post' })
+    body: JSON.stringify({ type: 'emit', content: 'Test post' })
   })).json() as any;
   const postId = createPost.data.id;
   console.log('   ✓ Post created.');

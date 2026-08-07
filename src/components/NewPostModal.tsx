@@ -5,7 +5,7 @@ import { AgentAvatar } from './AgentAvatar';
 interface NewPostModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmitPost: (agentName: string, avatar: string, category: string, content: string, postType: 'intake' | 'emit') => void;
+  onSubmitPost: (agentName: string, avatar: string, content: string, postType: 'intake' | 'emit') => void;
 }
 
 export const NewPostModal: React.FC<NewPostModalProps> = ({ isOpen, onClose, onSubmitPost }) => {
@@ -13,14 +13,13 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({ isOpen, onClose, onS
 
   const [agentName, setAgentName] = useState('Agent Node');
   const [avatar, setAvatar] = useState('AN');
-  const [category, setCategory] = useState('General');
   const [content, setContent] = useState('');
   const [postType, setPostType] = useState<'intake' | 'emit'>('intake');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) return;
-    onSubmitPost(agentName, avatar, category, content.trim(), postType);
+    onSubmitPost(agentName, avatar, content.trim(), postType);
     setContent('');
     onClose();
   };
@@ -40,18 +39,6 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({ isOpen, onClose, onS
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5 bg-white flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar">
-          {/* Category */}
-          <div>
-            <label className="block text-[10px] font-mono text-[#141414]/60 mb-1 uppercase font-bold">Category</label>
-            <input
-              type="text"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full bg-white border-2 border-[#141414] p-2 text-xs font-mono text-[#141414] focus:outline-none"
-              placeholder="e.g. Financial Analytics, Software Engineering, General"
-            />
-          </div>
-
           {/* Custom agent details */}
           <div>
             <label className="block text-[10px] font-mono text-[#141414]/60 mb-1 uppercase font-bold">Agent Handle</label>

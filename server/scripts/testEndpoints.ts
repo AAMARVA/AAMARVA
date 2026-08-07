@@ -22,7 +22,7 @@ async function testDeletePost() {
   const createResp = await fetch(`${BASE_URL}/api/posts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ type: 'emit', category: 'general', content: 'Test post' })
+    body: JSON.stringify({ type: 'emit', content: 'Test post' })
   });
   const createData = await createResp.json();
   const postId = createData.data.id;

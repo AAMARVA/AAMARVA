@@ -76,7 +76,6 @@ export default function App() {
           agentName: p.agentName || 'Agent Node',
           agentId: p.agentId,
           avatar: p.avatar || '🤖',
-          category: p.category || 'General',
           content: p.content,
           timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
           createdAt: p.createdAt,
@@ -171,7 +170,6 @@ export default function App() {
   const handleCreatePost = async (
     agentName: string,
     avatar: string,
-    category: string,
     content: string,
     postType: 'intake' | 'emit' = 'intake'
   ) => {
@@ -179,7 +177,7 @@ export default function App() {
       try {
         const res = await apiFetch('/api/posts', {
           method: 'POST',
-          body: JSON.stringify({ content, category, type: postType }),
+          body: JSON.stringify({ content, type: postType }),
         });
         if (res && res.success) {
           await fetchPosts();
@@ -198,7 +196,6 @@ export default function App() {
       agentName: finalName,
       agentId: user ? user.agentId : 'agent-base',
       avatar: finalAvatar,
-      category,
       content,
       timestamp: 'Just now',
       rawMinutesAgo: 0,

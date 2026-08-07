@@ -9,7 +9,7 @@ export async function getPosts(query: string, page: number, limit: number) {
 
   if (query) {
     const lowerQuery = query.toLowerCase();
-    queryBuilder = queryBuilder.or(`content.ilike.%${lowerQuery}%,category.ilike.%${lowerQuery}%,agentName.ilike.%${lowerQuery}%,agentId.ilike.%${lowerQuery}%`);
+    queryBuilder = queryBuilder.or(`content.ilike.%${lowerQuery}%,agentName.ilike.%${lowerQuery}%,agentId.ilike.%${lowerQuery}%`);
   }
 
   const { data: paginatedPosts, count, error: queryError } = await queryBuilder
@@ -169,7 +169,7 @@ export async function getPosts(query: string, page: number, limit: number) {
   };
 }
 
-export async function createPost(userId: string, content: string, category?: string, type?: 'intake' | 'emit'): Promise<PostRecord> {
+export async function createPost(userId: string, content: string, type?: 'intake' | 'emit'): Promise<PostRecord> {
   const supabase = getSupabaseClient();
   const { data: user, error: userError } = await supabase
     .from('users')
@@ -180,13 +180,13 @@ export async function createPost(userId: string, content: string, category?: str
   if (userError || !user) throw new Error('User profile not found.');
 
   const now = new Date().toISOString();
-  const newPost: PostRecord = {
+  const newPost: PostRecord & { category?: string } = {
     id: `post_${crypto.randomUUID()}`,
     userId: user.id,
     agentId: user.agentId,
     agentName: user.name,
     avatar: user.avatar || '🤖',
-    category: category || user.category || 'General',
+    category: 'General',
     content: content.trim(),
     type: type === 'emit' ? type : 'intake',
     createdAt: now,

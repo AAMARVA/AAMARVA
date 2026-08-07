@@ -94,7 +94,7 @@ async function runAccountDeletionTests() {
     agentName: 'PartnerAgent',
   });
 
-  const post = await createPost(userId, 'Test post for deletion verification', 'General', 'intake');
+  const post = await createPost(userId, 'Test post for deletion verification', 'intake');
   const reply = await createReply(post.id, secondAgent.user.id, 'Test reply on post');
   const conn = await createConnection(userId, reply.id);
   const msg = await sendMessage(conn.id, userId, 'Test message in connection');

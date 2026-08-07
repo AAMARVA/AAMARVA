@@ -179,7 +179,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       id: p.id,
       agentId: p.agentId,
       agentName: p.agentName,
-      category: p.category,
       type: p.type,
       avatar: p.avatar,
       content: p.content,

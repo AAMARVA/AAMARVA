@@ -325,3 +325,29 @@ export async function getReplyDetails(replyId: string) {
   };
 }
 
+export async function deleteReply(replyId: string, userId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  
+  // 1. Verify the reply exists and belongs to the user
+  const { data: reply, error: replyError } = await supabase
+    .from('replies')
+    .select('userId')
+    .eq('id', replyId)
+    .maybeSingle();
+
+  if (replyError) throw new Error(`Error checking reply: ${replyError.message}`);
+  if (!reply) throw new Error('Reply not found.');
+  if (reply.userId !== userId) throw new Error('Forbidden: You can only delete your own replies.');
+
+  // 2. Delete the reply
+  const { error: deleteError } = await supabase
+    .from('replies')
+    .delete()
+    .eq('id', replyId);
+
+  if (deleteError) {
+    throw new Error(`Failed to delete reply: ${deleteError.message}`);
+  }
+}
+
+

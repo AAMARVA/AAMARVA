@@ -9,7 +9,6 @@ export interface UserTokenPayload {
   id: string;
   agentId: string;
   email: string;
-  role: string;
 }
 
 export interface AuthTokens {
@@ -79,7 +78,6 @@ export function generateAccessToken(user: UserRecord): string {
     id: user.id,
     agentId: user.agentId,
     email: user.email,
-    role: user.role || 'agent_operator',
   };
   return jwt.sign(payload, getJwtSecret(), { expiresIn: '1d' });
 }
@@ -141,13 +139,11 @@ export function normalizeUserRecord(raw: any): UserRecord {
     passwordHash: raw.passwordHash || raw.password_hash || '',
     apiKey,
     name: raw.name || '',
-    role: raw.role || 'agent_operator',
     status: raw.status || 'active',
     emailVerified: raw.emailVerified !== undefined ? raw.emailVerified : (raw.email_verified !== undefined ? raw.email_verified : true),
     trustScore: raw.trustScore !== undefined ? raw.trustScore : (raw.trust_score !== undefined ? raw.trust_score : 0),
     verificationStatus: raw.verificationStatus || raw.verification_status || 'unverified',
     avatar: raw.avatar || '🤖',
-    category: raw.category,
     bio,
     createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.updated_at || new Date().toISOString(),
@@ -185,7 +181,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     passwordHash: newUser.passwordHash,
     apiKey: newUser.apiKey,
     name: newUser.name,
-    role: newUser.role,
+    role: 'agent_operator',
     status: newUser.status,
     emailVerified: newUser.emailVerified,
     verificationStatus: newUser.verificationStatus,
@@ -205,7 +201,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     passwordHash: newUser.passwordHash,
     bio: `apiKey:${newUser.apiKey}`,
     name: newUser.name,
-    role: newUser.role,
+    role: 'agent_operator',
     status: newUser.status,
     emailVerified: newUser.emailVerified,
     verificationStatus: newUser.verificationStatus,
@@ -225,7 +221,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     password_hash: newUser.passwordHash,
     api_key: newUser.apiKey,
     name: newUser.name,
-    role: newUser.role,
+    role: 'agent_operator',
     status: newUser.status,
     email_verified: newUser.emailVerified,
     verification_status: newUser.verificationStatus,
@@ -245,7 +241,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     password_hash: newUser.passwordHash,
     bio: `apiKey:${newUser.apiKey}`,
     name: newUser.name,
-    role: newUser.role,
+    role: 'agent_operator',
     status: newUser.status,
     email_verified: newUser.emailVerified,
     verification_status: newUser.verificationStatus,
@@ -386,7 +382,6 @@ export async function registerUser(data: {
     passwordHash,
     apiKey: apiKeyToUse,
     name: agentName,
-    role: 'agent_operator',
     status: 'active',
     emailVerified: false,
     verificationStatus: 'unverified',
@@ -577,7 +572,7 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   // 0. Pre-check: Verify user exists before attempting deletion
   const { data: userBefore, error: findErr } = await supabase
     .from('users')
-    .select('id, agentId')
+    .select('id, agentId, email')
     .eq('id', userId)
     .maybeSingle();
 
@@ -764,11 +759,36 @@ export async function deleteUserAccount(userId: string): Promise<void> {
 
   // Step G: Try deleting from Supabase Auth admin if initialized
   try {
-    if (supabase.auth?.admin?.deleteUser) {
-      await supabase.auth.admin.deleteUser(userId);
+    if (supabase.auth?.admin?.deleteUser && userBefore?.email) {
+      const targetEmail = userBefore.email.toLowerCase();
+      const { data: listData, error: listError } = await supabase.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000
+      });
+      if (listError) {
+        console.error('[Account Deletion Error] Failed to list Auth users:', listError);
+        throw new Error(`Failed to list Auth users to complete deletion: ${listError.message}`);
+      }
+      if (listData?.users) {
+        const authUser = listData.users.find(u => u.email?.toLowerCase() === targetEmail);
+        if (authUser) {
+          const { error: deleteError } = await supabase.auth.admin.deleteUser(authUser.id);
+          if (deleteError) {
+            console.error('[Account Deletion Error] Failed to delete Supabase Auth user:', deleteError);
+            throw new Error(`Failed to delete corresponding Auth user account: ${deleteError.message}`);
+          } else {
+            console.log(`[Account Deletion] Successfully deleted Supabase Auth user: ${targetEmail} (Auth ID: ${authUser.id})`);
+          }
+        } else {
+          console.log(`[Account Deletion Warning] Corresponding Auth user for email ${targetEmail} not found in Supabase Auth list.`);
+        }
+      }
+    } else if (userBefore?.email) {
+      throw new Error('Supabase Auth admin client is not initialized or does not have deleteUser permissions.');
     }
   } catch (e: any) {
-    console.warn('[Account Deletion Warning] Supabase Auth admin delete exception:', e?.message || e);
+    console.error('[Account Deletion Error] Supabase Auth admin delete exception:', e?.message || e);
+    throw e;
   }
 }
 

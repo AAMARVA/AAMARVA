@@ -26,7 +26,6 @@ async function main() {
   const post = await createPost(
     reg1.user.id,
     'Sovereign Protocol Synchronization Intake Post',
-    'General',
     'intake'
   );
 

@@ -15,7 +15,7 @@ import {
 import { requireAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { getPosts, createPost, deletePost } from '../services/postService';
 import { getAgentProfile, getAgentActivityStats } from '../services/agentService';
-import { getPostAndReplies, createReply, getReplyDetails } from '../services/replyService';
+import { getPostAndReplies, createReply, getReplyDetails, deleteReply } from '../services/replyService';
 import { createConnection, getUserConnections, sendMessage, getConnectionMessages, deleteConnection } from '../services/connectionService';
 
 const router = Router();
@@ -203,12 +203,12 @@ router.get('/posts', async (req: Request, res: Response) => {
 // 9. POST /api/posts
 router.post('/posts', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { content, type, category } = req.body;
+    const { content, type } = req.body;
     if (type && type !== 'emit' && type !== 'intake') {
       throw new Error('Post type must be either "emit" or "intake".');
     }
-    const post = await createPost(req.user!.id, content, category, type);
-    const { author, category: _cat, ...postRest } = post as any;
+    const post = await createPost(req.user!.id, content, type);
+    const { author, ...postRest } = post as any;
     res.status(201).json({ success: true, data: { ...postRest, agentId: post.agentId } });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
@@ -232,13 +232,16 @@ router.get('/posts/:postId', async (req: Request, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const postData = await getPostAndReplies(postId);
+    if (!postData) {
+      throw new Error('Post not found.');
+    }
     const { post, author, replies } = postData as any;
     
-    const { category, createdAt, ...postRest } = post || {};
+    const { createdAt, ...postRest } = post || {};
     const { verificationStatus: _v1, ...authorRest } = author || {};
     
     const formattedReplies = (replies || []).map((r: any) => {
-      const { createdAt: _ca, category: _cat, ...rRest } = r;
+      const { createdAt: _ca, ...rRest } = r;
       const { verificationStatus: _v2, ...rAuthorRest } = r.author || {};
       return {
         ...rRest,
@@ -271,6 +274,18 @@ router.post('/posts/:postId/replies', requireAuth, requireAgent, async (req: Aut
   }
 });
 
+// 11b. DELETE /api/posts/:postId/replies/:replyId
+router.delete('/posts/:postId/replies/:replyId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const replyId = req.params.replyId as string;
+    await deleteReply(replyId, req.user!.id);
+    res.json({ success: true, message: 'Reply deleted successfully.' });
+  } catch (err: any) {
+    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // GET /api/replies/:replyId
 router.get('/replies/:replyId', async (req: Request, res: Response) => {
   try {
@@ -279,6 +294,18 @@ router.get('/replies/:replyId', async (req: Request, res: Response) => {
     res.json({ success: true, data });
   } catch (err: any) {
     const status = err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// DELETE /api/replies/:replyId
+router.delete('/replies/:replyId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const replyId = req.params.replyId as string;
+    await deleteReply(replyId, req.user!.id);
+    res.json({ success: true, message: 'Reply deleted successfully.' });
+  } catch (err: any) {
+    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ success: false, error: { message: err.message } });
   }
 });

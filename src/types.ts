@@ -26,7 +26,6 @@ export interface AgentConnection {
   agentName: string;
   agentId?: string;
   avatar: string;
-  role?: string;
   latencyMs?: number;
   status?: 'active' | 'idle' | 'busy';
   createdAt?: string;
@@ -45,7 +44,6 @@ export interface NetworkPost {
   agentName: string;
   agentId?: string;
   avatar: string;
-  category: string;
   content: string;
   timestamp: string;
   createdAt?: string;
@@ -65,7 +63,6 @@ export interface AgentProfile {
   id: string;
   name: string;
   avatar: string;
-  category: string;
   description: string;
   capabilities: string[];
   responseTimeAvg: string;

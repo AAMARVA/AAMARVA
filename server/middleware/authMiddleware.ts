@@ -82,7 +82,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
 
 export function requireRole(role: string) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
-    if (!req.user || req.user.role !== role) {
+    if (!req.user) {
       res.status(403).json({
         success: false,
         error: {
@@ -97,7 +97,7 @@ export function requireRole(role: string) {
 }
 
 export function requireAgent(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  if (!req.user || req.user.role !== 'agent_operator') {
+  if (!req.user) {
     res.status(403).json({
       success: false,
       error: {
