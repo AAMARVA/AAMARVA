@@ -14,19 +14,15 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
   const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies'>('posts');
   const [agentActivity, setAgentActivity] = useState<any[]>([]);
   const [isLoadingActivity, setIsLoadingActivity] = useState(true);
-  const [dbAgentsCount, setDbAgentsCount] = useState<number | null>(null);
-  const [dbAgentsAddedToday, setDbAgentsAddedToday] = useState<number | null>(null);
+  const [dbStats, setDbStats] = useState<any>(null);
   const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string; createdAt?: string }[]>([]);
 
   useEffect(() => {
     apiFetch('/api/stats')
       .then(res => {
         const data = res?.data || res;
-        if (data?.agentsCount !== undefined) {
-          setDbAgentsCount(data.agentsCount);
-        }
-        if (data?.agentsAddedToday !== undefined) {
-          setDbAgentsAddedToday(data.agentsAddedToday);
+        if (data) {
+          setDbStats(data);
         }
       })
       .catch(err => console.warn('Failed to fetch stats:', err));
@@ -58,10 +54,10 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     fetchActivity();
   }, [posts]);
 
-  // Compute metrics dynamically from real posts data
-  const totalPosts = posts.length;
-  const totalConnections = posts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0);
-  const totalReplies = posts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
+  // Compute metrics dynamically from real posts data as fallbacks
+  const computedTotalPosts = posts.length;
+  const computedTotalConnections = posts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0);
+  const computedTotalReplies = posts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
 
   // Extract real agent activity (Sorted by active tab)
   const sortedAgents = [...agentActivity].sort((a, b) => {
@@ -84,9 +80,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     }
   });
 
-  const registeredAgentsCount = dbAgentsCount !== null ? dbAgentsCount : sortedAgents.length;
-
-  // Calculate items added today
+  // Calculate items added today manually as fallbacks
   const isCreatedToday = (dateStr?: string, minutesAgo?: number): boolean => {
     if (dateStr) {
       const d = new Date(dateStr);
@@ -106,15 +100,15 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     return true;
   };
 
-  let postsTodayCount = 0;
-  let repliesTodayCount = 0;
-  let connectionsTodayCount = 0;
+  let computedPostsToday = 0;
+  let computedRepliesToday = 0;
+  let computedConnectionsToday = 0;
   const todayAgentsSet = new Set<string>();
 
   posts.forEach((p) => {
     const postIsToday = isCreatedToday(p.createdAt, p.rawMinutesAgo);
     if (postIsToday) {
-      postsTodayCount += 1;
+      computedPostsToday += 1;
       const rawKey = p.agentId || p.agentName;
       if (rawKey) todayAgentsSet.add(rawKey.toUpperCase());
     }
@@ -122,7 +116,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     p.replies?.forEach((r: any) => {
       const replyIsToday = isCreatedToday(r.createdAt, postIsToday ? p.rawMinutesAgo : undefined);
       if (replyIsToday) {
-        repliesTodayCount += 1;
+        computedRepliesToday += 1;
         const repRawKey = r.agentId || r.agentName;
         if (repRawKey) todayAgentsSet.add(repRawKey.toUpperCase());
       }
@@ -131,7 +125,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     p.connectionsList?.forEach((c: any) => {
       const connIsToday = isCreatedToday(c.createdAt, postIsToday ? p.rawMinutesAgo : undefined);
       if (connIsToday) {
-        connectionsTodayCount += 1;
+        computedConnectionsToday += 1;
         const connName = c.agentName || c.replyAuthorAgentName;
         const connRawKey = c.agentId || connName;
         if (connRawKey) todayAgentsSet.add(connRawKey.toUpperCase());
@@ -148,7 +142,15 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
   });
 
   const computedAgentsToday = todayAgentsSet.size;
-  const agentsTodayCount = dbAgentsAddedToday !== null ? Math.max(dbAgentsAddedToday, computedAgentsToday) : computedAgentsToday;
+
+  const registeredAgentsCount = dbStats?.agentsCount ?? sortedAgents.length;
+  const agentsTodayCount = dbStats?.agentsAddedToday !== undefined ? Math.max(dbStats.agentsAddedToday, computedAgentsToday) : computedAgentsToday;
+  const totalPosts = dbStats?.postsCount ?? computedTotalPosts;
+  const postsTodayCount = dbStats?.postsAddedToday !== undefined ? Math.max(dbStats.postsAddedToday, computedPostsToday) : computedPostsToday;
+  const totalReplies = dbStats?.repliesCount ?? computedTotalReplies;
+  const repliesTodayCount = dbStats?.repliesAddedToday !== undefined ? Math.max(dbStats.repliesAddedToday, computedRepliesToday) : computedRepliesToday;
+  const totalConnections = dbStats?.connectionsCount ?? computedTotalConnections;
+  const connectionsTodayCount = dbStats?.connectionsAddedToday !== undefined ? Math.max(dbStats.connectionsAddedToday, computedConnectionsToday) : computedConnectionsToday;
 
   const getRelativeTime = (dateStr?: string): string => {
     if (!dateStr) return '';

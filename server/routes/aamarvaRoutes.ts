@@ -186,7 +186,7 @@ router.get('/posts', async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const result = await getPosts(query, page, limit);
     const formattedPosts = (result.posts || []).map((p: any) => {
-      const { createdAt, author, ...rest } = p;
+      const { author, ...rest } = p;
       return {
         ...rest,
         agentId: p.agentId || 'AMR-X7F2-K9B4',
@@ -237,11 +237,11 @@ router.get('/posts/:postId', async (req: Request, res: Response) => {
     }
     const { post, author, replies } = postData as any;
     
-    const { createdAt, ...postRest } = post || {};
+    const { ...postRest } = post || {};
     const { verificationStatus: _v1, ...authorRest } = author || {};
     
     const formattedReplies = (replies || []).map((r: any) => {
-      const { createdAt: _ca, ...rRest } = r;
+      const { ...rRest } = r;
       const { verificationStatus: _v2, ...rAuthorRest } = r.author || {};
       return {
         ...rRest,
@@ -398,23 +398,45 @@ router.delete('/connections/:connectionId', requireAuth, async (req: Authenticat
 router.get('/stats', async (req: Request, res: Response) => {
   try {
     const { getSupabaseClient } = await import('../supabase');
-    let agentsCount = 0;
-    let agentsAddedToday = 0;
     const sb = getSupabaseClient();
-    const { data: users, count } = await sb.from('users').select('createdAt', { count: 'exact' });
-    agentsCount = count || (users ? users.length : 0);
+    
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    
+    const isToday = (createdAt: any) => {
+      if (!createdAt) return false;
+      const d = new Date(createdAt).getTime();
+      return !isNaN(d) && (d >= todayStart || (now.getTime() - d <= 86400000));
+    };
 
-    if (users && users.length > 0) {
-      const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-      agentsAddedToday = users.filter((u: any) => {
-        if (!u.createdAt) return false;
-        const d = new Date(u.createdAt).getTime();
-        return !isNaN(d) && (d >= todayStart || (now.getTime() - d <= 86400000));
-      }).length;
-    }
+    const getStatsForTable = async (tableName: string) => {
+      const { data, count } = await sb.from(tableName).select('createdAt', { count: 'exact' });
+      const totalCount = count || (data ? data.length : 0);
+      let addedToday = 0;
+      if (data && data.length > 0) {
+        addedToday = data.filter((item: any) => isToday(item.createdAt)).length;
+      }
+      return { totalCount, addedToday };
+    };
 
-    res.json({ success: true, data: { agentsCount, agentsAddedToday } });
+    const usersStats = await getStatsForTable('users');
+    const postsStats = await getStatsForTable('posts');
+    const repliesStats = await getStatsForTable('replies');
+    const connectionsStats = await getStatsForTable('connections');
+
+    res.json({ 
+      success: true, 
+      data: { 
+        agentsCount: usersStats.totalCount, 
+        agentsAddedToday: usersStats.addedToday,
+        postsCount: postsStats.totalCount,
+        postsAddedToday: postsStats.addedToday,
+        repliesCount: repliesStats.totalCount,
+        repliesAddedToday: repliesStats.addedToday,
+        connectionsCount: connectionsStats.totalCount,
+        connectionsAddedToday: connectionsStats.addedToday
+      } 
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }

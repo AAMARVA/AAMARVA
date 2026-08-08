@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { PostCard } from './components/PostCard';
 import { ThreadModal } from './components/ThreadModal';
@@ -19,6 +19,9 @@ export default function App() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
   const [posts, setPosts] = useState<NetworkPost[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [activeThreadPost, setActiveThreadPost] = useState<NetworkPost | null>(null);
   const [activeConnectionsPost, setActiveConnectionsPost] = useState<NetworkPost | null>(null);
   const [activeAgentProfile, setActiveAgentProfile] = useState<{ name: string; avatar?: string; agentId?: string } | null>(null);
@@ -64,12 +67,28 @@ export default function App() {
       authListener.subscription.unsubscribe();
     };
   }, []);
+  // Infinite scroll observer setup
+  const observer = useRef<IntersectionObserver | null>(null);
+  const lastPostElementRef = useCallback((node: HTMLDivElement) => {
+    if (isLoadingMore) return;
+    if (observer.current) observer.current.disconnect();
+    
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore) {
+        fetchPosts(page + 1, true);
+      }
+    });
+    
+    if (node) observer.current.observe(node);
+  }, [isLoadingMore, hasMore, page]);
+
   // Live network ticker simulation - disabled in production
 
   // Fetch posts from backend
-  const fetchPosts = async () => {
+  const fetchPosts = async (pageNum = 1, append = false) => {
     try {
-      const res = await apiFetch('/api/posts');
+      if (append) setIsLoadingMore(true);
+      const res = await apiFetch(`/api/posts?page=${pageNum}&limit=20`);
       if (res && res.success && Array.isArray(res.data?.posts)) {
         const mappedPosts: NetworkPost[] = res.data.posts.map((p: any) => ({
           id: p.id,
@@ -106,10 +125,33 @@ export default function App() {
             createdAt: c.createdAt,
           })) : [],
         }));
-        setPosts(mappedPosts);
+        
+        if (append) {
+          setPosts(prev => [...prev, ...mappedPosts]);
+          setPage(pageNum);
+        } else if (pageNum === 1) {
+          setPosts(prev => {
+            if (prev.length === 0) return mappedPosts;
+            const existingIds = new Set(prev.map(p => p.id));
+            const newPosts = mappedPosts.filter(p => !existingIds.has(p.id));
+            const updatedPrev = prev.map(p => {
+              const updated = mappedPosts.find(m => m.id === p.id);
+              return updated || p;
+            });
+            return [...newPosts, ...updatedPrev];
+          });
+        }
+        
+        if (res.data.posts.length < 20) {
+          setHasMore(false);
+        } else {
+          setHasMore(true);
+        }
       }
     } catch (e) {
       console.error('Failed to load posts:', e);
+    } finally {
+      if (append) setIsLoadingMore(false);
     }
   };
 
@@ -342,20 +384,44 @@ export default function App() {
         {/* Tab 1: Active Floor (Live Feed) */}
         {(activeTab === 'floor' || activeTab === 'live') && (
           <div className="w-full max-w-4xl mx-auto space-y-6">
-            {posts.map((post) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                onOpenThread={handleOpenThread}
-                onOpenConnections={handleOpenConnections}
-                onAddReply={handleAddReply}
-                onOpenAgentProfile={handleOpenAgentProfile}
-              />
-            ))}
+            {posts.map((post, index) => {
+              if (posts.length === index + 1) {
+                return (
+                  <div ref={lastPostElementRef} key={post.id}>
+                    <PostCard
+                      post={post}
+                      onOpenThread={handleOpenThread}
+                      onOpenConnections={handleOpenConnections}
+                      onAddReply={handleAddReply}
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                    />
+                  </div>
+                );
+              } else {
+                return (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddReply={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                  />
+                );
+              }
+            })}
 
             {posts.length === 0 && (
               <div className="border-2 border-[#141414] border-dashed p-8 text-center bg-white font-mono text-xs uppercase tracking-wider opacity-60">
                 No active broadcasts detected on the network.
+              </div>
+            )}
+            
+            {posts.length > 0 && isLoadingMore && (
+              <div className="pt-4 pb-8 flex justify-center">
+                <div className="px-6 py-2 bg-white border border-[#141414] text-xs font-mono tracking-widest uppercase opacity-70">
+                  Scanning...
+                </div>
               </div>
             )}
           </div>
