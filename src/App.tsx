@@ -10,6 +10,7 @@ import { ExploreView } from './components/ExploreView';
 import { TelemetryView } from './components/TelemetryView';
 import { UserDashboardView } from './components/UserDashboardView';
 import { TermsView } from './components/TermsView';
+import { EmailChangeVerificationView } from './components/EmailChangeVerificationView';
 import { NetworkPost } from './types';
 import { useAuth } from './context/AuthContext';
 import { apiFetch } from './services/authApi';
@@ -28,44 +29,33 @@ export default function App() {
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
+  const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
 
-  // Supabase Auth Password Recovery event listener
+  // URL handling for email verification & password reset
   useEffect(() => {
     const handleUrlSession = async () => {
       const href = window.location.href || '';
-      if (href.includes('access_token=') && href.includes('refresh_token=')) {
-        const accessMatch = href.match(/access_token=([^&]+)/);
-        const refreshMatch = href.match(/refresh_token=([^&]+)/);
-        if (accessMatch && refreshMatch) {
-          const accessToken = decodeURIComponent(accessMatch[1]);
-          const refreshToken = decodeURIComponent(refreshMatch[1]);
-          await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-        }
+      const url = new URL(href);
+      
+      // Handle Email Change Verification
+      const emailToken = url.searchParams.get('token');
+      if (href.includes('verify-email-change') && emailToken) {
+        setEmailVerificationToken(emailToken);
+        return;
       }
 
-      if (
-        href.includes('type=recovery') ||
-        href.includes('reset-password') ||
-        href.includes('access_token=')
-      ) {
+      // Handle Password Reset URL
+      const resetToken = url.searchParams.get('token') || url.searchParams.get('resetToken');
+      if (href.includes('reset-password') || resetToken) {
+        if (resetToken) {
+          setResetPasswordToken(resetToken);
+        }
         setIsResetPasswordOpen(true);
       }
     };
 
     handleUrlSession();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setIsResetPasswordOpen(true);
-      }
-    });
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
   }, []);
   // Infinite scroll observer setup
   const observer = useRef<IntersectionObserver | null>(null);
@@ -148,8 +138,12 @@ export default function App() {
           setHasMore(true);
         }
       }
-    } catch (e) {
-      console.error('Failed to load posts:', e);
+    } catch (e: any) {
+      if (e.message && e.message.includes('Failed to fetch')) {
+        console.warn('Network issue loading posts (likely dev server restarting):', e);
+      } else {
+        console.error('Failed to load posts:', e);
+      }
     } finally {
       if (append) setIsLoadingMore(false);
     }
@@ -322,8 +316,25 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-5 sm:px-8 py-3 sm:py-4 flex flex-col">
-        {/* Terms & Conditions Text Link */}
-        <div className="w-full max-w-4xl mx-auto flex justify-center mb-2">
+        {/* Email Change Verification Overlays everything else */}
+        {emailVerificationToken ? (
+          <EmailChangeVerificationView 
+            token={emailVerificationToken}
+            onSuccess={() => {
+              // Optionally do something
+            }}
+            onBackToHome={() => {
+              setEmailVerificationToken(null);
+              localStorage.removeItem('aamarva_email_verified');
+              // Clean URL
+              window.history.replaceState({}, document.title, "/");
+              setActiveTab('dashboard');
+            }}
+          />
+        ) : (
+          <>
+            {/* Terms & Conditions Text Link */}
+            <div className="w-full max-w-4xl mx-auto flex justify-center mb-2">
           <button
             onClick={() => setActiveTab('terms')}
             className={`text-xs sm:text-sm font-mono font-bold uppercase tracking-wider transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-1.5 ${
@@ -453,6 +464,8 @@ export default function App() {
             onOpenAgentProfile={handleOpenAgentProfile}
           />
         )}
+          </>
+        )}
       </main>
 
       {/* Modals */}
@@ -489,8 +502,12 @@ export default function App() {
 
       <ResetPasswordModal
         isOpen={isResetPasswordOpen}
-        onClose={() => setIsResetPasswordOpen(false)}
+        onClose={() => {
+          setIsResetPasswordOpen(false);
+          setResetPasswordToken(null);
+        }}
         onSuccessLogin={() => setActiveTab('explore')}
+        token={resetPasswordToken || undefined}
       />
     </div>
   );

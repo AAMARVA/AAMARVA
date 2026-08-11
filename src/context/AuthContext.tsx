@@ -7,7 +7,9 @@ import {
   logoutUserApi,
   fetchCurrentProfileApi,
   setAccessToken,
+  getAccessToken,
   setRefreshToken,
+  getRefreshToken,
   deleteAccountApi,
 } from '../services/authApi';
 
@@ -42,23 +44,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return null;
   });
-  const [userPassword, setUserPassword] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('aamarva_user_password') || null;
-    }
-    return null;
-  });
+  const [userPassword, setUserPassword] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const refreshProfile = async () => {
+    const at = getAccessToken();
+    const rt = getRefreshToken();
+    const storedUserStr = typeof window !== 'undefined' ? localStorage.getItem('aamarva_user') : null;
+
+    // If there is no token AND no stored user, the user is logged out.
+    if (!at && !rt && !storedUserStr) {
+      setUser(null);
+      return;
+    }
+
     try {
       const profile = await fetchCurrentProfileApi();
-      setUser(profile);
-      if (typeof window !== 'undefined') {
-        if (profile) {
+      if (profile) {
+        setUser(profile);
+        if (typeof window !== 'undefined') {
           localStorage.setItem('aamarva_user', JSON.stringify(profile));
-        } else {
-          localStorage.removeItem('aamarva_user');
         }
       }
     } catch (err) {
@@ -74,7 +79,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUserPassword(null);
       if (typeof window !== 'undefined') {
         localStorage.removeItem('aamarva_user');
-        localStorage.removeItem('aamarva_user_password');
         localStorage.removeItem('aamarva_at');
         localStorage.removeItem('aamarva_rt');
       }
@@ -103,14 +107,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const result = await loginUserApi({ agentId, password: credential });
     const userToSave = result.user || result.data?.user || result;
     setUser(userToSave || null);
-    setUserPassword(credential);
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_user_password', credential);
       } else {
         localStorage.removeItem('aamarva_user');
-        localStorage.removeItem('aamarva_user_password');
       }
     }
   };
@@ -119,14 +120,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const result = await loginAgentApi({ agentId, apiKey });
     const userToSave = result.user || result.data?.user || result;
     setUser(userToSave || null);
-    setUserPassword(apiKey);
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_user_password', apiKey);
       } else {
         localStorage.removeItem('aamarva_user');
-        localStorage.removeItem('aamarva_user_password');
       }
     }
   };
@@ -152,13 +150,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setRefreshToken(refreshToken);
     }
 
-    setUserPassword(password);
-
     if (userToSave) {
       setUser(userToSave);
       if (typeof window !== 'undefined') {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_user_password', password);
       }
     } else {
       const returnedAgentId = resData.agentId || resData.user?.agentId || '';
@@ -179,12 +174,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await logoutUserApi();
+    try {
+      await logoutUserApi();
+    } catch (e) {
+      console.warn('Logout API error:', e);
+    }
     setUser(null);
     setUserPassword(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
-      localStorage.removeItem('aamarva_user_password');
+      localStorage.removeItem('aamarva_at');
+      localStorage.removeItem('aamarva_rt');
     }
   };
 
@@ -194,17 +194,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserPassword(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
-      localStorage.removeItem('aamarva_user_password');
       localStorage.removeItem('aamarva_at');
       localStorage.removeItem('aamarva_rt');
     }
   };
 
-  const updatePassword = (pwd: string) => {
-    setUserPassword(pwd);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('aamarva_user_password', pwd);
-    }
+  const updatePassword = (_pwd: string) => {
+    // Password is not saved in localStorage
   };
 
   return (

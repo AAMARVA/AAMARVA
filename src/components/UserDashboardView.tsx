@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
-import { apiFetch, getAccessToken, buildApiUrl } from '../services/authApi';
+import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
 import { ChatModal } from './ChatModal';
 
@@ -58,11 +58,21 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [isSendingRecovery, setIsSendingRecovery] = useState(false);
   const [recoverySuccess, setRecoverySuccess] = useState(false);
 
+  // Rotation state
+  const [showRotateModal, setShowRotateModal] = useState(false);
+  const [rotationPassword, setRotationPassword] = useState('');
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
+  const [isRotating, setIsRotating] = useState(false);
+  const [rotationError, setRotationError] = useState('');
+
+  // Email Change States
+  const [showEmailChangeModal, setShowEmailChangeModal] = useState(false);
+  const [emailChangeNewEmail, setEmailChangeNewEmail] = useState('');
+  const [isChangingEmail, setIsChangingEmail] = useState(false);
+  const [emailChangeError, setEmailChangeError] = useState('');
+  const [emailChangeSuccess, setEmailChangeSuccess] = useState('');
+
   const currentApiKey = user?.apiKey || null;
-  const displayPassword = userPassword 
-    || (typeof window !== 'undefined' ? localStorage.getItem('aamarva_user_password') : null)
-    || (currentUser as any)?.password 
-    || (currentAgentId ? `amr_${currentAgentId.toLowerCase().replace(/[^a-z0-9]/g, '')}` : 'aamarva_sec_2026');
   
   // Edit state
   const [isEditing, setIsEditing] = useState({
@@ -80,17 +90,50 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     setIsEditing(prev => ({ ...prev, [field]: !prev[field] }));
   };
 
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'aamarva_email_verified' && e.newValue === 'true') {
+        setShowEmailChangeModal(false);
+        setEmailChangeSuccess('');
+        setEmailChangeNewEmail('');
+        // We don't remove it here so that if they have multiple dashboard tabs, all of them close
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   const handleSave = (field: keyof typeof isEditing) => {
     if (field === 'password' && editPassword.trim()) {
       if (updatePassword) {
         updatePassword(editPassword.trim());
-      } else if (typeof window !== 'undefined') {
-        localStorage.setItem('aamarva_user_password', editPassword.trim());
       }
       setEditPassword('');
     }
     alert(String(field) + ' updated successfully!');
     setIsEditing(prev => ({ ...prev, [field]: false }));
+  };
+
+  const handleRequestEmailChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEmailChangeError('');
+    setEmailChangeSuccess('');
+    setIsChangingEmail(true);
+
+    try {
+      const res = await requestEmailChangeApi(emailChangeNewEmail);
+      setEmailChangeSuccess(res.message);
+      
+      // Auto-close success message after 10 seconds if they don't do it manually
+      setTimeout(() => {
+        setEmailChangeSuccess('');
+        setShowEmailChangeModal(false);
+      }, 10000);
+    } catch (err: any) {
+      setEmailChangeError(err.message || 'Failed to request email change.');
+    } finally {
+      setIsChangingEmail(false);
+    }
   };
   
   // Active Twitter profile tab state
@@ -136,6 +179,20 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       navigator.clipboard.writeText(currentApiKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleRotateApiKey = async () => {
+    setIsRotating(true);
+    setRotationError('');
+    try {
+      const res = await rotateApiKey(rotationPassword);
+      setNewApiKey(res.apiKey);
+      setRotationPassword('');
+    } catch (err: any) {
+      setRotationError(err.message || 'Failed to rotate API key.');
+    } finally {
+      setIsRotating(false);
     }
   };
 
@@ -478,9 +535,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Identity & Password */}
-            <div className="space-y-4">
+            <div className="space-y-4 flex flex-col">
                       {/* Email Address */}
-              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1">
+              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Email</span>
                   {isEditing.email && (
@@ -493,123 +550,51 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     </button>
                   )}
                 </div>
-                <div className="flex flex-col gap-4">
-                  {isEditing.email ? (
-                    <input 
-                      type="email" 
-                      value={editEmail} 
-                      onChange={(e) => setEditEmail(e.target.value)}
-                      className="w-full px-2 py-1 bg-white border border-[#141414] font-mono text-xs"
-                    />
-                  ) : (
+                <div className="flex flex-col gap-4 flex-grow">
+                  <div className="flex-grow flex items-center">
                     <span className="font-bold truncate">{revealed.email ? currentUser?.email : '••••••••••••••••'}</span>
-                  )}
-                  <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
-                    {isEditing.email ? (
-                      <button type="button" onClick={() => handleSave('email')} className="w-full text-center text-[#141414] hover:text-black font-bold uppercase text-[10px] underline">Save Changes</button>
-                    ) : (
-                      <>
-                        <button type="button" onClick={() => toggleField('email')} className="text-[#141414]/60 hover:text-black">
-                          {revealed.email ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                        <button type="button" onClick={() => toggleEdit('email')} className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline">Edit Email</button>
-                      </>
-                    )}
                   </div>
-                </div>
-              </div>
-
-              {/* Secure Password Key */}
-              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Password Security</span>
-                  {isEditing.password && (
+                  <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
+                    <button type="button" onClick={() => toggleField('email')} className="text-[#141414]/60 hover:text-black">
+                      {revealed.email ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
                     <button 
                       type="button" 
-                      onClick={() => setIsEditing(prev => ({ ...prev, password: false }))}
-                      className="text-[#141414]/60 hover:text-red-600 text-sm font-bold"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-col gap-4">
-                  {isEditing.password ? (
-                    <input 
-                      type="password" 
-                      placeholder="Enter new password"
-                      value={editPassword} 
-                      onChange={(e) => setEditPassword(e.target.value)}
-                      className="w-full px-2 py-1 bg-white border border-[#141414] font-mono text-xs"
-                    />
-                  ) : (
-                    <span className="font-bold break-all font-mono leading-none text-[#141414]/80">
-                      {revealed.password ? displayPassword : '••••••••••••••••'}
-                    </span>
-                  )}
-                  <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
-                    {isEditing.password ? (
-                      <button type="button" onClick={() => handleSave('password')} className="w-full text-center text-[#141414] hover:text-black font-bold uppercase text-[10px] underline">Save Changes</button>
-                    ) : (
-                      <>
-                        <button type="button" onClick={() => toggleField('password')} className="text-[#141414]/60 hover:text-black">
-                          {revealed.password ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                        <button type="button" onClick={() => toggleEdit('password')} className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline">Change Password</button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* API Access Key */}
-            <div className="space-y-4">
-              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Registered Agent ID</span>
-                </div>
-                <div className="flex flex-col gap-4">
-                  <span className="font-bold truncate">{currentAgentId || 'N/A'}</span>
-                  <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
-                    <div className="w-3.5 h-3.5" aria-hidden="true" />
-                    <button
-                      type="button"
                       onClick={() => {
-                        if (currentAgentId) {
-                          navigator.clipboard.writeText(currentAgentId);
-                          setCopiedId(true);
-                          setTimeout(() => setCopiedId(false), 2000);
-                        }
-                      }}
+                        setEmailChangeError('');
+                        setEmailChangeSuccess('');
+                        setEmailChangeNewEmail('');
+                        setShowEmailChangeModal(true);
+                      }} 
                       className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
                     >
-                      {copiedId ? 'Copied' : 'Copy ID'}
+                      Change Email
                     </button>
                   </div>
                 </div>
               </div>
-              
-              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1">
+
+            </div>
+
+            <div className="space-y-4 flex flex-col">
+              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
                 </div>
-                <div className="flex flex-col gap-4">
-                  <span className="font-bold break-all">{revealed.apiKey ? currentApiKey : '••••••••••••••••••••••••••••••'}</span>
-                  <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
+                <div className="flex flex-col gap-4 flex-grow">
+                  <div className="flex-grow" />
+                  <div className="flex justify-center items-center gap-2 border-t pt-2 border-[#141414]/20">
                     <button
                       type="button"
-                      onClick={() => toggleField('apiKey')}
-                      className="text-[#141414]/60 hover:text-black"
+                      onClick={() => {
+                        setNewApiKey(null);
+                        setRotationError('');
+                        setShowRotateModal(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#141414]/20 hover:border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider transition-all shadow-[1px_1px_0px_0px_rgba(20,20,20,0.1)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
                     >
-                      {revealed.apiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCopySecretKey}
-                      className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
-                    >
-                      {copied ? 'Copied' : 'Copy Key'}
+                      <RotateCw className="w-3 h-3" />
+                      Rotate API Key
                     </button>
                   </div>
                 </div>
@@ -627,6 +612,241 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
         </div>
         
+        {/* API Key Rotation Modal */}
+        {showRotateModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
+                  <RotateCw className="w-4 h-4" />
+                  Rotate API Key
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRotateModal(false);
+                    setNewApiKey(null);
+                  }}
+                  className="text-white hover:text-red-400 p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {!newApiKey ? (
+                  <>
+                    <div className="flex items-start gap-4 p-4 bg-neutral-100 border-2 border-[#141414] text-[#141414]">
+                      <div className="shrink-0 p-2 bg-[#141414] text-white rounded-full">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="font-bold text-sm uppercase tracking-wider font-mono underline">Warning</h3>
+                        <p className="text-xs font-mono leading-relaxed">
+                          Rotating your API key will <span className="font-black underline">immediately invalidate</span> the current key. Any existing agents or services using the old key will lose access.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      {rotationError && (
+                        <p className="mt-2 text-xs font-mono font-bold text-red-600 bg-red-50 p-2 border border-red-600">
+                          {rotationError}
+                        </p>
+                      )}
+                      
+                      <div className="space-y-2">
+                        <label className="block text-[10px] font-black uppercase text-[#141414]/50 font-mono">Confirm Password</label>
+                        <input
+                          type="password"
+                          value={rotationPassword}
+                          onChange={(e) => setRotationPassword(e.target.value)}
+                          placeholder="Enter your account password"
+                          className="w-full px-4 py-3 bg-[#E4E3E0]/30 border-2 border-[#141414] focus:bg-white outline-none font-mono text-sm transition-colors"
+                        />
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setShowRotateModal(false)}
+                          className="flex-1 py-3 bg-white border-2 border-[#141414] text-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#E4E3E0] transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleRotateApiKey}
+                          disabled={isRotating || !rotationPassword}
+                          className="flex-1 py-3 bg-[#141414] border-2 border-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {isRotating ? (
+                            <>
+                              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                              Rotating...
+                            </>
+                          ) : (
+                            'Confirm Rotation'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-3 p-4 bg-green-50 border-2 border-green-800 text-green-900">
+                      <CheckCircle2 className="w-6 h-6 shrink-0" />
+                      <div>
+                        <h3 className="font-bold text-sm uppercase tracking-wider font-mono">Success</h3>
+                        <p className="text-xs font-mono">Your API key has been rotated successfully.</p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-[#E4E3E0]/30 border-2 border-[#141414] border-dashed space-y-3">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="font-mono text-[10px] uppercase font-bold text-[#141414]/60">New Plaintext API Key</span>
+                        <div className="bg-white border-2 border-[#141414] p-3 flex justify-between items-center group">
+                          <code className="font-mono text-xs break-all selection:bg-black selection:text-white pr-2">{newApiKey}</code>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(newApiKey);
+                              alert('New API key copied!');
+                            }}
+                            className="shrink-0 p-2 bg-[#141414] text-white hover:bg-black transition-all"
+                            title="Copy to clipboard"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-neutral-100 p-3 border-l-4 border-[#141414] flex items-start gap-3">
+                        <ShieldCheck className="w-5 h-5 text-[#141414] shrink-0 mt-0.5" />
+                        <p className="text-[10px] font-mono leading-relaxed text-[#141414] italic">
+                          <span className="font-black uppercase">Critical:</span> This key will only be shown <span className="underline">once</span>. Copy it now and store it in a secure location. It is not recoverable once this window is closed.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setShowRotateModal(false);
+                        setNewApiKey(null);
+                        // Force a refresh of the profile if needed
+                        window.location.reload(); 
+                      }}
+                      className="w-full py-4 bg-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]"
+                    >
+                      I have saved my new API key
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Email Change Modal */}
+        {showEmailChangeModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
+                  <Mail className="w-4 h-4" />
+                  Change Email Address
+                </h2>
+                <button
+                  onClick={() => setShowEmailChangeModal(false)}
+                  className="text-white hover:text-red-400 p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {!emailChangeSuccess ? (
+                  <>
+                    <div className="flex items-start gap-4 p-4 bg-[#E4E3E0]/20 border-2 border-[#141414] text-[#141414]">
+                      <div className="shrink-0 p-2 bg-[#141414] text-white rounded-full">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="font-bold text-sm uppercase tracking-wider font-mono">Verification Required</h3>
+                        <p className="text-xs font-mono leading-relaxed">
+                          A verification link will be sent to your <span className="font-black underline">current email address</span>. The change will only take effect after you click that link.
+                        </p>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleRequestEmailChange} className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="block text-[10px] font-black uppercase text-[#141414]/50 font-mono">New Email Address</label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/40" />
+                          <input
+                            type="email"
+                            required
+                            value={emailChangeNewEmail}
+                            onChange={(e) => setEmailChangeNewEmail(e.target.value)}
+                            placeholder="Enter new email"
+                            className="w-full pl-10 pr-4 py-3 bg-[#E4E3E0]/30 border-2 border-[#141414] focus:bg-white outline-none font-mono text-sm transition-colors"
+                          />
+                        </div>
+                      </div>
+
+                      {emailChangeError && (
+                        <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs font-mono flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 shrink-0" />
+                          {emailChangeError}
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={isChangingEmail || !emailChangeNewEmail}
+                        className="w-full py-4 bg-[#141414] text-white font-black uppercase tracking-[0.2em] text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                      >
+                        {isChangingEmail ? (
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <Mail className="w-4 h-4" />
+                        )}
+                        Request Verification
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+                    <div className="p-4 bg-green-50 border-2 border-green-800 text-green-900 flex items-center gap-3">
+                      <CheckCircle2 className="w-5 h-5 shrink-0" />
+                      <p className="text-xs font-mono font-bold uppercase tracking-tight">Request Successful</p>
+                    </div>
+
+                    <div className="space-y-4 text-center">
+                      <p className="text-sm font-mono leading-relaxed text-[#141414]">
+                        We've sent a verification link to your current email address.
+                      </p>
+                      <div className="p-3 bg-[#E4E3E0]/30 border border-dashed border-[#141414]/30 font-mono text-xs font-bold">
+                        {currentUser?.email}
+                      </div>
+                      <p className="text-[10px] text-[#141414]/60 font-mono uppercase">
+                        Please check your inbox and click the link to confirm the change to <strong>{emailChangeNewEmail}</strong>.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setShowEmailChangeModal(false);
+                        setEmailChangeSuccess('');
+                      }}
+                      className="w-full py-4 bg-[#141414] text-white font-black uppercase tracking-[0.2em] text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3"
+                    >
+                      Close
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Delete Confirmation Modal */}
         {showDeleteModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -804,7 +1024,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
             </div>
             <p className="font-mono text-[11px] text-red-700 font-bold italic">
-              ⚠️ Please save your Agent ID and Paid Key securely. You are now logged into your dashboard session.
+              ⚠️ IMPORTANT: This will never be shown again. Store it carefully.
             </p>
           </div>
         )}
@@ -934,33 +1154,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
                         setIsSendingRecovery(true);
                         try {
-                          // First check if email is registered in the system
-                          const checkRes = await fetch(buildApiUrl('/api/auth/check-email'), {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: recoveryEmail.trim() }),
-                          });
-                          const checkData = await checkRes.json();
-
-                          if (!checkRes.ok || !checkData.success) {
-                            setRecoveryMessage("This email isn't registered.");
-                            setIsSendingRecovery(false);
-                            return;
-                          }
-
-                          const redirectTo = window.location.origin;
-                          const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail.trim(), {
-                            redirectTo,
-                          });
-
-                          if (error) {
-                            setRecoveryMessage(error.message || 'Failed to send recovery link.');
-                          } else {
-                            setRecoverySuccess(true);
-                            setRecoveryMessage('Recovery link sent! Check your email inbox to reset your password.');
-                          }
+                          const res = await requestForgotPasswordApi(recoveryEmail.trim());
+                          setRecoverySuccess(true);
+                          setRecoveryMessage(res.message || 'The verification link has been sent to your email.');
                         } catch (err: any) {
-                          setRecoveryMessage(err?.message || 'Failed to request password recovery.');
+                          setRecoverySuccess(false);
+                          setRecoveryMessage(err?.message || "This email is not present in our database");
                         } finally {
                           setIsSendingRecovery(false);
                         }

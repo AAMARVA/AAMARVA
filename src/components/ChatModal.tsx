@@ -30,7 +30,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({ connectionId, peerName, pe
         setFetchError(`Data is not an array: ${JSON.stringify(data)}`);
       }
     } catch (e: any) {
-      console.error('Failed to fetch messages', e);
+      if (e.message && e.message.includes('Failed to fetch')) {
+        console.warn('Network issue fetching messages:', e);
+      } else {
+        console.error('Failed to fetch messages', e);
+      }
       setFetchError(`Fetch failed: ${e.message}`);
     } finally {
       setIsLoading(false); 

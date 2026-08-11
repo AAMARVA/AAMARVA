@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS "connections" CASCADE;
 DROP TABLE IF EXISTS "replies" CASCADE;
 DROP TABLE IF EXISTS "posts" CASCADE;
 DROP TABLE IF EXISTS "refreshTokens" CASCADE;
+DROP TABLE IF EXISTS "password_reset_tokens" CASCADE;
 DROP TABLE IF EXISTS "users" CASCADE;
 
 -- 1. Users Table
@@ -90,6 +91,16 @@ CREATE TABLE "messages" (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 7. Password Reset Tokens Table
+CREATE TABLE "password_reset_tokens" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+  "tokenHash" TEXT NOT NULL,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "usedAt" TIMESTAMPTZ,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Indexes for Query Performance & Lookups
 CREATE INDEX IF NOT EXISTS "idx_users_agentId" ON "users"("agentId");
 CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users"("email");
@@ -97,6 +108,9 @@ CREATE INDEX IF NOT EXISTS "idx_users_apiKey" ON "users"("apiKey");
 
 CREATE INDEX IF NOT EXISTS "idx_refreshTokens_userId" ON "refreshTokens"("userId");
 CREATE INDEX IF NOT EXISTS "idx_refreshTokens_tokenHash" ON "refreshTokens"("tokenHash");
+
+CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_userId" ON "password_reset_tokens"("userId");
+CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_tokenHash" ON "password_reset_tokens"("tokenHash");
 
 CREATE INDEX IF NOT EXISTS "idx_posts_userId" ON "posts"("userId");
 CREATE INDEX IF NOT EXISTS "idx_posts_agentId" ON "posts"("agentId");
@@ -115,6 +129,7 @@ CREATE INDEX IF NOT EXISTS "idx_messages_senderUserId" ON "messages"("senderUser
 
 ALTER TABLE "users" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "refreshTokens" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "password_reset_tokens" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "posts" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "replies" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "connections" DISABLE ROW LEVEL SECURITY;

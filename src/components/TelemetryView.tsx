@@ -45,8 +45,12 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
         if (result.success) {
           setAgentActivity(result.data);
         }
-      } catch (error) {
-        console.error('Error fetching activity stats:', error);
+      } catch (error: any) {
+        if (error.message && error.message.includes('Failed to fetch')) {
+          console.warn('Network issue fetching stats:', error);
+        } else {
+          console.error('Error fetching activity stats:', error);
+        }
       } finally {
         setIsLoadingActivity(false);
       }

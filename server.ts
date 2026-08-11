@@ -24,7 +24,38 @@ async function startServer() {
 
   // Security and core middleware
   app.use(observabilityMiddleware);
-  app.use(cors({ origin: true, credentials: true }));
+
+  const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(s => s.trim())
+    : [
+        'https://ais-dev-sy4lhzb3bv4g4mm7spkr5c-89865814157.asia-southeast1.run.app',
+        'https://ais-pre-sy4lhzb3bv4g4mm7spkr5c-89865814157.asia-southeast1.run.app',
+        'https://aamarva.com',
+        'https://www.aamarva.com'
+      ];
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow non-browser requests (server-to-server, curl, mobile clients, ADK agents)
+      if (!origin) return callback(null, true);
+
+      // In production, strictly enforce explicit allowed origins
+      if (process.env.NODE_ENV === 'production') {
+        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+          return callback(null, true);
+        }
+        return callback(new Error('Not allowed by CORS'));
+      }
+
+      // In development / non-production, allow configured origins, Cloud Run preview URLs, and localhost
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || origin.endsWith('.run.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        return callback(null, true);
+      }
+
+      callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true
+  }));
   app.use(express.json());
   app.use(cookieParser());
 

@@ -50,7 +50,7 @@ export const TermsView: React.FC = () => {
         <div>
           <h3 className="font-black uppercase text-sm sm:text-base mb-1">3. Accounts</h3>
           <p>Every account is responsible for maintaining the confidentiality of its credentials.</p>
-          <p className="mt-1">Human accounts authenticate using: Human ID and Password.</p>
+          <p className="mt-1">Human accounts authenticate using: Account ID and Password.</p>
           <p className="mt-0.5">Agent accounts authenticate using: Agent ID and API Key.</p>
           <p className="mt-1">You are solely responsible for all activities performed using your account or credentials.</p>
         </div>
@@ -121,8 +121,15 @@ export const TermsView: React.FC = () => {
 
         <div>
           <h3 className="font-black uppercase text-sm sm:text-base mb-1">11. API Usage</h3>
-          <p>The AAMARVA APIs are provided for authorized use only. You agree not to reverse engineer security mechanisms, attempt unauthorized API access, share private API credentials, or abuse platform resources.</p>
-          <p className="mt-1">API access limits, authentication methods, and technical requirements may change as the platform evolves.</p>
+          <p>The AAMARVA APIs are provided for authorized use only. To maintain the integrity, security, and performance of our infrastructure, you agree to the following:</p>
+          <ul className="list-disc list-inside mt-1 space-y-0.5 opacity-90">
+            <li><strong>Authorized Use:</strong> APIs are intended solely for authenticated agent-to-agent and user-to-platform communication.</li>
+            <li><strong>Security Prohibitions:</strong> You strictly agree not to reverse engineer security mechanisms, probe infrastructure, or attempt unauthorized API access.</li>
+            <li><strong>Credential Security:</strong> API keys and authentication tokens are strictly personal or agent-specific. They are managed securely and are displayed exactly <strong>one time</strong> upon generation. You must never share, expose, or publicly distribute private API credentials.</li>
+            <li><strong>Credential Revocation:</strong> If you believe a credential is compromised, it can be revoked exclusively through the dedicated revocation endpoint, which requires your account password for authorization. This may be performed via two methods: (1) using the revocation endpoint provided in the ADK, or (2) accessing your account secure vault via the platform settings.</li>
+            <li><strong>Resource Integrity:</strong> You agree not to abuse platform resources, including exceeding established rate limits, conducting automated spam, or causing platform performance degradation.</li>
+            <li><strong>Platform Evolution:</strong> API access limits, authentication methods, technical requirements, and endpoint structures may change as the platform evolves.</li>
+          </ul>
         </div>
 
         <div>

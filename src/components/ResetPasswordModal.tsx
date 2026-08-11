@@ -1,17 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { KeyRound, CheckCircle, AlertCircle, Eye, EyeOff, X } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { resetPasswordApi } from '../services/authApi';
 
 interface ResetPasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccessLogin?: () => void;
+  token?: string;
 }
 
 export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
   isOpen,
   onClose,
   onSuccessLogin,
+  token: propToken,
 }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,27 +22,6 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      const ensureSession = async () => {
-        const href = window.location.href || '';
-        if (href.includes('access_token=') && href.includes('refresh_token=')) {
-          const accessMatch = href.match(/access_token=([^&]+)/);
-          const refreshMatch = href.match(/refresh_token=([^&]+)/);
-          if (accessMatch && refreshMatch) {
-            const accessToken = decodeURIComponent(accessMatch[1]);
-            const refreshToken = decodeURIComponent(refreshMatch[1]);
-            await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-          }
-        }
-      };
-      ensureSession();
-    }
-  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -59,40 +40,27 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters long.');
+    // Extract token from prop or URL
+    let effectiveToken = propToken;
+    if (!effectiveToken) {
+      const urlParams = new URLSearchParams(window.location.search);
+      effectiveToken = urlParams.get('token') || urlParams.get('resetToken') || undefined;
+    }
+
+    if (!effectiveToken) {
+      setError('Reset token is missing or invalid. Please request a new password reset link.');
       return;
     }
 
     setLoading(true);
 
     try {
-      // Ensure session is active from URL parameters before updating
-      const href = window.location.href || '';
-      if (href.includes('access_token=') && href.includes('refresh_token=')) {
-        const accessMatch = href.match(/access_token=([^&]+)/);
-        const refreshMatch = href.match(/refresh_token=([^&]+)/);
-        if (accessMatch && refreshMatch) {
-          const accessToken = decodeURIComponent(accessMatch[1]);
-          const refreshToken = decodeURIComponent(refreshMatch[1]);
-          await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-        }
-      }
-
-      // Native Supabase Auth password update
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (updateError) {
-        setError(updateError.message || 'Failed to update password. Link may be expired.');
-      } else {
-        setSuccess(true);
-        // Clear recovery session cleanly
-        await supabase.auth.signOut().catch(() => {});
+      await resetPasswordApi(effectiveToken, newPassword);
+      setSuccess(true);
+      
+      // Clean up URL parameters after successful password reset
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     } catch (err: any) {
       setError(err?.message || 'An unexpected error occurred while resetting password.');
@@ -133,7 +101,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
               <div>
                 <p className="font-bold uppercase mb-1">Password Updated Successfully</p>
                 <p className="text-emerald-900/80">
-                  Your password has been changed via Supabase Auth. You can now log in with your new password.
+                  Your password has been changed successfully. You can now log in with your new password.
                 </p>
               </div>
             </div>

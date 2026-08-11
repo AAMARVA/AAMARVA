@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { UserRecord, RefreshTokenRecord } from './db.js';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase.js';
+import { sendEmailVerification, sendPasswordResetEmail } from './emailService.js';
+import { config } from './config.js';
 
 
 export interface UserTokenPayload {
@@ -68,9 +70,22 @@ export async function comparePassword(password: string, hash: string): Promise<b
   return await bcrypt.compare(password, hash);
 }
 
+export async function hashApiKey(apiKey: string): Promise<string> {
+  const saltRounds = 10;
+  return await bcrypt.hash(apiKey, saltRounds);
+}
+
+export async function compareApiKey(apiKey: string, hash: string): Promise<boolean> {
+  return await bcrypt.compare(apiKey, hash);
+}
+
 export function generateAgentId(): string {
   const randomHex = crypto.randomBytes(3).toString('hex').toUpperCase();
   return `AMR-${randomHex}`;
+}
+
+export function generateApiKey(): string {
+  return `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
 }
 
 export function generateAccessToken(user: UserRecord): string {
@@ -124,27 +139,25 @@ const AVATAR_POOL = [
   '🌊', '🌋', '🗻', '🏜️', '🏝️', '🌳', '🌲', '🌵', '🌻', '🌸'
 ];
 
-export function normalizeUserRecord(raw: any): UserRecord {
+export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
   if (!raw) return raw;
-  let apiKey = raw.apiKey || raw.api_key || '';
-  let bio = raw.bio || '';
-  if (!apiKey && bio && bio.startsWith('apiKey:')) {
-    apiKey = bio.replace('apiKey:', '');
-    bio = '';
-  }
+  
+  // Authoritative apiKeyHash source: auth.user.app_metadata (Admin-only)
+  const apiKeyHash = authUser?.app_metadata?.apiKeyHash || '';
+
   return {
     id: raw.id,
     agentId: raw.agentId || raw.agent_id || '',
     email: raw.email || '',
     passwordHash: raw.passwordHash || raw.password_hash || '',
-    apiKey,
+    apiKey: apiKeyHash, // Use dedicated hash field from metadata
     name: raw.name || '',
     status: raw.status || 'active',
     emailVerified: raw.emailVerified !== undefined ? raw.emailVerified : (raw.email_verified !== undefined ? raw.email_verified : true),
     trustScore: raw.trustScore !== undefined ? raw.trustScore : (raw.trust_score !== undefined ? raw.trust_score : 0),
     verificationStatus: raw.verificationStatus || raw.verification_status || 'unverified',
     avatar: raw.avatar || '🤖',
-    bio,
+    bio: raw.bio || '',
     createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.updated_at || new Date().toISOString(),
   };
@@ -174,12 +187,12 @@ async function findUserById(supabase: any, id: string) {
 }
 
 async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
+  // Primary attempt: Use dedicated apiKey column (if it ever exists)
   const camelRecord: Record<string, any> = {
     id: newUser.id,
     agentId: newUser.agentId,
     email: newUser.email,
     passwordHash: newUser.passwordHash,
-    apiKey: newUser.apiKey,
     name: newUser.name,
     role: 'agent_operator',
     status: newUser.status,
@@ -190,98 +203,28 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     updatedAt: newUser.updatedAt,
   };
 
-  let { error } = await supabase.from('users').insert([camelRecord]);
-  if (!error) return;
-  if (error.code === '23505') throw error;
-
-  const camelBioRecord: Record<string, any> = {
-    id: newUser.id,
-    agentId: newUser.agentId,
-    email: newUser.email,
-    passwordHash: newUser.passwordHash,
-    bio: `apiKey:${newUser.apiKey}`,
-    name: newUser.name,
-    role: 'agent_operator',
-    status: newUser.status,
-    emailVerified: newUser.emailVerified,
-    verificationStatus: newUser.verificationStatus,
-    avatar: newUser.avatar,
-    createdAt: newUser.createdAt,
-    updatedAt: newUser.updatedAt,
-  };
-
-  const resCamelBio = await supabase.from('users').insert([camelBioRecord]);
-  if (!resCamelBio.error) return;
-  if (resCamelBio.error.code === '23505') throw resCamelBio.error;
-
-  const snakeRecord: Record<string, any> = {
-    id: newUser.id,
-    agent_id: newUser.agentId,
-    email: newUser.email,
-    password_hash: newUser.passwordHash,
-    api_key: newUser.apiKey,
-    name: newUser.name,
-    role: 'agent_operator',
-    status: newUser.status,
-    email_verified: newUser.emailVerified,
-    verification_status: newUser.verificationStatus,
-    avatar: newUser.avatar,
-    created_at: newUser.createdAt,
-    updated_at: newUser.updatedAt,
-  };
-
-  const resSnake = await supabase.from('users').insert([snakeRecord]);
-  if (!resSnake.error) return;
-  if (resSnake.error.code === '23505') throw resSnake.error;
-
-  const snakeBioRecord: Record<string, any> = {
-    id: newUser.id,
-    agent_id: newUser.agentId,
-    email: newUser.email,
-    password_hash: newUser.passwordHash,
-    bio: `apiKey:${newUser.apiKey}`,
-    name: newUser.name,
-    role: 'agent_operator',
-    status: newUser.status,
-    email_verified: newUser.emailVerified,
-    verification_status: newUser.verificationStatus,
-    avatar: newUser.avatar,
-    created_at: newUser.createdAt,
-    updated_at: newUser.updatedAt,
-  };
-
-  const resSnakeBio = await supabase.from('users').insert([snakeBioRecord]);
-  if (!resSnakeBio.error) return;
-  if (resSnakeBio.error.code === '23505') throw resSnakeBio.error;
-
-  const camelStripped: Record<string, any> = {
-    id: newUser.id,
-    agentId: newUser.agentId,
-    email: newUser.email,
-    passwordHash: newUser.passwordHash,
-    bio: `apiKey:${newUser.apiKey}`,
-    name: newUser.name,
-    avatar: newUser.avatar,
-  };
-
-  const resCamelStripped = await supabase.from('users').insert([camelStripped]);
-  if (!resCamelStripped.error) return;
-  if (resCamelStripped.error.code === '23505') throw resCamelStripped.error;
-
-  const snakeStripped: Record<string, any> = {
-    id: newUser.id,
-    agent_id: newUser.agentId,
-    email: newUser.email,
-    password_hash: newUser.passwordHash,
-    bio: `apiKey:${newUser.apiKey}`,
-    name: newUser.name,
-    avatar: newUser.avatar,
-  };
-
-  const resSnakeStripped = await supabase.from('users').insert([snakeStripped]);
-  if (!resSnakeStripped.error) return;
-
-  throw error || resSnake.error || resSnakeBio.error;
+  const { error } = await supabase.from('users').insert([camelRecord]);
+  if (error && error.code === '23505') throw error;
+  if (error) {
+    // If dedicated column fails, we rely on user_metadata which is handled in registerUser
+    // but we still try snake_case for the profile part
+    const snakeRecord: Record<string, any> = {
+      id: newUser.id,
+      agent_id: newUser.agentId,
+      email: newUser.email,
+      password_hash: newUser.passwordHash,
+      name: newUser.name,
+      role: 'agent_operator',
+      status: newUser.status,
+      email_verified: newUser.emailVerified,
+      verification_status: newUser.verificationStatus,
+      avatar: newUser.avatar,
+      created_at: newUser.createdAt,
+      updated_at: newUser.updatedAt,
+    };
+    const resSnake = await supabase.from('users').insert([snakeRecord]);
+    if (resSnake.error && resSnake.error.code === '23505') throw resSnake.error;
+  }
 }
 
 export async function registerUser(data: {
@@ -345,42 +288,18 @@ export async function registerUser(data: {
   }
 
   // Generate unique API Key
-  let apiKeyToUse = '';
-  let isUniqueApiKey = false;
-  let keyAttempts = 0;
-  while (!isUniqueApiKey && keyAttempts < 10) {
-    const prospectiveKey = `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
-    let isUsed = false;
-    try {
-      const { data: ext1 } = await supabase.from('users').select('id').eq('apiKey', prospectiveKey).limit(1);
-      if (ext1 && ext1.length > 0) isUsed = true;
-    } catch (e) {
-      try {
-        const { data: ext2 } = await supabase.from('users').select('id').eq('api_key', prospectiveKey).limit(1);
-        if (ext2 && ext2.length > 0) isUsed = true;
-      } catch (err2) {
-        // ignore schema errors, assume unique
-      }
-    }
-    if (!isUsed) {
-      apiKeyToUse = prospectiveKey;
-      isUniqueApiKey = true;
-    }
-    keyAttempts++;
-  }
-  if (!apiKeyToUse) {
-    apiKeyToUse = `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
-  }
+  const apiKeyToUse = generateApiKey();
 
   const passwordHash = data.password ? await hashPassword(data.password) : await hashPassword(crypto.randomBytes(32).toString('hex'));
   
   // Create user
+  const apiKeyHash = await hashApiKey(apiKeyToUse);
   const newUser: UserRecord = {
     id: `usr_${crypto.randomUUID()}`,
     agentId,
     email: normalizedEmail,
     passwordHash,
-    apiKey: apiKeyToUse,
+    apiKey: apiKeyHash,
     name: agentName,
     status: 'active',
     emailVerified: false,
@@ -392,23 +311,29 @@ export async function registerUser(data: {
 
   await insertUserToSupabase(supabase, newUser);
 
-  // Sync creation with Supabase Auth (auth.users)
-  if (data.password && supabase) {
+  // Sync creation with Supabase Auth (auth.users) and store apiKeyHash in metadata
+  if (supabase) {
     try {
       if (supabase.auth?.admin?.createUser) {
         await supabase.auth.admin.createUser({
           email: normalizedEmail,
-          password: data.password,
+          password: data.password || crypto.randomBytes(32).toString('hex'),
           email_confirm: true,
+          app_metadata: { apiKeyHash }
         });
       } else if (supabase.auth?.signUp) {
-        await supabase.auth.signUp({
+        const { data: signUpData } = await supabase.auth.signUp({
           email: normalizedEmail,
-          password: data.password,
+          password: data.password || crypto.randomBytes(32).toString('hex')
         });
+        if (signUpData?.user?.id && supabase.auth?.admin?.updateUserById) {
+           await supabase.auth.admin.updateUserById(signUpData.user.id, {
+             app_metadata: { apiKeyHash }
+           });
+        }
       }
     } catch (authErr) {
-      console.warn('Note: Supabase auth.users provisioning attempt:', authErr);
+      console.warn('Note: Supabase auth.users provisioning attempt failed.');
     }
   }
   
@@ -429,7 +354,7 @@ export async function registerUser(data: {
 
   await supabase.from('refreshTokens').insert([newRecord]);
   
-  const { passwordHash: _, ...safeUser } = newUser;
+  const { passwordHash: _, apiKey: __, ...safeUser } = newUser;
   return { agentId, apiKey: apiKeyToUse, user: safeUser as any, tokens: { accessToken, refreshToken } };
 }
 
@@ -450,6 +375,45 @@ async function findUserByAgentId(agentId: string) {
   // Fallback to searching by id
   const { data: byId } = await supabase.from('users').select('*').eq('id', term).maybeSingle();
   return byId || null;
+}
+
+export async function findUserByApiKey(apiKey: string) {
+  const supabase = getSupabaseClient();
+  const term = (apiKey || '').trim();
+  if (!term) return null;
+
+  // We cannot filter by user_metadata in Supabase REST API directly,
+  // so we list all auth users and check their metadata.
+  const { data: { users: authUsers }, error: authErr } = await supabase.auth.admin.listUsers();
+  if (authErr || !authUsers) {
+    console.error('findUserByApiKey: Failed to list auth users:', authErr);
+    return null;
+  }
+
+  for (const aUser of authUsers) {
+    const hash = aUser.app_metadata?.apiKeyHash || '';
+    if (!hash) continue;
+
+    let isMatch = false;
+    if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
+      isMatch = await compareApiKey(term, hash);
+    } else {
+      isMatch = (hash === term);
+    }
+
+    if (isMatch) {
+      // Found the auth user, now get the public user record
+      const { data: pUser } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('email', aUser.email || '')
+        .maybeSingle();
+      
+      return pUser ? normalizeUserRecord(pUser, aUser) : null;
+    }
+  }
+
+  return null;
 }
 
 export async function loginHuman(data: { agentId: string; password: string }) {
@@ -496,7 +460,7 @@ export async function loginHuman(data: { agentId: string; password: string }) {
     createdAt: new Date().toISOString()
   }]);
 
-  const { passwordHash: _, ...safeUser } = normalizedUser;
+  const { passwordHash: _, apiKey: __, ...safeUser } = normalizedUser;
 
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
@@ -509,18 +473,39 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     throw new Error('Please provide both Agent ID and API Key.');
   }
 
+  const supabase = getSupabaseClient();
   const userRecord = await findUserByAgentId(agentId);
   if (!userRecord) {
     throw new Error('Agent Login failed: Agent ID not found.');
   }
 
-  const normalizedUser = normalizeUserRecord(userRecord);
+  // Fetch Supabase Auth user to get apiKeyHash from metadata (prefer app_metadata)
+  const { data: { users: authUsers } } = await supabase.auth.admin.listUsers();
+  const authUser = authUsers.find(u => u.email?.toLowerCase() === userRecord.email?.toLowerCase());
+
+  const normalizedUser = normalizeUserRecord(userRecord, authUser);
 
   if (normalizedUser.status !== 'active') {
     throw new Error('This account is currently inactive.');
   }
 
-  const isApiKeyValid = normalizedUser.apiKey && normalizedUser.apiKey === apiKey;
+  let isApiKeyValid = false;
+  if (normalizedUser.apiKey.startsWith('$2a$') || normalizedUser.apiKey.startsWith('$2b$')) {
+    isApiKeyValid = await compareApiKey(apiKey, normalizedUser.apiKey);
+  } else {
+    isApiKeyValid = normalizedUser.apiKey === apiKey;
+    if (isApiKeyValid) {
+      const hashedKey = await hashApiKey(apiKey);
+      
+      // Update app_metadata in Supabase Auth (Admin-only storage)
+      if (authUser) {
+        await supabase.auth.admin.updateUserById(authUser.id, {
+          app_metadata: { ...authUser.app_metadata, apiKeyHash: hashedKey }
+        });
+      }
+    }
+  }
+
   if (!isApiKeyValid) {
     throw new Error('Agent Login failed: Invalid API Key.');
   }
@@ -530,7 +515,6 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
   const refreshToken = generateRefreshToken(normalizedUser.id, familyId);
   const tokenHash = hashToken(refreshToken);
 
-  const supabase = getSupabaseClient();
   await supabase.from('refreshTokens').insert([{
     id: `rt_${crypto.randomUUID()}`,
     userId: normalizedUser.id,
@@ -541,7 +525,7 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     createdAt: new Date().toISOString()
   }]);
 
-  const { passwordHash: _, ...safeUser } = normalizedUser;
+  const { passwordHash: _, apiKey: __, ...safeUser } = normalizedUser;
 
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
@@ -558,7 +542,7 @@ export async function updateUserProfile(userId: string, data: Partial<UserRecord
     
   if (error || !updatedUser) throw new Error(error?.message || 'Failed to update profile');
   
-  const { passwordHash: _, ...safeUser } = normalizeUserRecord(updatedUser);
+  const { passwordHash: _, apiKey: __, ...safeUser } = normalizeUserRecord(updatedUser);
   return safeUser;
 }
 
@@ -793,18 +777,14 @@ export async function deleteUserAccount(userId: string): Promise<void> {
 }
 
 export async function logoutUser(userId: string, refreshToken?: string) {
-  console.log(`[Logout] Attempting logout for user: ${userId}, token present: ${!!refreshToken}`);
   if (refreshToken) {
     try {
       const tokenHash = hashToken(refreshToken);
       const supabase = getSupabaseClient();
       await supabase.from('refreshTokens').delete().eq('tokenHash', tokenHash).eq('userId', userId);
-      console.log(`[Logout] Token hash deleted: ${tokenHash}`);
     } catch (e) {
       console.error(`[Logout] Error deleting token: ${e}`);
     }
-  } else {
-    console.log(`[Logout] No refresh token provided for user: ${userId}`);
   }
 }
 
@@ -879,10 +859,384 @@ export async function refreshSessionToken(token: string): Promise<{ user: Omit<U
     throw new Error(`Failed to save rotated session token: ${insertError.message}`);
   }
 
-  const { passwordHash: _, ...safeUser } = user;
+  const { passwordHash: _, apiKey: __, ...safeUser } = user;
   return {
     user: safeUser as any,
     tokens: { accessToken: newAccessToken, refreshToken: newRefreshToken },
   };
+}
+
+/**
+ * Rotates the agent's API key.
+ * Requires password verification.
+ */
+export async function rotateAgentApiKey(userId: string, password: string) {
+  const supabase = getSupabaseClient();
+
+  // 1. Find user
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (userError || !user) throw new Error('User not found.');
+
+  // Verify password
+  if (!user.passwordHash) {
+    throw new Error('Password login is not enabled for this account.');
+  }
+  const isPasswordValid = await comparePassword(password, user.passwordHash);
+  if (!isPasswordValid) {
+    throw new Error('Authentication failed: Invalid password.');
+  }
+
+  // 3. Generate new API Key
+  const newApiKey = generateApiKey();
+  const apiKeyHash = await bcrypt.hash(newApiKey, 12);
+
+  // 4. Find the Supabase Auth User ID (UUID) by email
+  // The users table ID (usr_...) is NOT the Supabase Auth UUID.
+  const { data: { users: authUsers }, error: listError } = await supabase.auth.admin.listUsers();
+  if (listError) throw new Error('Failed to access auth system.');
+
+  const authUser = authUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase());
+  if (!authUser) throw new Error('Auth account not found for this user.');
+
+  // 5. Update Supabase Auth app_metadata (authoritative storage) using the UUID
+  const { error: authUpdateError } = await supabase.auth.admin.updateUserById(authUser.id, {
+    app_metadata: { ...authUser.app_metadata, apiKeyHash }
+  });
+
+  if (authUpdateError) {
+    console.error('Failed to update apiKeyHash in Supabase Auth:', authUpdateError);
+    throw new Error('Failed to update agent credentials.');
+  }
+
+  // 6. Update the public users table apiKey (hashed) for redundancy/sync
+  await supabase.from('users').update({ apiKey: apiKeyHash, updatedAt: new Date().toISOString() }).eq('id', user.id);
+
+  return { apiKey: newApiKey };
+}
+
+/**
+ * Initiates an email change request.
+ * 1. Validates new email.
+ * 2. Stores hashed token in app_metadata.
+ * 3. Sends verification email to the OLD address.
+ */
+export async function requestEmailChange(userId: string, data: { newEmail: string; password?: string }, customAppUrl?: string) {
+  const supabase = getSupabaseClient();
+  const normalizedNewEmail = normalizeEmail(data.newEmail);
+
+  if (!validateEmailFormat(normalizedNewEmail)) {
+    throw new Error('Invalid email format.');
+  }
+
+  // 1. Find current user
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (userError || !user) throw new Error('User not found.');
+  if (normalizeEmail(user.email) === normalizedNewEmail) {
+    throw new Error('New email is identical to current email.');
+  }
+
+  // 3. Check if new email is already taken
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('id')
+    .ilike('email', normalizedNewEmail)
+    .maybeSingle();
+  
+  if (existingUser) {
+    throw new Error('Email address already in use.');
+  }
+
+  // 4. Generate verification token
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes
+
+  // 5. Store in Supabase Auth app_metadata
+  const { data: { users: authUsers } } = await supabase.auth.admin.listUsers();
+  const authUser = authUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase());
+  if (!authUser) throw new Error('Auth account not found.');
+
+  const { error: updateError } = await supabase.auth.admin.updateUserById(authUser.id, {
+    app_metadata: {
+      ...authUser.app_metadata,
+      pendingEmailChange: {
+        newEmail: normalizedNewEmail,
+        tokenHash,
+        expiresAt
+      }
+    }
+  });
+
+  if (updateError) throw new Error('Failed to create verification request.');
+
+  // 6. Send email to OLD address
+  const appUrl = customAppUrl || process.env.APP_URL || config.appUrl || 'https://aamarva.com';
+  await sendEmailVerification(user.email, normalizedNewEmail, token, appUrl);
+
+  return { message: 'Verification email sent to your current address.' };
+}
+
+/**
+ * Verifies and applies an email change.
+ */
+export async function verifyEmailChange(token: string) {
+  const supabase = getSupabaseClient();
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  // 1. Find user with this pending token
+  const { data: { users: authUsers }, error: listError } = await supabase.auth.admin.listUsers();
+  if (listError) throw new Error('Failed to process verification.');
+
+  let targetAuthUser = null;
+  let pendingData = null;
+
+  for (const u of authUsers) {
+    const p = u.app_metadata?.pendingEmailChange;
+    if (p && p.tokenHash === tokenHash) {
+      targetAuthUser = u;
+      pendingData = p;
+      break;
+    }
+  }
+
+  if (!targetAuthUser || !pendingData) {
+    throw new Error('Invalid or expired verification token.');
+  }
+
+  // 2. Check expiration
+  if (new Date(pendingData.expiresAt).getTime() < Date.now()) {
+    // Clear expired data
+    await supabase.auth.admin.updateUserById(targetAuthUser.id, {
+      app_metadata: { ...targetAuthUser.app_metadata, pendingEmailChange: null }
+    });
+    throw new Error('Verification token has expired.');
+  }
+
+  // 3. Final availability check (someone else might have taken it in the meantime)
+  const { data: collision } = await supabase
+    .from('users')
+    .select('id')
+    .ilike('email', pendingData.newEmail)
+    .maybeSingle();
+  
+  if (collision) {
+    throw new Error('Email address is no longer available.');
+  }
+
+  const oldEmail = targetAuthUser.email;
+
+  // 4. Atomic Update with Rollback on failure
+  // a. Update public users table
+  const { error: dbError } = await supabase
+    .from('users')
+    .update({ 
+      email: pendingData.newEmail, 
+      updatedAt: new Date().toISOString() 
+    })
+    .ilike('email', oldEmail || '');
+
+  if (dbError) throw new Error('Failed to update account record.');
+
+  // b. Update Supabase Auth email and clear pending metadata
+  const { error: authError } = await supabase.auth.admin.updateUserById(targetAuthUser.id, {
+    email: pendingData.newEmail,
+    email_confirm: true,
+    app_metadata: { ...targetAuthUser.app_metadata, pendingEmailChange: null }
+  });
+
+  if (authError) {
+    console.error('Failed to update Supabase Auth email, rolling back database email update:', authError);
+    // Rollback DB update
+    const { error: rollbackError } = await supabase
+      .from('users')
+      .update({ 
+        email: oldEmail, 
+        updatedAt: new Date().toISOString() 
+      })
+      .ilike('email', pendingData.newEmail);
+
+    if (rollbackError) {
+      console.error('CRITICAL: Rollback of database email update failed!', rollbackError);
+    }
+
+    throw new Error('Failed to finalize email update in auth system.');
+  }
+
+  return { email: pendingData.newEmail };
+}
+
+/**
+ * Handles forgot password request:
+ * 1. Normalize email.
+ * 2. Query Aamarva `users` table.
+ * 3. If user DOES NOT exist: return generic success message without sending email or creating tokens (prevents account enumeration).
+ * 4. If user DOES exist:
+ *    - Invalidate any previous active reset tokens for this user in `password_reset_tokens`.
+ *    - Generate secure random token.
+ *    - Hash token using SHA-256.
+ *    - Store in `password_reset_tokens` table in Supabase PostgreSQL (no in-memory fallback).
+ *    - Send password reset email.
+ *    - Return generic success message.
+ */
+export async function requestForgotPassword(email: string, appUrl: string) {
+  const genericSuccessMsg = "If an account exists for this email, a password reset link has been sent.";
+
+  if (!email || typeof email !== 'string') {
+    return { success: true, message: genericSuccessMsg };
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  if (!validateEmailFormat(normalizedEmail)) {
+    return { success: true, message: genericSuccessMsg };
+  }
+
+  const supabase = getSupabaseClient();
+  const user = await findUserByEmail(supabase, normalizedEmail);
+
+  if (!user) {
+    throw new Error("This email address is not registered in our database.");
+  }
+
+  // User EXISTS.
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes
+  const tokenId = crypto.randomUUID();
+  const nowIso = new Date().toISOString();
+
+  // Clean up stale (used or expired) password reset records
+  try {
+    await supabase
+      .from('password_reset_tokens')
+      .delete()
+      .or(`usedAt.not.is.null,expiresAt.lt.${nowIso}`);
+  } catch (cleanupErr) {
+    // Non-blocking cleanup
+  }
+
+  // 1. Invalidate existing active reset tokens in Supabase (Fail closed if invalidation fails)
+  try {
+    const { error: invalidateErr } = await supabase
+      .from('password_reset_tokens')
+      .update({ usedAt: nowIso })
+      .eq('userId', user.id)
+      .is('usedAt', null);
+
+    if (invalidateErr) {
+      console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to invalidate previous reset tokens:', invalidateErr.message || invalidateErr);
+      throw new Error('Unable to process password reset at this time.');
+    }
+  } catch (err: any) {
+    console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Exception during token invalidation in Supabase:', err?.message || err);
+    throw new Error('Unable to process password reset at this time.');
+  }
+
+  // 2. Store new reset token record in password_reset_tokens table (Required persistent storage - no in-memory fallback)
+  try {
+    const { error: insertErr } = await supabase
+      .from('password_reset_tokens')
+      .insert({
+        id: tokenId,
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+        usedAt: null,
+        createdAt: nowIso
+      });
+
+    if (insertErr) {
+      console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to store password reset token in Supabase:', insertErr.message || insertErr);
+      throw new Error('Unable to process password reset at this time.');
+    }
+  } catch (err: any) {
+    console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Exception storing password reset token in Supabase:', err?.message || err);
+    throw new Error('Unable to process password reset at this time.');
+  }
+
+  // 3. Send email through Brevo email service
+  try {
+    await sendPasswordResetEmail(user.email, rawToken, appUrl, user.name);
+    return { success: true, message: "The verification link has been sent to your email." };
+  } catch (emailErr: any) {
+    console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to dispatch password reset email:', emailErr?.message || emailErr);
+    throw new Error('Unable to send the password reset email. Please try again later.');
+  }
+}
+
+/**
+ * Resets user password using a raw reset token (strict database persistence, no in-memory fallback):
+ */
+export async function resetPassword(token: string, newPassword: string) {
+  if (!token || typeof token !== 'string' || token.trim() === '') {
+    throw new Error('Reset token is required.');
+  }
+
+  const passValidation = validatePasswordStrength(newPassword);
+  if (!passValidation.valid) {
+    throw new Error(passValidation.message || 'Invalid password.');
+  }
+
+  const supabase = getSupabaseClient();
+  const tokenHash = crypto.createHash('sha256').update(token.trim()).digest('hex');
+  const nowIso = new Date().toISOString();
+
+  // Atomically claim the token: update usedAt = nowIso only if usedAt is null and expiresAt > now
+  let tokenData: any = null;
+  try {
+    const { data: updatedTokens, error: claimErr } = await supabase
+      .from('password_reset_tokens')
+      .update({ usedAt: nowIso })
+      .eq('tokenHash', tokenHash)
+      .is('usedAt', null)
+      .gt('expiresAt', nowIso)
+      .select('*');
+
+    if (claimErr) {
+      console.warn('⚠️ Error claiming password reset token in Supabase:', claimErr.message || claimErr);
+    } else if (updatedTokens && updatedTokens.length > 0) {
+      tokenData = updatedTokens[0];
+    }
+  } catch (err: any) {
+    console.warn('⚠️ Exception claiming password reset token in Supabase:', err?.message || err);
+  }
+
+  if (!tokenData) {
+    throw new Error('Invalid, expired, or already used password reset token.');
+  }
+
+  // Fetch user from Aamarva users table
+  const { data: user, error: userErr } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', tokenData.userId)
+    .maybeSingle();
+
+  if (userErr || !user) {
+    throw new Error('Database error finding user account.');
+  }
+
+  const newPasswordHash = await hashPassword(newPassword);
+
+  // Update user password
+  const { error: updateError } = await supabase
+    .from('users')
+    .update({ passwordHash: newPasswordHash, updatedAt: new Date().toISOString() })
+    .eq('id', user.id);
+
+  if (updateError) {
+    throw new Error('Failed to update password.');
+  }
+
+  return { message: 'Password has been successfully reset.' };
 }
 

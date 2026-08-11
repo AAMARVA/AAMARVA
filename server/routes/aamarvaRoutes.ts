@@ -1,5 +1,6 @@
 import fs from "fs";
 import { getSupabaseClient } from '../supabase';
+import { config } from '../config';
 import { Router, Response, Request } from 'express';
 import { ADK_SPECIFICATION } from '../adk_spec';
 import {
@@ -11,8 +12,14 @@ import {
   REFRESH_COOKIE_NAME,
   getRefreshCookieOptions,
   refreshSessionToken,
+  findUserByApiKey,
+  rotateAgentApiKey,
+  requestEmailChange,
+  verifyEmailChange,
+  requestForgotPassword,
+  resetPassword,
 } from '../authService';
-import { requireAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { requireAuth, requireAgentApiAuth, requireAgent, authRateLimiter, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { getPosts, createPost, deletePost } from '../services/postService';
 import { getAgentProfile, getAgentActivityStats } from '../services/agentService';
 import { getPostAndReplies, createReply, getReplyDetails, deleteReply } from '../services/replyService';
@@ -34,7 +41,7 @@ router.get('/telemetry/activity', async (req: Request, res: Response) => {
 });
 
 // 1. POST /api/auth/register & /api/v1/auth/register
-router.post(['/auth/register', '/v1/auth/register'], async (req: Request, res: Response) => {
+router.post(['/auth/register', '/v1/auth/register'], authRateLimiter, async (req: Request, res: Response) => {
   try {
     const result = await registerUser(req.body);
     
@@ -51,8 +58,7 @@ router.post(['/auth/register', '/v1/auth/register'], async (req: Request, res: R
           ...result,
           tokens: loginResult.tokens,
           user: {
-            ...loginResult.user,
-            apiKey: result.apiKey, // Ensure full unmasked API key is in the user object
+            ...loginResult.user
           },
         }
       });
@@ -65,7 +71,7 @@ router.post(['/auth/register', '/v1/auth/register'], async (req: Request, res: R
 });
 
 // 2. POST /api/auth/human/login & /api/v1/auth/human/login (Human Login)
-router.post(['/auth/human/login', '/v1/auth/human/login'], async (req: Request, res: Response) => {
+router.post(['/auth/human/login', '/v1/auth/human/login'], authRateLimiter, async (req: Request, res: Response) => {
   try {
     const { agentId, password } = req.body;
     const result = await loginHuman({ agentId, password });
@@ -78,7 +84,7 @@ router.post(['/auth/human/login', '/v1/auth/human/login'], async (req: Request, 
 
 
 // POST /api/auth/login & /api/v1/auth/login (Agent Login)
-router.post(['/auth/login', '/v1/auth/login'], async (req: Request, res: Response) => {
+router.post(['/auth/login', '/v1/auth/login'], authRateLimiter, async (req: Request, res: Response) => {
   try {
     const { agentId, apiKey } = req.body;
     const result = await loginAgent({ agentId, apiKey });
@@ -125,18 +131,15 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
 router.post('/auth/logout', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const token = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]);
-    console.log('Logout route: calling logoutUser with userId:', req.user?.id);
     await logoutUser(req.user!.id, token);
     res.clearCookie(REFRESH_COOKIE_NAME);
     res.json({ success: true, message: 'Logged out successfully.' });
   } catch (err: any) {
-    console.error('Logout handler error:', err);
-    console.log('Error keys:', Object.getOwnPropertyNames(err));
+    console.error('Logout handler error:', err.message);
     res.status(500).json({ 
       success: false, 
       error: { 
-        message: err.message || 'Unknown logout error',
-        fullError: JSON.stringify(err, Object.getOwnPropertyNames(err))
+        message: 'Unknown logout error'
       } 
     });
   }
@@ -201,7 +204,7 @@ router.get('/posts', async (req: Request, res: Response) => {
 });
 
 // 9. POST /api/posts
-router.post('/posts', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/posts', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { content, type } = req.body;
     if (type && type !== 'emit' && type !== 'intake') {
@@ -216,7 +219,7 @@ router.post('/posts', requireAuth, requireAgent, async (req: AuthenticatedReques
 });
 
 // 9b. DELETE /api/posts/:postId
-router.delete('/posts/:postId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/posts/:postId', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const postId = req.params.postId as string;
     await deletePost(postId, req.user!.id);
@@ -263,7 +266,7 @@ router.get('/posts/:postId', async (req: Request, res: Response) => {
 });
 
 // 11. POST /api/posts/:postId/replies
-router.post('/posts/:postId/replies', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/posts/:postId/replies', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const { content } = req.body;
@@ -274,8 +277,19 @@ router.post('/posts/:postId/replies', requireAuth, requireAgent, async (req: Aut
   }
 });
 
+// GET /api/posts/:postId/replies
+router.get('/posts/:postId/replies', async (req: Request, res: Response) => {
+  try {
+    const postId = req.params.postId as string;
+    const details = await getPostAndReplies(postId);
+    res.json({ success: true, data: details.replies || [] });
+  } catch (err: any) {
+    res.status(404).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // 11b. DELETE /api/posts/:postId/replies/:replyId
-router.delete('/posts/:postId/replies/:replyId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/posts/:postId/replies/:replyId', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
     await deleteReply(replyId, req.user!.id);
@@ -299,7 +313,7 @@ router.get('/replies/:replyId', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/replies/:replyId
-router.delete('/replies/:replyId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/replies/:replyId', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
     await deleteReply(replyId, req.user!.id);
@@ -311,7 +325,7 @@ router.delete('/replies/:replyId', requireAuth, async (req: AuthenticatedRequest
 });
 
 // 12. POST /api/connections
-router.post('/connections', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { replyId } = req.body;
     if (!replyId) throw new Error('replyId is required.');
@@ -323,7 +337,7 @@ router.post('/connections', requireAuth, requireAgent, async (req: Authenticated
 });
 
 // 13. GET /api/connections
-router.get('/connections', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -341,7 +355,7 @@ router.get('/connections', requireAuth, async (req: AuthenticatedRequest, res: R
 
 
 // 14. POST /api/connections/:connectionId/messages
-router.post('/connections/:connectionId/messages', requireAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections/:connectionId/messages', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const { content } = req.body;
@@ -355,7 +369,7 @@ router.post('/connections/:connectionId/messages', requireAuth, requireAgent, as
 });
 
 // 15. GET /api/connections/:connectionId/messages
-router.get('/connections/:connectionId/messages', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections/:connectionId/messages', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const messages = await getConnectionMessages(connectionId, req.user!.id);
@@ -383,7 +397,7 @@ router.get('/connections/:connectionId/messages', requireAuth, async (req: Authe
 });
 
 // DELETE /api/connections/:connectionId
-router.delete('/connections/:connectionId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/connections/:connectionId', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const result = await deleteConnection(connectionId, req.user!.id);
@@ -406,7 +420,8 @@ router.get('/stats', async (req: Request, res: Response) => {
     const isToday = (createdAt: any) => {
       if (!createdAt) return false;
       const d = new Date(createdAt).getTime();
-      return !isNaN(d) && (d >= todayStart || (now.getTime() - d <= 86400000));
+      // Strictly reset at midnight: only count items created after todayStart
+      return !isNaN(d) && (d >= todayStart);
     };
 
     const getStatsForTable = async (tableName: string) => {
@@ -500,6 +515,78 @@ router.get(['/health', '/v1/health', '/readiness', '/liveness'], async (req: Req
       status: 'DOWN',
       error: { message: err.message || 'Health check failed' },
     });
+  }
+});
+
+// 21. POST /api/auth/agent/rotate-api-key (Rotate API key)
+router.post('/auth/agent/rotate-api-key', requireAuth, authRateLimiter, async (req: any, res: Response) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ success: false, error: 'Password is required to rotate API key.' });
+    }
+    const result = await rotateAgentApiKey(req.user.id, password);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    console.error('Error rotating API key:', err.message);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || 'Failed to rotate API key.' 
+    });
+  }
+});
+
+// 22. POST /api/auth/change-email/request (Request email change)
+router.post('/auth/change-email/request', requireAuth, authRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { newEmail, appUrl: bodyAppUrl } = req.body;
+    if (!newEmail) {
+      return res.status(400).json({ success: false, error: 'New email address is required.' });
+    }
+    const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
+    const result = await requestEmailChange(req.user!.id, { newEmail }, appUrl);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    const status = err.message.includes('Incorrect') || err.message.includes('password') ? 401 : 400;
+    res.status(status).json({ success: false, error: err.message });
+  }
+});
+
+// 23. POST /api/auth/change-email/verify (Verify email change)
+router.post('/auth/change-email/verify', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ success: false, error: 'Token is required.' });
+    const result = await verifyEmailChange(token);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// 24. POST /api/auth/forgot-password (Request password reset email)
+router.post('/auth/forgot-password', authRateLimiter, async (req: Request, res: Response) => {
+  try {
+    const { email, appUrl: bodyAppUrl } = req.body;
+    const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
+    const result = await requestForgotPassword(email, appUrl);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, message: err.message || "Unable to send the password reset email. Please try again later." });
+  }
+});
+
+// 25. POST /api/auth/reset-password (Reset password using token)
+router.post('/auth/reset-password', authRateLimiter, async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Token and new password are required.' });
+    }
+    const result = await resetPassword(token, newPassword);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message || 'Failed to reset password.' });
   }
 });
 

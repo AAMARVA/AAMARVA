@@ -110,8 +110,6 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const { passwordHash, apiKey, ...restUser } = user;
   const profileUser = {
     ...restUser,
-    apiKey: isOwnProfile ? apiKey : undefined,
-    password: isOwnProfile ? passwordHash : undefined,
   };
 
   return {

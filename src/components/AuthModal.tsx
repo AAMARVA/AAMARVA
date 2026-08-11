@@ -55,7 +55,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setIsSubmitting(true);
       try {
         const result = await register(email, password, name);
-        onClose();
+        setRegResult(result);
+        setSuccessMsg('Account registered successfully! Welcome to AAMARVA.');
       } catch (err: any) {
         setError(err.message || 'Registration failed. Please try again.');
       } finally {
@@ -107,7 +108,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="bg-[#f0f0f0] p-2 font-mono text-[11px] break-all border border-black/10 select-all">
                     {regResult.apiKey}
                   </div>
-                  <p className="text-[9px] font-mono mt-1 text-red-600 font-bold uppercase">Important: Save this key. Use it for agent operations.</p>
+                  <p className="text-[9px] font-mono mt-1 text-red-600 font-bold uppercase">IMPORTANT: This will never be shown again. Store it carefully.</p>
                 </div>
               </div>
             </div>

@@ -10,9 +10,10 @@ export interface AuthenticatedRequest extends Request {
 
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // max 20 auth attempts per IP per 15 min window
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => process.env.NODE_ENV !== 'production' || req.ip === '127.0.0.1' || req.ip === '::1' || req.ip?.includes('127.0.0.1') || req.hostname === 'localhost',
   message: {
     error: 'Too many authentication attempts from this IP, please try again after 15 minutes.',
   },
@@ -20,7 +21,6 @@ export const authRateLimiter = rateLimit({
 
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
-
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     res.status(401).json({
       success: false,
@@ -33,7 +33,83 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
   }
 
   const token = authHeader.split(' ')[1];
-  const payload = verifyAccessToken(token);
+  let payload = verifyAccessToken(token);
+
+  if (!payload) {
+    res.status(401).json({
+      success: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Invalid or expired access token.',
+      },
+    });
+    return;
+  }
+
+  try {
+    // Verify user is active in DB
+    const supabase = getSupabaseClient();
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('status')
+      .eq('id', payload.id)
+      .maybeSingle();
+
+    if (error || !user || user.status !== 'active') {
+      res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'User account is invalid or suspended.',
+        },
+      });
+      return;
+    }
+
+    req.user = payload;
+    next();
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'An internal error occurred during authentication.',
+      },
+    });
+  }
+}
+
+export async function requireAgentApiAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({
+      success: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Authentication required. Missing Bearer token.',
+      },
+    });
+    return;
+  }
+
+  const token = authHeader.split(' ')[1];
+  let payload = verifyAccessToken(token);
+
+  if (!payload) {
+    try {
+      const { findUserByApiKey } = await import('../authService.js');
+      const user = await findUserByApiKey(token);
+      if (user) {
+        payload = {
+          id: user.id,
+          agentId: user.agentId,
+          email: user.email
+        };
+      }
+    } catch (err) {
+      console.error('API key auth fallback error:', err);
+    }
+  }
 
   if (!payload) {
     res.status(401).json({

@@ -2,40 +2,60 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+/**
+ * Public / Non-Confidential Backend Configuration Defaults
+ * Centralized in code. Can be overridden by environment variables if supplied.
+ */
+export const PUBLIC_CONFIG = {
+  appUrl: process.env.APP_URL || 'https://aamarva.com',
+  emailFrom: process.env.EMAIL_FROM || 'AAMARVA <no-reply@aamarva.com>',
+  emailReplyTo: process.env.EMAIL_REPLY_TO || 'AAMARVA Support <support@aamarva.com>',
+  supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
+};
+
 export interface AppConfig {
-  jwtSecret: string;
-  jwtRefreshSecret: string;
+  jwtSecret: string | undefined;
+  jwtRefreshSecret: string | undefined;
   supabaseUrl: string;
-  supabaseServiceRoleKey: string;
+  supabaseServiceRoleKey: string | undefined;
+  brevoApiKey: string | undefined;
+  emailFrom: string;
+  emailReplyTo: string;
+  appUrl: string;
   port: number;
   isProduction: boolean;
 }
 
+export const config: AppConfig = {
+  // Public non-confidential configuration
+  appUrl: PUBLIC_CONFIG.appUrl,
+  emailFrom: PUBLIC_CONFIG.emailFrom,
+  emailReplyTo: PUBLIC_CONFIG.emailReplyTo,
+  supabaseUrl: PUBLIC_CONFIG.supabaseUrl,
+
+  // Sensitive environment secrets (read directly from process.env at runtime)
+  get jwtSecret() { return process.env.JWT_SECRET; },
+  get jwtRefreshSecret() { return process.env.JWT_REFRESH_SECRET; },
+  get supabaseServiceRoleKey() { return process.env.SUPABASE_SERVICE_ROLE_KEY; },
+  get brevoApiKey() { return process.env.BREVO_API_KEY; },
+
+  port: Number(process.env.PORT || 3000),
+  isProduction: process.env.NODE_ENV === 'production',
+};
+
 export function validateConfig(): AppConfig {
-  const missing: string[] = [];
+  const missingSecrets: string[] = [];
+  if (!process.env.JWT_SECRET?.trim()) missingSecrets.push('JWT_SECRET');
+  if (!process.env.JWT_REFRESH_SECRET?.trim()) missingSecrets.push('JWT_REFRESH_SECRET');
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) missingSecrets.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!process.env.BREVO_API_KEY?.trim()) missingSecrets.push('BREVO_API_KEY');
 
-  const config = {
-    jwtSecret: process.env.JWT_SECRET,
-    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
-    supabaseUrl: process.env.SUPABASE_URL,
-    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    port: Number(process.env.PORT || 3000),
-    isProduction: process.env.NODE_ENV === 'production',
-  };
-
-  if (!config.jwtSecret || config.jwtSecret.trim() === '') missing.push('JWT_SECRET');
-  if (!config.jwtRefreshSecret || config.jwtRefreshSecret.trim() === '') missing.push('JWT_REFRESH_SECRET');
-  if (!config.supabaseUrl || config.supabaseUrl.trim() === '') missing.push('SUPABASE_URL');
-  if (!config.supabaseServiceRoleKey || config.supabaseServiceRoleKey.trim() === '') missing.push('SUPABASE_SERVICE_ROLE_KEY');
-
-  if (missing.length > 0) {
-    throw new Error(
-      `FATAL: Missing required environment configuration variables: [${missing.join(', ')}].\n` +
-      `Please configure these in your environment/Settings page to ensure production security.`
+  if (missingSecrets.length > 0) {
+    console.warn(
+      `⚠️ Warning: Missing required secret environment variables: [${missingSecrets.join(', ')}].\n` +
+      `Please configure these in your AI Studio Secrets / environment variables.`
     );
   }
 
-  return config as AppConfig;
+  return config;
 }
-
-export const config = validateConfig();
