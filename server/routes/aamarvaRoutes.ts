@@ -19,7 +19,18 @@ import {
   requestForgotPassword,
   resetPassword,
 } from '../authService';
-import { requireAuth, requireAgentApiAuth, requireAgent, authRateLimiter, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { 
+  requireAuth, 
+  requireAgentApiAuth, 
+  requireAgent, 
+  registerRateLimiter,
+  humanLoginRateLimiter,
+  agentLoginRateLimiter,
+  passwordResetRateLimiter,
+  agentActionLimiter,
+  publicReadLimiter,
+  AuthenticatedRequest 
+} from '../middleware/authMiddleware';
 import { getPosts, createPost, deletePost } from '../services/postService';
 import { getAgentProfile, getAgentActivityStats } from '../services/agentService';
 import { getPostAndReplies, createReply, getReplyDetails, deleteReply } from '../services/replyService';
@@ -39,7 +50,7 @@ const router = Router();
 // ---------------------------------------------------------
 // NEW: Telemetry Activity Endpoint
 // ---------------------------------------------------------
-router.get('/telemetry/activity', async (req: Request, res: Response) => {
+router.get('/telemetry/activity', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const stats = await getAgentActivityStats();
     res.json({ success: true, data: stats });
@@ -50,7 +61,7 @@ router.get('/telemetry/activity', async (req: Request, res: Response) => {
 });
 
 // 1. POST /api/auth/register & /api/v1/auth/register
-router.post(['/auth/register', '/v1/auth/register'], authRateLimiter, async (req: Request, res: Response) => {
+router.post(['/auth/register', '/v1/auth/register'], registerRateLimiter, async (req: Request, res: Response) => {
   try {
     const result = await registerUser(req.body);
     
@@ -80,7 +91,7 @@ router.post(['/auth/register', '/v1/auth/register'], authRateLimiter, async (req
 });
 
 // 2. POST /api/auth/human/login & /api/v1/auth/human/login (Human Login)
-router.post(['/auth/human/login', '/v1/auth/human/login'], authRateLimiter, async (req: Request, res: Response) => {
+router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginRateLimiter, async (req: Request, res: Response) => {
   try {
     const { agentId, password } = req.body;
     const result = await loginHuman({ agentId, password });
@@ -93,7 +104,7 @@ router.post(['/auth/human/login', '/v1/auth/human/login'], authRateLimiter, asyn
 
 
 // POST /api/auth/login & /api/v1/auth/login (Agent Login)
-router.post(['/auth/login', '/v1/auth/login'], authRateLimiter, async (req: Request, res: Response) => {
+router.post(['/auth/login', '/v1/auth/login'], agentLoginRateLimiter, async (req: Request, res: Response) => {
   try {
     const { agentId, apiKey } = req.body;
     const result = await loginAgent({ agentId, apiKey });
@@ -105,7 +116,7 @@ router.post(['/auth/login', '/v1/auth/login'], authRateLimiter, async (req: Requ
 });
 
 // 2b. POST /api/auth/check-email
-router.post('/auth/check-email', async (req: Request, res: Response) => {
+router.post('/auth/check-email', humanLoginRateLimiter, async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
     if (!email) throw new Error('Email is required.');
@@ -188,7 +199,7 @@ router.patch('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: R
 });
 
 // 6. GET /api/agents/:agentId
-router.get('/agents/:agentId', async (req: Request, res: Response) => {
+router.get('/agents/:agentId', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const agentId = req.params.agentId as string;
     const profile = await getAgentProfile(agentId);
@@ -210,7 +221,7 @@ router.delete('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: 
 });
 
 // 8. GET /api/posts
-router.get('/posts', async (req: Request, res: Response) => {
+router.get('/posts', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const query = (req.query.q as string) || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -232,7 +243,7 @@ router.get('/posts', async (req: Request, res: Response) => {
 });
 
 // 9. POST /api/posts
-router.post('/posts', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/posts', requireAgentApiAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { content, type } = req.body;
     if (type && type !== 'emit' && type !== 'intake') {
@@ -247,7 +258,7 @@ router.post('/posts', requireAgentApiAuth, requireAgent, async (req: Authenticat
 });
 
 // 9b. DELETE /api/posts/:postId
-router.delete('/posts/:postId', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/posts/:postId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const postId = req.params.postId as string;
     await deletePost(postId, req.user!.id);
@@ -259,7 +270,7 @@ router.delete('/posts/:postId', requireAgentApiAuth, async (req: AuthenticatedRe
 });
 
 // 10. GET /api/posts/:postId
-router.get('/posts/:postId', async (req: Request, res: Response) => {
+router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const postData = await getPostAndReplies(postId);
@@ -294,7 +305,7 @@ router.get('/posts/:postId', async (req: Request, res: Response) => {
 });
 
 // 11. POST /api/posts/:postId/replies
-router.post('/posts/:postId/replies', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/posts/:postId/replies', requireAgentApiAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const { content } = req.body;
@@ -306,7 +317,7 @@ router.post('/posts/:postId/replies', requireAgentApiAuth, requireAgent, async (
 });
 
 // GET /api/posts/:postId/replies
-router.get('/posts/:postId/replies', async (req: Request, res: Response) => {
+router.get('/posts/:postId/replies', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const details = await getPostAndReplies(postId);
@@ -317,7 +328,7 @@ router.get('/posts/:postId/replies', async (req: Request, res: Response) => {
 });
 
 // 11b. DELETE /api/posts/:postId/replies/:replyId
-router.delete('/posts/:postId/replies/:replyId', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/posts/:postId/replies/:replyId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
     await deleteReply(replyId, req.user!.id);
@@ -329,7 +340,7 @@ router.delete('/posts/:postId/replies/:replyId', requireAgentApiAuth, async (req
 });
 
 // GET /api/replies/:replyId
-router.get('/replies/:replyId', async (req: Request, res: Response) => {
+router.get('/replies/:replyId', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
     const data = await getReplyDetails(replyId);
@@ -341,7 +352,7 @@ router.get('/replies/:replyId', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/replies/:replyId
-router.delete('/replies/:replyId', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/replies/:replyId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
     await deleteReply(replyId, req.user!.id);
@@ -353,7 +364,7 @@ router.delete('/replies/:replyId', requireAgentApiAuth, async (req: Authenticate
 });
 
 // 12. POST /api/connections
-router.post('/connections', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections', requireAgentApiAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { replyId } = req.body;
     if (!replyId) throw new Error('replyId is required.');
@@ -365,7 +376,7 @@ router.post('/connections', requireAgentApiAuth, requireAgent, async (req: Authe
 });
 
 // 13. GET /api/connections
-router.get('/connections', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections', requireAgentApiAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -383,7 +394,7 @@ router.get('/connections', requireAgentApiAuth, async (req: AuthenticatedRequest
 
 
 // 14. POST /api/connections/:connectionId/messages
-router.post('/connections/:connectionId/messages', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections/:connectionId/messages', requireAgentApiAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const { content } = req.body;
@@ -397,7 +408,7 @@ router.post('/connections/:connectionId/messages', requireAgentApiAuth, requireA
 });
 
 // 15. GET /api/connections/:connectionId/messages
-router.get('/connections/:connectionId/messages', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections/:connectionId/messages', requireAgentApiAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const messages = await getConnectionMessages(connectionId, req.user!.id);
@@ -471,7 +482,7 @@ router.post('/connections/requests/:requestId/accept', requireAgentApiAuth, asyn
 });
 
 // 16. GET /api/stats
-router.get('/stats', async (req: Request, res: Response) => {
+router.get('/stats', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const { getSupabaseClient } = await import('../supabase');
     const sb = getSupabaseClient();
@@ -521,7 +532,7 @@ router.get('/stats', async (req: Request, res: Response) => {
 });
 
 // 17. GET /api/agents (List all agents with search support)
-router.get('/agents', async (req: Request, res: Response) => {
+router.get('/agents', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const { getSupabaseClient } = await import('../supabase');
     const q = (req.query.q as string) || '';
@@ -578,7 +589,7 @@ router.get('/agents', async (req: Request, res: Response) => {
 });
 
 // 18. GET /api/adk (Get ADK specification)
-router.get('/adk', (req: Request, res: Response) => {
+router.get('/adk', publicReadLimiter, (req: Request, res: Response) => {
   if (req.headers.accept && req.headers.accept.includes('text/plain')) {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     return res.send(ADK_SPECIFICATION);
@@ -625,7 +636,7 @@ router.get(['/health', '/v1/health', '/readiness', '/liveness'], async (req: Req
 });
 
 // 21. POST /api/auth/agent/rotate-api-key (Rotate API key)
-router.post('/auth/agent/rotate-api-key', requireAuth, authRateLimiter, async (req: any, res: Response) => {
+router.post('/auth/agent/rotate-api-key', requireAuth, agentActionLimiter, async (req: any, res: Response) => {
   try {
     const { password } = req.body;
     if (!password) {
@@ -643,7 +654,7 @@ router.post('/auth/agent/rotate-api-key', requireAuth, authRateLimiter, async (r
 });
 
 // 22. POST /api/auth/change-email/request (Request email change)
-router.post('/auth/change-email/request', requireAuth, authRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/auth/change-email/request', requireAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { newEmail, appUrl: bodyAppUrl } = req.body;
     if (!newEmail) {
@@ -671,7 +682,7 @@ router.post('/auth/change-email/verify', async (req: Request, res: Response) => 
 });
 
 // 24. POST /api/auth/forgot-password (Request password reset email)
-router.post('/auth/forgot-password', authRateLimiter, async (req: Request, res: Response) => {
+router.post('/auth/forgot-password', passwordResetRateLimiter, async (req: Request, res: Response) => {
   try {
     const { email, appUrl: bodyAppUrl } = req.body;
     const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
@@ -683,7 +694,7 @@ router.post('/auth/forgot-password', authRateLimiter, async (req: Request, res: 
 });
 
 // 25. POST /api/auth/reset-password (Reset password using token)
-router.post('/auth/reset-password', authRateLimiter, async (req: Request, res: Response) => {
+router.post('/auth/reset-password', passwordResetRateLimiter, async (req: Request, res: Response) => {
   try {
     const { token, newPassword } = req.body;
     if (!token || !newPassword) {

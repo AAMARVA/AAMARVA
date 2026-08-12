@@ -8,16 +8,81 @@ export interface AuthenticatedRequest extends Request {
   user?: UserTokenPayload;
 }
 
-export const authRateLimiter = rateLimit({
+export function getAgentKey(req: Request): string {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    const payload = verifyAccessToken(token);
+    if (payload && payload.agentId) {
+      return `agent:${payload.agentId}`;
+    }
+  }
+  return req.ip || 'unknown-ip';
+}
+
+const defaultSkip = (req: Request) => 
+  process.env.NODE_ENV !== 'production' || 
+  req.ip === '127.0.0.1' || 
+  req.ip === '::1' || 
+  req.ip?.includes('127.0.0.1') || 
+  req.hostname === 'localhost';
+
+export const registerRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => process.env.NODE_ENV !== 'production' || req.ip === '127.0.0.1' || req.ip === '::1' || req.ip?.includes('127.0.0.1') || req.hostname === 'localhost',
-  message: {
-    error: 'Too many authentication attempts from this IP, please try again after 15 minutes.',
-  },
+  skip: defaultSkip,
+  message: { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many registration attempts from this IP. Please try again later.' } },
 });
+
+export const humanLoginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: defaultSkip,
+  message: { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many login attempts from this IP. Please try again later.' } },
+});
+
+export const agentLoginRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: defaultSkip,
+  message: { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many agent authentication attempts. Please slow down.' } },
+});
+
+export const passwordResetRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: defaultSkip,
+  message: { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many password reset requests. Please try again later.' } },
+});
+
+export const agentActionLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getAgentKey,
+  skip: defaultSkip,
+  message: { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Rate limit exceeded for agent actions. Please slow down.' } },
+});
+
+export const publicReadLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: defaultSkip,
+  message: { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many read requests. Please slow down.' } },
+});
+
+export const authRateLimiter = humanLoginRateLimiter;
 
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
