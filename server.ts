@@ -17,7 +17,7 @@ async function startServer() {
   await checkDatabaseConnectivity();
 
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = 3000;
 
   // Trust reverse proxy for rate-limiting headers (X-Forwarded-For, etc.)
   app.set('trust proxy', 1);

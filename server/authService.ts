@@ -79,6 +79,43 @@ export async function compareApiKey(apiKey: string, hash: string): Promise<boole
   return await bcrypt.compare(apiKey, hash);
 }
 
+export function computeApiKeyFingerprint(apiKey: string): string {
+  const cleanKey = (apiKey || '').trim();
+  if (!cleanKey) return '';
+  const secret = process.env.API_KEY_HMAC_SECRET;
+  if (!secret) {
+    throw new Error('Critical configuration error: API_KEY_HMAC_SECRET environment variable is missing.');
+  }
+  return crypto.createHmac('sha256', secret).update(cleanKey).digest('hex');
+}
+
+let authUsersCache: any[] | null = null;
+let lastCacheFetchTime = 0;
+const CACHE_TTL_MS = 30000; // 30 seconds
+
+export function invalidateAuthCache(): void {
+  authUsersCache = null;
+  lastCacheFetchTime = 0;
+}
+
+async function getAuthUsersList(forceRefresh = false): Promise<any[]> {
+  const now = Date.now();
+  if (!forceRefresh && authUsersCache && (now - lastCacheFetchTime < CACHE_TTL_MS)) {
+    return authUsersCache;
+  }
+
+  const supabase = getSupabaseClient();
+  const { data: { users: authUsers }, error: authErr } = await supabase.auth.admin.listUsers();
+  if (authErr || !authUsers) {
+    console.error('getAuthUsersList: Failed to list auth users:', authErr);
+    return authUsersCache || [];
+  }
+
+  authUsersCache = authUsers;
+  lastCacheFetchTime = now;
+  return authUsers;
+}
+
 export function generateAgentId(): string {
   const randomHex = crypto.randomBytes(3).toString('hex').toUpperCase();
   return `AMR-${randomHex}`;
@@ -311,15 +348,16 @@ export async function registerUser(data: {
 
   await insertUserToSupabase(supabase, newUser);
 
-  // Sync creation with Supabase Auth (auth.users) and store apiKeyHash in metadata
+  // Sync creation with Supabase Auth (auth.users) and store apiKeyHash and apiKeyFingerprint in metadata
   if (supabase) {
     try {
+      const apiKeyFingerprint = computeApiKeyFingerprint(apiKeyToUse);
       if (supabase.auth?.admin?.createUser) {
         await supabase.auth.admin.createUser({
           email: normalizedEmail,
           password: data.password || crypto.randomBytes(32).toString('hex'),
           email_confirm: true,
-          app_metadata: { apiKeyHash }
+          app_metadata: { apiKeyHash, apiKeyFingerprint }
         });
       } else if (supabase.auth?.signUp) {
         const { data: signUpData } = await supabase.auth.signUp({
@@ -328,10 +366,11 @@ export async function registerUser(data: {
         });
         if (signUpData?.user?.id && supabase.auth?.admin?.updateUserById) {
            await supabase.auth.admin.updateUserById(signUpData.user.id, {
-             app_metadata: { apiKeyHash }
+             app_metadata: { apiKeyHash, apiKeyFingerprint }
            });
         }
       }
+      invalidateAuthCache();
     } catch (authErr) {
       console.warn('Note: Supabase auth.users provisioning attempt failed.');
     }
@@ -382,15 +421,48 @@ export async function findUserByApiKey(apiKey: string) {
   const term = (apiKey || '').trim();
   if (!term) return null;
 
-  // We cannot filter by user_metadata in Supabase REST API directly,
-  // so we list all auth users and check their metadata.
-  const { data: { users: authUsers }, error: authErr } = await supabase.auth.admin.listUsers();
-  if (authErr || !authUsers) {
-    console.error('findUserByApiKey: Failed to list auth users:', authErr);
+  const targetFingerprint = computeApiKeyFingerprint(term);
+  let authUsers = await getAuthUsersList();
+
+  // 1. Fast path: Find candidate auth user by HMAC fingerprint
+  let candidateUser = authUsers.find(
+    (u) => u.app_metadata?.apiKeyFingerprint === targetFingerprint
+  );
+
+  // If candidate not found in cache, force refresh cache from Supabase once
+  if (!candidateUser) {
+    authUsers = await getAuthUsersList(true);
+    candidateUser = authUsers.find(
+      (u) => u.app_metadata?.apiKeyFingerprint === targetFingerprint
+    );
+  }
+
+  if (candidateUser) {
+    const hash = candidateUser.app_metadata?.apiKeyHash || '';
+    if (!hash) return null;
+
+    let isMatch = false;
+    if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
+      isMatch = await compareApiKey(term, hash);
+    } else {
+      isMatch = (hash === term);
+    }
+
+    if (isMatch) {
+      const { data: pUser } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('email', candidateUser.email || '')
+        .maybeSingle();
+
+      return pUser ? normalizeUserRecord(pUser, candidateUser) : null;
+    }
     return null;
   }
 
-  for (const aUser of authUsers) {
+  // 2. Backward compatibility fallback for legacy API keys missing fingerprint
+  const legacyUsers = authUsers.filter((u) => !u.app_metadata?.apiKeyFingerprint);
+  for (const aUser of legacyUsers) {
     const hash = aUser.app_metadata?.apiKeyHash || '';
     if (!hash) continue;
 
@@ -402,13 +474,25 @@ export async function findUserByApiKey(apiKey: string) {
     }
 
     if (isMatch) {
-      // Found the auth user, now get the public user record
+      // Auto-backfill fingerprint for legacy key
+      try {
+        await supabase.auth.admin.updateUserById(aUser.id, {
+          app_metadata: {
+            ...aUser.app_metadata,
+            apiKeyFingerprint: targetFingerprint,
+          },
+        });
+        invalidateAuthCache();
+      } catch (backfillErr) {
+        console.warn('Failed to backfill apiKeyFingerprint for legacy user:', backfillErr);
+      }
+
       const { data: pUser } = await supabase
         .from('users')
         .select('*')
         .ilike('email', aUser.email || '')
         .maybeSingle();
-      
+
       return pUser ? normalizeUserRecord(pUser, aUser) : null;
     }
   }
@@ -496,18 +580,33 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     isApiKeyValid = normalizedUser.apiKey === apiKey;
     if (isApiKeyValid) {
       const hashedKey = await hashApiKey(apiKey);
+      const fingerprint = computeApiKeyFingerprint(apiKey);
       
       // Update app_metadata in Supabase Auth (Admin-only storage)
       if (authUser) {
         await supabase.auth.admin.updateUserById(authUser.id, {
-          app_metadata: { ...authUser.app_metadata, apiKeyHash: hashedKey }
+          app_metadata: { ...authUser.app_metadata, apiKeyHash: hashedKey, apiKeyFingerprint: fingerprint }
         });
+        invalidateAuthCache();
       }
     }
   }
 
   if (!isApiKeyValid) {
     throw new Error('Agent Login failed: Invalid API Key.');
+  }
+
+  // Backfill fingerprint into app_metadata if missing
+  if (authUser && !authUser.app_metadata?.apiKeyFingerprint) {
+    const fingerprint = computeApiKeyFingerprint(apiKey);
+    try {
+      await supabase.auth.admin.updateUserById(authUser.id, {
+        app_metadata: { ...authUser.app_metadata, apiKeyFingerprint: fingerprint }
+      });
+      invalidateAuthCache();
+    } catch (err) {
+      console.warn('Failed to update apiKeyFingerprint on agent login:', err);
+    }
   }
 
   const familyId = crypto.randomUUID();
@@ -894,6 +993,7 @@ export async function rotateAgentApiKey(userId: string, password: string) {
   // 3. Generate new API Key
   const newApiKey = generateApiKey();
   const apiKeyHash = await bcrypt.hash(newApiKey, 12);
+  const apiKeyFingerprint = computeApiKeyFingerprint(newApiKey);
 
   // 4. Find the Supabase Auth User ID (UUID) by email
   // The users table ID (usr_...) is NOT the Supabase Auth UUID.
@@ -905,13 +1005,15 @@ export async function rotateAgentApiKey(userId: string, password: string) {
 
   // 5. Update Supabase Auth app_metadata (authoritative storage) using the UUID
   const { error: authUpdateError } = await supabase.auth.admin.updateUserById(authUser.id, {
-    app_metadata: { ...authUser.app_metadata, apiKeyHash }
+    app_metadata: { ...authUser.app_metadata, apiKeyHash, apiKeyFingerprint }
   });
 
   if (authUpdateError) {
     console.error('Failed to update apiKeyHash in Supabase Auth:', authUpdateError);
     throw new Error('Failed to update agent credentials.');
   }
+
+  invalidateAuthCache();
 
   // 6. Update the public users table apiKey (hashed) for redundancy/sync
   await supabase.from('users').update({ apiKey: apiKeyHash, updatedAt: new Date().toISOString() }).eq('id', user.id);

@@ -30,11 +30,6 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setQuery('');
-      apiFetch('/api/agents').then(res => {
-        if (res && res.success && Array.isArray(res.data)) {
-          setAgents(res.data);
-        }
-      }).catch(() => {});
     }
   }, [isOpen]);
 

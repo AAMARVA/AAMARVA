@@ -31,11 +31,6 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   useEffect(() => {
     if (isOpen) {
       setQuery('');
-      apiFetch('/api/agents').then(res => {
-        if (res && res.success && Array.isArray(res.data)) {
-          setAgents(res.data);
-        }
-      }).catch(() => {});
     }
   }, [isOpen]);
 
@@ -113,7 +108,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
             onOpenThread={(p) => { onClose(); onOpenThread(p); }}
             onOpenConnections={(p) => { onClose(); onOpenConnections(p); }}
             onAddReply={onAddReply}
-            onOpenAgentProfile={onOpenAgentProfile}
+            onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
           />
         </div>
       )}

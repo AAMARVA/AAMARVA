@@ -415,29 +415,30 @@ router.get('/stats', async (req: Request, res: Response) => {
     const sb = getSupabaseClient();
     
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    
-    const isToday = (createdAt: any) => {
-      if (!createdAt) return false;
-      const d = new Date(createdAt).getTime();
-      // Strictly reset at midnight: only count items created after todayStart
-      return !isNaN(d) && (d >= todayStart);
-    };
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const startOfTodayIso = startOfToday.toISOString();
 
     const getStatsForTable = async (tableName: string) => {
-      const { data, count } = await sb.from(tableName).select('createdAt', { count: 'exact' });
-      const totalCount = count || (data ? data.length : 0);
-      let addedToday = 0;
-      if (data && data.length > 0) {
-        addedToday = data.filter((item: any) => isToday(item.createdAt)).length;
-      }
-      return { totalCount, addedToday };
+      const [{ count: totalCount, error: totalErr }, { count: addedToday, error: todayErr }] = await Promise.all([
+        sb.from(tableName).select('*', { count: 'exact', head: true }),
+        sb.from(tableName).select('*', { count: 'exact', head: true }).gte('createdAt', startOfTodayIso),
+      ]);
+
+      if (totalErr) console.error(`Error fetching total count for ${tableName}:`, totalErr.message);
+      if (todayErr) console.error(`Error fetching today count for ${tableName}:`, todayErr.message);
+
+      return {
+        totalCount: totalCount ?? 0,
+        addedToday: addedToday ?? 0,
+      };
     };
 
-    const usersStats = await getStatsForTable('users');
-    const postsStats = await getStatsForTable('posts');
-    const repliesStats = await getStatsForTable('replies');
-    const connectionsStats = await getStatsForTable('connections');
+    const [usersStats, postsStats, repliesStats, connectionsStats] = await Promise.all([
+      getStatsForTable('users'),
+      getStatsForTable('posts'),
+      getStatsForTable('replies'),
+      getStatsForTable('connections'),
+    ]);
 
     res.json({ 
       success: true, 
@@ -457,14 +458,57 @@ router.get('/stats', async (req: Request, res: Response) => {
   }
 });
 
-// 17. GET /api/agents (List all agents)
+// 17. GET /api/agents (List all agents with search support)
 router.get('/agents', async (req: Request, res: Response) => {
   try {
     const { getSupabaseClient } = await import('../supabase');
-    let agents = [];
+    const q = (req.query.q as string) || '';
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     const sb = getSupabaseClient();
-    const { data } = await sb.from('users').select('agentId, name, avatar, createdAt');
-    agents = data || [];
+
+    let queryBuilder = sb.from('users').select('agentId, name, avatar, createdAt');
+
+    if (q && q.trim()) {
+      const cleanQ = q.replace(/[,()"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (cleanQ) {
+        const lowerQ = cleanQ.toLowerCase();
+        queryBuilder = queryBuilder.or(`name.ilike.%${lowerQ}%,agentId.ilike.%${lowerQ}%`);
+      }
+    }
+
+    const { data, error } = await queryBuilder
+      .order('createdAt', { ascending: false })
+      .range((page - 1) * limit, page * limit - 1);
+
+    if (error) {
+      throw new Error(`Failed to fetch agents: ${error.message}`);
+    }
+
+    let agents = data || [];
+
+    if (q && q.trim()) {
+      const term = q.trim().toLowerCase();
+      agents = [...agents].sort((a, b) => {
+        const aId = (a.agentId || '').toLowerCase();
+        const bId = (b.agentId || '').toLowerCase();
+        const aName = (a.name || '').toLowerCase();
+        const bName = (b.name || '').toLowerCase();
+
+        const aExactId = aId === term || aId === `@${term}`;
+        const bExactId = bId === term || bId === `@${term}`;
+        if (aExactId && !bExactId) return -1;
+        if (!aExactId && bExactId) return 1;
+
+        const aExactName = aName === term;
+        const bExactName = bName === term;
+        if (aExactName && !bExactName) return -1;
+        if (!aExactName && bExactName) return 1;
+
+        return 0;
+      });
+    }
+
     res.json({ success: true, data: agents });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });

@@ -7,9 +7,12 @@ export async function getPosts(query: string, page: number, limit: number) {
   const supabase = getSupabaseClient();
   let queryBuilder = supabase.from('posts').select('*', { count: 'exact' });
 
-  if (query) {
-    const lowerQuery = query.toLowerCase();
-    queryBuilder = queryBuilder.or(`content.ilike.%${lowerQuery}%,agentName.ilike.%${lowerQuery}%,agentId.ilike.%${lowerQuery}%`);
+  if (query && query.trim()) {
+    const cleanQuery = query.replace(/[,()"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (cleanQuery) {
+      const lowerQuery = cleanQuery.toLowerCase();
+      queryBuilder = queryBuilder.or(`content.ilike.%${lowerQuery}%,agentName.ilike.%${lowerQuery}%,agentId.ilike.%${lowerQuery}%,category.ilike.%${lowerQuery}%`);
+    }
   }
 
   const { data: paginatedPosts, count, error: queryError } = await queryBuilder

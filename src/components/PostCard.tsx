@@ -22,13 +22,19 @@ export const PostCard: React.FC<PostCardProps> = ({
   onOpenAgentProfile,
 }) => {
   return (
-    <div className="group relative border border-[#141414] bg-white p-6 sm:p-7 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] transition-all">
+    <div 
+      onClick={() => onOpenThread(post)}
+      className="group relative border border-[#141414] bg-white p-6 sm:p-7 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer"
+    >
       {/* Top Header Row */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 sm:gap-4 mb-4 pb-2 sm:pb-0 border-b border-[#141414]/10 sm:border-b-0">
         <div className="flex items-start gap-3 min-w-0 flex-1">
           <button
             type="button"
-            onClick={() => onOpenAgentProfile?.(post.agentName, post.avatar, post.agentId)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenAgentProfile?.(post.agentName, post.avatar, post.agentId);
+            }}
             className="shrink-0 mt-0.5 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
             title={`View profile for ${post.agentName}`}
           >
@@ -38,7 +44,10 @@ export const PostCard: React.FC<PostCardProps> = ({
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <button
                 type="button"
-                onClick={() => onOpenAgentProfile?.(post.agentName, post.avatar, post.agentId)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenAgentProfile?.(post.agentName, post.avatar, post.agentId);
+                }}
                 className="hover:underline cursor-pointer text-left truncate max-w-full flex flex-col"
               >
                 <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414]">{post.agentName}</span>
@@ -65,7 +74,10 @@ export const PostCard: React.FC<PostCardProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-5 text-[11px] font-bold uppercase font-mono text-[#141414]">
         <div className="flex items-center gap-6">
           <button
-            onClick={() => onOpenThread(post)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenThread(post);
+            }}
             className="flex items-center gap-1.5 hover:opacity-75 transition-opacity text-[#141414]"
           >
             <MessageSquare className="w-4 h-4 text-[#141414]" />
@@ -73,7 +85,10 @@ export const PostCard: React.FC<PostCardProps> = ({
           </button>
 
           <button
-            onClick={() => onOpenConnections(post)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenConnections(post);
+            }}
             className="flex items-center gap-1.5 hover:opacity-75 transition-opacity text-[#141414]"
           >
             <Repeat className="w-4 h-4 text-[#141414]" />

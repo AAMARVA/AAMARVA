@@ -58,7 +58,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     fetchActivity();
   }, [posts]);
 
-  // Compute metrics dynamically from real posts data as fallbacks
+  // Fallbacks for cumulative total counts if dbStats is not yet loaded
   const computedTotalPosts = posts.length;
   const computedTotalConnections = posts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0);
   const computedTotalReplies = posts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
@@ -84,77 +84,14 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     }
   });
 
-  // Calculate items added today manually as fallbacks
-  const isCreatedToday = (dateStr?: string, minutesAgo?: number): boolean => {
-    if (dateStr) {
-      const d = new Date(dateStr);
-      if (!isNaN(d.getTime())) {
-        const now = new Date();
-        const sameDay =
-          d.getFullYear() === now.getFullYear() &&
-          d.getMonth() === now.getMonth() &&
-          d.getDate() === now.getDate();
-        const within24h = now.getTime() - d.getTime() <= 86400000;
-        return sameDay || within24h;
-      }
-    }
-    if (minutesAgo !== undefined) {
-      return minutesAgo <= 1440;
-    }
-    return true;
-  };
-
-  let computedPostsToday = 0;
-  let computedRepliesToday = 0;
-  let computedConnectionsToday = 0;
-  const todayAgentsSet = new Set<string>();
-
-  posts.forEach((p) => {
-    const postIsToday = isCreatedToday(p.createdAt, p.rawMinutesAgo);
-    if (postIsToday) {
-      computedPostsToday += 1;
-      const rawKey = p.agentId || p.agentName;
-      if (rawKey) todayAgentsSet.add(rawKey.toUpperCase());
-    }
-
-    p.replies?.forEach((r: any) => {
-      const replyIsToday = isCreatedToday(r.createdAt, postIsToday ? p.rawMinutesAgo : undefined);
-      if (replyIsToday) {
-        computedRepliesToday += 1;
-        const repRawKey = r.agentId || r.agentName;
-        if (repRawKey) todayAgentsSet.add(repRawKey.toUpperCase());
-      }
-    });
-
-    p.connectionsList?.forEach((c: any) => {
-      const connIsToday = isCreatedToday(c.createdAt, postIsToday ? p.rawMinutesAgo : undefined);
-      if (connIsToday) {
-        computedConnectionsToday += 1;
-        const connName = c.agentName || c.replyAuthorAgentName;
-        const connRawKey = c.agentId || connName;
-        if (connRawKey) todayAgentsSet.add(connRawKey.toUpperCase());
-      }
-    });
-  });
-
-  // Also include system agents created today in todayAgentsSet
-  systemAgents.forEach((a) => {
-    if (a.createdAt && isCreatedToday(a.createdAt)) {
-      const key = (a.agentId || a.name).toUpperCase();
-      todayAgentsSet.add(key);
-    }
-  });
-
-  const computedAgentsToday = todayAgentsSet.size;
-
   const registeredAgentsCount = dbStats?.agentsCount ?? sortedAgents.length;
-  const agentsTodayCount = dbStats?.agentsAddedToday !== undefined ? Math.max(dbStats.agentsAddedToday, computedAgentsToday) : computedAgentsToday;
+  const agentsTodayCount = dbStats?.agentsAddedToday ?? 0;
   const totalPosts = dbStats?.postsCount ?? computedTotalPosts;
-  const postsTodayCount = dbStats?.postsAddedToday !== undefined ? Math.max(dbStats.postsAddedToday, computedPostsToday) : computedPostsToday;
+  const postsTodayCount = dbStats?.postsAddedToday ?? 0;
   const totalReplies = dbStats?.repliesCount ?? computedTotalReplies;
-  const repliesTodayCount = dbStats?.repliesAddedToday !== undefined ? Math.max(dbStats.repliesAddedToday, computedRepliesToday) : computedRepliesToday;
+  const repliesTodayCount = dbStats?.repliesAddedToday ?? 0;
   const totalConnections = dbStats?.connectionsCount ?? computedTotalConnections;
-  const connectionsTodayCount = dbStats?.connectionsAddedToday !== undefined ? Math.max(dbStats.connectionsAddedToday, computedConnectionsToday) : computedConnectionsToday;
+  const connectionsTodayCount = dbStats?.connectionsAddedToday ?? 0;
 
   const getRelativeTime = (dateStr?: string): string => {
     if (!dateStr) return '';

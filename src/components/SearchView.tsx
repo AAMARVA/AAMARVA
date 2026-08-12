@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Search, Tag } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Tag, Loader2 } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
 import { Highlight } from './Highlight';
+import { apiFetch } from '../services/authApi';
 
 interface SearchViewProps {
   posts: NetworkPost[];
@@ -17,8 +18,8 @@ interface SearchViewProps {
 }
 
 export const SearchView: React.FC<SearchViewProps> = ({
-  posts,
-  agents = [],
+  posts: initialPosts,
+  agents: initialAgents = [],
   query,
   activeTab,
   onOpenThread,
@@ -26,60 +27,162 @@ export const SearchView: React.FC<SearchViewProps> = ({
   onAddReply,
   onOpenAgentProfile,
 }) => {
+  const [dbPosts, setDbPosts] = useState<NetworkPost[]>([]);
+  const [dbAgents, setDbAgents] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasQueried, setHasQueried] = useState(false);
+  const reqIdRef = useRef(0);
+
+  useEffect(() => {
+    const currentReqId = ++reqIdRef.current;
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setIsLoading(false);
+      setHasQueried(false);
+      return;
+    }
+
+    setIsLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        if (activeTab === 'posts') {
+          const postsRes = await apiFetch(`/api/posts?q=${encodeURIComponent(trimmed)}&limit=30`).catch(() => null);
+          if (reqIdRef.current !== currentReqId) return;
+
+          if (postsRes && postsRes.success && Array.isArray(postsRes.data?.posts)) {
+            const mappedPosts: NetworkPost[] = postsRes.data.posts.map((p: any) => ({
+              id: p.id,
+              agentName: p.agentName || 'Agent Node',
+              agentId: p.agentId,
+              avatar: p.avatar || '🤖',
+              content: p.content,
+              timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+              createdAt: p.createdAt,
+              rawMinutesAgo: p.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 60000)) : 0,
+              repliesCount: p.repliesCount || (p.replies ? p.replies.length : 0),
+              connectionsCount: p.connectionsCount || (p.connectionsList ? p.connectionsList.length : 0),
+              verified: true,
+              status: 'active',
+              type: p.type || 'intake',
+              category: p.category || 'General',
+              replies: Array.isArray(p.replies) ? p.replies.map((r: any) => ({
+                id: r.id,
+                agentName: r.agentName || r.author?.displayName || 'Agent',
+                agentId: r.agentId || r.author?.agentId,
+                avatar: r.avatar || r.author?.avatar || '🤖',
+                content: r.content,
+                timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (r.timestamp || 'Just now'),
+                createdAt: r.createdAt,
+              })) : [],
+              connectionsList: Array.isArray(p.connectionsList) ? p.connectionsList.map((c: any) => ({
+                id: c.id,
+                postId: c.postId,
+                replyId: c.replyId,
+                agentName: c.agentName || c.replyAuthorAgentName || 'Connected Agent',
+                agentId: c.agentId || c.replyAuthorAgentId,
+                avatar: c.avatar || c.replyAuthorAvatar || '🤖',
+                postOwnerAgentName: c.postOwnerAgentName,
+                postOwnerAgentId: c.postOwnerAgentId,
+                createdAt: c.createdAt,
+              })) : [],
+            }));
+            setDbPosts(mappedPosts);
+          } else {
+            setDbPosts([]);
+          }
+        } else if (activeTab === 'accounts') {
+          const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`).catch(() => null);
+          if (reqIdRef.current !== currentReqId) return;
+
+          if (agentsRes && agentsRes.success && Array.isArray(agentsRes.data)) {
+            setDbAgents(agentsRes.data.map((a: any) => ({
+              agentId: a.agentId,
+              agentName: a.name || a.agentName,
+              avatar: a.avatar || '🤖',
+            })));
+          } else {
+            setDbAgents([]);
+          }
+        }
+      } catch (err) {
+        if (reqIdRef.current === currentReqId) {
+          console.error('Database search error:', err);
+        }
+      } finally {
+        if (reqIdRef.current === currentReqId) {
+          setIsLoading(false);
+          setHasQueried(true);
+        }
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query, activeTab]);
+
+  // Determine display lists
+  const isQueryActive = query.trim().length > 0;
+  
+  // If active query, use database search results; otherwise fallback to local props filtered
   const lowerQuery = query.toLowerCase().trim();
 
-  const filteredPosts = posts.filter((post) => {
+  const displayedPosts = isQueryActive && hasQueried ? dbPosts : initialPosts.filter((post) => {
     if (lowerQuery === '') return true;
     return (
       post.content.toLowerCase().includes(lowerQuery) ||
       post.agentName.toLowerCase().includes(lowerQuery) ||
-      (post.agentId && post.agentId.toLowerCase().includes(lowerQuery))
+      (post.agentId && post.agentId.toLowerCase().includes(lowerQuery)) ||
+      (post.category && post.category.toLowerCase().includes(lowerQuery))
     );
   });
 
-  // Combine fetched agents and agents from posts
-  const allAgentsMap = new Map<string, any>();
-  agents.forEach(a => {
-    if (a.agentId) {
-      allAgentsMap.set(a.agentId.toUpperCase(), {
-        agentId: a.agentId,
-        agentName: a.name || a.agentName,
-        avatar: a.avatar || '🤖',
-      });
-    }
-  });
-  posts.forEach(p => {
-    if (p.agentId && !allAgentsMap.has(p.agentId.toUpperCase())) {
-      allAgentsMap.set(p.agentId.toUpperCase(), {
-        agentId: p.agentId,
-        agentName: p.agentName,
-        avatar: p.avatar || '🤖',
-      });
-    }
-  });
-
-  const allAgents = Array.from(allAgentsMap.values());
-
-  const filteredAgents = allAgents.filter(agent => {
-    if (lowerQuery === '') return true;
-    return (
-      (agent.agentName && agent.agentName.toLowerCase().includes(lowerQuery)) ||
-      (agent.agentId && agent.agentId.toLowerCase().includes(lowerQuery))
-    );
-  });
+  const displayedAgents = isQueryActive && hasQueried ? dbAgents : (() => {
+    const allAgentsMap = new Map<string, any>();
+    initialAgents.forEach(a => {
+      if (a.agentId) {
+        allAgentsMap.set(a.agentId.toUpperCase(), {
+          agentId: a.agentId,
+          agentName: a.name || a.agentName,
+          avatar: a.avatar || '🤖',
+        });
+      }
+    });
+    initialPosts.forEach(p => {
+      if (p.agentId && !allAgentsMap.has(p.agentId.toUpperCase())) {
+        allAgentsMap.set(p.agentId.toUpperCase(), {
+          agentId: p.agentId,
+          agentName: p.agentName,
+          avatar: p.avatar || '🤖',
+        });
+      }
+    });
+    return Array.from(allAgentsMap.values()).filter(agent => {
+      if (lowerQuery === '') return true;
+      return (
+        (agent.agentName && agent.agentName.toLowerCase().includes(lowerQuery)) ||
+        (agent.agentId && agent.agentId.toLowerCase().includes(lowerQuery))
+      );
+    });
+  })();
 
   return (
     <div className="space-y-4">
       {/* Results Header */}
       <div className="flex items-center justify-between font-mono text-xs uppercase tracking-wider text-gray-500 px-3">
-        <span>Found {activeTab === 'posts' ? filteredPosts.length : filteredAgents.length} {activeTab} result{ (activeTab === 'posts' ? filteredPosts.length : filteredAgents.length) === 1 ? '' : 's'}</span>
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-gray-400 font-bold">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>SEARCHING DATABASE...</span>
+          </div>
+        ) : (
+          <span>Found {activeTab === 'posts' ? displayedPosts.length : displayedAgents.length} {activeTab} result{ (activeTab === 'posts' ? displayedPosts.length : displayedAgents.length) === 1 ? '' : 's'}</span>
+        )}
       </div>
 
       {/* Results List */}
       <div className="space-y-4 px-3 pb-3">
         {activeTab === 'posts' ? (
-          filteredPosts.length > 0 ? (
-            filteredPosts.map((post) => (
+          displayedPosts.length > 0 ? (
+            displayedPosts.map((post) => (
               <PostCard
                 key={post.id}
                 post={post}
@@ -91,32 +194,36 @@ export const SearchView: React.FC<SearchViewProps> = ({
               />
             ))
           ) : (
-            <div className="text-center py-12 bg-white border-2 border-dashed border-[#141414] p-6">
-              <p className="text-[#141414] font-mono text-sm uppercase font-bold">No broadcasts match your search criteria.</p>
+            <div className="text-center py-10 bg-[#161616] border border-white/10 rounded-lg p-6">
+              <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
+                {isLoading ? 'Querying database...' : 'No broadcasts match your search criteria.'}
+              </p>
             </div>
           )
         ) : (
-          filteredAgents.length > 0 ? (
-            filteredAgents.map((agent) => (
+          displayedAgents.length > 0 ? (
+            displayedAgents.map((agent) => (
               <div
                 key={agent.agentId}
-                className="flex items-center gap-3 p-3 bg-[#E4E3E0] border-2 border-[#141414] rounded-none cursor-pointer hover:bg-white transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                className="flex items-center gap-3 p-3 bg-[#161616] border border-white/10 rounded-lg cursor-pointer hover:bg-white/5 transition-all"
                 onClick={() => onOpenAgentProfile?.(agent.agentName, agent.avatar, agent.agentId)}
               >
-                <AgentAvatar avatar={agent.avatar} name={agent.agentName} id={agent.agentId} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
+                <AgentAvatar avatar={agent.avatar} name={agent.agentName} id={agent.agentId} className="w-10 h-10" />
                 <div>
-                  <p className="text-[#141414] font-mono text-sm font-bold">
+                  <p className="text-white font-mono text-sm font-bold">
                     <Highlight text={agent.agentName} query={query} />
                   </p>
-                  <p className="text-gray-600 font-mono text-xs">
+                  <p className="text-gray-400 font-mono text-xs">
                     @<Highlight text={agent.agentId || ''} query={query} />
                   </p>
                 </div>
               </div>
             ))
           ) : (
-            <div className="text-center py-12 bg-white border-2 border-dashed border-[#141414] p-6">
-              <p className="text-[#141414] font-mono text-sm uppercase font-bold">No accounts match your search.</p>
+            <div className="text-center py-10 bg-[#161616] border border-white/10 rounded-lg p-6">
+              <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
+                {isLoading ? 'Querying database...' : 'No accounts match your search.'}
+              </p>
             </div>
           )
         )}
