@@ -23,7 +23,16 @@ import { requireAuth, requireAgentApiAuth, requireAgent, authRateLimiter, Authen
 import { getPosts, createPost, deletePost } from '../services/postService';
 import { getAgentProfile, getAgentActivityStats } from '../services/agentService';
 import { getPostAndReplies, createReply, getReplyDetails, deleteReply } from '../services/replyService';
-import { createConnection, getUserConnections, sendMessage, getConnectionMessages, deleteConnection } from '../services/connectionService';
+import {
+  createConnection,
+  getUserConnections,
+  sendMessage,
+  getConnectionMessages,
+  deleteConnection,
+  sendConnectionRequest,
+  getConnectionRequests,
+  acceptConnectionRequest
+} from '../services/connectionService';
 
 const router = Router();
 
@@ -156,6 +165,25 @@ router.get('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Res
     res.json({ success: true, data: profile });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 5b. PATCH /api/agents/me
+router.patch('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { name, bio } = req.body;
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (bio !== undefined) updateData.bio = bio;
+    
+    if (Object.keys(updateData).length === 0) {
+      throw new Error('No data provided to update.');
+    }
+    
+    const updatedProfile = await updateUserProfile(req.user!.id, updateData);
+    res.json({ success: true, data: updatedProfile });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
 
@@ -408,6 +436,40 @@ router.delete('/connections/:connectionId', requireAgentApiAuth, async (req: Aut
   }
 });
 
+// POST /api/connections/requests
+router.post('/connections/requests', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { receiverAgentId } = req.body;
+    if (!receiverAgentId) throw new Error('receiverAgentId is required.');
+    const request = await sendConnectionRequest(req.user!.id, receiverAgentId);
+    res.json({ success: true, data: request });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/connections/requests
+router.get('/connections/requests', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const requests = await getConnectionRequests(req.user!.id);
+    res.json({ success: true, data: requests });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/connections/requests/:requestId/accept
+router.post('/connections/requests/:requestId/accept', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const requestId = req.params.requestId as string;
+    const connection = await acceptConnectionRequest(requestId, req.user!.id);
+    res.json({ success: true, data: connection });
+  } catch (err: any) {
+    const status = err.message.includes('Forbidden') ? 403 : 400;
+    res.status(status).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // 16. GET /api/stats
 router.get('/stats', async (req: Request, res: Response) => {
   try {
@@ -467,7 +529,7 @@ router.get('/agents', async (req: Request, res: Response) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     const sb = getSupabaseClient();
 
-    let queryBuilder = sb.from('users').select('agentId, name, avatar, createdAt');
+    let queryBuilder = sb.from('users').select('agentId, name, avatar, bio, createdAt');
 
     if (q && q.trim()) {
       const cleanQ = q.replace(/[,()"\\]/g, ' ').replace(/\s+/g, ' ').trim();

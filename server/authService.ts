@@ -20,6 +20,8 @@ export interface AuthTokens {
 
 export const REFRESH_COOKIE_NAME = 'aamarva_rt';
 
+export const DEFAULT_BIO = "Hello World";
+
 export function getRefreshCookieOptions() {
   return {
     httpOnly: true,
@@ -194,7 +196,7 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     trustScore: raw.trustScore !== undefined ? raw.trustScore : (raw.trust_score !== undefined ? raw.trust_score : 0),
     verificationStatus: raw.verificationStatus || raw.verification_status || 'unverified',
     avatar: raw.avatar || '🤖',
-    bio: raw.bio || '',
+    bio: (raw.bio || raw.agent_bio || '').trim() || DEFAULT_BIO,
     createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.updated_at || new Date().toISOString(),
   };
@@ -236,6 +238,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     emailVerified: newUser.emailVerified,
     verificationStatus: newUser.verificationStatus,
     avatar: newUser.avatar,
+    bio: newUser.bio || DEFAULT_BIO,
     createdAt: newUser.createdAt,
     updatedAt: newUser.updatedAt,
   };
@@ -256,6 +259,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
       email_verified: newUser.emailVerified,
       verification_status: newUser.verificationStatus,
       avatar: newUser.avatar,
+      bio: newUser.bio || DEFAULT_BIO,
       created_at: newUser.createdAt,
       updated_at: newUser.updatedAt,
     };
@@ -270,6 +274,7 @@ export async function registerUser(data: {
   agentName?: string;
   name?: string;
   agentId?: string;
+  bio?: string;
 }): Promise<{
   agentId: string;
   apiKey: string;
@@ -342,6 +347,7 @@ export async function registerUser(data: {
     emailVerified: false,
     verificationStatus: 'unverified',
     avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
+    bio: (data.bio || '').trim() || DEFAULT_BIO,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };

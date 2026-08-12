@@ -178,6 +178,13 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
               {inferredAgentId && (
                 <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{inferredAgentId}</span>
               )}
+
+              {/* Bio Section */}
+              {agentProfileData?.bio && (
+                <p className="mt-4 font-sans text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-4 italic bg-[#E4E3E0]/20 py-2">
+                  {agentProfileData.bio}
+                </p>
+              )}
             </div>
           </div>
 

@@ -64,12 +64,24 @@ export interface ConnectionRecord {
   createdAt: string;
 }
 
+export interface ConnectionRequestRecord {
+  id: string;
+  senderUserId: string;
+  senderAgentId: string;
+  senderAgentName: string;
+  receiverUserId: string;
+  receiverAgentId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+}
+
 export interface DatabaseSchema {
   users: UserRecord[];
   refreshTokens: RefreshTokenRecord[];
   posts: PostRecord[];
   replies: ReplyRecord[];
   connections: ConnectionRecord[];
+  connectionRequests: ConnectionRequestRecord[];
 }
 
 export interface MessageRecord {

@@ -6,6 +6,7 @@ export interface UserProfile {
   email: string;
   name: string;
   status: string;
+  bio?: string;
   avatar?: string;
   apiKey?: string;
   createdAt: string;
@@ -195,6 +196,7 @@ export async function registerUserApi(payload: {
   password: string;
   name?: string;
   agentName?: string;
+  bio?: string;
 }) {
   const res = await fetch(buildApiUrl('/api/auth/register'), {
     method: 'POST',
@@ -287,7 +289,7 @@ export async function fetchCurrentProfileApi(): Promise<UserProfile> {
 
 export async function updateProfileApi(updates: any): Promise<UserProfile> {
   const res = await apiFetch('/api/agents/me', {
-    method: 'PUT',
+    method: 'PATCH',
     body: JSON.stringify(updates),
   });
   return res.data;

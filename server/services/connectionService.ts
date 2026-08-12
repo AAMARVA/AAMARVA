@@ -4,6 +4,8 @@ import { ConnectionRecord } from '../db.js';
 
 // In-memory messages fallback cache for when the Supabase 'messages' table is missing in the database
 const inMemoryMessagesFallback: any[] = [];
+const inMemoryRequestsFallback: any[] = [];
+const inMemoryConnectionsFallback: any[] = [];
 
 
 export async function createConnection(userId: string, replyId: string) {
@@ -241,13 +243,18 @@ export async function sendMessage(connectionId: string, userId: string, content:
   const supabase = getSupabaseClient();
   
   // Find connection
-  const { data: connection, error: connError } = await supabase
-    .from('connections')
-    .select('*')
-    .eq('id', connectionId)
-    .maybeSingle();
+  let connection = inMemoryConnectionsFallback.find(c => c.id === connectionId);
+  
+  if (!connection) {
+    const { data: dbConn, error: connError } = await supabase
+      .from('connections')
+      .select('*')
+      .eq('id', connectionId)
+      .maybeSingle();
+    if (dbConn) connection = dbConn;
+  }
 
-  if (connError || !connection) throw new Error('Connection not found.');
+  if (!connection) throw new Error('Connection not found.');
   
   // Find user
   const { data: currentUser, error: userError } = await supabase
@@ -294,13 +301,18 @@ export async function sendMessage(connectionId: string, userId: string, content:
 export async function getConnectionMessages(connectionId: string, userId: string) {
   const supabase = getSupabaseClient();
   
-  const { data: connection, error: connError } = await supabase
-    .from('connections')
-    .select('*')
-    .eq('id', connectionId)
-    .maybeSingle();
+  let connection = inMemoryConnectionsFallback.find(c => c.id === connectionId);
+  
+  if (!connection) {
+    const { data: dbConn, error: connError } = await supabase
+      .from('connections')
+      .select('*')
+      .eq('id', connectionId)
+      .maybeSingle();
+    if (dbConn) connection = dbConn;
+  }
 
-  if (connError || !connection) throw new Error('Connection not found.');
+  if (!connection) throw new Error('Connection not found.');
 
   // Verify participant access
   const { data: currentUser } = await supabase
@@ -447,4 +459,176 @@ export async function deleteConnection(connectionId: string, userId: string) {
   }
 
   return { success: true, message: 'Connection removed successfully.' };
+}
+
+export async function sendConnectionRequest(senderUserId: string, receiverAgentId: string) {
+  const supabase = getSupabaseClient();
+
+  // Find sender profile
+  const { data: sender, error: senderError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', senderUserId)
+    .maybeSingle();
+  if (senderError || !sender) throw new Error('Sender profile not found.');
+
+  // Find receiver profile
+  const { data: receiver, error: receiverError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('agentId', receiverAgentId)
+    .maybeSingle();
+  if (receiverError || !receiver) throw new Error('Target agent not found.');
+
+  if (sender.id === receiver.id) {
+    throw new Error('Cannot send connection request to yourself.');
+  }
+
+  // Check if already connected
+  const orFilter = `and(postOwnerUserId.eq.${sender.id},replyAuthorUserId.eq.${receiver.id}),and(postOwnerUserId.eq.${receiver.id},replyAuthorUserId.eq.${sender.id})`;
+  const { data: existingConn } = await supabase
+    .from('connections')
+    .select('id')
+    .or(orFilter)
+    .maybeSingle();
+  
+  if (existingConn) {
+    throw new Error('Already connected to this agent.');
+  }
+
+  // Check if request already pending
+  const { data: existingRequest } = await supabase
+    .from('connection_requests')
+    .select('id')
+    .match({ senderUserId, receiverUserId: receiver.id, status: 'pending' })
+    .maybeSingle();
+
+  if (existingRequest) {
+    throw new Error('Connection request already pending.');
+  }
+
+  const newRequest = {
+    id: `req_${crypto.randomUUID()}`,
+    senderUserId,
+    senderAgentId: sender.agentId,
+    senderAgentName: sender.name,
+    receiverUserId: receiver.id,
+    receiverAgentId: receiver.agentId,
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  };
+
+  inMemoryRequestsFallback.push(newRequest);
+
+  const { error: insertError } = await supabase
+    .from('connection_requests')
+    .insert([newRequest]);
+
+  if (insertError) {
+    console.warn('⚠️ connection_requests table write failed. Held in fallback.', insertError.message);
+  }
+
+  const { status, ...rest } = newRequest;
+  return rest;
+}
+
+export async function getConnectionRequests(userId: string) {
+  const supabase = getSupabaseClient();
+
+  let dbRequests: any[] = [];
+  try {
+    const { data, error } = await supabase
+      .from('connection_requests')
+      .select('*')
+      .eq('receiverUserId', userId)
+      .eq('status', 'pending')
+      .order('createdAt', { ascending: false });
+
+    if (error) {
+      console.warn('⚠️ connection_requests query failed, falling back. Error:', error.message);
+    } else {
+      dbRequests = data || [];
+    }
+  } catch (err: any) {
+    console.warn('⚠️ Exception during connection_requests query. Fallback used. Error:', err.message);
+  }
+
+  const dbIds = new Set(dbRequests.map(r => r.id));
+  const memRequests = inMemoryRequestsFallback.filter(r => r.receiverUserId === userId && r.status === 'pending');
+  const combined = [...dbRequests];
+  memRequests.forEach(r => {
+    if (!dbIds.has(r.id)) {
+      combined.push(r);
+    }
+  });
+
+  return combined
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map(({ status, ...rest }) => rest);
+}
+
+export async function acceptConnectionRequest(requestId: string, userId: string) {
+  const supabase = getSupabaseClient();
+
+  // Find request
+  let request = inMemoryRequestsFallback.find(r => r.id === requestId);
+  
+  if (!request) {
+    const { data: dbReq, error: reqError } = await supabase
+      .from('connection_requests')
+      .select('*')
+      .eq('id', requestId)
+      .maybeSingle();
+    
+    if (dbReq) request = dbReq;
+    if (reqError || !request) throw new Error('Connection request not found.');
+  }
+
+  if (request.receiverUserId !== userId) throw new Error('Forbidden: Not your connection request.');
+  if (request.status !== 'pending') throw new Error('Connection request is no longer pending.');
+
+  // Update request status
+  request.status = 'accepted';
+  try {
+    await supabase
+      .from('connection_requests')
+      .update({ status: 'accepted' })
+      .eq('id', requestId);
+  } catch (err) {
+    console.warn('⚠️ Failed to update connection_requests status in DB, updated in memory.');
+  }
+
+  // Create connection
+  const now = new Date().toISOString();
+  const newConnection: ConnectionRecord = {
+    id: `conn_${crypto.randomUUID()}`,
+    postId: '', // Direct connection, no post
+    replyId: '', // Direct connection, no reply
+    postOwnerUserId: request.senderUserId,
+    postOwnerAgentId: request.senderAgentId,
+    postOwnerAgentName: request.senderAgentName,
+    replyAuthorUserId: request.receiverUserId,
+    replyAuthorAgentId: request.receiverAgentId,
+    replyAuthorAgentName: '', // Will be filled below if needed
+    createdAt: now,
+  };
+
+  // Get receiver name
+  const { data: receiver } = await supabase
+    .from('users')
+    .select('name')
+    .eq('id', userId)
+    .maybeSingle();
+  newConnection.replyAuthorAgentName = receiver?.name || 'Agent';
+
+  const { error: connError } = await supabase
+    .from('connections')
+    .insert([newConnection]);
+
+  if (connError) {
+    console.warn('⚠️ Connections table write failed (likely schema constraint). Falling back to memory.', connError.message);
+    inMemoryConnectionsFallback.push(newConnection);
+  }
+
+  return newConnection;
 }

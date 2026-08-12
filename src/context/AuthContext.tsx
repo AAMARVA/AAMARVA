@@ -11,6 +11,7 @@ import {
   setRefreshToken,
   getRefreshToken,
   deleteAccountApi,
+  updateProfileApi,
 } from '../services/authApi';
 
 interface AuthContextType {
@@ -21,10 +22,11 @@ interface AuthContextType {
   updatePassword?: (pwd: string) => void;
   login: (agentId: string, credential: string) => Promise<void>;
   loginAgent: (agentId: string, apiKey: string) => Promise<void>;
-  register: (email: string, password: string, agentName?: string) => Promise<{ agentId: string; apiKey: string }>;
+  register: (email: string, password: string, agentName?: string, bio?: string) => Promise<{ agentId: string; apiKey: string }>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -129,12 +131,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (email: string, password: string, agentName?: string, customAgentId?: string) => {
+  const register = async (email: string, password: string, agentName?: string, bio?: string, customAgentId?: string) => {
     const result = await registerUserApi({ 
       email, 
       password, 
       agentName, 
       name: agentName,
+      bio,
       agentId: customAgentId 
     } as any);
     
@@ -203,6 +206,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Password is not saved in localStorage
   };
 
+  const updateProfile = async (updates: Partial<UserProfile>) => {
+    try {
+      const updatedUser = await updateProfileApi(updates);
+      setUser(updatedUser);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('aamarva_user', JSON.stringify(updatedUser));
+      }
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+      throw err;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -217,6 +233,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         deleteAccount,
         refreshProfile,
+        updateProfile,
       }}
     >
       {children}

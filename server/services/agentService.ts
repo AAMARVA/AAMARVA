@@ -1,6 +1,6 @@
 import { getSupabaseClient } from '../supabase.js';
 import { UserRecord } from '../db.js';
-import { normalizeUserRecord } from '../authService.js';
+import { normalizeUserRecord, DEFAULT_BIO } from '../authService.js';
 
 export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const normalizedTarget = agentId.trim().replace(/^@/, '').toUpperCase();
@@ -138,7 +138,7 @@ export async function getAgentActivityStats() {
   // 1. Fetch all users/agents
   const { data: users, error: usersError } = await supabase
     .from('users')
-    .select('id, name, agentId, avatar');
+    .select('id, name, agentId, avatar, bio');
 
   if (usersError) throw usersError;
 
@@ -165,6 +165,7 @@ export async function getAgentActivityStats() {
     agentId: string; 
     name: string; 
     avatar: string; 
+    bio: string;
     posts: number; 
     replies: number; 
     connections: number;
@@ -178,6 +179,7 @@ export async function getAgentActivityStats() {
       agentId: cleanId,
       name: u.name,
       avatar: u.avatar || '🤖',
+      bio: u.bio || DEFAULT_BIO,
       posts: 0,
       replies: 0,
       connections: 0

@@ -24,13 +24,28 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   onAddReply,
   onOpenAgentProfile,
 }) => {
-  const { user, isAuthenticated, userPassword, updatePassword, login, register, logout, deleteAccount } = useAuth();
+  const { 
+    user, 
+    isAuthenticated, 
+    userPassword, 
+    updatePassword, 
+    login, 
+    register, 
+    logout, 
+    deleteAccount,
+    updateProfile 
+  } = useAuth();
+
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editBio, setEditBio] = useState('');
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [loginAgentId, setLoginAgentId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [bio, setBio] = useState('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -139,6 +154,29 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   // Active Twitter profile tab state
   const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections'>('posts');
 
+  const handleStartEditing = () => {
+    setEditName(currentAgentName);
+    setEditBio(currentUser?.bio || '');
+    setIsEditingProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      setIsSubmitting(true);
+      setError('');
+      await updateProfile({
+        name: editName,
+        bio: editBio,
+      });
+      setIsEditingProfile(false);
+      setSuccessMsg('Profile updated successfully.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to update profile.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -160,7 +198,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
     try {
       if (mode === 'register') {
-        const res = await register(email, password, name);
+        const res = await register(email, password, name, bio);
         setRegisteredData({ agentId: res.agentId, apiKey: res.apiKey });
         setSuccessMsg(`Account registered successfully! Welcome to AAMARVA.`);
       } else {
@@ -317,15 +355,74 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               )}
             </div>
 
-            {/* Names */}
+            {/* Names and Actions */}
             <div className="pt-1 flex flex-col">
-              <h1 className="font-mono font-bold text-xl sm:text-2xl text-[#141414] tracking-tight truncate leading-tight">
-                {currentAgentName}
-              </h1>
-              {currentAgentId && (
-                <span className="inline-flex font-mono text-[10px] sm:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-2 py-0.5 mt-1 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
-                  @{currentAgentId}
-                </span>
+              <div className="flex justify-between items-start">
+                <div className="flex flex-col">
+                  {isEditingProfile ? (
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="font-mono font-bold text-xl sm:text-2xl text-[#141414] tracking-tight truncate leading-tight border-b-2 border-[#141414] focus:outline-none bg-[#E4E3E0]/30 px-1"
+                      autoFocus
+                    />
+                  ) : (
+                    <h1 className="font-mono font-bold text-xl sm:text-2xl text-[#141414] tracking-tight truncate leading-tight">
+                      {currentAgentName}
+                    </h1>
+                  )}
+                  {currentAgentId && (
+                    <span className="inline-flex font-mono text-[10px] sm:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-2 py-0.5 mt-1 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                      @{currentAgentId}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  {isEditingProfile ? (
+                    <>
+                      <button
+                        onClick={() => setIsEditingProfile(false)}
+                        className="font-mono text-[10px] font-bold uppercase border-2 border-[#141414] px-3 py-1 bg-white hover:bg-[#E4E3E0] transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveProfile}
+                        disabled={isSubmitting}
+                        className="font-mono text-[10px] font-bold uppercase border-2 border-[#141414] px-4 py-1 bg-[#141414] text-white hover:opacity-90 transition-opacity shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] disabled:opacity-50"
+                      >
+                        {isSubmitting ? 'Saving...' : 'Save'}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={handleStartEditing}
+                      className="font-mono text-[10px] font-bold uppercase border-2 border-[#141414] px-4 py-1 bg-white hover:bg-[#E4E3E0] transition-colors shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
+                    >
+                      Edit Profile
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Bio Section */}
+              {isEditingProfile ? (
+                <div className="mt-4">
+                  <textarea
+                    value={editBio}
+                    onChange={(e) => setEditBio(e.target.value)}
+                    placeholder="Tell everyone about your autonomous mission..."
+                    className="w-full font-sans text-sm text-[#141414] leading-relaxed border-2 border-[#141414] p-3 italic bg-[#E4E3E0]/10 focus:outline-none min-h-[80px] resize-none"
+                  />
+                </div>
+              ) : (
+                currentUser?.bio && (
+                  <p className="mt-4 font-sans text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-4 italic bg-[#E4E3E0]/20 py-2">
+                    {currentUser.bio}
+                  </p>
+                )
               )}
             </div>
           </div>
@@ -1049,6 +1146,20 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     onChange={(e) => setName(e.target.value)}
                     placeholder="e.g. Nexus Commander"
                     className="w-full pl-10 pr-4 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
+                  Agent Identity (Bio)
+                </label>
+                <div className="relative flex items-center">
+                  <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-[#141414]/50" />
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    placeholder="Briefly describe your mission or origin... (Optional)"
+                    className="w-full pl-10 pr-4 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] min-h-[80px] resize-none"
                   />
                 </div>
               </div>
