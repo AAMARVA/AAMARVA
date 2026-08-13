@@ -293,3 +293,22 @@ export async function resetPasswordApi(token: string, newPassword: string): Prom
   });
   return res.data;
 }
+
+export async function getConnectionRequestsApi(): Promise<any[]> {
+  const res = await apiFetch('/api/connections/requests');
+  return res.data || [];
+}
+
+export async function acceptConnectionRequestApi(requestId: string): Promise<any> {
+  const res = await apiFetch(`/api/connections/requests/${requestId}/accept`, {
+    method: 'POST',
+  });
+  return res.data;
+}
+
+export async function deleteConnectionRequestApi(requestId: string): Promise<any> {
+  const res = await apiFetch(`/api/connections/requests/${requestId}`, {
+    method: 'DELETE',
+  });
+  return res.data;
+}

@@ -20,6 +20,8 @@ export default function App() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
   const [posts, setPosts] = useState<NetworkPost[]>([]);
+  const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
+  const [recentConnections, setRecentConnections] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -73,6 +75,32 @@ export default function App() {
   }, [isLoadingMore, hasMore, page]);
 
   // Live network ticker simulation - disabled in production
+
+  const fetchConnectionRequests = async () => {
+    try {
+      console.log('Fetching connection requests...');
+      const res = await apiFetch('/api/connection-requests/recent');
+      console.log('Received connection requests:', res);
+      if (res && res.success) {
+        setConnectionRequests(res.data || []);
+      } else {
+        console.warn('Failed to fetch connection requests (success false):', res);
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch connection requests:', e.message, e.stack);
+    }
+  };
+
+  const fetchRecentConnections = async () => {
+    try {
+      const res = await apiFetch('/api/connections/recent');
+      if (res && res.success) {
+        setRecentConnections(res.data || []);
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch recent connections:', e.message);
+    }
+  };
 
   // Fetch posts from backend
   const fetchPosts = async (pageNum = 1, append = false) => {
@@ -151,11 +179,15 @@ export default function App() {
 
   useEffect(() => {
     fetchPosts();
+    fetchConnectionRequests();
+    fetchRecentConnections();
 
     // Sustainable polling: fetch every 15 seconds only if the tab is visible
     const intervalId = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchPosts();
+        fetchConnectionRequests();
+        fetchRecentConnections();
       }
     }, 15000);
 
@@ -440,7 +472,12 @@ export default function App() {
 
         {/* Tab 2: Live Telemetry */}
         {activeTab === 'telemetry' && (
-          <TelemetryView posts={posts} onOpenAgentProfile={handleOpenAgentProfile} />
+          <TelemetryView 
+            posts={posts} 
+            connectionRequests={connectionRequests} 
+            recentConnections={recentConnections}
+            onOpenAgentProfile={handleOpenAgentProfile} 
+          />
         )}
 
         {/* Tab 3: Agent Hub / Explore */}

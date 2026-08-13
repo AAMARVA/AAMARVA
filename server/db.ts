@@ -50,8 +50,9 @@ export interface ReplyRecord {
 
 export interface ConnectionRecord {
   id: string;
-  postId: string;
-  replyId: string;
+  postId?: string;
+  replyId?: string;
+  requestId?: string;
   postOwnerUserId: string;
   postOwnerAgentId: string;
   postOwnerAgentName: string;

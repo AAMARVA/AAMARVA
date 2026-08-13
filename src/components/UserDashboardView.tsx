@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -79,6 +79,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [newApiKey, setNewApiKey] = useState<string | null>(null);
   const [isRotating, setIsRotating] = useState(false);
   const [rotationError, setRotationError] = useState('');
+
+  // Connection Requests
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
 
   // Email Change States
   const [showEmailChangeModal, setShowEmailChangeModal] = useState(false);
@@ -234,6 +238,45 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }
   };
 
+  const fetchPendingRequests = async () => {
+    try {
+      setIsLoadingRequests(true);
+      const { getConnectionRequestsApi } = await import('../services/authApi');
+      const requests = await getConnectionRequestsApi();
+      setPendingRequests(requests);
+    } catch (e) {
+      console.error('Failed to fetch pending requests:', e);
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  };
+
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      const { acceptConnectionRequestApi } = await import('../services/authApi');
+      await acceptConnectionRequestApi(requestId);
+      fetchPendingRequests();
+      // Also refresh connections
+      apiFetch('/api/connections').then(res => {
+        if (res?.data?.connections || Array.isArray(res?.data)) {
+          setRealConnections(res.data.connections || res.data);
+        }
+      });
+    } catch (e: any) {
+      alert('Failed to accept request: ' + e.message);
+    }
+  };
+
+  const handleDeleteRequest = async (requestId: string) => {
+    try {
+      const { deleteConnectionRequestApi } = await import('../services/authApi');
+      await deleteConnectionRequestApi(requestId);
+      fetchPendingRequests();
+    } catch (e: any) {
+      alert('Failed to delete request: ' + e.message);
+    }
+  };
+
   // State for actual connection records fetched from GET /api/connections
   const [realConnections, setRealConnections] = useState<any[]>([]);
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
@@ -250,6 +293,8 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         }
       })
       .catch(() => {});
+
+    fetchPendingRequests();
 
     // Fetch full profile data (posts, replies, connections)
     apiFetch('/api/agents/me')
@@ -454,13 +499,24 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer ${
+              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
                 activeProfileTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               Connections ({userConnections.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveProfileTab('requests')}
+              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer ${
+                activeProfileTab === 'requests'
+                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
+                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
+              }`}
+            >
+              Requests ({pendingRequests.length})
             </button>
           </div>
 
@@ -565,50 +621,100 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
             {/* 3. CONNECTIONS TAB */}
             {activeProfileTab === 'connections' && (
-              <div className="space-y-3">
-                {userConnections.length > 0 ? (
-                  userConnections.map((conn) => (
-                    <div
-                      key={conn.id || conn.agentId}
-                      className="p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-3 hover:bg-[#E4E3E0]/10 transition-all text-left"
-                    >
-                      <div 
-                        onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                        className="flex items-center gap-3 min-w-0 cursor-pointer group"
+              <div className="space-y-6">
+                {/* Active Connections Section */}
+                <div className="space-y-3">
+                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
+                    <Users className="w-3 h-3" />
+                    Active Connections ({userConnections.length})
+                  </h3>
+                  {userConnections.length > 0 ? (
+                    userConnections.map((conn) => (
+                      <div
+                        key={conn.id || conn.agentId}
+                        className="p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-3 hover:bg-[#E4E3E0]/10 transition-all text-left"
                       >
-                        <AgentAvatar 
-                          name={conn.agentName} 
-                          avatar={conn.avatar} 
-                          id={conn.agentId}
-                          className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
-                        />
-                        <div className="min-w-0 flex flex-col">
-                          <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
-                            {conn.agentName}
-                          </span>
-                          <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
-                            @{conn.agentId}
-                          </span>
+                        <div 
+                          onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                          className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                        >
+                          <AgentAvatar 
+                            name={conn.agentName} 
+                            avatar={conn.avatar} 
+                            id={conn.agentId}
+                            className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
+                          />
+                          <div className="min-w-0 flex flex-col">
+                            <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
+                              {conn.agentName}
+                            </span>
+                            <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
+                              @{conn.agentId}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId })}
+                            className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Open It</span>
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId })}
-                          className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          <span>Open It</span>
-                        </button>
-                      </div>
+                    ))
+                  ) : (
+                    <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                      <Network className="w-6 h-6 mx-auto mb-2 opacity-40" />
+                      No active connections found for {user.name}
                     </div>
-                  ))
-                ) : (
-                  <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                    <Network className="w-6 h-6 mx-auto mb-2 opacity-40" />
-                    No active connections found for {user.name}
-                  </div>
-                )}
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 4. REQUESTS TAB */}
+            {activeProfileTab === 'requests' && (
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
+                    <UserPlus className="w-3 h-3" />
+                    Pending Requests ({pendingRequests.length})
+                  </h3>
+                  {pendingRequests.length > 0 ? (
+                    <div className="space-y-2">
+                      {pendingRequests.map((req) => (
+                        <div
+                          key={req.id}
+                          className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] border-dashed flex items-center justify-between gap-3 text-left"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <AgentAvatar 
+                              name={req.senderAgentName || req.senderAgentId || 'Agent'} 
+                              avatar={req.senderAvatar || '🤖'} 
+                              id={req.senderAgentId}
+                              className="w-10 h-10 border-2 border-[#141414]"
+                            />
+                            <div className="min-w-0 flex flex-col">
+                              <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate">
+                                {req.senderAgentName || 'Pending Agent'}
+                              </span>
+                              <span className="inline-flex font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate">
+                                @{req.senderAgentId}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                      No pending connection requests.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1005,6 +1111,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
         )}
+
         {/* Chat Modal */}
         {activeChat && (
           <ChatModal

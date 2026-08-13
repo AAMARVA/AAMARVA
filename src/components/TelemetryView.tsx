@@ -1,16 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Users, Repeat, MessageSquare } from 'lucide-react';
+import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { apiFetch } from '../services/authApi';
 
 interface TelemetryViewProps {
   posts?: NetworkPost[];
+  connectionRequests?: any[];
+  recentConnections?: any[];
   liveAgentCount: number;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
-export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpenAgentProfile }) => {
+export const TelemetryView: React.FC<TelemetryViewProps> = ({ 
+  posts = [], 
+  connectionRequests = [], 
+  recentConnections = [],
+  onOpenAgentProfile 
+}) => {
   const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies'>('posts');
   const [agentActivity, setAgentActivity] = useState<any[]>([]);
   const [isLoadingActivity, setIsLoadingActivity] = useState(true);
@@ -124,7 +131,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     agentId?: string;
     avatar: string;
     text: string;
-    type: 'post' | 'reply' | 'connection';
+    type: 'post' | 'reply' | 'connection' | 'request';
     peerName?: string;
     createdAt?: string;
   }> = [];
@@ -181,6 +188,55 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
       });
     });
   });
+
+  connectionRequests.forEach((req) => {
+    const sKey = normalizeId(req.senderAgentId || req.senderAgentName);
+    const sResolved = masterNameMap[sKey];
+    const sDisplayName = sResolved && !isTechnicalName(sResolved.name) ? sResolved.name : req.senderAgentName;
+
+    const rKey = normalizeId(req.receiverAgentId);
+    const rResolved = masterNameMap[rKey];
+    const rDisplayName = rResolved && !isTechnicalName(rResolved.name) ? rResolved.name : req.receiverAgentId;
+
+    const logText = `sent a connection request to ${rDisplayName}`;
+
+    liveFloorLogs.push({
+      id: `req-${req.id}`,
+      agentName: sDisplayName,
+      agentId: req.senderAgentId,
+      avatar: sResolved?.avatar || '🤖',
+      text: logText,
+      type: 'request',
+      peerName: rDisplayName,
+      createdAt: req.createdAt,
+    });
+  });
+
+  recentConnections.forEach((conn) => {
+    // Check if this connection was already added via post logic
+    if (liveFloorLogs.some(l => l.id === `c-${conn.id}`)) return;
+
+    const sKey = normalizeId(conn.postOwnerAgentId || conn.postOwnerAgentName);
+    const sResolved = masterNameMap[sKey];
+    const sDisplayName = sResolved && !isTechnicalName(sResolved.name) ? sResolved.name : (conn.postOwnerAgentName || 'Agent');
+
+    const rKey = normalizeId(conn.replyAuthorAgentId || conn.replyAuthorAgentName);
+    const rResolved = masterNameMap[rKey];
+    const rDisplayName = rResolved && !isTechnicalName(rResolved.name) ? rResolved.name : (conn.replyAuthorAgentName || 'Agent');
+
+    liveFloorLogs.push({
+      id: `c-${conn.id}`,
+      agentName: sDisplayName,
+      agentId: conn.postOwnerAgentId,
+      avatar: sResolved?.avatar || '🤖',
+      text: `formed a connection with ${rDisplayName}`,
+      type: 'connection',
+      peerName: rDisplayName,
+      createdAt: conn.createdAt,
+    });
+  });
+
+  liveFloorLogs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
@@ -269,11 +325,17 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
                       >
                         <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-7 h-7 border border-white/30" />
                       </button>
+                      {log.type === 'post' && (
+                        <Plus className="w-3.5 h-3.5 text-white shrink-0 inline-block" />
+                      )}
                       {log.type === 'reply' && (
                         <span className="text-white font-bold text-xs">↳</span>
                       )}
                       {log.type === 'connection' && (
                         <Repeat className="w-3.5 h-3.5 text-white shrink-0 inline-block" />
+                      )}
+                      {log.type === 'request' && (
+                        <UserPlus className="w-3.5 h-3.5 text-white shrink-0 inline-block" />
                       )}
                     </div>
                     <div>

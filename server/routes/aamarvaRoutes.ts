@@ -44,7 +44,10 @@ import {
   deleteConnection,
   sendConnectionRequest,
   getConnectionRequests,
-  acceptConnectionRequest
+  acceptConnectionRequest,
+  getRecentConnectionRequests,
+  getRecentConnections,
+  deleteConnectionRequest
 } from '../services/connectionService';
 
 const router = Router();
@@ -75,15 +78,16 @@ router.post(['/auth/register', '/v1/auth/register'], registerRateLimiter, async 
       });
       res.cookie(REFRESH_COOKIE_NAME, loginResult.tokens.refreshToken, getRefreshCookieOptions());
       
-      const safeTokens = {
-        accessToken: loginResult.tokens.accessToken
+      const tokens = {
+        accessToken: loginResult.tokens.accessToken,
+        refreshToken: loginResult.tokens.refreshToken
       };
 
       return res.status(201).json({
         success: true,
         data: {
           ...result,
-          tokens: safeTokens,
+          tokens,
           user: {
             ...loginResult.user
           },
@@ -104,15 +108,16 @@ router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginRateLimiter
     const result = await loginHuman({ agentId, password });
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
     
-    const safeTokens = {
-      accessToken: result.tokens.accessToken
+    const tokens = {
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken
     };
 
     res.json({
       success: true,
       data: {
         ...result,
-        tokens: safeTokens
+        tokens
       }
     });
   } catch (err: any) {
@@ -128,15 +133,16 @@ router.post(['/auth/login', '/v1/auth/login'], agentLoginRateLimiter, async (req
     const result = await loginAgent({ agentId, apiKey });
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
     
-    const safeTokens = {
-      accessToken: result.tokens.accessToken
+    const tokens = {
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken
     };
 
     res.json({
       success: true,
       data: {
         ...result,
-        tokens: safeTokens
+        tokens
       }
     });
   } catch (err: any) {
@@ -171,15 +177,16 @@ router.post('/auth/refresh', tokenRefreshLimiter, async (req: Request, res: Resp
     const result = await refreshSessionToken(token);
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
     
-    const safeTokens = {
-      accessToken: result.tokens.accessToken
+    const tokens = {
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken
     };
 
     res.json({
       success: true,
       data: {
         ...result,
-        tokens: safeTokens
+        tokens
       }
     });
   } catch (err: any) {
@@ -487,6 +494,26 @@ router.delete('/connections/:connectionId', requireAgentApiAuth, agentActionLimi
   }
 });
 
+// GET /api/connection-requests/recent
+router.get('/connection-requests/recent', publicReadLimiter, async (req: Request, res: Response) => {
+  try {
+    const requests = await getRecentConnectionRequests(20);
+    res.json({ success: true, data: requests });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/connections/recent
+router.get('/connections/recent', publicReadLimiter, async (req: Request, res: Response) => {
+  try {
+    const connections = await getRecentConnections(20);
+    res.json({ success: true, data: connections });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // POST /api/connections/requests
 router.post('/connections/requests', requireAgentApiAuth, requireAgent, connectionRequestLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -517,6 +544,18 @@ router.post('/connections/requests/:requestId/accept', requireAgentApiAuth, agen
     res.json({ success: true, data: connection });
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : 400;
+    res.status(status).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// DELETE /api/connections/requests/:requestId
+router.delete('/connections/requests/:requestId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const requestId = req.params.requestId as string;
+    const result = await deleteConnectionRequest(requestId, req.user!.id);
+    res.json(result);
+  } catch (err: any) {
+    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ success: false, error: { message: err.message } });
   }
 });

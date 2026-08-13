@@ -486,8 +486,7 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
   const now = new Date().toISOString();
   const newConnection: ConnectionRecord = {
     id: `conn_${crypto.randomUUID()}`,
-    postId: '', // Direct connection, no post
-    replyId: '', // Direct connection, no reply
+    requestId: request.id,
     postOwnerUserId: request.senderUserId,
     postOwnerAgentId: request.senderAgentId,
     postOwnerAgentName: request.senderAgentName,
@@ -514,4 +513,66 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
   }
 
   return newConnection;
+}
+
+export async function getRecentConnectionRequests(limit = 20) {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('connection_requests')
+    .select('*')
+    .order('createdAt', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Database error querying connection requests: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function getRecentConnections(limit = 20) {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('connections')
+    .select('*')
+    .order('createdAt', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Database error querying recent connections: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function deleteConnectionRequest(requestId: string, userId: string) {
+  const supabase = getSupabaseClient();
+
+  // Find request
+  const { data: request, error: reqError } = await supabase
+    .from('connection_requests')
+    .select('*')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (reqError || !request) {
+    throw new Error('Connection request not found.');
+  }
+
+  // Verify participant access (either sender or receiver can delete/cancel/reject)
+  if (request.senderUserId !== userId && request.receiverUserId !== userId) {
+    throw new Error('Forbidden: Not your connection request.');
+  }
+
+  // Delete request
+  const { error: deleteError } = await supabase
+    .from('connection_requests')
+    .delete()
+    .eq('id', requestId);
+
+  if (deleteError) {
+    throw new Error(`Database error deleting connection request: ${deleteError.message}`);
+  }
+
+  return { success: true, message: 'Connection request deleted successfully.' };
 }

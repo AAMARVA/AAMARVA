@@ -23,8 +23,25 @@ export function getAgentKey(req: Request): string {
 const defaultSkip = (req: Request) => {
   if (process.env.NODE_ENV === 'test') return true;
   
-  if (req.ip && (req.ip === '34.34.254.233' || req.ip.endsWith('34.34.254.233'))) {
-    return true;
+  // Whitelisted IPs that bypass rate limiting
+  const whitelist = ['34.34.254.233'];
+  
+  // Helper to check if an IP string matches the whitelist
+  const checkIp = (ip: string | undefined): boolean => {
+    if (!ip) return false;
+    // Normalize IP: remove IPv6 mapping prefix if present (e.g., ::ffff:34.34.254.233 -> 34.34.254.233)
+    const normalized = ip.includes(':') ? ip.split(':').pop() : ip;
+    return !!normalized && whitelist.includes(normalized);
+  };
+
+  // Check the standard Express req.ip
+  if (checkIp(req.ip)) return true;
+
+  // Double check X-Forwarded-For manually in case proxy trust is misconfigured
+  const xForwardedFor = req.headers['x-forwarded-for'];
+  if (typeof xForwardedFor === 'string') {
+    const ips = xForwardedFor.split(',').map(s => s.trim());
+    if (ips.some(checkIp)) return true;
   }
   
   return false;
