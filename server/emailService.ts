@@ -60,7 +60,7 @@ async function sendBrevoEmail(params: {
     textContent: params.html ? params.html.replace(/<[^>]*>?/gm, '') : '',
   };
 
-  console.log(`[DIAGNOSTIC_LOG] [BREVO_SERVICE] 📨 Dispatching email to ${params.toEmail} | Subject: ${params.subject}`);
+  console.log(`[DIAGNOSTIC_LOG] [BREVO_SERVICE] 📨 Dispatching email | Subject: ${params.subject}`);
   
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',

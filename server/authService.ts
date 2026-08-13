@@ -186,19 +186,16 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
 
   return {
     id: raw.id,
-    agentId: raw.agentId || raw.agent_id || '',
+    agentId: raw.agentId || '',
     email: raw.email || '',
-    passwordHash: raw.passwordHash || raw.password_hash || '',
-    apiKey: apiKeyHash, // Use dedicated hash field from metadata
+    passwordHash: raw.passwordHash || '',
+    apiKeyHash: apiKeyHash, // Use dedicated hash field from metadata
     name: raw.name || '',
     status: raw.status || 'active',
-    emailVerified: raw.emailVerified !== undefined ? raw.emailVerified : (raw.email_verified !== undefined ? raw.email_verified : true),
-    trustScore: raw.trustScore !== undefined ? raw.trustScore : (raw.trust_score !== undefined ? raw.trust_score : 0),
-    verificationStatus: raw.verificationStatus || raw.verification_status || 'unverified',
     avatar: raw.avatar || '🤖',
-    bio: (raw.bio || raw.agent_bio || '').trim() || DEFAULT_BIO,
-    createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
-    updatedAt: raw.updatedAt || raw.updated_at || new Date().toISOString(),
+    bio: (raw.bio || '').trim() || DEFAULT_BIO,
+    createdAt: raw.createdAt || new Date().toISOString(),
+    updatedAt: raw.updatedAt || new Date().toISOString(),
   };
 }
 
@@ -226,17 +223,13 @@ async function findUserById(supabase: any, id: string) {
 }
 
 async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
-  // Primary attempt: Use dedicated apiKey column (if it ever exists)
   const camelRecord: Record<string, any> = {
     id: newUser.id,
     agentId: newUser.agentId,
     email: newUser.email,
     passwordHash: newUser.passwordHash,
     name: newUser.name,
-    role: 'agent_operator',
     status: newUser.status,
-    emailVerified: newUser.emailVerified,
-    verificationStatus: newUser.verificationStatus,
     avatar: newUser.avatar,
     bio: newUser.bio || DEFAULT_BIO,
     createdAt: newUser.createdAt,
@@ -244,28 +237,13 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
   };
 
   const { error } = await supabase.from('users').insert([camelRecord]);
-  if (error && error.code === '23505') throw error;
-  if (error) {
-    // If dedicated column fails, we rely on user_metadata which is handled in registerUser
-    // but we still try snake_case for the profile part
-    const snakeRecord: Record<string, any> = {
-      id: newUser.id,
-      agent_id: newUser.agentId,
-      email: newUser.email,
-      password_hash: newUser.passwordHash,
-      name: newUser.name,
-      role: 'agent_operator',
-      status: newUser.status,
-      email_verified: newUser.emailVerified,
-      verification_status: newUser.verificationStatus,
-      avatar: newUser.avatar,
-      bio: newUser.bio || DEFAULT_BIO,
-      created_at: newUser.createdAt,
-      updated_at: newUser.updatedAt,
-    };
-    const resSnake = await supabase.from('users').insert([snakeRecord]);
-    if (resSnake.error && resSnake.error.code === '23505') throw resSnake.error;
+  if (!error) return;
+
+  if (error?.code === '23505') {
+    throw new Error('An agent or user with this email or Agent ID already exists.');
   }
+
+  throw new Error(`Database error: ${error.message}`);
 }
 
 export async function registerUser(data: {
@@ -312,12 +290,7 @@ export async function registerUser(data: {
       const { data: ext1 } = await supabase.from('users').select('id').eq('agentId', prospectiveId).limit(1);
       if (ext1 && ext1.length > 0) isUsed = true;
     } catch (e) {
-      try {
-        const { data: ext2 } = await supabase.from('users').select('id').eq('agent_id', prospectiveId).limit(1);
-        if (ext2 && ext2.length > 0) isUsed = true;
-      } catch (err2) {
-        // ignore schema errors, assume unique
-      }
+      // ignore
     }
     if (!isUsed) {
       agentId = prospectiveId;
@@ -331,55 +304,101 @@ export async function registerUser(data: {
 
   // Generate unique API Key
   const apiKeyToUse = generateApiKey();
-
   const passwordHash = data.password ? await hashPassword(data.password) : await hashPassword(crypto.randomBytes(32).toString('hex'));
-  
-  // Create user
   const apiKeyHash = await hashApiKey(apiKeyToUse);
+  const apiKeyFingerprint = computeApiKeyFingerprint(apiKeyToUse);
+
+  let authUserId = crypto.randomUUID();
+  let authUserCreated = false;
+
+  // 1. Create in Supabase Auth first if possible to satisfy foreign key constraints
+  if (supabase) {
+    try {
+      if (supabase.auth?.admin?.createUser) {
+        const { data: createdAuthUser, error: authCreateErr } = await supabase.auth.admin.createUser({
+          email: normalizedEmail,
+          password: data.password || crypto.randomBytes(32).toString('hex'),
+          email_confirm: true,
+          user_metadata: {
+            agentId,
+            name: agentName,
+            avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
+            bio: (data.bio || '').trim() || DEFAULT_BIO
+          },
+          app_metadata: { apiKeyHash, apiKeyFingerprint }
+        });
+        if (authCreateErr) {
+          throw new Error(`Failed to create auth user: ${authCreateErr.message}`);
+        }
+        if (createdAuthUser?.user?.id) {
+          authUserId = createdAuthUser.user.id;
+          authUserCreated = true;
+        }
+      } else if (supabase.auth?.signUp) {
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password: data.password || crypto.randomBytes(32).toString('hex'),
+          options: {
+            data: {
+              agentId,
+              name: agentName,
+              avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
+              bio: (data.bio || '').trim() || DEFAULT_BIO
+            }
+          }
+        });
+        if (signUpErr) {
+          throw new Error(`Failed to sign up auth user: ${signUpErr.message}`);
+        }
+        if (signUpData?.user?.id) {
+          authUserId = signUpData.user.id;
+          authUserCreated = true;
+          if (supabase.auth?.admin?.updateUserById) {
+            await supabase.auth.admin.updateUserById(authUserId, {
+              app_metadata: { apiKeyHash, apiKeyFingerprint }
+            });
+          }
+        }
+      }
+    } catch (authErr: any) {
+      console.error('Auth user creation failed:', authErr);
+      throw new Error(`Authentication provider error: ${authErr.message}`);
+    }
+  }
+
   const newUser: UserRecord = {
-    id: `usr_${crypto.randomUUID()}`,
+    id: authUserId,
     agentId,
     email: normalizedEmail,
     passwordHash,
-    apiKey: apiKeyHash,
+    apiKeyHash: apiKeyHash,
     name: agentName,
     status: 'active',
-    emailVerified: false,
-    verificationStatus: 'unverified',
     avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
     bio: (data.bio || '').trim() || DEFAULT_BIO,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
 
-  await insertUserToSupabase(supabase, newUser);
-
-  // Sync creation with Supabase Auth (auth.users) and store apiKeyHash and apiKeyFingerprint in metadata
-  if (supabase) {
-    try {
-      const apiKeyFingerprint = computeApiKeyFingerprint(apiKeyToUse);
-      if (supabase.auth?.admin?.createUser) {
-        await supabase.auth.admin.createUser({
-          email: normalizedEmail,
-          password: data.password || crypto.randomBytes(32).toString('hex'),
-          email_confirm: true,
-          app_metadata: { apiKeyHash, apiKeyFingerprint }
-        });
-      } else if (supabase.auth?.signUp) {
-        const { data: signUpData } = await supabase.auth.signUp({
-          email: normalizedEmail,
-          password: data.password || crypto.randomBytes(32).toString('hex')
-        });
-        if (signUpData?.user?.id && supabase.auth?.admin?.updateUserById) {
-           await supabase.auth.admin.updateUserById(signUpData.user.id, {
-             app_metadata: { apiKeyHash, apiKeyFingerprint }
-           });
-        }
+  try {
+    await insertUserToSupabase(supabase, newUser);
+  } catch (insertErr: any) {
+    console.error('Direct table insert failed:', insertErr);
+    // If we successfully created an auth user but failed to insert into the users table,
+    // we must clean up the orphaned auth user.
+    if (authUserCreated && supabase && supabase.auth?.admin?.deleteUser) {
+      try {
+        await supabase.auth.admin.deleteUser(authUserId);
+        console.log(`Cleaned up orphaned auth user ${authUserId}`);
+      } catch (cleanupErr) {
+        console.error(`Failed to clean up orphaned auth user ${authUserId}:`, cleanupErr);
       }
-      invalidateAuthCache();
-    } catch (authErr) {
-      console.warn('Note: Supabase auth.users provisioning attempt failed.');
     }
+    throw insertErr; // Rethrow to fail the registration and return an error response
+  }
+
+  if (supabase) {
+    invalidateAuthCache();
   }
   
   const familyId = crypto.randomUUID();
@@ -399,7 +418,7 @@ export async function registerUser(data: {
 
   await supabase.from('refreshTokens').insert([newRecord]);
   
-  const { passwordHash: _, apiKey: __, ...safeUser } = newUser;
+  const { passwordHash: _, apiKeyHash: __, ...safeUser } = newUser;
   return { agentId, apiKey: apiKeyToUse, user: safeUser as any, tokens: { accessToken, refreshToken } };
 }
 
@@ -422,89 +441,7 @@ async function findUserByAgentId(agentId: string) {
   return byId || null;
 }
 
-export async function findUserByApiKey(apiKey: string) {
-  const supabase = getSupabaseClient();
-  const term = (apiKey || '').trim();
-  if (!term) return null;
-
-  const targetFingerprint = computeApiKeyFingerprint(term);
-  let authUsers = await getAuthUsersList();
-
-  // 1. Fast path: Find candidate auth user by HMAC fingerprint
-  let candidateUser = authUsers.find(
-    (u) => u.app_metadata?.apiKeyFingerprint === targetFingerprint
-  );
-
-  // If candidate not found in cache, force refresh cache from Supabase once
-  if (!candidateUser) {
-    authUsers = await getAuthUsersList(true);
-    candidateUser = authUsers.find(
-      (u) => u.app_metadata?.apiKeyFingerprint === targetFingerprint
-    );
-  }
-
-  if (candidateUser) {
-    const hash = candidateUser.app_metadata?.apiKeyHash || '';
-    if (!hash) return null;
-
-    let isMatch = false;
-    if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
-      isMatch = await compareApiKey(term, hash);
-    } else {
-      isMatch = (hash === term);
-    }
-
-    if (isMatch) {
-      const { data: pUser } = await supabase
-        .from('users')
-        .select('*')
-        .ilike('email', candidateUser.email || '')
-        .maybeSingle();
-
-      return pUser ? normalizeUserRecord(pUser, candidateUser) : null;
-    }
-    return null;
-  }
-
-  // 2. Backward compatibility fallback for legacy API keys missing fingerprint
-  const legacyUsers = authUsers.filter((u) => !u.app_metadata?.apiKeyFingerprint);
-  for (const aUser of legacyUsers) {
-    const hash = aUser.app_metadata?.apiKeyHash || '';
-    if (!hash) continue;
-
-    let isMatch = false;
-    if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
-      isMatch = await compareApiKey(term, hash);
-    } else {
-      isMatch = (hash === term);
-    }
-
-    if (isMatch) {
-      // Auto-backfill fingerprint for legacy key
-      try {
-        await supabase.auth.admin.updateUserById(aUser.id, {
-          app_metadata: {
-            ...aUser.app_metadata,
-            apiKeyFingerprint: targetFingerprint,
-          },
-        });
-        invalidateAuthCache();
-      } catch (backfillErr) {
-        console.warn('Failed to backfill apiKeyFingerprint for legacy user:', backfillErr);
-      }
-
-      const { data: pUser } = await supabase
-        .from('users')
-        .select('*')
-        .ilike('email', aUser.email || '')
-        .maybeSingle();
-
-      return pUser ? normalizeUserRecord(pUser, aUser) : null;
-    }
-  }
-
-  return null;
-}
+// Legacy findUserByApiKey lookup completely removed
 
 export async function loginHuman(data: { agentId: string; password: string }) {
   const agentId = (data.agentId || '').trim();
@@ -550,7 +487,7 @@ export async function loginHuman(data: { agentId: string; password: string }) {
     createdAt: new Date().toISOString()
   }]);
 
-  const { passwordHash: _, apiKey: __, ...safeUser } = normalizedUser;
+  const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
 
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
@@ -580,22 +517,8 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
   }
 
   let isApiKeyValid = false;
-  if (normalizedUser.apiKey.startsWith('$2a$') || normalizedUser.apiKey.startsWith('$2b$')) {
-    isApiKeyValid = await compareApiKey(apiKey, normalizedUser.apiKey);
-  } else {
-    isApiKeyValid = normalizedUser.apiKey === apiKey;
-    if (isApiKeyValid) {
-      const hashedKey = await hashApiKey(apiKey);
-      const fingerprint = computeApiKeyFingerprint(apiKey);
-      
-      // Update app_metadata in Supabase Auth (Admin-only storage)
-      if (authUser) {
-        await supabase.auth.admin.updateUserById(authUser.id, {
-          app_metadata: { ...authUser.app_metadata, apiKeyHash: hashedKey, apiKeyFingerprint: fingerprint }
-        });
-        invalidateAuthCache();
-      }
-    }
+  if (normalizedUser.apiKeyHash && (normalizedUser.apiKeyHash.startsWith('$2a$') || normalizedUser.apiKeyHash.startsWith('$2b$'))) {
+    isApiKeyValid = await compareApiKey(apiKey, normalizedUser.apiKeyHash);
   }
 
   if (!isApiKeyValid) {
@@ -630,7 +553,7 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     createdAt: new Date().toISOString()
   }]);
 
-  const { passwordHash: _, apiKey: __, ...safeUser } = normalizedUser;
+  const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
 
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 }
@@ -647,7 +570,7 @@ export async function updateUserProfile(userId: string, data: Partial<UserRecord
     
   if (error || !updatedUser) throw new Error(error?.message || 'Failed to update profile');
   
-  const { passwordHash: _, apiKey: __, ...safeUser } = normalizeUserRecord(updatedUser);
+  const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizeUserRecord(updatedUser);
   return safeUser;
 }
 
@@ -674,155 +597,30 @@ export async function deleteUserAccount(userId: string): Promise<void> {
     throw new Error('Account deletion failed: User account not found or already deleted.');
   }
 
-  // Helper function to safely execute deletion across multiple column name conventions
-  const safeDelete = async (table: string, cols: string[], val: any) => {
-    if (Array.isArray(val) && val.length === 0) return;
-    for (const col of cols) {
-      try {
-        const query = supabase.from(table).delete();
-        const { error } = Array.isArray(val)
-          ? await query.in(col, val)
-          : await query.eq(col, val);
-
-        if (error) {
-          if (
-            error.code === '42703' ||
-            error.code === '42P01' ||
-            error.code === 'PGRST204' ||
-            error.code === 'PGRST205' ||
-            error.message?.includes('column') ||
-            error.message?.includes('table') ||
-            error.message?.includes('does not exist') ||
-            error.message?.includes('schema cache')
-          ) {
-            continue;
-          }
-          console.error(`[Account Deletion Failure] Table: ${table}, Column: ${col}, Error:`, error);
-          throw new Error(`Failed to delete records from ${table} on ${col}: ${error.message}`);
-        }
-      } catch (e: any) {
-        if (e.message?.startsWith('Failed to delete records from')) throw e;
-        console.error(`[Account Deletion Exception] Table: ${table}, Column: ${col}:`, e);
-        throw new Error(`Deletion exception in ${table} (${col}): ${e.message || e}`);
-      }
-    }
-  };
-
-  // 1. Gather all Posts created by this user
-  let postIds: string[] = [];
-  for (const col of ['userId', 'user_id']) {
-    try {
-      const { data, error } = await supabase.from('posts').select('id').eq(col, userId);
-      if (error && error.code !== '42703') {
-      }
-      if (data && Array.isArray(data)) {
-        postIds.push(...data.map((p: any) => p.id));
-      }
-    } catch (e) {
-    }
-  }
-  postIds = Array.from(new Set(postIds));
-
-  // 2. Gather all Replies: authored by this user OR attached to this user's posts
-  let replyIds: string[] = [];
-  for (const col of ['userId', 'user_id']) {
-    try {
-      const { data } = await supabase.from('replies').select('id').eq(col, userId);
-      if (data && Array.isArray(data)) {
-        replyIds.push(...data.map((r: any) => r.id));
-      }
-    } catch (e) {
-    }
-  }
-  if (postIds.length > 0) {
-    for (const col of ['postId', 'post_id']) {
-      try {
-        const { data } = await supabase.from('replies').select('id').in(col, postIds);
-        if (data && Array.isArray(data)) {
-          replyIds.push(...data.map((r: any) => r.id));
-        }
-      } catch (e) {
-      }
-    }
-  }
-  replyIds = Array.from(new Set(replyIds));
-
-  // 3. Gather all Connections involving this user, posts, or replies
-  let connectionIds: string[] = [];
-  for (const col of ['postOwnerUserId', 'post_owner_user_id', 'replyAuthorUserId', 'reply_author_user_id']) {
-    try {
-      const { data } = await supabase.from('connections').select('id').eq(col, userId);
-      if (data && Array.isArray(data)) {
-        connectionIds.push(...data.map((c: any) => c.id));
-      }
-    } catch (e) {
-    }
-  }
-  if (postIds.length > 0) {
-    for (const col of ['postId', 'post_id']) {
-      try {
-        const { data } = await supabase.from('connections').select('id').in(col, postIds);
-        if (data && Array.isArray(data)) {
-          connectionIds.push(...data.map((c: any) => c.id));
-        }
-      } catch (e) {
-      }
-    }
-  }
-  if (replyIds.length > 0) {
-    for (const col of ['replyId', 'reply_id']) {
-      try {
-        const { data } = await supabase.from('connections').select('id').in(col, replyIds);
-        if (data && Array.isArray(data)) {
-          connectionIds.push(...data.map((c: any) => c.id));
-        }
-      } catch (e) {
-      }
-    }
-  }
-  connectionIds = Array.from(new Set(connectionIds));
-
   // --- EXECUTE DELETIONS IN BOTTOM-UP DEPENDENCY ORDER ---
 
-  // Step A: Delete Messages
-  if (connectionIds.length > 0) {
-    await safeDelete('messages', ['connectionId', 'connection_id'], connectionIds);
-  }
-  await safeDelete('messages', ['senderUserId', 'sender_user_id'], userId);
+  // Step 1: Delete Messages sent by the user
+  await supabase.from('messages').delete().eq('senderUserId', userId);
 
-  // Step B: Delete Connections
-  if (connectionIds.length > 0) {
-    await safeDelete('connections', ['id'], connectionIds);
-  }
-  await safeDelete('connections', ['postOwnerUserId', 'post_owner_user_id', 'replyAuthorUserId', 'reply_author_user_id'], userId);
-  if (postIds.length > 0) {
-    await safeDelete('connections', ['postId', 'post_id'], postIds);
-  }
-  if (replyIds.length > 0) {
-    await safeDelete('connections', ['replyId', 'reply_id'], replyIds);
-  }
+  // Step 2: Delete Connection Requests involving the user
+  await supabase.from('connection_requests').delete().eq('senderUserId', userId);
+  await supabase.from('connection_requests').delete().eq('receiverUserId', userId);
 
-  // Step C: Delete Replies
-  if (replyIds.length > 0) {
-    await safeDelete('replies', ['id'], replyIds);
-  }
-  await safeDelete('replies', ['userId', 'user_id'], userId);
-  if (postIds.length > 0) {
-    await safeDelete('replies', ['postId', 'post_id'], postIds);
-  }
+  // Step 3: Delete Connections involving the user
+  await supabase.from('connections').delete().eq('postOwnerUserId', userId);
+  await supabase.from('connections').delete().eq('replyAuthorUserId', userId);
 
-  // Step D: Delete Posts
-  if (postIds.length > 0) {
-    await safeDelete('posts', ['id'], postIds);
-  }
-  await safeDelete('posts', ['userId', 'user_id'], userId);
+  // Step 4: Delete Replies written by the user
+  await supabase.from('replies').delete().eq('userId', userId);
 
-  // Step E: Delete Refresh Tokens
-  for (const tbl of ['refreshTokens', 'refresh_tokens', 'refreshtokens']) {
-    await safeDelete(tbl, ['userId', 'user_id'], userId);
-  }
+  // Step 5: Delete Posts authored by the user
+  await supabase.from('posts').delete().eq('userId', userId);
 
-  // Step F: Delete User Record
+  // Step 6: Delete Password Reset Tokens & Refresh Tokens
+  await supabase.from('password_reset_tokens').delete().eq('userId', userId);
+  await supabase.from('refreshTokens').delete().eq('userId', userId);
+
+  // Step 7: Delete User Record
   const { error } = await supabase.from('users').delete().eq('id', userId);
   if (error) {
     console.error('[Account Deletion Failure] Failed to delete user record:', error);
@@ -964,7 +762,7 @@ export async function refreshSessionToken(token: string): Promise<{ user: Omit<U
     throw new Error(`Failed to save rotated session token: ${insertError.message}`);
   }
 
-  const { passwordHash: _, apiKey: __, ...safeUser } = user;
+  const { passwordHash: _, apiKeyHash: __, ...safeUser } = user;
   return {
     user: safeUser as any,
     tokens: { accessToken: newAccessToken, refreshToken: newRefreshToken },
@@ -1021,8 +819,8 @@ export async function rotateAgentApiKey(userId: string, password: string) {
 
   invalidateAuthCache();
 
-  // 6. Update the public users table apiKey (hashed) for redundancy/sync
-  await supabase.from('users').update({ apiKey: apiKeyHash, updatedAt: new Date().toISOString() }).eq('id', user.id);
+  // 6. Update the public users table updatedAt for redundancy/sync
+  await supabase.from('users').update({ updatedAt: new Date().toISOString() }).eq('id', user.id);
 
   return { apiKey: newApiKey };
 }

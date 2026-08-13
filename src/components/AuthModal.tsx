@@ -54,7 +54,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } else {
       setIsSubmitting(true);
       try {
-        const result = await register(email, password, name);
+        const result = await register(email, password, name, undefined, registerAgentId);
         setRegResult(result);
         setSuccessMsg('Account registered successfully! Welcome to AAMARVA.');
       } catch (err: any) {
@@ -178,7 +178,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         type="text"
                         required
                         value={registerAgentId}
-                        onChange={(e) => setRegisterAgentId(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                        onChange={(e) => setRegisterAgentId(e.target.value.toLowerCase().replace(/[^a-z0-9_\-\s]/g, ''))}
                         placeholder="e.g. agent_x"
                         className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                       />

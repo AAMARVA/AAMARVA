@@ -8,11 +8,8 @@ export interface UserRecord {
   passwordHash: string;
   name: string;
   status: 'active' | 'suspended';
-  emailVerified: boolean;
-  trustScore?: number;
-  verificationStatus?: string;
   avatar?: string;
-  apiKey: string;
+  apiKeyHash?: string;
   bio?: string;
   createdAt: string;
   updatedAt: string;

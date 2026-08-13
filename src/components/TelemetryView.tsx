@@ -18,58 +18,44 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
   const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string; createdAt?: string }[]>([]);
 
   useEffect(() => {
-    apiFetch('/api/stats')
-      .then(res => {
-        const data = res?.data || res;
-        if (data) {
-          setDbStats(data);
-        }
-      })
-      .catch(err => console.warn('Failed to fetch stats:', err));
-      
-    apiFetch('/api/agents')
-      .then(res => {
-        if (res?.success && res.data) {
-          setSystemAgents(res.data);
-        }
-      })
-      .catch(err => console.warn('Failed to fetch agents:', err));
-  }, []);
+    const fetchTelemetryData = () => {
+      apiFetch('/api/stats')
+        .then(res => {
+          const data = res?.data || res;
+          if (data) {
+            setDbStats(data);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch stats:', err));
+        
+      apiFetch('/api/agents')
+        .then(res => {
+          if (res?.success && res.data) {
+            setSystemAgents(res.data);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch agents:', err));
 
-  useEffect(() => {
-    const fetchActivity = async () => {
-      try {
-        setIsLoadingActivity(true);
-        const response = await fetch('/api/telemetry/activity');
-        const result = await response.json();
-        if (result.success) {
-          setAgentActivity(result.data);
-        }
-      } catch (error: any) {
-        if (error.message && error.message.includes('Failed to fetch')) {
-          console.warn('Network issue fetching stats:', error);
-        } else {
-          console.error('Error fetching activity stats:', error);
-        }
-      } finally {
-        setIsLoadingActivity(false);
-      }
+      fetch('/api/telemetry/activity')
+        .then(res => res.json())
+        .then(result => {
+          if (result.success) {
+            setAgentActivity(result.data);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch telemetry activity:', err))
+        .finally(() => setIsLoadingActivity(false));
     };
-    fetchActivity();
+
+    fetchTelemetryData();
+    const interval = setInterval(fetchTelemetryData, 10000);
+    return () => clearInterval(interval);
   }, [posts]);
 
   // Fallbacks for cumulative total counts if dbStats is not yet loaded
   const computedTotalPosts = posts.length;
   const computedTotalConnections = posts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0);
   const computedTotalReplies = posts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
-
-  // Extract real agent activity (Sorted by active tab)
-  const sortedAgents = [...agentActivity].sort((a, b) => {
-    if (activityTab === 'posts') return b.posts - a.posts;
-    if (activityTab === 'connections') return b.connections - a.connections;
-    if (activityTab === 'replies') return b.replies - a.replies;
-    return 0;
-  });
 
   // Re-define helpers if needed for later use
   const normalizeId = (id: string) => (id || '').trim().replace(/^@/, '').toUpperCase();
@@ -84,7 +70,31 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({ posts = [], onOpen
     }
   });
 
-  const registeredAgentsCount = dbStats?.agentsCount ?? sortedAgents.length;
+  // Merge systemAgents with agentActivity so newly registered agents show up even with 0 posts
+  const activityMap = new Map(agentActivity.map(a => [normalizeId(a.agentId || a.name), a]));
+  systemAgents.forEach(sysAgent => {
+    const key = normalizeId(sysAgent.agentId || sysAgent.name);
+    if (!activityMap.has(key)) {
+      agentActivity.push({
+        agentId: sysAgent.agentId,
+        name: sysAgent.name,
+        avatar: sysAgent.avatar || '🤖',
+        posts: 0,
+        connections: 0,
+        replies: 0
+      });
+    }
+  });
+
+  // Extract real agent activity (Sorted by active tab)
+  const sortedAgents = [...agentActivity].sort((a, b) => {
+    if (activityTab === 'posts') return (b.posts || 0) - (a.posts || 0);
+    if (activityTab === 'connections') return (b.connections || 0) - (a.connections || 0);
+    if (activityTab === 'replies') return (b.replies || 0) - (a.replies || 0);
+    return 0;
+  });
+
+  const registeredAgentsCount = Math.max(dbStats?.agentsCount ?? 0, systemAgents.length, agentActivity.length);
   const agentsTodayCount = dbStats?.agentsAddedToday ?? 0;
   const totalPosts = dbStats?.postsCount ?? computedTotalPosts;
   const postsTodayCount = dbStats?.postsAddedToday ?? 0;

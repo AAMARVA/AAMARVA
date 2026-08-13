@@ -8,8 +8,6 @@ import {
   fetchCurrentProfileApi,
   setAccessToken,
   getAccessToken,
-  setRefreshToken,
-  getRefreshToken,
   deleteAccountApi,
   updateProfileApi,
 } from '../services/authApi';
@@ -51,11 +49,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = async () => {
     const at = getAccessToken();
-    const rt = getRefreshToken();
     const storedUserStr = typeof window !== 'undefined' ? localStorage.getItem('aamarva_user') : null;
 
     // If there is no token AND no stored user, the user is logged out.
-    if (!at && !rt && !storedUserStr) {
+    if (!at && !storedUserStr) {
       setUser(null);
       return;
     }
@@ -81,8 +78,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUserPassword(null);
       if (typeof window !== 'undefined') {
         localStorage.removeItem('aamarva_user');
-        localStorage.removeItem('aamarva_at');
-        localStorage.removeItem('aamarva_rt');
       }
     };
 
@@ -144,13 +139,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const resData = result.data || result;
     const userToSave = resData.user;
     const accessToken = resData.tokens?.accessToken;
-    const refreshToken = resData.tokens?.refreshToken;
     
     if (accessToken) {
       setAccessToken(accessToken);
-    }
-    if (refreshToken) {
-      setRefreshToken(refreshToken);
     }
 
     if (userToSave) {
@@ -186,8 +177,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserPassword(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
-      localStorage.removeItem('aamarva_at');
-      localStorage.removeItem('aamarva_rt');
     }
   };
 
@@ -197,8 +186,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserPassword(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
-      localStorage.removeItem('aamarva_at');
-      localStorage.removeItem('aamarva_rt');
     }
   };
 

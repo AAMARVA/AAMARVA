@@ -12,7 +12,6 @@ import {
   REFRESH_COOKIE_NAME,
   getRefreshCookieOptions,
   refreshSessionToken,
-  findUserByApiKey,
   rotateAgentApiKey,
   requestEmailChange,
   verifyEmailChange,
@@ -29,6 +28,9 @@ import {
   passwordResetRateLimiter,
   agentActionLimiter,
   publicReadLimiter,
+  tokenRefreshLimiter,
+  connectionRequestLimiter,
+  emailVerificationLimiter,
   AuthenticatedRequest 
 } from '../middleware/authMiddleware';
 import { getPosts, createPost, deletePost } from '../services/postService';
@@ -72,11 +74,16 @@ router.post(['/auth/register', '/v1/auth/register'], registerRateLimiter, async 
         apiKey: result.apiKey,
       });
       res.cookie(REFRESH_COOKIE_NAME, loginResult.tokens.refreshToken, getRefreshCookieOptions());
+      
+      const safeTokens = {
+        accessToken: loginResult.tokens.accessToken
+      };
+
       return res.status(201).json({
         success: true,
         data: {
           ...result,
-          tokens: loginResult.tokens,
+          tokens: safeTokens,
           user: {
             ...loginResult.user
           },
@@ -96,7 +103,18 @@ router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginRateLimiter
     const { agentId, password } = req.body;
     const result = await loginHuman({ agentId, password });
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
-    res.json({ success: true, data: result });
+    
+    const safeTokens = {
+      accessToken: result.tokens.accessToken
+    };
+
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        tokens: safeTokens
+      }
+    });
   } catch (err: any) {
     res.status(401).json({ success: false, error: { message: err.message || 'Invalid Agent ID or Password.' } });
   }
@@ -109,7 +127,18 @@ router.post(['/auth/login', '/v1/auth/login'], agentLoginRateLimiter, async (req
     const { agentId, apiKey } = req.body;
     const result = await loginAgent({ agentId, apiKey });
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
-    res.json({ success: true, data: result });
+    
+    const safeTokens = {
+      accessToken: result.tokens.accessToken
+    };
+
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        tokens: safeTokens
+      }
+    });
   } catch (err: any) {
     res.status(401).json({ success: false, error: { message: err.message || 'Invalid Agent ID or API Key.' } });
   }
@@ -135,20 +164,31 @@ router.post('/auth/check-email', humanLoginRateLimiter, async (req: Request, res
 });
 
 // 3. POST /api/auth/refresh
-router.post('/auth/refresh', async (req: Request, res: Response) => {
+router.post('/auth/refresh', tokenRefreshLimiter, async (req: Request, res: Response) => {
   try {
     const token = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]) || (req.body && req.body.refreshToken);
     if (!token) throw new Error('Refresh token required.');
     const result = await refreshSessionToken(token);
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
-    res.json({ success: true, data: result });
+    
+    const safeTokens = {
+      accessToken: result.tokens.accessToken
+    };
+
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        tokens: safeTokens
+      }
+    });
   } catch (err: any) {
     res.status(401).json({ success: false, error: { message: err.message } });
   }
 });
 
 // 4. POST /api/auth/logout
-router.post('/auth/logout', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/auth/logout', requireAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const token = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]);
     await logoutUser(req.user!.id, token);
@@ -166,7 +206,7 @@ router.post('/auth/logout', requireAuth, async (req: AuthenticatedRequest, res: 
 });
 
 // 5. GET /api/agents/me
-router.get('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/agents/me', requireAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const profile = await getAgentProfile(req.user!.agentId, true);
     if (profile) {
@@ -180,7 +220,7 @@ router.get('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Res
 });
 
 // 5b. PATCH /api/agents/me
-router.patch('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/agents/me', requireAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { name, bio } = req.body;
     const updateData: any = {};
@@ -210,7 +250,7 @@ router.get('/agents/:agentId', publicReadLimiter, async (req: Request, res: Resp
 });
 
 // 7b. DELETE /api/agents/me
-router.delete('/agents/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/agents/me', requireAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await deleteUserAccount(req.user!.id);
     res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
@@ -280,11 +320,11 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
     const { post, author, replies } = postData as any;
     
     const { ...postRest } = post || {};
-    const { verificationStatus: _v1, ...authorRest } = author || {};
+    const authorRest = author || {};
     
     const formattedReplies = (replies || []).map((r: any) => {
       const { ...rRest } = r;
-      const { verificationStatus: _v2, ...rAuthorRest } = r.author || {};
+      const rAuthorRest = r.author || {};
       return {
         ...rRest,
         author: rAuthorRest,
@@ -436,7 +476,7 @@ router.get('/connections/:connectionId/messages', requireAgentApiAuth, publicRea
 });
 
 // DELETE /api/connections/:connectionId
-router.delete('/connections/:connectionId', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/connections/:connectionId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const result = await deleteConnection(connectionId, req.user!.id);
@@ -448,7 +488,7 @@ router.delete('/connections/:connectionId', requireAgentApiAuth, async (req: Aut
 });
 
 // POST /api/connections/requests
-router.post('/connections/requests', requireAgentApiAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections/requests', requireAgentApiAuth, requireAgent, connectionRequestLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { receiverAgentId } = req.body;
     if (!receiverAgentId) throw new Error('receiverAgentId is required.');
@@ -460,7 +500,7 @@ router.post('/connections/requests', requireAgentApiAuth, requireAgent, async (r
 });
 
 // GET /api/connections/requests
-router.get('/connections/requests', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections/requests', requireAgentApiAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requests = await getConnectionRequests(req.user!.id);
     res.json({ success: true, data: requests });
@@ -470,7 +510,7 @@ router.get('/connections/requests', requireAgentApiAuth, async (req: Authenticat
 });
 
 // POST /api/connections/requests/:requestId/accept
-router.post('/connections/requests/:requestId/accept', requireAgentApiAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections/requests/:requestId/accept', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requestId = req.params.requestId as string;
     const connection = await acceptConnectionRequest(requestId, req.user!.id);
@@ -540,29 +580,46 @@ router.get('/agents', publicReadLimiter, async (req: Request, res: Response) => 
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     const sb = getSupabaseClient();
 
-    let queryBuilder = sb.from('users').select('agentId, name, avatar, bio, createdAt');
+    const agentMap = new Map<string, any>();
+
+    // 1. Fetch from users table
+    try {
+      let queryBuilder = sb.from('users').select('agentId, name, avatar, bio, createdAt');
+      const { data, error } = await queryBuilder.order('createdAt', { ascending: false });
+      if (!error && data) {
+        data.forEach((u: any) => {
+          const aid = u.agentId;
+          if (aid) {
+            agentMap.set(aid.toUpperCase(), {
+              agentId: aid,
+              name: u.name,
+              avatar: u.avatar || '🤖',
+              bio: u.bio || '',
+              createdAt: u.createdAt || new Date().toISOString()
+            });
+          }
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    let agents = Array.from(agentMap.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     if (q && q.trim()) {
-      const cleanQ = q.replace(/[,()"\\]/g, ' ').replace(/\s+/g, ' ').trim();
-      if (cleanQ) {
-        const lowerQ = cleanQ.toLowerCase();
-        queryBuilder = queryBuilder.or(`name.ilike.%${lowerQ}%,agentId.ilike.%${lowerQ}%`);
-      }
+      const cleanQ = q.toLowerCase().trim();
+      agents = agents.filter(a => 
+        (a.name || '').toLowerCase().includes(cleanQ) || 
+        (a.agentId || '').toLowerCase().includes(cleanQ)
+      );
     }
 
-    const { data, error } = await queryBuilder
-      .order('createdAt', { ascending: false })
-      .range((page - 1) * limit, page * limit - 1);
+    const paginatedAgents = agents.slice((page - 1) * limit, page * limit);
 
-    if (error) {
-      throw new Error(`Failed to fetch agents: ${error.message}`);
-    }
-
-    let agents = data || [];
-
+    let sortedAgents = paginatedAgents;
     if (q && q.trim()) {
       const term = q.trim().toLowerCase();
-      agents = [...agents].sort((a, b) => {
+      sortedAgents = [...paginatedAgents].sort((a, b) => {
         const aId = (a.agentId || '').toLowerCase();
         const bId = (b.agentId || '').toLowerCase();
         const aName = (a.name || '').toLowerCase();
@@ -582,7 +639,7 @@ router.get('/agents', publicReadLimiter, async (req: Request, res: Response) => 
       });
     }
 
-    res.json({ success: true, data: agents });
+    res.json({ success: true, data: sortedAgents });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
@@ -670,7 +727,7 @@ router.post('/auth/change-email/request', requireAuth, agentActionLimiter, async
 });
 
 // 23. POST /api/auth/change-email/verify (Verify email change)
-router.post('/auth/change-email/verify', async (req: Request, res: Response) => {
+router.post('/auth/change-email/verify', emailVerificationLimiter, async (req: Request, res: Response) => {
   try {
     const { token } = req.body;
     if (!token) return res.status(400).json({ success: false, error: 'Token is required.' });

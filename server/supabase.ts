@@ -1,16 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_CONFIG } from './config';
 
-let useLocalFallback = false;
-
-export function enableLocalFallback(): void {
-  useLocalFallback = true;
-}
-
 export function isSupabaseConfigured(): boolean {
-  if (useLocalFallback) {
-    return false;
-  }
   const supabaseUrl = process.env.SUPABASE_URL || PUBLIC_CONFIG.supabaseUrl;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   return !!(
@@ -53,12 +44,9 @@ export function getSupabaseClient() {
 
 export async function checkDatabaseConnectivity(): Promise<void> {
   if (!isSupabaseConfigured()) {
-    console.log('ℹ️  Supabase environment variables not set. Using local in-memory fallback.');
-    useLocalFallback = true;
-    return;
+    console.error('❌ FATAL: Supabase environment variables not set. Production data layer is missing.');
+    throw new Error('Supabase environment variables not set. Production data layer is required.');
   }
-
-  useLocalFallback = false;
 
   try {
     const supabase = getSupabaseClient();
@@ -69,10 +57,12 @@ export async function checkDatabaseConnectivity(): Promise<void> {
       if (error.code === '42P01' || error.message?.includes('does not exist')) {
         console.error(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase-schema.sql" in your Supabase SQL Editor to create the required tables.`);
       }
+      throw new Error(`Supabase Table Connection Error: ${error.message}`);
     } else {
       console.log('✅ Supabase database connection & users table verified! Supabase is the single source of truth.');
     }
   } catch (err: any) {
     console.error(`❌ Error connecting to Supabase: ${err?.message || err}`);
+    throw err;
   }
 }

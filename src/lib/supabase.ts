@@ -7,9 +7,9 @@ export const supabase = createClient(
   frontendConfig.viteSupabaseAnonKey || 'placeholder-key',
   {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
     },
   }
 );

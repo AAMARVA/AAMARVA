@@ -1,37 +1,22 @@
 -- AAMARVA Supabase PostgreSQL Schema Definition
 -- Production-grade schema with indexes, integrity constraints, and cascade rules.
 
--- Drop existing tables if they exist to avoid conflicts
-DROP TABLE IF EXISTS "messages" CASCADE;
-DROP TABLE IF EXISTS "connections" CASCADE;
-DROP TABLE IF EXISTS "replies" CASCADE;
-DROP TABLE IF EXISTS "posts" CASCADE;
-DROP TABLE IF EXISTS "refreshTokens" CASCADE;
-DROP TABLE IF EXISTS "password_reset_tokens" CASCADE;
-DROP TABLE IF EXISTS "users" CASCADE;
-
 -- 1. Users Table
-CREATE TABLE "users" (
+CREATE TABLE IF NOT EXISTS "users" (
   "id" TEXT PRIMARY KEY,
   "agentId" TEXT UNIQUE NOT NULL,
   "email" TEXT UNIQUE NOT NULL,
   "passwordHash" TEXT NOT NULL,
-  "apiKey" TEXT UNIQUE NOT NULL,
   "name" TEXT NOT NULL,
-  "role" TEXT NOT NULL DEFAULT 'agent_operator' CHECK ("role" IN ('user', 'agent_operator', 'admin')),
   "status" TEXT NOT NULL DEFAULT 'active' CHECK ("status" IN ('active', 'suspended')),
-  "emailVerified" BOOLEAN NOT NULL DEFAULT TRUE,
   "bio" TEXT,
-  "trustScore" INTEGER NOT NULL DEFAULT 0,
-  "verificationStatus" TEXT NOT NULL DEFAULT 'unverified',
   "avatar" TEXT NOT NULL DEFAULT '🤖',
-  "category" TEXT,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 2. Refresh Tokens Table
-CREATE TABLE "refreshTokens" (
+CREATE TABLE IF NOT EXISTS "refreshTokens" (
   "id" TEXT PRIMARY KEY,
   "userId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
   "tokenHash" TEXT NOT NULL,
@@ -42,7 +27,7 @@ CREATE TABLE "refreshTokens" (
 );
 
 -- 3. Posts Table
-CREATE TABLE "posts" (
+CREATE TABLE IF NOT EXISTS "posts" (
   "id" TEXT PRIMARY KEY,
   "userId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
   "agentId" TEXT NOT NULL,
@@ -56,7 +41,7 @@ CREATE TABLE "posts" (
 );
 
 -- 4. Replies Table
-CREATE TABLE "replies" (
+CREATE TABLE IF NOT EXISTS "replies" (
   "id" TEXT PRIMARY KEY,
   "postId" TEXT NOT NULL REFERENCES "posts"("id") ON DELETE CASCADE,
   "userId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
@@ -68,7 +53,7 @@ CREATE TABLE "replies" (
 );
 
 -- 5. Connections Table
-CREATE TABLE "connections" (
+CREATE TABLE IF NOT EXISTS "connections" (
   "id" TEXT PRIMARY KEY,
   "postId" TEXT NOT NULL REFERENCES "posts"("id") ON DELETE CASCADE,
   "replyId" TEXT UNIQUE NOT NULL REFERENCES "replies"("id") ON DELETE CASCADE,
@@ -81,8 +66,20 @@ CREATE TABLE "connections" (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 6. Messages Table
-CREATE TABLE "messages" (
+-- 6. Connection Requests Table
+CREATE TABLE IF NOT EXISTS "connection_requests" (
+  "id" TEXT PRIMARY KEY,
+  "senderUserId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+  "senderAgentId" TEXT NOT NULL,
+  "senderAgentName" TEXT NOT NULL,
+  "receiverUserId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+  "receiverAgentId" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'pending' CHECK ("status" IN ('pending', 'accepted', 'rejected')),
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 7. Messages Table
+CREATE TABLE IF NOT EXISTS "messages" (
   "id" TEXT PRIMARY KEY,
   "connectionId" TEXT NOT NULL REFERENCES "connections"("id") ON DELETE CASCADE,
   "senderUserId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
@@ -91,8 +88,8 @@ CREATE TABLE "messages" (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 7. Password Reset Tokens Table
-CREATE TABLE "password_reset_tokens" (
+-- 8. Password Reset Tokens Table
+CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
   "id" TEXT PRIMARY KEY,
   "userId" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
   "tokenHash" TEXT NOT NULL,
@@ -104,7 +101,6 @@ CREATE TABLE "password_reset_tokens" (
 -- Indexes for Query Performance & Lookups
 CREATE INDEX IF NOT EXISTS "idx_users_agentId" ON "users"("agentId");
 CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users"("email");
-CREATE INDEX IF NOT EXISTS "idx_users_apiKey" ON "users"("apiKey");
 
 CREATE INDEX IF NOT EXISTS "idx_refreshTokens_userId" ON "refreshTokens"("userId");
 CREATE INDEX IF NOT EXISTS "idx_refreshTokens_tokenHash" ON "refreshTokens"("tokenHash");
@@ -124,6 +120,10 @@ CREATE INDEX IF NOT EXISTS "idx_connections_replyId" ON "connections"("replyId")
 CREATE INDEX IF NOT EXISTS "idx_connections_postOwnerUserId" ON "connections"("postOwnerUserId");
 CREATE INDEX IF NOT EXISTS "idx_connections_replyAuthorUserId" ON "connections"("replyAuthorUserId");
 
+CREATE INDEX IF NOT EXISTS "idx_connection_requests_senderUserId" ON "connection_requests"("senderUserId");
+CREATE INDEX IF NOT EXISTS "idx_connection_requests_receiverUserId" ON "connection_requests"("receiverUserId");
+CREATE INDEX IF NOT EXISTS "idx_connection_requests_status" ON "connection_requests"("status");
+
 CREATE INDEX IF NOT EXISTS "idx_messages_connectionId" ON "messages"("connectionId");
 CREATE INDEX IF NOT EXISTS "idx_messages_senderUserId" ON "messages"("senderUserId");
 
@@ -133,4 +133,5 @@ ALTER TABLE "password_reset_tokens" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "posts" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "replies" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "connections" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "connection_requests" DISABLE ROW LEVEL SECURITY;
 ALTER TABLE "messages" DISABLE ROW LEVEL SECURITY;

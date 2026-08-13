@@ -14,7 +14,6 @@ export interface UserProfile {
 }
 
 export function buildApiUrl(endpoint: string): string {
-  // If it's already an absolute URL, return it
   if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
     return endpoint;
   }
@@ -24,7 +23,6 @@ export function buildApiUrl(endpoint: string): string {
     if (baseUrl && typeof baseUrl === 'string' && baseUrl.trim() !== '') {
       try {
         const parsedBase = new URL(baseUrl);
-        // Only use external baseUrl if it's explicitly configured and on a different host
         if (parsedBase.hostname !== window.location.hostname && 
             !window.location.hostname.includes('.run.app') && 
             !window.location.hostname.includes('.aistudio.') &&
@@ -51,43 +49,14 @@ export function buildApiUrl(endpoint: string): string {
   return `${cleanedBase}${normalizedEndpoint}`;
 }
 
-let memoryAccessToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('aamarva_at') : null;
-let memoryRefreshToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('aamarva_rt') : null;
+let memoryAccessToken: string | null = null;
 
 export function setAccessToken(token: string | null) {
   memoryAccessToken = token;
-  if (typeof window !== 'undefined') {
-    if (token) {
-      localStorage.setItem('aamarva_at', token);
-    } else {
-      localStorage.removeItem('aamarva_at');
-    }
-  }
 }
 
 export function getAccessToken(): string | null {
-  if (!memoryAccessToken && typeof window !== 'undefined') {
-    memoryAccessToken = localStorage.getItem('aamarva_at');
-  }
   return memoryAccessToken;
-}
-
-export function setRefreshToken(token: string | null) {
-  memoryRefreshToken = token;
-  if (typeof window !== 'undefined') {
-    if (token) {
-      localStorage.setItem('aamarva_rt', token);
-    } else {
-      localStorage.removeItem('aamarva_rt');
-    }
-  }
-}
-
-export function getRefreshToken(): string | null {
-  if (!memoryRefreshToken && typeof window !== 'undefined') {
-    memoryRefreshToken = localStorage.getItem('aamarva_rt');
-  }
-  return memoryRefreshToken;
 }
 
 let refreshPromise: Promise<boolean> | null = null;
@@ -122,60 +91,53 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
       });
     } else {
       if (!refreshPromise) {
-      refreshPromise = (async () => {
-        try {
-          const rt = getRefreshToken();
-          const refreshRes = await fetch(buildApiUrl('/api/auth/refresh'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: rt ? JSON.stringify({ refreshToken: rt }) : undefined,
-            credentials: 'include',
-          });
+        refreshPromise = (async () => {
+          try {
+            const refreshRes = await fetch(buildApiUrl('/api/auth/refresh'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+            });
 
-          if (refreshRes.ok) {
-            const refreshData = await refreshRes.json();
-            const resTokens = refreshData.data?.tokens || refreshData.tokens || refreshData.data || refreshData;
-            const newAt = resTokens.accessToken;
-            const newRt = resTokens.refreshToken;
-            if (newAt) {
-              setAccessToken(newAt);
+            if (refreshRes.ok) {
+              const refreshData = await refreshRes.json();
+              const resTokens = refreshData.data?.tokens || refreshData.tokens || refreshData.data || refreshData;
+              const newAt = resTokens.accessToken;
+              if (newAt) {
+                setAccessToken(newAt);
+              }
+              return true;
+            } else {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('auth-unauthorized'));
+              }
+              return false;
             }
-            if (newRt) {
-              setRefreshToken(newRt);
-            }
-            return true;
-          } else {
+          } catch (err) {
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('auth-unauthorized'));
             }
             return false;
+          } finally {
+            refreshPromise = null;
           }
-        } catch (err) {
-          console.error('Silent refresh failed');
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('auth-unauthorized'));
-          }
-          return false;
-        } finally {
-          refreshPromise = null;
-        }
-      })();
-    }
-
-    const refreshSuccess = await refreshPromise;
-
-    if (refreshSuccess) {
-      const newAt = getAccessToken();
-      if (newAt) {
-        headers.set('Authorization', `Bearer ${newAt}`);
+        })();
       }
-      response = await fetch(fullUrl, {
-        ...options,
-        headers,
-        credentials: 'include',
-      });
+
+      const refreshSuccess = await refreshPromise;
+
+      if (refreshSuccess) {
+        const newAt = getAccessToken();
+        if (newAt) {
+          headers.set('Authorization', `Bearer ${newAt}`);
+        }
+        response = await fetch(fullUrl, {
+          ...options,
+          headers,
+          credentials: 'include',
+        });
+      }
     }
-  }
   }
 
   const data = await response.json().catch(() => ({}));
@@ -230,9 +192,6 @@ export async function loginUserApi(payload: { agentId: string; password: string;
   if (payloadData.tokens?.accessToken) {
     setAccessToken(payloadData.tokens.accessToken);
   }
-  if (payloadData.tokens?.refreshToken) {
-    setRefreshToken(payloadData.tokens.refreshToken);
-  }
   return payloadData;
 }
 
@@ -253,24 +212,18 @@ export async function loginAgentApi(payload: { agentId: string; apiKey: string; 
   if (payloadData.tokens?.accessToken) {
     setAccessToken(payloadData.tokens.accessToken);
   }
-  if (payloadData.tokens?.refreshToken) {
-    setRefreshToken(payloadData.tokens.refreshToken);
-  }
   return payloadData;
 }
 
 export async function logoutUserApi() {
   try {
-    const rt = getRefreshToken();
     await fetch(buildApiUrl('/api/auth/logout'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: rt ? JSON.stringify({ refreshToken: rt }) : undefined,
       credentials: 'include',
     });
   } catch (e) {}
   setAccessToken(null);
-  setRefreshToken(null);
 }
 
 export async function deleteAccountApi() {
@@ -278,7 +231,6 @@ export async function deleteAccountApi() {
     method: 'DELETE',
   });
   setAccessToken(null);
-  setRefreshToken(null);
   return res;
 }
 
@@ -295,9 +247,6 @@ export async function updateProfileApi(updates: any): Promise<UserProfile> {
   return res.data;
 }
 
-/**
- * Rotate agent API key
- */
 export async function rotateApiKey(password: string): Promise<{ apiKey: string }> {
   const res = await apiFetch('/api/auth/agent/rotate-api-key', {
     method: 'POST',
@@ -306,9 +255,6 @@ export async function rotateApiKey(password: string): Promise<{ apiKey: string }
   return res.data;
 }
 
-/**
- * Request an email change (sends verification email)
- */
 export async function requestEmailChangeApi(newEmail: string): Promise<{ message: string }> {
   const appUrl = window.location.origin;
   const res = await apiFetch('/api/auth/change-email/request', {
@@ -318,9 +264,6 @@ export async function requestEmailChangeApi(newEmail: string): Promise<{ message
   return res.data;
 }
 
-/**
- * Verify an email change using a token
- */
 export async function verifyEmailChangeApi(token: string): Promise<{ email: string }> {
   const res = await apiFetch('/api/auth/change-email/verify', {
     method: 'POST',
@@ -329,11 +272,7 @@ export async function verifyEmailChangeApi(token: string): Promise<{ email: stri
   return res.data;
 }
 
-/**
- * Request password reset email
- */
 export async function requestForgotPasswordApi(email: string): Promise<{ success?: boolean; message: string }> {
-  console.log('[FRONTEND_DIAGNOSTIC] Initiating requestForgotPasswordApi for email:', email);
   const startTime = Date.now();
   try {
     const appUrl = window.location.origin;
@@ -341,19 +280,12 @@ export async function requestForgotPasswordApi(email: string): Promise<{ success
       method: 'POST',
       body: JSON.stringify({ email, appUrl }),
     });
-    const duration = Date.now() - startTime;
-    console.log(`[FRONTEND_DIAGNOSTIC] Received response in ${duration}ms:`, res);
     return res;
   } catch (err: any) {
-    const duration = Date.now() - startTime;
-    console.error(`[FRONTEND_DIAGNOSTIC] Error in requestForgotPasswordApi after ${duration}ms:`, err);
     throw err;
   }
 }
 
-/**
- * Reset password using token
- */
 export async function resetPasswordApi(token: string, newPassword: string): Promise<{ message: string }> {
   const res = await apiFetch('/api/auth/reset-password', {
     method: 'POST',

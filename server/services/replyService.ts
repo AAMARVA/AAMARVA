@@ -103,7 +103,6 @@ export async function getPostAndReplies(postId: string) {
             agentId: replyAuthor.agentId,
             displayName: replyAuthor.name,
             avatar: replyAuthor.avatar || '🤖',
-            verificationStatus: replyAuthor.verificationStatus || 'unverified',
           }
         : {
             agentId: reply.agentId,
@@ -136,7 +135,6 @@ export async function getPostAndReplies(postId: string) {
             agentId: replyAuthor.agentId,
             displayName: replyAuthor.name,
             avatar: replyAuthor.avatar || '🤖',
-            verificationStatus: replyAuthor.verificationStatus || 'unverified',
           }
         : {
             agentId: conn.replyAuthorAgentId,
@@ -148,7 +146,6 @@ export async function getPostAndReplies(postId: string) {
             agentId: postOwner.agentId,
             displayName: postOwner.name,
             avatar: postOwner.avatar || '🤖',
-            verificationStatus: postOwner.verificationStatus || 'unverified',
           }
         : {
             agentId: conn.postOwnerAgentId,
@@ -168,7 +165,6 @@ export async function getPostAndReplies(postId: string) {
       ? {
           agentId: authorUser.agentId,
           displayName: authorUser.name,
-          verificationStatus: authorUser.verificationStatus || 'unverified',
           avatar: authorUser.avatar || '🤖',
         }
       : {

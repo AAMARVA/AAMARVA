@@ -107,7 +107,7 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const totalConnections = (connections || []).length;
   const activeDays = 1; // Simplified
 
-  const { passwordHash, apiKey, ...restUser } = user;
+  const { passwordHash, apiKeyHash, ...restUser } = user;
   const profileUser = {
     ...restUser,
   };
@@ -135,30 +135,56 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
 export async function getAgentActivityStats() {
   const supabase = getSupabaseClient();
 
-  // 1. Fetch all users/agents
-  const { data: users, error: usersError } = await supabase
-    .from('users')
-    .select('id, name, agentId, avatar, bio');
+  const userMap = new Map<string, { id: string; name: string; agentId: string; avatar: string; bio: string }>();
 
-  if (usersError) throw usersError;
+  // 1. Fetch from users table if available
+  try {
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id, name, agentId, avatar, bio');
+    if (!usersError && users) {
+      users.forEach((u: any) => {
+        const aid = u.agentId;
+        if (aid) {
+          userMap.set(aid.toUpperCase(), {
+            id: u.id,
+            name: u.name,
+            agentId: aid,
+            avatar: u.avatar || '🤖',
+            bio: u.bio || DEFAULT_BIO
+          });
+        }
+      });
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  const usersList = Array.from(userMap.values());
 
   // 2. Fetch all posts
   const { data: posts, error: postsError } = await supabase
     .from('posts')
     .select('id, agentId');
-  if (postsError) throw postsError;
+  if (postsError && postsError.code !== '42P01') {
+    // ignore table missing error
+  }
 
   // 3. Fetch all replies
   const { data: replies, error: repliesError } = await supabase
     .from('replies')
     .select('id, agentId');
-  if (repliesError) throw repliesError;
+  if (repliesError && repliesError.code !== '42P01') {
+    // ignore
+  }
 
   // 4. Fetch all connections
   const { data: connections, error: connectionsError } = await supabase
     .from('connections')
     .select('id, replyAuthorAgentId, postOwnerAgentId');
-  if (connectionsError) throw connectionsError;
+  if (connectionsError && connectionsError.code !== '42P01') {
+    // ignore
+  }
 
   // Map to store activity
   const activityMap: Record<string, { 
@@ -172,7 +198,7 @@ export async function getAgentActivityStats() {
   }> = {};
 
   // Initialize with all registered agents
-  users.forEach(u => {
+  usersList.forEach(u => {
     const cleanId = (u.agentId || '').replace(/^@/, '');
     const key = cleanId.toUpperCase();
     activityMap[key] = {
@@ -187,19 +213,19 @@ export async function getAgentActivityStats() {
   });
 
   // Count Posts
-  posts.forEach(p => {
+  (posts || []).forEach(p => {
     const key = (p.agentId || '').replace(/^@/, '').toUpperCase();
     if (activityMap[key]) activityMap[key].posts++;
   });
 
   // Count Replies
-  replies.forEach(r => {
+  (replies || []).forEach(r => {
     const key = (r.agentId || '').replace(/^@/, '').toUpperCase();
     if (activityMap[key]) activityMap[key].replies++;
   });
 
   // Count Connections
-  connections.forEach(c => {
+  (connections || []).forEach(c => {
     const replyAuthorKey = (c.replyAuthorAgentId || '').replace(/^@/, '').toUpperCase();
     const postOwnerKey = (c.postOwnerAgentId || '').replace(/^@/, '').toUpperCase();
     if (activityMap[replyAuthorKey]) activityMap[replyAuthorKey].connections++;

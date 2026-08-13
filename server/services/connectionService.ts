@@ -1,12 +1,6 @@
 import crypto from 'crypto';
-import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
+import { getSupabaseClient } from '../supabase.js';
 import { ConnectionRecord } from '../db.js';
-
-// In-memory messages fallback cache for when the Supabase 'messages' table is missing in the database
-const inMemoryMessagesFallback: any[] = [];
-const inMemoryRequestsFallback: any[] = [];
-const inMemoryConnectionsFallback: any[] = [];
-
 
 export async function createConnection(userId: string, replyId: string) {
   const supabase = getSupabaseClient();
@@ -126,19 +120,12 @@ export async function createConnection(userId: string, replyId: string) {
     createdAt: reply.createdAt || now,
   };
 
-  inMemoryMessagesFallback.push(initialPostMessage);
-  inMemoryMessagesFallback.push(initialReplyMessage);
-
-  try {
-    const { error: msgInsertError } = await supabase
-      .from('messages')
-      .insert([initialPostMessage, initialReplyMessage]);
-    
-    if (msgInsertError) {
-      console.warn('⚠️ Messages table write during connection creation failed. Held in fallback.', msgInsertError.message);
-    }
-  } catch (err: any) {
-    console.warn('⚠️ Messages table insert caught error. Held in fallback. Error:', err.message || err);
+  const { error: msgInsertError } = await supabase
+    .from('messages')
+    .insert([initialPostMessage, initialReplyMessage]);
+  
+  if (msgInsertError) {
+    throw new Error(`Database error writing connection initial messages: ${msgInsertError.message}`);
   }
 
   return newConnection;
@@ -237,24 +224,17 @@ export async function getUserConnections(userId: string, page: number, limit: nu
   };
 }
 
-
-
 export async function sendMessage(connectionId: string, userId: string, content: string) {
   const supabase = getSupabaseClient();
   
   // Find connection
-  let connection = inMemoryConnectionsFallback.find(c => c.id === connectionId);
-  
-  if (!connection) {
-    const { data: dbConn, error: connError } = await supabase
-      .from('connections')
-      .select('*')
-      .eq('id', connectionId)
-      .maybeSingle();
-    if (dbConn) connection = dbConn;
-  }
+  const { data: connection, error: connError } = await supabase
+    .from('connections')
+    .select('*')
+    .eq('id', connectionId)
+    .maybeSingle();
 
-  if (!connection) throw new Error('Connection not found.');
+  if (connError || !connection) throw new Error('Connection not found.');
   
   // Find user
   const { data: currentUser, error: userError } = await supabase
@@ -279,20 +259,12 @@ export async function sendMessage(connectionId: string, userId: string, content:
     createdAt: now,
   };
 
-  // Always keep in-memory cache updated as a fallback
-  inMemoryMessagesFallback.push(newMessage);
+  const { error: insertError } = await supabase
+    .from('messages')
+    .insert([newMessage]);
 
-  // Try to insert (will fail if table doesn't exist, but we mock it if needed)
-  try {
-    const { error: insertError } = await supabase
-      .from('messages')
-      .insert([newMessage]);
-
-    if (insertError) {
-      console.warn('⚠️ Messages table write to Supabase failed (it might not exist). Message is held in memory fallback.', insertError.message);
-    }
-  } catch (err: any) {
-    console.warn('⚠️ Exception caught during Messages table insert. Message is held in memory fallback. Error:', err.message || err);
+  if (insertError) {
+    throw new Error(`Database error sending message: ${insertError.message}`);
   }
 
   return newMessage;
@@ -301,18 +273,13 @@ export async function sendMessage(connectionId: string, userId: string, content:
 export async function getConnectionMessages(connectionId: string, userId: string) {
   const supabase = getSupabaseClient();
   
-  let connection = inMemoryConnectionsFallback.find(c => c.id === connectionId);
-  
-  if (!connection) {
-    const { data: dbConn, error: connError } = await supabase
-      .from('connections')
-      .select('*')
-      .eq('id', connectionId)
-      .maybeSingle();
-    if (dbConn) connection = dbConn;
-  }
+  const { data: connection, error: connError } = await supabase
+    .from('connections')
+    .select('*')
+    .eq('id', connectionId)
+    .maybeSingle();
 
-  if (!connection) throw new Error('Connection not found.');
+  if (connError || !connection) throw new Error('Connection not found.');
 
   // Verify participant access
   const { data: currentUser } = await supabase
@@ -334,73 +301,17 @@ export async function getConnectionMessages(connectionId: string, userId: string
     throw new Error('Forbidden: You are not a participant in this conversation.');
   }
 
-  let dbMessages: any[] = [];
-  try {
-    const { data: messages, error: msgError } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('connectionId', connectionId)
-      .order('createdAt', { ascending: true });
+  const { data: messages, error: msgError } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('connectionId', connectionId)
+    .order('createdAt', { ascending: true });
 
-    if (msgError) {
-      console.warn("⚠️ Messages table query failed, falling back to in-memory store. Error:", msgError.message || msgError);
-    } else {
-      dbMessages = messages || [];
-    }
-  } catch (err: any) {
-    console.warn("⚠️ Exception caught while querying messages table, falling back to in-memory store. Error:", err.message || err);
+  if (msgError) {
+    throw new Error(`Database error querying messages: ${msgError.message}`);
   }
 
-  // Combine db messages with any temporary in-memory ones for this connection
-  const dbMsgIds = new Set(dbMessages.map(m => m.id));
-  const combined = [...dbMessages];
-  const memMsgs = inMemoryMessagesFallback.filter(m => m.connectionId === connectionId);
-  memMsgs.forEach(m => {
-    if (!dbMsgIds.has(m.id)) {
-      combined.push(m);
-    }
-  });
-
-  // If no stored messages found, construct initial messages from the original post and reply
-  if (combined.length === 0 && connection.postId && connection.replyId) {
-    try {
-      const { data: post } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('id', connection.postId)
-        .maybeSingle();
-
-      const { data: reply } = await supabase
-        .from('replies')
-        .select('*')
-        .eq('id', connection.replyId)
-        .maybeSingle();
-
-      if (post && post.content) {
-        combined.push({
-          id: `msg_post_${connection.id}`,
-          connectionId: connection.id,
-          senderUserId: connection.postOwnerUserId,
-          senderAgentId: connection.postOwnerAgentId,
-          content: post.content,
-          createdAt: post.createdAt || connection.createdAt,
-        });
-      }
-
-      if (reply && reply.content) {
-        combined.push({
-          id: `msg_reply_${connection.id}`,
-          connectionId: connection.id,
-          senderUserId: connection.replyAuthorUserId || connection.postOwnerUserId,
-          senderAgentId: connection.replyAuthorAgentId,
-          content: reply.content,
-          createdAt: reply.createdAt || connection.createdAt,
-        });
-      }
-    } catch (fallbackErr) {
-      console.warn("Error synthesizing fallback connection messages:", fallbackErr);
-    }
-  }
+  const combined = messages || [];
 
   return combined.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
@@ -449,13 +360,6 @@ export async function deleteConnection(connectionId: string, userId: string) {
 
   if (deleteError) {
     throw new Error(`Failed to delete connection: ${deleteError.message}`);
-  }
-
-  // Clean up in-memory fallback
-  for (let i = inMemoryMessagesFallback.length - 1; i >= 0; i--) {
-    if (inMemoryMessagesFallback[i].connectionId === connectionId) {
-      inMemoryMessagesFallback.splice(i, 1);
-    }
   }
 
   return { success: true, message: 'Connection removed successfully.' };
@@ -518,14 +422,12 @@ export async function sendConnectionRequest(senderUserId: string, receiverAgentI
     createdAt: new Date().toISOString()
   };
 
-  inMemoryRequestsFallback.push(newRequest);
-
   const { error: insertError } = await supabase
     .from('connection_requests')
     .insert([newRequest]);
 
   if (insertError) {
-    console.warn('⚠️ connection_requests table write failed. Held in fallback.', insertError.message);
+    throw new Error(`Database error creating connection request: ${insertError.message}`);
   }
 
   const { status, ...rest } = newRequest;
@@ -535,32 +437,18 @@ export async function sendConnectionRequest(senderUserId: string, receiverAgentI
 export async function getConnectionRequests(userId: string) {
   const supabase = getSupabaseClient();
 
-  let dbRequests: any[] = [];
-  try {
-    const { data, error } = await supabase
-      .from('connection_requests')
-      .select('*')
-      .eq('receiverUserId', userId)
-      .eq('status', 'pending')
-      .order('createdAt', { ascending: false });
+  const { data, error } = await supabase
+    .from('connection_requests')
+    .select('*')
+    .eq('receiverUserId', userId)
+    .eq('status', 'pending')
+    .order('createdAt', { ascending: false });
 
-    if (error) {
-      console.warn('⚠️ connection_requests query failed, falling back. Error:', error.message);
-    } else {
-      dbRequests = data || [];
-    }
-  } catch (err: any) {
-    console.warn('⚠️ Exception during connection_requests query. Fallback used. Error:', err.message);
+  if (error) {
+    throw new Error(`Database error querying connection requests: ${error.message}`);
   }
 
-  const dbIds = new Set(dbRequests.map(r => r.id));
-  const memRequests = inMemoryRequestsFallback.filter(r => r.receiverUserId === userId && r.status === 'pending');
-  const combined = [...dbRequests];
-  memRequests.forEach(r => {
-    if (!dbIds.has(r.id)) {
-      combined.push(r);
-    }
-  });
+  const combined = data || [];
 
   return combined
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -571,31 +459,27 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
   const supabase = getSupabaseClient();
 
   // Find request
-  let request = inMemoryRequestsFallback.find(r => r.id === requestId);
+  const { data: request, error: reqError } = await supabase
+    .from('connection_requests')
+    .select('*')
+    .eq('id', requestId)
+    .maybeSingle();
   
-  if (!request) {
-    const { data: dbReq, error: reqError } = await supabase
-      .from('connection_requests')
-      .select('*')
-      .eq('id', requestId)
-      .maybeSingle();
-    
-    if (dbReq) request = dbReq;
-    if (reqError || !request) throw new Error('Connection request not found.');
+  if (reqError || !request) {
+    throw new Error('Connection request not found.');
   }
 
   if (request.receiverUserId !== userId) throw new Error('Forbidden: Not your connection request.');
   if (request.status !== 'pending') throw new Error('Connection request is no longer pending.');
 
   // Update request status
-  request.status = 'accepted';
-  try {
-    await supabase
-      .from('connection_requests')
-      .update({ status: 'accepted' })
-      .eq('id', requestId);
-  } catch (err) {
-    console.warn('⚠️ Failed to update connection_requests status in DB, updated in memory.');
+  const { error: updateError } = await supabase
+    .from('connection_requests')
+    .update({ status: 'accepted' })
+    .eq('id', requestId);
+
+  if (updateError) {
+    throw new Error(`Database error updating connection request status: ${updateError.message}`);
   }
 
   // Create connection
@@ -609,7 +493,7 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
     postOwnerAgentName: request.senderAgentName,
     replyAuthorUserId: request.receiverUserId,
     replyAuthorAgentId: request.receiverAgentId,
-    replyAuthorAgentName: '', // Will be filled below if needed
+    replyAuthorAgentName: '',
     createdAt: now,
   };
 
@@ -626,8 +510,7 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
     .insert([newConnection]);
 
   if (connError) {
-    console.warn('⚠️ Connections table write failed (likely schema constraint). Falling back to memory.', connError.message);
-    inMemoryConnectionsFallback.push(newConnection);
+    throw new Error(`Database error establishing connection: ${connError.message}`);
   }
 
   return newConnection;
