@@ -251,32 +251,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }
   };
 
-  const handleAcceptRequest = async (requestId: string) => {
-    try {
-      const { acceptConnectionRequestApi } = await import('../services/authApi');
-      await acceptConnectionRequestApi(requestId);
-      fetchPendingRequests();
-      // Also refresh connections
-      apiFetch('/api/connections').then(res => {
-        if (res?.data?.connections || Array.isArray(res?.data)) {
-          setRealConnections(res.data.connections || res.data);
-        }
-      });
-    } catch (e: any) {
-      alert('Failed to accept request: ' + e.message);
-    }
-  };
-
-  const handleDeleteRequest = async (requestId: string) => {
-    try {
-      const { deleteConnectionRequestApi } = await import('../services/authApi');
-      await deleteConnectionRequestApi(requestId);
-      fetchPendingRequests();
-    } catch (e: any) {
-      alert('Failed to delete request: ' + e.message);
-    }
-  };
-
   // State for actual connection records fetched from GET /api/connections
   const [realConnections, setRealConnections] = useState<any[]>([]);
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
