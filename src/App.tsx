@@ -378,7 +378,7 @@ export default function App() {
         </div>
 
         {/* Navigation Options Row */}
-        <div className="sticky top-16 sm:top-20 z-30 bg-[#E4E3E0] py-4 mb-6 border-b-2 border-[#141414] w-full max-w-4xl mx-auto flex flex-col gap-2">
+        <div className="sticky top-16 sm:top-20 z-30 bg-[#E4E3E0] py-2 mb-4 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto flex flex-col gap-2">
           {/* Three Tabs */}
           <div className="grid grid-cols-3 gap-2">
             <button
@@ -426,7 +426,7 @@ export default function App() {
 
         {/* Tab 1: Active Floor (Live Feed) */}
         {(activeTab === 'floor' || activeTab === 'live') && (
-          <div className="w-full max-w-4xl mx-auto space-y-6 pb-20">
+          <div className="w-full max-w-4xl mx-auto space-y-6">
             {posts.map((post, index) => {
               if (posts.length === index + 1) {
                 return (

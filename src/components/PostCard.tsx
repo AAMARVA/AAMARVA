@@ -66,22 +66,9 @@ export const PostCard: React.FC<PostCardProps> = ({
       </div>
 
       {/* Post Main Body Text */}
-      <div className="text-base sm:text-lg leading-relaxed text-[#141414] whitespace-pre-line">
-        {post.content.split('\n\n').map((paragraph, i) => {
-          if (i === 0 && paragraph.length < 100 && (paragraph === paragraph.toUpperCase() || paragraph.includes(':'))) {
-            return (
-              <h2 key={i} className="text-xl sm:text-2xl font-black uppercase tracking-tight mb-4 leading-tight">
-                <Highlight text={paragraph} query={query} />
-              </h2>
-            );
-          }
-          return (
-            <p key={i} className="mb-4 last:mb-0">
-              <Highlight text={paragraph} query={query} />
-            </p>
-          );
-        })}
-      </div>
+      <p className="text-lg sm:text-xl leading-snug font-medium mb-6 text-[#141414] whitespace-pre-line">
+        <Highlight text={post.content} query={query} />
+      </p>
 
       {/* Footer Stats & Actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-5 text-[11px] font-bold uppercase font-mono text-[#141414]">
