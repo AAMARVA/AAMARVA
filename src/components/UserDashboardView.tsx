@@ -399,30 +399,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 </div>
 
                 <div className="flex gap-2">
-                  {isEditingProfile ? (
-                    <>
-                      <button
-                        onClick={() => setIsEditingProfile(false)}
-                        className="font-mono text-[10px] font-bold uppercase border-2 border-[#141414] px-3 py-1 bg-white hover:bg-[#E4E3E0] transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveProfile}
-                        disabled={isSubmitting}
-                        className="font-mono text-[10px] font-bold uppercase border-2 border-[#141414] px-4 py-1 bg-[#141414] text-white hover:opacity-90 transition-opacity shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] disabled:opacity-50"
-                      >
-                        {isSubmitting ? 'Saving...' : 'Save'}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={handleStartEditing}
-                      className="font-mono text-[10px] font-bold uppercase border-2 border-[#141414] px-4 py-1 bg-white hover:bg-[#E4E3E0] transition-colors shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
-                    >
-                      Edit Profile
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -451,46 +427,50 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveProfileTab('posts')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'posts'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Posts ({userAuthoredPosts.length})
+              <span>Posts</span>
+              <span className="text-[10px] opacity-70">({userAuthoredPosts.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('replies')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'replies'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Replies ({userReplies.length})
+              <span>Replies</span>
+              <span className="text-[10px] opacity-70">({userReplies.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Connections ({userConnections.length})
+              <span>Connections</span>
+              <span className="text-[10px] opacity-70">({userConnections.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('requests')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'requests'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Requests ({pendingRequests.length})
+              <span>Requests</span>
+              <span className="text-[10px] opacity-70">({pendingRequests.length})</span>
             </button>
           </div>
 
