@@ -378,119 +378,75 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <div className="pt-1 flex flex-col">
               <div className="flex justify-between items-start">
                 <div className="flex flex-col">
-                  {isEditingProfile ? (
-                    <input
-                      type="text"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      className="font-mono font-bold text-xl sm:text-2xl text-[#141414] tracking-tight truncate leading-tight border-b-2 border-[#141414] focus:outline-none bg-[#E4E3E0]/30 px-1"
-                      autoFocus
-                    />
-                  ) : (
-                    <h1 className="font-mono font-bold text-xl sm:text-2xl text-[#141414] tracking-tight truncate leading-tight">
-                      {currentAgentName}
-                    </h1>
-                  )}
+                  <h1 className="font-mono font-bold text-xl sm:text-2xl text-[#141414] tracking-tight truncate leading-tight">
+                    {currentAgentName}
+                  </h1>
                   {currentAgentId && (
                     <span className="inline-flex font-mono text-[10px] sm:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-2 py-0.5 mt-1 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                       @{currentAgentId}
                     </span>
                   )}
                 </div>
-
-                <div className="flex gap-2">
-                  {isEditingProfile ? (
-                    <>
-                      <button
-                        onClick={() => setIsEditingProfile(false)}
-                        className="font-mono text-[10px] font-bold uppercase border-2 border-[#141414] px-3 py-1 bg-white hover:bg-[#E4E3E0] transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveProfile}
-                        disabled={isSubmitting}
-                        className="font-mono text-[10px] font-bold uppercase border-2 border-[#141414] px-4 py-1 bg-[#141414] text-white hover:opacity-90 transition-opacity shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] disabled:opacity-50"
-                      >
-                        {isSubmitting ? 'Saving...' : 'Save'}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={handleStartEditing}
-                      className="font-mono text-[10px] font-bold uppercase border-2 border-[#141414] px-4 py-1 bg-white hover:bg-[#E4E3E0] transition-colors shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
-                    >
-                      Edit Profile
-                    </button>
-                  )}
-                </div>
               </div>
 
               {/* Bio Section */}
-              {isEditingProfile ? (
-                <div className="mt-4">
-                  <textarea
-                    value={editBio}
-                    onChange={(e) => setEditBio(e.target.value)}
-                    placeholder="Tell everyone about your autonomous mission..."
-                    className="w-full font-sans text-sm text-[#141414] leading-relaxed border-2 border-[#141414] p-3 italic bg-[#E4E3E0]/10 focus:outline-none min-h-[80px] resize-none"
-                  />
-                </div>
-              ) : (
-                currentUser?.bio && (
-                  <p className="mt-4 font-sans text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-4 italic bg-[#E4E3E0]/20 py-2">
-                    {currentUser.bio}
-                  </p>
-                )
+              {currentUser?.bio && (
+                <p className="mt-4 font-sans text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-4 italic bg-[#E4E3E0]/20 py-2">
+                  {currentUser.bio}
+                </p>
               )}
             </div>
           </div>
 
           {/* Twitter Navigation Tabs */}
-          <div className="flex border-t-2 border-b-2 border-[#141414] bg-[#E4E3E0] sticky top-0 z-20 shrink-0">
+          <div className="flex border-t-2 border-b-2 border-[#141414] bg-[#E4E3E0] sticky top-[128px] sm:top-[160px] z-20 shrink-0">
             <button
               type="button"
               onClick={() => setActiveProfileTab('posts')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 sm:py-3 flex flex-col items-center justify-center text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
                 activeProfileTab === 'posts'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Posts ({userAuthoredPosts.length})
+              <span className="opacity-60 text-[9px] mb-0.5 sm:text-[10px] sm:mb-0 sm:opacity-100">Posts</span>
+              <span className="text-[11px] sm:text-xs">({userAuthoredPosts.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('replies')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 sm:py-3 flex flex-col items-center justify-center text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
                 activeProfileTab === 'replies'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Replies ({userReplies.length})
+              <span className="opacity-60 text-[9px] mb-0.5 sm:text-[10px] sm:mb-0 sm:opacity-100">Replies</span>
+              <span className="text-[11px] sm:text-xs">({userReplies.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 sm:py-3 flex flex-col items-center justify-center text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
                 activeProfileTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Connections ({userConnections.length})
+              <span className="opacity-60 text-[9px] mb-0.5 sm:text-[10px] sm:mb-0 sm:opacity-100">Connections</span>
+              <span className="text-[11px] sm:text-xs">({userConnections.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('requests')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 sm:py-3 flex flex-col items-center justify-center text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer ${
                 activeProfileTab === 'requests'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Requests ({pendingRequests.length})
+              <span className="opacity-60 text-[9px] mb-0.5 sm:text-[10px] sm:mb-0 sm:opacity-100">Requests</span>
+              <span className="text-[11px] sm:text-xs">({pendingRequests.length})</span>
             </button>
           </div>
 

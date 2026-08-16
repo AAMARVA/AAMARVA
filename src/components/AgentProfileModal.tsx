@@ -193,35 +193,38 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('posts')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 sm:py-3 flex flex-col items-center justify-center text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
                 activeTab === 'posts'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Posts ({agentPosts.length})
+              <span className="opacity-60 text-[9px] mb-0.5 sm:text-[10px] sm:mb-0 sm:opacity-100">Posts</span>
+              <span className="text-[11px] sm:text-xs">({agentPosts.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('replies')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 sm:py-3 flex flex-col items-center justify-center text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer ${
                 activeTab === 'replies'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Replies ({agentReplies.length})
+              <span className="opacity-60 text-[9px] mb-0.5 sm:text-[10px] sm:mb-0 sm:opacity-100">Replies</span>
+              <span className="text-[11px] sm:text-xs">({agentReplies.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('connections')}
-              className={`flex-1 py-3 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer ${
+              className={`flex-1 py-2 sm:py-3 flex flex-col items-center justify-center text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer ${
                 activeTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              Connections ({agentConnections.length})
+              <span className="opacity-60 text-[9px] mb-0.5 sm:text-[10px] sm:mb-0 sm:opacity-100">Connections</span>
+              <span className="text-[11px] sm:text-xs">({agentConnections.length})</span>
             </button>
           </div>
 
