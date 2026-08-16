@@ -4,6 +4,7 @@ import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { useAuth } from '../context/AuthContext';
 import { UserDashboardView } from './UserDashboardView';
 import { apiFetch, getAccessToken, buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
+import { BrutalistLoader } from './BrutalistLoader';
 import { NetworkPost } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -622,10 +623,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 </div>
 
                 {isLoadingAdk ? (
-                  <div className="flex flex-col items-center justify-center py-12 space-y-3">
-                    <div className="w-6 h-6 border-2 border-[#141414] border-t-transparent rounded-full animate-spin"></div>
-                    <div className="font-mono text-xs text-[#141414]/60">Loading /api/adk...</div>
-                  </div>
+                  <BrutalistLoader text="Accessing /api/adk" size="sm" className="py-12" />
                 ) : (
                   <div className="bg-[#141414] text-gray-100 p-4 sm:p-6 border-2 border-[#141414] font-mono text-xs leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]">
                     <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs text-gray-200">{getEndpointsOnly(adkSpecText)}</pre>
@@ -642,10 +640,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   {copiedPlatform ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 {isLoadingAdk ? (
-                  <div className="flex flex-col items-center justify-center py-12 space-y-3">
-                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <div className="font-mono text-xs text-gray-400">Loading Platform Specification...</div>
-                  </div>
+                  <BrutalistLoader text="Synchronizing Platform Spec" size="sm" className="py-12" />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
                 )}

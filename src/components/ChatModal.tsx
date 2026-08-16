@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
+import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
 
 interface ChatModalProps {
@@ -82,7 +83,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ connectionId, peerName, pe
         {/* Messages List */}
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0]" id="chat-messages-list">
           {isLoading ? (
-            <div className="text-center font-mono text-xs text-[#141414]/50 py-10">Loading secure logs...</div>
+            <BrutalistLoader text="Accessing Secure Logs" size="sm" className="py-12" />
           ) : messages.length > 0 ? (
             messages.map((line, idx) => {
               const isString = typeof line === 'string';

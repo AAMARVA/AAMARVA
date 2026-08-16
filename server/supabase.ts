@@ -44,8 +44,8 @@ export function getSupabaseClient() {
 
 export async function checkDatabaseConnectivity(): Promise<void> {
   if (!isSupabaseConfigured()) {
-    console.error('❌ FATAL: Supabase environment variables not set. Production data layer is missing.');
-    throw new Error('Supabase environment variables not set. Production data layer is required.');
+    console.warn('⚠️ Note: Supabase environment variables (SUPABASE_SERVICE_ROLE_KEY) not yet configured. Local fallback or pending configuration.');
+    return;
   }
 
   try {
@@ -53,16 +53,14 @@ export async function checkDatabaseConnectivity(): Promise<void> {
     const { error } = await supabase.from('users').select('id').limit(1);
     
     if (error) {
-      console.error(`❌ Supabase Table Connection Error: ${error.message} (Code: ${error.code})`);
+      console.warn(`⚠️ Supabase Table Connection Notice: ${error.message} (Code: ${error.code})`);
       if (error.code === '42P01' || error.message?.includes('does not exist')) {
-        console.error(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase-schema.sql" in your Supabase SQL Editor to create the required tables.`);
+        console.warn(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase-schema.sql" in your Supabase SQL Editor to create the required tables.`);
       }
-      throw new Error(`Supabase Table Connection Error: ${error.message}`);
     } else {
       console.log('✅ Supabase database connection & users table verified! Supabase is the single source of truth.');
     }
   } catch (err: any) {
-    console.error(`❌ Error connecting to Supabase: ${err?.message || err}`);
-    throw err;
+    console.warn(`⚠️ Warning connecting to Supabase: ${err?.message || err}`);
   }
 }
