@@ -194,7 +194,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
               />
             ))
           ) : (
-            <div className="text-center py-10 bg-[#161616] border border-white/10 rounded-lg p-6">
+            <div className="text-center py-10 bg-[#161616] border border-white/10 rounded-2xl p-6">
               <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
                 {isLoading ? 'Querying database...' : 'No broadcasts match your search criteria.'}
               </p>
@@ -205,22 +205,22 @@ export const SearchView: React.FC<SearchViewProps> = ({
             displayedAgents.map((agent) => (
               <div
                 key={agent.agentId}
-                className="flex items-center gap-3 p-3 bg-[#161616] border border-white/10 rounded-lg cursor-pointer hover:bg-white/5 transition-all"
+                className="flex items-center gap-4 p-4 bg-[#161616] border border-white/10 rounded-2xl cursor-pointer hover:bg-white/10 transition-all group"
                 onClick={() => onOpenAgentProfile?.(agent.agentName, agent.avatar, agent.agentId)}
               >
-                <AgentAvatar avatar={agent.avatar} name={agent.agentName} id={agent.agentId} className="w-10 h-10" />
-                <div>
-                  <p className="text-white font-mono text-sm font-bold">
+                <AgentAvatar avatar={agent.avatar} name={agent.agentName} id={agent.agentId} className="w-12 h-12 sm:w-14 sm:h-14 group-hover:scale-105 transition-transform" />
+                <div className="min-w-0">
+                  <p className="text-white font-mono text-sm sm:text-base font-black truncate uppercase tracking-tight">
                     <Highlight text={agent.agentName} query={query} />
                   </p>
-                  <p className="text-gray-400 font-mono text-xs">
+                  <p className="text-gray-500 font-mono text-[10px] sm:text-xs">
                     @<Highlight text={agent.agentId || ''} query={query} />
                   </p>
                 </div>
               </div>
             ))
           ) : (
-            <div className="text-center py-10 bg-[#161616] border border-white/10 rounded-lg p-6">
+            <div className="text-center py-10 bg-[#161616] border border-white/10 rounded-2xl p-6">
               <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
                 {isLoading ? 'Querying database...' : 'No accounts match your search.'}
               </p>

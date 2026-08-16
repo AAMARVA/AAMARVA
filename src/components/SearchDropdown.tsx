@@ -12,6 +12,8 @@ interface SearchDropdownProps {
   onOpenConnections: (post: NetworkPost) => void;
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  activeMainTab?: string;
+  onSetActiveMainTab?: (tab: any) => void;
 }
 
 export const SearchDropdown: React.FC<SearchDropdownProps> = ({ 
@@ -21,7 +23,9 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   onOpenThread,
   onOpenConnections,
   onAddReply,
-  onOpenAgentProfile
+  onOpenAgentProfile,
+  activeMainTab,
+  onSetActiveMainTab
 }) => {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'accounts' | 'posts'>('posts');
@@ -54,64 +58,119 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   return (
     <div 
       ref={dropdownRef}
-      className="absolute right-4 sm:right-8 top-1.5 sm:top-2.5 z-50 w-[290px] min-[420px]:w-[340px] sm:w-[380px] bg-black rounded-xl overflow-hidden animate-in fade-in duration-150 shadow-2xl border-2 border-[#141414]"
+      className="fixed inset-0 z-50 w-full h-full bg-[#0F0F0F] flex flex-col animate-in fade-in duration-200"
     >
-      {/* Search Input Area */}
-      <div className="p-2 sm:p-2.5 border-b border-white/10 bg-black">
-        <div className="flex items-center gap-2 sm:gap-2.5 bg-[#161616] rounded-lg px-3 py-1.5 sm:py-2 border border-white/10">
-          <Search className="w-4 h-4 text-gray-400 shrink-0" />
-          <input 
-            type="text" 
-            placeholder="Search posts or accounts..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            autoFocus
-            className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-xs sm:text-sm font-mono"
-          />
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors p-1 rounded focus:outline-none"
-            title="Close Search"
-          >
-            <X className="w-4 h-4" />
-          </button>
+      <div className="max-w-xl mx-auto w-full flex flex-col h-full bg-black sm:border-x border-white/5">
+        <div className="sticky top-0 z-30">
+          {/* Desktop Navigation Options Row (Hidden on Mobile) */}
+          {onSetActiveMainTab && (
+            <div className="hidden sm:flex flex-col gap-2 p-3 border-b border-white/10 bg-black">
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => { onSetActiveMainTab('floor'); onClose(); }}
+                  className={`px-3 py-2 text-xs font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                    (activeMainTab === 'floor' || activeMainTab === 'live')
+                      ? 'bg-white text-black border-2 border-white shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]'
+                      : 'bg-black text-white border-b-2 border-r-2 border-white hover:bg-white/10'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeMainTab === 'floor' || activeMainTab === 'live' ? 'bg-black animate-pulse' : 'bg-white/40'}`}></span>
+                  <span>Floor</span>
+                </button>
+
+                <button
+                  onClick={() => { onSetActiveMainTab('telemetry'); onClose(); }}
+                  className={`px-3 py-2 text-xs font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                    activeMainTab === 'telemetry'
+                      ? 'bg-white text-black border-2 border-white shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]'
+                      : 'bg-black text-white border-b-2 border-r-2 border-white hover:bg-white/10'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeMainTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-white/40'}`}></span>
+                  <span>Telemetry</span>
+                </button>
+
+                <button
+                  onClick={() => { onSetActiveMainTab('hub'); onClose(); }}
+                  className={`px-3 py-2 text-xs font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                    (activeMainTab === 'hub' || activeMainTab === 'explore')
+                      ? 'bg-white text-black border-2 border-white shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]'
+                      : 'bg-black text-white border-b-2 border-r-2 border-white hover:bg-white/10'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${(activeMainTab === 'hub' || activeMainTab === 'explore') ? 'bg-black animate-pulse' : 'bg-white/40'}`}></span>
+                  <span>Agent Hub</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Search Input Area */}
+          <div className="p-2 sm:p-3 border-b border-white/10 bg-black">
+          <div className="flex items-center gap-3 bg-[#161616] rounded-lg px-3 py-1.5 border border-white/10 shadow-xl">
+            <Search className="w-4 h-4 text-gray-400 shrink-0" />
+            <input 
+              type="text" 
+              placeholder="Search posts or accounts"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoFocus
+              className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 focus:outline-none"
+              title="Clear Search"
+            >
+              <X className="w-5 h-5 sm:w-4 sm:h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      {query.trim().length > 0 && (
-        <div className="flex border-b border-white/10">
-          <button
-            onClick={() => setActiveTab('posts')}
-            className={`flex-1 py-2 text-xs font-mono uppercase tracking-wider ${activeTab === 'posts' ? 'text-white border-b border-white' : 'text-gray-500'}`}
-          >
-            Posts
-          </button>
-          <button
-            onClick={() => setActiveTab('accounts')}
-            className={`flex-1 py-2 text-xs font-mono uppercase tracking-wider ${activeTab === 'accounts' ? 'text-white border-b border-white' : 'text-gray-500'}`}
-          >
-            Accounts
-          </button>
-        </div>
-      )}
+        {/* Tabs */}
+        {query.trim().length > 0 && (
+          <div className="flex border-b border-white/10 bg-black shrink-0 px-4 sm:px-8">
+            <div className="flex w-full sm:w-auto gap-8">
+              <button
+                onClick={() => setActiveTab('posts')}
+                className={`py-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all ${activeTab === 'posts' ? 'text-white border-b-2 border-white' : 'text-gray-500 hover:text-gray-300'}`}
+              >
+                Posts
+              </button>
+              <button
+                onClick={() => setActiveTab('accounts')}
+                className={`py-2 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all ${activeTab === 'accounts' ? 'text-white border-b-2 border-white' : 'text-gray-500 hover:text-gray-300'}`}
+              >
+                Accounts
+              </button>
+            </div>
+          </div>
+        )}
 
-      {/* Content Area */}
-      {query.trim().length > 0 && (
-        <div className="max-h-[60vh] overflow-y-auto bg-black text-white">
-          <SearchView
-            posts={posts}
-            agents={agents}
-            query={query}
-            activeTab={activeTab}
-            onOpenThread={(p) => { onClose(); onOpenThread(p); }}
-            onOpenConnections={(p) => { onClose(); onOpenConnections(p); }}
-            onAddReply={onAddReply}
-            onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
-          />
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto overscroll-contain bg-black text-white px-3 py-4 sm:px-8 sm:py-6">
+          {query.trim().length > 0 ? (
+            <SearchView
+              posts={posts}
+              agents={agents}
+              query={query}
+              activeTab={activeTab}
+              onOpenThread={(p) => { onClose(); onOpenThread(p); }}
+              onOpenConnections={(p) => { onClose(); onOpenConnections(p); }}
+              onAddReply={onAddReply}
+              onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
+            />
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center p-8 text-center space-y-6 opacity-40">
+              <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center border border-white/10">
+                <Search className="w-12 h-12 text-white" />
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

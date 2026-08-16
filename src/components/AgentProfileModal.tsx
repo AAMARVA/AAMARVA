@@ -120,22 +120,22 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-2 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
-      <div className="bg-white border-2 border-[#141414] w-full max-w-xl shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[720px] my-auto overflow-hidden text-[#141414]">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-1.5 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
+      <div className="bg-white border-2 border-[#141414] w-full max-w-xl shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] sm:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[90vh] sm:h-[85vh] max-h-[720px] my-auto overflow-hidden text-[#141414]">
         
         {/* Modal Top Header Bar */}
-        <div className="px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
-          <div className="flex items-center gap-2">
+        <div className="px-3 sm:px-4 py-2 sm:py-2.5 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-1"
+              className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-0.5 sm:mr-1"
               title="Back"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             </button>
             <div>
-              <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] truncate leading-tight">
+              <h3 className="font-mono font-black uppercase text-[11px] sm:text-sm tracking-wider text-[#141414] truncate leading-tight max-w-[120px] sm:max-w-none">
                 {displayName}
               </h3>
             </div>
@@ -145,7 +145,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             className="border border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
             aria-label="Close"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
 
@@ -153,35 +153,35 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar flex flex-col bg-white">
           
           {/* Twitter Banner Cover */}
-          <div className="h-20 sm:h-24 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
+          <div className="h-16 sm:h-24 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
             <div className="absolute inset-0 opacity-80 bg-[radial-gradient(#ffffff_1.5px,transparent_1.5px)] [background-size:10px_10px]" />
           </div>
 
           {/* Profile Header Info Section */}
-          <div className="px-4 sm:px-6 pb-4 border-b-2 border-[#141414] bg-white relative">
+          <div className="px-3 sm:px-6 pb-4 border-b-2 border-[#141414] bg-white relative">
             {/* Overlapping Profile Picture and Aligned Badge */}
-            <div className="flex items-center justify-between -mt-10 mb-3">
-              <AgentAvatar name={displayName} avatar={currentAvatar} id={inferredAgentId} className="w-20 h-20 border-4 border-white text-4xl shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
+            <div className="flex items-center justify-between -mt-8 sm:-mt-10 mb-2 sm:mb-3">
+              <AgentAvatar name={displayName} avatar={currentAvatar} id={inferredAgentId} className="w-16 h-16 sm:w-20 sm:h-20 border-4 border-white text-3xl sm:text-4xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
               {joinedDateFormatted && (
-                <div className="font-mono text-[11px] font-bold uppercase border border-[#141414] px-2.5 py-1 bg-[#E4E3E0] flex items-center gap-1.5 text-[#141414]">
-                  <Calendar className="w-3 h-3 text-[#141414]" />
-                  <span>Joined {joinedDateFormatted}</span>
+                <div className="font-mono text-[9px] sm:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 text-[#141414]">
+                  <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#141414]" />
+                  <span>{joinedDateFormatted}</span>
                 </div>
               )}
             </div>
 
             {/* Names */}
-            <div className="pt-1 flex flex-col">
-              <h2 className="font-black uppercase text-lg sm:text-xl tracking-wider text-[#141414]">
+            <div className="pt-0.5 flex flex-col">
+              <h2 className="font-black uppercase text-base sm:text-xl tracking-wider text-[#141414]">
                 {displayName}
               </h2>
               {inferredAgentId && (
-                <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{inferredAgentId}</span>
+                <span className="inline-flex font-mono text-[8px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{inferredAgentId}</span>
               )}
 
               {/* Bio Section */}
               {agentProfileData?.bio && (
-                <p className="mt-4 font-sans text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-4 italic bg-[#E4E3E0]/20 py-2">
+                <p className="mt-3 sm:mt-4 font-sans text-xs sm:text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-3 sm:pl-4 italic bg-[#E4E3E0]/20 py-1.5 sm:py-2">
                   {agentProfileData.bio}
                 </p>
               )}
@@ -193,43 +193,43 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('posts')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeTab === 'posts'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span>Posts</span>
-              <span className="text-[10px] opacity-70">({agentPosts.length})</span>
+              <span className="text-[9px] sm:text-[10px] opacity-70">({agentPosts.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('replies')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeTab === 'replies'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span>Replies</span>
-              <span className="text-[10px] opacity-70">({agentReplies.length})</span>
+              <span className="text-[9px] sm:text-[10px] opacity-70">({agentReplies.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('connections')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span>Connections</span>
-              <span className="text-[10px] opacity-70">({agentConnections.length})</span>
+              <span className="text-[9px] sm:text-[10px] opacity-70">({agentConnections.length})</span>
             </button>
           </div>
 
           {/* Feed Content Area */}
-          <div className="p-4 sm:p-5 space-y-4 flex-1">
+          <div className="p-3 sm:p-5 space-y-4 flex-1">
             
             {/* 1. POSTS TAB */}
             {activeTab === 'posts' && (

@@ -348,34 +348,34 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden relative flex flex-col">
           <button
             onClick={logout}
-            className="absolute top-3 right-3 py-1.5 px-2.5 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center gap-1.5 z-10 cursor-pointer"
+            className="absolute top-2 right-2 py-1 px-2 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[9px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center gap-1 z-10 cursor-pointer"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             <span>Sign Out</span>
           </button>
 
           {/* Twitter Banner Cover */}
-          <div className="h-20 sm:h-24 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
+          <div className="h-16 sm:h-24 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
             <div className="absolute inset-0 opacity-80 bg-[radial-gradient(#ffffff_1.5px,transparent_1.5px)] [background-size:10px_10px]" />
           </div>
 
           {/* Profile Header Info Section */}
-          <div className="px-4 sm:px-6 pb-6 bg-white relative">
+          <div className="px-3 sm:px-6 pb-5 sm:pb-6 bg-white relative">
             {/* Overlapping Profile Picture and Aligned Badge */}
-            <div className="flex items-center justify-between -mt-10 mb-3">
-              <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-20 h-20 border-4 border-white text-4xl shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
+            <div className="flex items-center justify-between -mt-8 sm:-mt-10 mb-2 sm:mb-3">
+              <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-16 h-16 sm:w-20 sm:h-20 border-4 border-white text-3xl sm:text-4xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
               {currentUser?.createdAt && (
-                <div className="font-mono text-[11px] font-bold uppercase border border-[#141414] px-2.5 py-1 bg-[#E4E3E0] flex items-center gap-1.5 text-[#141414]">
-                  <Calendar className="w-3 h-3 text-[#141414]" />
+                <div className="font-mono text-[9px] sm:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 text-[#141414]">
+                  <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#141414]" />
                   <span>
-                    Joined {new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                    <span className="hidden min-[400px]:inline">Joined </span>{new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                   </span>
                 </div>
               )}
             </div>
 
             {/* Names and Actions */}
-            <div className="pt-1 flex flex-col">
+            <div className="pt-0.5 flex flex-col">
               <div className="flex justify-between items-start">
                 <div className="flex flex-col">
                   {isEditingProfile ? (
@@ -383,16 +383,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       type="text"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className="font-mono font-bold text-xl sm:text-2xl text-[#141414] tracking-tight truncate leading-tight border-b-2 border-[#141414] focus:outline-none bg-[#E4E3E0]/30 px-1"
+                      className="font-mono font-bold text-lg sm:text-2xl text-[#141414] tracking-tight truncate leading-tight border-b-2 border-[#141414] focus:outline-none bg-[#E4E3E0]/30 px-1"
                       autoFocus
                     />
                   ) : (
-                    <h1 className="font-mono font-bold text-xl sm:text-2xl text-[#141414] tracking-tight truncate leading-tight">
+                    <h1 className="font-mono font-bold text-lg sm:text-2xl text-[#141414] tracking-tight truncate leading-tight">
                       {currentAgentName}
                     </h1>
                   )}
                   {currentAgentId && (
-                    <span className="inline-flex font-mono text-[10px] sm:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-2 py-0.5 mt-1 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                    <span className="inline-flex font-mono text-[9px] sm:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                       @{currentAgentId}
                     </span>
                   )}
@@ -404,17 +404,17 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
               {/* Bio Section */}
               {isEditingProfile ? (
-                <div className="mt-4">
+                <div className="mt-3 sm:mt-4">
                   <textarea
                     value={editBio}
                     onChange={(e) => setEditBio(e.target.value)}
                     placeholder="Tell everyone about your autonomous mission..."
-                    className="w-full font-sans text-sm text-[#141414] leading-relaxed border-2 border-[#141414] p-3 italic bg-[#E4E3E0]/10 focus:outline-none min-h-[80px] resize-none"
+                    className="w-full font-sans text-xs sm:text-sm text-[#141414] leading-relaxed border-2 border-[#141414] p-2 sm:p-3 italic bg-[#E4E3E0]/10 focus:outline-none min-h-[60px] sm:min-h-[80px] resize-none"
                   />
                 </div>
               ) : (
                 currentUser?.bio && (
-                  <p className="mt-4 font-sans text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-4 italic bg-[#E4E3E0]/20 py-2">
+                  <p className="mt-3 sm:mt-4 font-sans text-xs sm:text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-3 sm:pl-4 italic bg-[#E4E3E0]/20 py-1.5 sm:py-2">
                     {currentUser.bio}
                   </p>
                 )
@@ -427,55 +427,55 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveProfileTab('posts')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'posts'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span>Posts</span>
-              <span className="text-[10px] opacity-70">({userAuthoredPosts.length})</span>
+              <span className="text-[9px] sm:text-[10px] opacity-70">({userAuthoredPosts.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('replies')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'replies'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span>Replies</span>
-              <span className="text-[10px] opacity-70">({userReplies.length})</span>
+              <span className="text-[9px] sm:text-[10px] opacity-70">({userReplies.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              <span>Connections</span>
-              <span className="text-[10px] opacity-70">({userConnections.length})</span>
+              <span className="truncate w-full px-1">Connections</span>
+              <span className="text-[9px] sm:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('requests')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'requests'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span>Requests</span>
-              <span className="text-[10px] opacity-70">({pendingRequests.length})</span>
+              <span className="text-[9px] sm:text-[10px] opacity-70">({pendingRequests.length})</span>
             </button>
           </div>
 
           {/* Twitter Feed Content Area */}
-          <div className="p-4 sm:p-6 bg-white space-y-4 max-h-[600px] overflow-y-auto">
+          <div className="p-3 sm:p-6 bg-white space-y-4 max-h-[500px] sm:max-h-[600px] overflow-y-auto">
             {/* 1. POSTS TAB */}
             {activeProfileTab === 'posts' && (
               <div className="space-y-6">

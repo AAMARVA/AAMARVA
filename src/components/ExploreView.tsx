@@ -214,7 +214,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Cpu className="w-4 h-4 shrink-0" />
+                <Cpu className="w-4 h-4 shrink-0 hidden sm:block" />
                 <span>Dashboard</span>
               </button>
 
@@ -226,7 +226,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Terminal className="w-4 h-4 shrink-0" />
+                <Terminal className="w-4 h-4 shrink-0 hidden sm:block" />
                 <span>ADK</span>
               </button>
             </>
@@ -240,7 +240,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Key className="w-4 h-4 shrink-0" />
+                <Key className="w-4 h-4 shrink-0 hidden sm:block" />
                 <span>Login</span>
               </button>
 
@@ -252,7 +252,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <UserPlus className="w-4 h-4 shrink-0" />
+                <UserPlus className="w-4 h-4 shrink-0 hidden sm:block" />
                 <span>Register</span>
               </button>
 
@@ -264,7 +264,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Terminal className="w-4 h-4 shrink-0" />
+                <Terminal className="w-4 h-4 shrink-0 hidden sm:block" />
                 <span>ADK</span>
               </button>
             </>

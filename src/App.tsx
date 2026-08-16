@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Search } from 'lucide-react';
 import { Header } from './components/Header';
 import { PostCard } from './components/PostCard';
 import { ThreadModal } from './components/ThreadModal';
@@ -334,6 +335,7 @@ export default function App() {
     <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans flex flex-col justify-between selection:bg-black selection:text-white">
       {/* Top Navigation Bar */}
         <Header
+          activeTab={activeTab}
           setActiveTab={setActiveTab}
           onOpenSearch={() => setIsSearchModalOpen(!isSearchModalOpen)}
           isSearchDropdownOpen={isSearchModalOpen}
@@ -347,128 +349,163 @@ export default function App() {
 
 
       {/* Main Content Container */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-5 sm:px-8 py-3 sm:py-4 flex flex-col">
+      <main className={`flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-3 sm:py-4 flex flex-col ${isNewPostOpen ? 'overflow-hidden' : ''} mb-20 sm:mb-0`}>
         {/* Email Change Verification Overlays everything else */}
         {emailVerificationToken ? (
           <EmailChangeVerificationView 
             token={emailVerificationToken}
-            onSuccess={() => {
-              // Optionally do something
-            }}
+            onSuccess={() => {}}
             onBackToHome={() => {
               setEmailVerificationToken(null);
               localStorage.removeItem('aamarva_email_verified');
-              // Clean URL
               window.history.replaceState({}, document.title, "/");
               setActiveTab('dashboard');
             }}
           />
         ) : (
           <>
-            {/* Terms & Conditions Text Link */}
-            <div className="w-full max-w-4xl mx-auto flex justify-center mb-2">
-          <button
-            onClick={() => setActiveTab('terms')}
-            className={`text-xs sm:text-sm font-mono font-bold uppercase tracking-wider transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-1.5 ${
-              activeTab === 'terms' ? 'text-[#141414] decoration-[#141414] font-black' : 'text-[#141414]/70 hover:text-[#141414] decoration-[#141414]/30 hover:decoration-[#141414]'
-            }`}
-          >
-            Terms & Conditions
-          </button>
-        </div>
+            {/* Unified Terms & Conditions (At the top of content) */}
+            <div className="flex justify-center mb-1 mt-0">
+              <button
+                onClick={() => setActiveTab('terms')}
+                className={`text-xs font-mono font-black uppercase tracking-[0.15em] transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-2 ${
+                  activeTab === 'terms' ? 'text-[#141414] decoration-[#141414]' : 'text-[#141414]/75 hover:text-[#141414]'
+                }`}
+              >
+                Terms & Conditions
+              </button>
+            </div>
 
-        {/* Navigation Options Row */}
-        <div className="sticky top-16 sm:top-20 z-30 bg-[#E4E3E0] py-2 mb-4 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto flex flex-col gap-2">
-          {/* Three Tabs */}
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={() => setActiveTab('floor')}
-              className={`px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-black uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 select-none ${
-                (activeTab === 'floor' || activeTab === 'live')
-                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${activeTab === 'floor' || activeTab === 'live' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
-              <span>Floor</span>
-            </button>
+            {/* Desktop Navigation Options Row (Hidden on Mobile) */}
+            <div className="hidden sm:flex sticky top-20 z-30 bg-[#E4E3E0] py-2 mb-4 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2">
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setActiveTab('floor')}
+                  className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                    (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live'))
+                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                      : 'bg-white text-[#141414] border-b-2 border-r-2 border-[#141414] hover:bg-[#E4E3E0]'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live') ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
+                  <span>Floor</span>
+                </button>
 
-            <button
-              onClick={() => setActiveTab('telemetry')}
-              className={`px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-black uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 select-none ${
-                activeTab === 'telemetry'
-                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${activeTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
-              <span>Telemetry</span>
-            </button>
+                <button
+                  onClick={() => setActiveTab('telemetry')}
+                  className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                    (!isSearchModalOpen && activeTab === 'telemetry')
+                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                      : 'bg-white text-[#141414] border-b-2 border-r-2 border-[#141414] hover:bg-[#E4E3E0]'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && activeTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
+                  <span>Telemetry</span>
+                </button>
 
-            <button
-              onClick={() => setActiveTab('hub')}
-              className={`px-2 sm:px-3 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-black uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 select-none ${
-                (activeTab === 'hub' || activeTab === 'explore')
-                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${(activeTab === 'hub' || activeTab === 'explore') ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
-              <span>Agent Hub</span>
-            </button>
-          </div>
-        </div>
+                <button
+                  onClick={() => setActiveTab('hub')}
+                  className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                    (!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore'))
+                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                      : 'bg-white text-[#141414] border-b-2 border-r-2 border-[#141414] hover:bg-[#E4E3E0]'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore') ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
+                  <span>Agent Hub</span>
+                </button>
+              </div>
+            </div>
 
-        {/* Terms & Conditions View */}
-        {activeTab === 'terms' && (
-          <TermsView />
-        )}
-
-        {/* Tab 1: Active Floor (Live Feed) */}
-        {(activeTab === 'floor' || activeTab === 'live') && (
-          <div className="w-full max-w-4xl mx-auto space-y-6">
-            {posts.map((post, index) => {
-              if (posts.length === index + 1) {
-                return (
-                  <div ref={lastPostElementRef} key={post.id}>
-                    <PostCard
-                      post={post}
-                      onOpenThread={handleOpenThread}
-                      onOpenConnections={handleOpenConnections}
-                      onAddReply={handleAddReply}
-                      onOpenAgentProfile={handleOpenAgentProfile}
-                    />
+            {/* Mobile Bottom Navigation (Fixed) */}
+            <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t-4 border-[#141414] px-2 py-2 safe-bottom shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
+              <div className="grid grid-cols-3 gap-1">
+                <button
+                  onClick={() => setActiveTab('floor')}
+                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all ${
+                    (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live')) ? 'text-[#141414]' : 'text-[#141414]/60'
+                  }`}
+                >
+                  <div className={`w-8 h-8 flex items-center justify-center transition-all ${
+                    (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live')) 
+                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
+                      : 'border-b-2 border-r-2 border-[#141414]'
+                  }`}>
+                    <span className="font-mono text-xs font-black">F</span>
                   </div>
-                );
-              } else {
-                return (
-                  <PostCard
-                    key={post.id}
-                    post={post}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddReply={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                  />
-                );
-              }
-            })}
+                  <span className="text-[9px] font-mono font-black uppercase">Floor</span>
+                </button>
 
-            {posts.length === 0 && (
-              <div className="border-2 border-[#141414] border-dashed p-8 text-center bg-white font-mono text-xs uppercase tracking-wider opacity-60">
-                No active broadcasts detected on the network.
+                <button
+                  onClick={() => setActiveTab('telemetry')}
+                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all ${
+                    (!isSearchModalOpen && activeTab === 'telemetry') ? 'text-[#141414]' : 'text-[#141414]/60'
+                  }`}
+                >
+                  <div className={`w-8 h-8 flex items-center justify-center transition-all ${
+                    (!isSearchModalOpen && activeTab === 'telemetry') 
+                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
+                      : 'border-b-2 border-r-2 border-[#141414]'
+                  }`}>
+                    <span className="font-mono text-xs font-black">T</span>
+                  </div>
+                  <span className="text-[9px] font-mono font-black uppercase">Telemetry</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('hub')}
+                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all ${
+                    (!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore')) ? 'text-[#141414]' : 'text-[#141414]/60'
+                  }`}
+                >
+                  <div className={`w-8 h-8 flex items-center justify-center transition-all ${
+                    (!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore')) 
+                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
+                      : 'border-b-2 border-r-2 border-[#141414]'
+                  }`}>
+                    <span className="font-mono text-xs font-black">H</span>
+                  </div>
+                  <span className="text-[9px] font-mono font-black uppercase">Hub</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Terms & Conditions View */}
+            {activeTab === 'terms' && <TermsView />}
+
+            {/* Tab 1: Active Floor (Live Feed) */}
+            {(activeTab === 'floor' || activeTab === 'live') && (
+              <div className="w-full max-w-4xl mx-auto space-y-4 sm:space-y-6">
+                {posts.map((post, index) => {
+                  const isLast = posts.length === index + 1;
+                  return (
+                    <div ref={isLast ? lastPostElementRef : null} key={post.id}>
+                      <PostCard
+                        post={post}
+                        onOpenThread={handleOpenThread}
+                        onOpenConnections={handleOpenConnections}
+                        onAddReply={handleAddReply}
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                      />
+                    </div>
+                  );
+                })}
+
+                {posts.length === 0 && (
+                  <div className="border-2 border-[#141414] border-dashed p-8 text-center bg-white font-mono text-xs uppercase tracking-wider opacity-60">
+                    No active broadcasts detected on the network.
+                  </div>
+                )}
+                
+                {posts.length > 0 && isLoadingMore && (
+                  <div className="pt-4 pb-8 flex justify-center">
+                    <div className="px-6 py-2 bg-white border border-[#141414] text-xs font-mono tracking-widest uppercase opacity-70">
+                      Scanning...
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-            
-            {posts.length > 0 && isLoadingMore && (
-              <div className="pt-4 pb-8 flex justify-center">
-                <div className="px-6 py-2 bg-white border border-[#141414] text-xs font-mono tracking-widest uppercase opacity-70">
-                  Scanning...
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Tab 2: Live Telemetry */}
         {activeTab === 'telemetry' && (
