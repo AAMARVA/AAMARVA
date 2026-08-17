@@ -359,7 +359,7 @@ export default function App() {
 
 
       {/* Main Content Container */}
-      <main className={`flex-1 max-w-6xl w-full mx-auto px-4 lg:px-8 py-3 lg:py-4 flex flex-col ${isNewPostOpen ? 'overflow-hidden' : ''} mb-20 lg:mb-0`}>
+      <main className={`flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-3 sm:py-4 flex flex-col ${isNewPostOpen ? 'overflow-hidden' : ''} mb-20 sm:mb-0`}>
         {/* Email Change Verification Overlays everything else */}
         {emailVerificationToken ? (
           <EmailChangeVerificationView 
@@ -375,7 +375,7 @@ export default function App() {
         ) : (
           <>
             {/* Unified Terms & Conditions (At the top of content) */}
-            <div className={`justify-center mb-1 mt-0 ${(activeTab === 'floor' || activeTab === 'live') ? 'hidden lg:flex' : 'flex'}`}>
+            <div className={`justify-center mb-1 mt-0 ${(activeTab === 'floor' || activeTab === 'live') ? 'hidden sm:flex' : 'flex'}`}>
               <button
                 onClick={() => setActiveTab('terms')}
                 className={`text-xs font-mono font-black uppercase tracking-[0.15em] transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-2 ${
@@ -386,8 +386,8 @@ export default function App() {
               </button>
             </div>
 
-            {/* Desktop Navigation Options Row (Hidden on Mobile/Landscape Mobile) */}
-            <div className="hidden lg:flex sticky top-20 z-30 bg-[#E4E3E0] py-2 mb-4 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2">
+            {/* Desktop Navigation Options Row (Hidden on Mobile) */}
+            <div className="hidden sm:flex sticky top-20 z-30 bg-[#E4E3E0] py-2 mb-4 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2">
               <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => setActiveTab('floor')}
@@ -428,7 +428,7 @@ export default function App() {
             </div>
 
             {/* Mobile Bottom Navigation (Fixed) */}
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t-4 border-[#141414] px-2 py-2 safe-bottom shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
+            <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t-4 border-[#141414] px-2 py-2 safe-bottom shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
               <div className="grid grid-cols-3 gap-1">
                 <button
                   onClick={() => setActiveTab('floor')}

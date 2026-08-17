@@ -170,16 +170,16 @@ export const SearchView: React.FC<SearchViewProps> = ({
       {/* Results Header */}
       <div className="flex items-center justify-between font-mono text-xs uppercase tracking-wider text-gray-500 px-3">
         {isLoading ? (
-          <div className="flex items-center gap-2 text-white font-bold opacity-80">
-            <BrutalistLoader text="Accessing Network Nodes" size="sm" theme="dark" className="py-0" />
-          </div>
+          <span className="text-gray-400 font-mono text-xs uppercase tracking-wider animate-pulse">
+            Accessing Network Nodes...
+          </span>
         ) : (
           <span>Found {activeTab === 'posts' ? displayedPosts.length : displayedAgents.length} {activeTab} result{ (activeTab === 'posts' ? displayedPosts.length : displayedAgents.length) === 1 ? '' : 's'}</span>
         )}
       </div>
 
       {/* Results List */}
-      <div className="space-y-4 px-3 pb-3">
+      <div className="space-y-4 px-3 pb-8">
         {activeTab === 'posts' ? (
           displayedPosts.length > 0 ? (
             displayedPosts.map((post) => (

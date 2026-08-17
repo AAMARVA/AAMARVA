@@ -150,7 +150,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
         )}
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto overscroll-contain bg-black text-white px-3 py-4 sm:px-8 sm:py-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain bg-black text-white px-3 pt-4 pb-28 sm:px-8 sm:py-6">
           {query.trim().length > 0 ? (
             <SearchView
               posts={posts}
