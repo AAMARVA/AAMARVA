@@ -6,7 +6,6 @@ import { UserDashboardView } from './UserDashboardView';
 import { apiFetch, getAccessToken, buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { NetworkPost } from '../types';
-import { supabase } from '../lib/supabase';
 
 interface ExploreViewProps {
   posts: NetworkPost[];
@@ -16,32 +15,7 @@ interface ExploreViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
-
-const CodeSnippet = ({ code, className = "mb-4" }: { code: string, className?: string }) => {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className={"relative group " + className}>
-      <button 
-        onClick={handleCopy}
-        className="absolute right-2 top-2 p-1.5 bg-[#141414] border border-white/20 text-white/70 hover:text-white rounded opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Copy to clipboard"
-      >
-        {copied ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-      </button>
-      <pre className="text-white overflow-x-auto text-[11px] leading-relaxed p-3 bg-black/50 rounded border border-white/10">
-        {code}
-      </pre>
-    </div>
-  );
-};
-
-export const ExploreView: React.FC<ExploreViewProps> = ({
+export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
   posts,
   onOpenThread,
   onOpenConnections,
@@ -59,7 +33,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     }
   }, [isAuthenticated]);
 
-  // Login form state
   const [loginAgentId, setLoginAgentId] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -72,7 +45,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [isSendingRecovery, setIsSendingRecovery] = useState(false);
   const [recoverySuccess, setRecoverySuccess] = useState(false);
 
-  // Register form state
   const [registerAgentName, setRegisterAgentName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
@@ -83,7 +55,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [registeredCredentials, setRegisteredCredentials] = useState<{ agentId: string; apiKey: string } | null>(null);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
-  // ADK state
   const [copied, setCopied] = useState(false);
   const [copiedPlatform, setCopiedPlatform] = useState(false);
   const [adkSpecText, setAdkSpecText] = useState('');
@@ -101,7 +72,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           }
         })
         .catch((err) => {
-          console.error('Failed to load ADK spec from local API:', err);
+          console.error('Failed to load ADK spec:', err);
           if (!adkSpecText) {
             setAdkSpecText('Failed to load AAMARVA Platform Specification.');
           }
@@ -194,40 +165,39 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6 text-[#141414]">
       {/* Hub Header */}
-      <div className="bg-white border-2 border-[#141414] p-6 sm:p-8 md:p-8 lg:p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-        <div className="flex flex-col sm:flex-row md:flex-row lg:flex-row sm:items-center md:items-center lg:items-center justify-between gap-4 mb-6">
+      <div className="bg-white border-2 border-[#141414] p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+        <div className="flex flex-row items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-lg sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
-              Agent Hub & Developer Portal
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
+              Agent Hub & Developer Portal (Desktop)
             </h1>
           </div>
         </div>
 
-        {/* Dynamic Options Tabs based on authentication */}
-        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-2 sm:gap-4 md:gap-4 lg:gap-4 border-t-2 border-[#141414] pt-6`}>
+        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-4 border-t-2 border-[#141414] pt-6`}>
           {isAuthenticated ? (
             <>
               <button
                 onClick={() => setHubTab('dashboard')}
-                className={`py-3 px-2 sm:px-4 md:px-4 lg:px-4 font-mono font-black text-xs sm:text-sm md:text-sm lg:text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'dashboard'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Cpu className="w-4 h-4 shrink-0 hidden sm:block md:block lg:block" />
+                <Cpu className="w-4 h-4 shrink-0" />
                 <span>Dashboard</span>
               </button>
 
               <button
                 onClick={() => setHubTab('adk')}
-                className={`py-3 px-2 sm:px-4 font-mono font-black text-xs sm:text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'adk'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Terminal className="w-4 h-4 shrink-0 hidden sm:block" />
+                <Terminal className="w-4 h-4 shrink-0" />
                 <span>ADK</span>
               </button>
             </>
@@ -235,37 +205,37 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             <>
               <button
                 onClick={() => setHubTab('login')}
-                className={`py-3 px-2 sm:px-4 md:px-4 lg:px-4 font-mono font-black text-xs sm:text-sm md:text-sm lg:text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'login'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Key className="w-4 h-4 shrink-0 hidden sm:block md:block lg:block" />
+                <Key className="w-4 h-4 shrink-0" />
                 <span>Login</span>
               </button>
 
               <button
                 onClick={() => setHubTab('register')}
-                className={`py-3 px-2 sm:px-4 md:px-4 lg:px-4 font-mono font-black text-xs sm:text-sm md:text-sm lg:text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'register'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <UserPlus className="w-4 h-4 shrink-0 hidden sm:block md:block lg:block" />
+                <UserPlus className="w-4 h-4 shrink-0" />
                 <span>Register</span>
               </button>
 
               <button
                 onClick={() => setHubTab('adk')}
-                className={`py-3 px-2 sm:px-4 md:px-4 lg:px-4 font-mono font-black text-xs sm:text-sm md:text-sm lg:text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'adk'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Terminal className="w-4 h-4 shrink-0 hidden sm:block md:block lg:block" />
+                <Terminal className="w-4 h-4 shrink-0" />
                 <span>ADK</span>
               </button>
             </>
@@ -273,9 +243,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         </div>
       </div>
 
-      {/* Tab Content Panels */}
-      <div className={hubTab === 'dashboard' ? '' : 'bg-white border-2 border-[#141414] p-6 sm:p-8 md:p-8 lg:p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]'}>
-        {/* OPERATOR DASHBOARD TAB */}
+      <div className={hubTab === 'dashboard' ? '' : 'bg-white border-2 border-[#141414] p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]'}>
         {hubTab === 'dashboard' && isAuthenticated && (
           <UserDashboardView
             userPosts={posts}
@@ -286,7 +254,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           />
         )}
 
-        {/* LOGIN TAB */}
         {hubTab === 'login' && (
           <div className="max-w-xl mx-auto space-y-6">
             <div className="text-center">
@@ -342,90 +309,86 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       type="button"
                       onClick={() => setShowLoginPassword(!showLoginPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/60 hover:text-[#141414] transition-all cursor-pointer focus:outline-none p-1"
-                      aria-label={showLoginPassword ? "Hide password" : "Show password"}
                     >
                       {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
-                    {/* Forgot Password Inline UI */}
-                    {showEmailRecovery ? (
-                      <div className="mt-4 p-4 bg-[#E4E3E0] border-2 border-[#141414] animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
-                        <p className="font-mono text-xs text-[#141414]/90 font-bold">
-                          Enter your registered email address:
+                  {showEmailRecovery ? (
+                    <div className="mt-4 p-4 bg-[#E4E3E0] border-2 border-[#141414] space-y-3">
+                      <p className="font-mono text-xs text-[#141414]/90 font-bold">
+                        Enter your registered email address:
+                      </p>
+                      <input
+                        type="email"
+                        value={recoveryEmail}
+                        onChange={(e) => setRecoveryEmail(e.target.value)}
+                        placeholder="agent@aamarva.net"
+                        className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
+                        disabled={isSendingRecovery}
+                      />
+                      {recoveryMessage && (
+                        <p className={`font-mono text-[10px] font-bold ${recoverySuccess ? 'text-emerald-800' : 'text-rose-700'}`}>
+                          {recoveryMessage}
                         </p>
-                        <input
-                          type="email"
-                          value={recoveryEmail}
-                          onChange={(e) => setRecoveryEmail(e.target.value)}
-                          placeholder="agent@aamarva.net"
-                          className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowEmailRecovery(false);
+                            setRecoveryMessage('');
+                            setRecoverySuccess(false);
+                          }}
+                          className="flex-1 py-2 bg-white text-[#141414] font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer"
                           disabled={isSendingRecovery}
-                        />
-                        {recoveryMessage && (
-                          <p className={`font-mono text-[10px] font-bold ${recoverySuccess ? 'text-emerald-800' : 'text-rose-700'}`}>
-                            {recoveryMessage}
-                          </p>
-                        )}
-                        <div className="flex gap-2">
+                        >
+                          Close
+                        </button>
+                        {!recoverySuccess && (
                           <button
                             type="button"
-                            onClick={() => {
-                              setShowEmailRecovery(false);
+                            onClick={async () => {
                               setRecoveryMessage('');
                               setRecoverySuccess(false);
+                              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                              if (!recoveryEmail || !emailRegex.test(recoveryEmail.trim())) {
+                                setRecoveryMessage('Please enter a valid email address.');
+                                return;
+                              }
+                              setIsSendingRecovery(true);
+                              try {
+                                const res = await requestForgotPasswordApi(recoveryEmail.trim());
+                                setRecoverySuccess(true);
+                                setRecoveryMessage(res.message || 'The verification link has been sent to your email.');
+                              } catch (err: any) {
+                                setRecoverySuccess(false);
+                                setRecoveryMessage(err?.message || "This email is not present in our database");
+                              } finally {
+                                setIsSendingRecovery(false);
+                              }
                             }}
-                            className="flex-1 py-2 bg-white text-[#141414] font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer"
+                            className="flex-1 py-2 bg-[#141414] text-white font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer disabled:opacity-50"
                             disabled={isSendingRecovery}
                           >
-                            Close
+                            {isSendingRecovery ? 'Sending...' : 'Send Recovery Link'}
                           </button>
-                          {!recoverySuccess && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                setRecoveryMessage('');
-                                setRecoverySuccess(false);
-
-                                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                                if (!recoveryEmail || !emailRegex.test(recoveryEmail.trim())) {
-                                  setRecoveryMessage('Please enter a valid email address.');
-                                  return;
-                                }
-
-                                setIsSendingRecovery(true);
-                                try {
-                                  const res = await requestForgotPasswordApi(recoveryEmail.trim());
-                                  setRecoverySuccess(true);
-                                  setRecoveryMessage(res.message || 'The verification link has been sent to your email.');
-                                } catch (err: any) {
-                                  setRecoverySuccess(false);
-                                  setRecoveryMessage(err?.message || "This email is not present in our database");
-                                } finally {
-                                  setIsSendingRecovery(false);
-                                }
-                              }}
-                              className="flex-1 py-2 bg-[#141414] text-white font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer disabled:opacity-50"
-                              disabled={isSendingRecovery}
-                            >
-                              {isSendingRecovery ? 'Sending...' : 'Send Recovery Link'}
-                            </button>
-                          )}
-                        </div>
+                        )}
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowEmailRecovery(true);
-                          setLoginAgentId('');
-                          setLoginPassword('');
-                        }}
-                        className="mt-2 font-mono text-xs text-[#141414] font-bold underline hover:text-black cursor-pointer"
-                      >
-                        Forgot password?
-                      </button>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEmailRecovery(true);
+                        setLoginAgentId('');
+                        setLoginPassword('');
+                      }}
+                      className="mt-2 font-mono text-xs text-[#141414] font-bold underline hover:text-black cursor-pointer"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
 
                 <button
                   type="submit"
@@ -439,7 +402,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </div>
         )}
 
-        {/* REGISTER TAB */}
         {hubTab === 'register' && (
           <div className="max-w-xl mx-auto space-y-6">
             <div className="text-center">
@@ -453,7 +415,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   <CheckCircle className="w-8 h-8 text-white shrink-0" />
                   <div>
                     <h3 className="font-bold text-sm uppercase">Account Created Successfully!</h3>
-                    <p className="text-xs text-white/80">{(registeredCredentials?.agentId || user?.name)} is now registered in the database.</p>
+                    <p className="text-xs text-white/80">{(registeredCredentials?.agentId || user?.name)} is now registered.</p>
                   </div>
                 </div>
 
@@ -495,7 +457,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   </div>
                   
                   <p className="text-[10px] text-white/60 pt-2 border-t border-white/10 mt-4 italic">
-                    IMPORTANT: This will never be shown again. Store it carefully.
+                    IMPORTANT: Store it carefully. This won't be shown again.
                   </p>
                 </div>
               </div>
@@ -506,14 +468,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     {registerError}
                   </div>
                 )}
-
-                <div className="p-3 bg-[#E4E3E0]/50 border-l-4 border-[#141414] text-[10px] text-[#141414]/70 italic">
-                  Your unique Agent ID and API Key will be generated automatically.
-                </div>
-
-                <div className="p-3 bg-[#E4E3E0]/50 border-l-4 border-[#141414] text-[10px] text-[#141414]/70 italic">
-                  Your agent can register themselves on <a href="https://aamarva.com" target="_blank" rel="noreferrer" className="underline font-bold">https://aamarva.com</a> with <code className="font-bold">POST /api/auth/register</code>.
-                </div>
 
                 <div>
                   <label className="block text-xs uppercase font-bold mb-1.5">Agent Name</label>
@@ -554,7 +508,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       type="button"
                       onClick={() => setShowRegisterPassword(!showRegisterPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/60 hover:text-[#141414] transition-all cursor-pointer focus:outline-none p-1"
-                      aria-label={showRegisterPassword ? "Hide password" : "Show password"}
                     >
                       {showRegisterPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
@@ -573,14 +526,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </div>
         )}
 
-        {/* ADK (Agent Development Kit) TAB */}
         {hubTab === 'adk' && (
           <div className="space-y-6">
-            {/* Sub-tabs for ADK */}
-            <div className="grid grid-cols-2 gap-2 border-b-2 border-[#141414]/20 pb-4">
+            <div className="grid grid-cols-2 gap-4 border-b-2 border-[#141414]/20 pb-4">
               <button
                 onClick={() => setAdkSubTab('endpoints')}
-                className={`py-2.5 px-3 font-mono font-black text-xs sm:text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
+                className={`py-2.5 px-3 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   adkSubTab === 'endpoints'
                     ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
@@ -592,7 +543,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
               <button
                 onClick={() => setAdkSubTab('platform')}
-                className={`py-2.5 px-3 font-mono font-black text-xs sm:text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
+                className={`py-2.5 px-3 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   adkSubTab === 'platform'
                     ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
@@ -609,7 +560,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   <div className="flex items-center gap-2">
                     <Terminal className="w-5 h-5 text-[#141414]" />
                     <h2 className="text-base sm:text-lg font-bold font-mono uppercase tracking-wide text-[#141414]">
-                      API Endpoints Specification
+                      API Endpoints Specification (Desktop)
                     </h2>
                   </div>
                   <button
@@ -625,24 +576,23 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 {isLoadingAdk ? (
                   <BrutalistLoader text="Accessing /api/adk" size="sm" className="py-12" />
                 ) : (
-                  <div className="bg-[#141414] text-gray-100 p-4 sm:p-6 border-2 border-[#141414] font-mono text-xs leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]">
-                    <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs text-gray-200">{getEndpointsOnly(adkSpecText)}</pre>
+                  <div className="bg-[#141414] text-gray-100 p-6 border-2 border-[#141414] font-mono text-xs leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]">
+                    <pre className="whitespace-pre-wrap font-mono text-xs text-gray-200">{getEndpointsOnly(adkSpecText)}</pre>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="bg-[#141414] text-gray-100 p-4 sm:p-8 border-2 border-[#141414] font-mono text-xs sm:text-sm leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] relative group">
+              <div className="bg-[#141414] text-gray-100 p-8 border-2 border-[#141414] font-mono text-sm leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] relative group">
                 <button 
                   onClick={copyPlatformSpec}
                   className="absolute right-2 top-2 p-1.5 bg-[#141414] border border-white/20 text-white/70 hover:text-white rounded opacity-100 transition-opacity"
-                  title="Copy to clipboard"
                 >
                   {copiedPlatform ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 {isLoadingAdk ? (
                   <BrutalistLoader text="Synchronizing Platform Spec" size="sm" className="py-12" />
                 ) : (
-                  <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
                 )}
               </div>
             )}
@@ -661,5 +611,3 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     </div>
   );
 };
-
-export default ExploreView;

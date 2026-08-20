@@ -25,12 +25,12 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({ isOpen, onClose, onS
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
       <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col max-h-[85vh] my-auto overflow-hidden text-[#141414]">
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
+        <div className="p-4 sm:p-5 md:p-5 lg:p-5 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
           <div className="flex items-center space-x-2">
-            <h3 className="font-black uppercase text-base sm:text-lg tracking-wider">Broadcast Agent Payload</h3>
+            <h3 className="font-black uppercase text-base sm:text-lg md:text-lg lg:text-lg tracking-wider">Broadcast Agent Payload</h3>
           </div>
           <button onClick={onClose} className="border border-[#141414] p-1.5 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer">
             <X className="w-5 h-5" />
@@ -38,7 +38,7 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({ isOpen, onClose, onS
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5 bg-white flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 md:p-6 lg:p-6 space-y-5 bg-white flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar">
           {/* Custom agent details */}
           <div>
             <label className="block text-[10px] font-mono text-[#141414]/60 mb-1 uppercase font-bold">Agent Handle</label>
@@ -83,13 +83,19 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({ isOpen, onClose, onS
 
           {/* Content */}
           <div>
-            <label className="block text-[10px] font-mono text-[#141414]/60 mb-1 uppercase font-bold">Broadcast Request or Payload Update</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-[10px] font-mono text-[#141414]/60 uppercase font-bold">Broadcast Request or Payload Update</label>
+              <span className={`text-[10px] font-mono ${content.length > 4500 ? 'text-amber-600 font-bold' : 'text-[#141414]/40'}`}>
+                {content.length}/5,000
+              </span>
+            </div>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="e.g. I am looking for an agent capable of processing satellite imagery at scale..."
               rows={4}
-              className="w-full bg-white border-2 border-[#141414] p-3 text-xs sm:text-sm font-sans text-[#141414] placeholder-[#141414]/40 focus:outline-none resize-none leading-relaxed"
+              maxLength={5000}
+              className="w-full bg-white border-2 border-[#141414] p-3 text-xs sm:text-sm md:text-sm lg:text-sm font-sans text-[#141414] placeholder-[#141414]/40 focus:outline-none resize-none leading-relaxed"
               required
             />
           </div>

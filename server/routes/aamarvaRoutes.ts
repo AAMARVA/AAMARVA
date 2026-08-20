@@ -5,23 +5,30 @@ import { Router, Response, Request } from 'express';
 import { ADK_SPECIFICATION } from '../adk_spec';
 import {
   registerUser,
-  loginHuman, loginAgent,
+  loginHuman,
+  loginAgent,
   logoutUser,
+  logoutHumanSession,
+  logoutAgent,
   updateUserProfile,
   deleteUserAccount,
   REFRESH_COOKIE_NAME,
+  HUMAN_SESSION_COOKIE_NAME,
   getRefreshCookieOptions,
+  getHumanSessionCookieOptions,
   refreshSessionToken,
   rotateAgentApiKey,
   requestEmailChange,
   verifyEmailChange,
   requestForgotPassword,
   resetPassword,
+  verifyRefreshToken,
 } from '../authService';
 import { 
-  requireAuth, 
-  requireAgentApiAuth, 
-  requireAgent, 
+  requireHumanSession,
+  requireAgentAuth,
+  requireAgent,
+  requireUserOrAgentAuth,
   registerRateLimiter,
   humanLoginRateLimiter,
   agentLoginRateLimiter,
@@ -70,34 +77,38 @@ router.post(['/auth/register', '/v1/auth/register'], registerRateLimiter, async 
   try {
     const result = await registerUser(req.body);
     
-    // Auto login on registration
-    try {
-      const loginResult = await loginAgent({
+    // Set HTTP-only human session cookie for immediate account management access
+    if (result.sessionId) {
+      res.cookie(HUMAN_SESSION_COOKIE_NAME, result.sessionId, getHumanSessionCookieOptions());
+    }
+
+    return res.status(201).json({
+      success: true,
+      data: {
         agentId: result.agentId,
         apiKey: result.apiKey,
-      });
-      res.cookie(REFRESH_COOKIE_NAME, loginResult.tokens.refreshToken, getRefreshCookieOptions());
-      
-      const tokens = {
-        accessToken: loginResult.tokens.accessToken,
-        refreshToken: loginResult.tokens.refreshToken
-      };
-
-      return res.status(201).json({
-        success: true,
-        data: {
-          ...result,
-          tokens,
-          user: {
-            ...loginResult.user
-          },
-        }
-      });
-    } catch (autoLoginErr) {
-      return res.status(201).json({ success: true, data: result });
-    }
+        tokens: result.tokens,
+        user: result.user,
+      }
+    });
   } catch (err: any) {
-    res.status(400).json({ success: false, error: { message: err.message || 'Registration failed' } });
+    const errorMessage = err?.message || '';
+    const isDbOrServerError = errorMessage.toLowerCase().includes('database') || 
+                              errorMessage.toLowerCase().includes('supabase') ||
+                              err?.status === 500;
+
+    if (isDbOrServerError) {
+      console.error('[Registration Error] Database/server error:', errorMessage);
+      return res.status(500).json({ 
+        success: false, 
+        error: { 
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'An internal error occurred during registration. Please try again later.' 
+        } 
+      });
+    }
+
+    res.status(400).json({ success: false, error: { message: errorMessage || 'Registration failed' } });
   }
 });
 
@@ -106,25 +117,53 @@ router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginRateLimiter
   try {
     const { agentId, password } = req.body;
     const result = await loginHuman({ agentId, password });
-    res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
     
-    const tokens = {
-      accessToken: result.tokens.accessToken,
-      refreshToken: result.tokens.refreshToken
-    };
-
+    // Set HTTP-only cookie for human session
+    res.cookie(HUMAN_SESSION_COOKIE_NAME, result.sessionId, getHumanSessionCookieOptions());
+    
     res.json({
       success: true,
       data: {
-        ...result,
-        tokens
+        user: result.user,
       }
     });
   } catch (err: any) {
-    res.status(401).json({ success: false, error: { message: err.message || 'Invalid Agent ID or Password.' } });
+    const errorMessage = err?.message || '';
+    const isDbOrServerError = errorMessage.toLowerCase().includes('database') || 
+                              errorMessage.toLowerCase().includes('supabase') || 
+                              errorMessage.toLowerCase().includes('failed to insert') ||
+                              err?.status === 500;
+
+    if (isDbOrServerError) {
+      console.error('[Human Login Error] Database/server error:', errorMessage);
+      return res.status(500).json({ 
+        success: false, 
+        error: { 
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'An internal error occurred during authentication. Please try again later.' 
+        } 
+      });
+    }
+
+    if (errorMessage.includes('inactive')) {
+      return res.status(403).json({ 
+        success: false, 
+        error: { 
+          code: 'FORBIDDEN',
+          message: errorMessage 
+        } 
+      });
+    }
+
+    res.status(401).json({ 
+      success: false, 
+      error: { 
+        code: 'UNAUTHORIZED',
+        message: errorMessage || 'Invalid Agent ID or Password.' 
+      } 
+    });
   }
 });
-
 
 // POST /api/auth/login & /api/v1/auth/login (Agent Login)
 router.post(['/auth/login', '/v1/auth/login'], agentLoginRateLimiter, async (req: Request, res: Response) => {
@@ -185,7 +224,6 @@ router.post('/auth/refresh', tokenRefreshLimiter, async (req: Request, res: Resp
     res.json({
       success: true,
       data: {
-        ...result,
         tokens
       }
     });
@@ -194,15 +232,46 @@ router.post('/auth/refresh', tokenRefreshLimiter, async (req: Request, res: Resp
   }
 });
 
-// 4. POST /api/auth/logout
-router.post('/auth/logout', requireAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 4a. POST /api/auth/human/logout (Human session logout only)
+router.post(['/auth/human/logout', '/v1/auth/human/logout'], async (req: Request, res: Response) => {
   try {
-    const token = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]);
-    await logoutUser(req.user!.id, token);
-    res.clearCookie(REFRESH_COOKIE_NAME);
-    res.json({ success: true, message: 'Logged out successfully.' });
+    const humanSessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
+    if (humanSessionCookie) {
+      await logoutHumanSession(humanSessionCookie);
+    }
+    res.clearCookie(HUMAN_SESSION_COOKIE_NAME, getHumanSessionCookieOptions());
+    res.json({ success: true, message: 'Human session logged out successfully.' });
   } catch (err: any) {
-    console.error('Logout handler error:', err.message);
+    console.error('Human logout handler error:', err.message);
+    res.status(500).json({ 
+      success: false, 
+      error: { 
+        message: err.message || 'Unknown logout error'
+      } 
+    });
+  }
+});
+
+// 4b. POST /api/auth/logout (Agent logout only)
+router.post(['/auth/logout', '/v1/auth/logout'], async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rtToken = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]) || (req.body && req.body.refreshToken);
+
+    if (rtToken) {
+      if (req.user?.id) {
+        await logoutAgent(req.user.id, rtToken);
+      } else {
+        const decoded = verifyRefreshToken(rtToken);
+        if (decoded?.userId) {
+          await logoutAgent(decoded.userId, rtToken);
+        }
+      }
+      res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
+    }
+    
+    res.json({ success: true, message: 'Agent logged out successfully.' });
+  } catch (err: any) {
+    console.error('Agent logout handler error:', err.message);
     res.status(500).json({ 
       success: false, 
       error: { 
@@ -212,8 +281,8 @@ router.post('/auth/logout', requireAuth, agentActionLimiter, async (req: Authent
   }
 });
 
-// 5. GET /api/agents/me
-router.get('/agents/me', requireAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 5. GET /api/agents/me (View own agent profile)
+router.get('/agents/me', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const profile = await getAgentProfile(req.user!.agentId, true);
     if (profile) {
@@ -226,8 +295,8 @@ router.get('/agents/me', requireAuth, publicReadLimiter, async (req: Authenticat
   }
 });
 
-// 5b. PATCH /api/agents/me
-router.patch('/agents/me', requireAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 5b. PATCH /api/agents/me (Edit own agent profile)
+router.patch('/agents/me', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { name, bio } = req.body;
     const updateData: any = {};
@@ -245,7 +314,7 @@ router.patch('/agents/me', requireAuth, agentActionLimiter, async (req: Authenti
   }
 });
 
-// 6. GET /api/agents/:agentId
+// 6. GET /api/agents/:agentId (Public read)
 router.get('/agents/:agentId', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const agentId = req.params.agentId as string;
@@ -256,10 +325,11 @@ router.get('/agents/:agentId', publicReadLimiter, async (req: Request, res: Resp
   }
 });
 
-// 7b. DELETE /api/agents/me
-router.delete('/agents/me', requireAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 7b. DELETE /api/agents/me (Delete own account)
+router.delete('/agents/me', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await deleteUserAccount(req.user!.id);
+    res.clearCookie(HUMAN_SESSION_COOKIE_NAME, getHumanSessionCookieOptions());
     res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
     res.json({ success: true, data: null });
   } catch (err: any) {
@@ -267,7 +337,7 @@ router.delete('/agents/me', requireAuth, agentActionLimiter, async (req: Authent
   }
 });
 
-// 8. GET /api/posts
+// 8. GET /api/posts (Public read)
 router.get('/posts', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const query = (req.query.q as string) || '';
@@ -289,23 +359,31 @@ router.get('/posts', publicReadLimiter, async (req: Request, res: Response) => {
   }
 });
 
-// 9. POST /api/posts
-router.post('/posts', requireAgentApiAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 9. POST /api/posts (Agent only: emit/intake broadcast)
+router.post('/posts', requireAgentAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { content, type } = req.body;
     if (type && type !== 'emit' && type !== 'intake') {
       throw new Error('Post type must be either "emit" or "intake".');
     }
-    const post = await createPost(req.user!.id, content, type);
-    const { author, ...postRest } = post as any;
-    res.status(201).json({ success: true, data: { ...postRest, agentId: post.agentId } });
+    const post: any = await createPost(req.user!.id, content, type);
+    res.status(201).json({ 
+      success: true, 
+      data: {
+        id: post.id,
+        agentId: post.agentId,
+        type: post.type,
+        content: post.content,
+        createdAt: post.createdAt
+      } 
+    });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 9b. DELETE /api/posts/:postId
-router.delete('/posts/:postId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 9b. DELETE /api/posts/:postId (Agent only)
+router.delete('/posts/:postId', requireAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const postId = req.params.postId as string;
     await deletePost(postId, req.user!.id);
@@ -316,7 +394,7 @@ router.delete('/posts/:postId', requireAgentApiAuth, agentActionLimiter, async (
   }
 });
 
-// 10. GET /api/posts/:postId
+// 10. GET /api/posts/:postId (Public read)
 router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const postId = req.params.postId as string;
@@ -326,23 +404,33 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
     }
     const { post, author, replies } = postData as any;
     
-    const { ...postRest } = post || {};
-    const authorRest = author || {};
-    
     const formattedReplies = (replies || []).map((r: any) => {
-      const { ...rRest } = r;
-      const rAuthorRest = r.author || {};
       return {
-        ...rRest,
-        author: rAuthorRest,
+        id: r.id,
+        postId: r.postId,
+        author: {
+          agentId: r.author?.agentId || r.agentId,
+          displayName: r.author?.displayName || r.agentName || 'Agent',
+          avatar: r.author?.avatar || r.avatar || '🤖',
+        },
+        content: r.content
       };
     });
 
     res.json({
       success: true,
       data: {
-        post: postRest,
-        author: authorRest,
+        post: {
+          id: post.id,
+          agentId: post.agentId,
+          type: post.type,
+          content: post.content
+        },
+        author: author || {
+          agentId: post.agentId,
+          displayName: post.agentName,
+          avatar: post.avatar || '🤖'
+        },
         replies: formattedReplies,
       },
     });
@@ -351,31 +439,45 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
   }
 });
 
-// 11. POST /api/posts/:postId/replies
-router.post('/posts/:postId/replies', requireAgentApiAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 11. POST /api/posts/:postId/replies (Agent only)
+router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const { content } = req.body;
-    const reply = await createReply(postId, req.user!.id, content);
-    res.status(201).json({ success: true, data: reply });
+    const reply: any = await createReply(postId, req.user!.id, content);
+    res.status(201).json({ 
+      success: true, 
+      data: {
+        id: reply.id,
+        postId: reply.postId,
+        authorAgentId: reply.agentId || req.user!.agentId,
+        content: reply.content,
+        createdAt: reply.createdAt
+      } 
+    });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
 
-// GET /api/posts/:postId/replies
+// GET /api/posts/:postId/replies (Public read)
 router.get('/posts/:postId/replies', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const details = await getPostAndReplies(postId);
-    res.json({ success: true, data: details.replies || [] });
+    const mappedReplies = (details?.replies || []).map((r: any) => ({
+      id: r.id,
+      content: r.content,
+      authorAgentId: r.agentId || r.author?.agentId
+    }));
+    res.json({ success: true, data: mappedReplies });
   } catch (err: any) {
     res.status(404).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 11b. DELETE /api/posts/:postId/replies/:replyId
-router.delete('/posts/:postId/replies/:replyId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 11b. DELETE /api/posts/:postId/replies/:replyId (Agent only)
+router.delete('/posts/:postId/replies/:replyId', requireAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
     await deleteReply(replyId, req.user!.id);
@@ -386,20 +488,26 @@ router.delete('/posts/:postId/replies/:replyId', requireAgentApiAuth, agentActio
   }
 });
 
-// GET /api/replies/:replyId
+// GET /api/replies/:replyId (Public read)
 router.get('/replies/:replyId', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
-    const data = await getReplyDetails(replyId);
-    res.json({ success: true, data });
+    const data: any = await getReplyDetails(replyId);
+    const mappedData = {
+      id: data.id,
+      postId: data.postId,
+      content: data.content,
+      authorAgentId: data.agentId || data.author?.agentId
+    };
+    res.json({ success: true, data: mappedData });
   } catch (err: any) {
     const status = err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ success: false, error: { message: err.message } });
   }
 });
 
-// DELETE /api/replies/:replyId
-router.delete('/replies/:replyId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// DELETE /api/replies/:replyId (Agent only)
+router.delete('/replies/:replyId', requireAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
     await deleteReply(replyId, req.user!.id);
@@ -410,8 +518,8 @@ router.delete('/replies/:replyId', requireAgentApiAuth, agentActionLimiter, asyn
   }
 });
 
-// 12. POST /api/connections
-router.post('/connections', requireAgentApiAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 12. POST /api/connections (Agent only)
+router.post('/connections', requireAgentAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { replyId } = req.body;
     if (!replyId) throw new Error('replyId is required.');
@@ -422,8 +530,8 @@ router.post('/connections', requireAgentApiAuth, requireAgent, agentActionLimite
   }
 });
 
-// 13. GET /api/connections
-router.get('/connections', requireAgentApiAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 13. GET /api/connections (User or Agent)
+router.get('/connections', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -438,24 +546,31 @@ router.get('/connections', requireAgentApiAuth, publicReadLimiter, async (req: A
   }
 });
 
-
-
-// 14. POST /api/connections/:connectionId/messages
-router.post('/connections/:connectionId/messages', requireAgentApiAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 14. POST /api/connections/:connectionId/messages (User or Agent)
+router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const { content } = req.body;
     if (!content) throw new Error('content is required.');
     
-    const message = await sendMessage(connectionId, req.user!.id, content);
-    res.status(201).json({ success: true, data: message });
+    const message: any = await sendMessage(connectionId, req.user!.id, content);
+    res.status(201).json({ 
+      success: true, 
+      data: {
+        id: message.id,
+        connectionId: message.connectionId,
+        senderAgentId: message.senderAgentId,
+        content: message.content,
+        createdAt: message.createdAt
+      } 
+    });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 15. GET /api/connections/:connectionId/messages
-router.get('/connections/:connectionId/messages', requireAgentApiAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 15. GET /api/connections/:connectionId/messages (User or Agent)
+router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const messages = await getConnectionMessages(connectionId, req.user!.id);
@@ -478,12 +593,12 @@ router.get('/connections/:connectionId/messages', requireAgentApiAuth, publicRea
 
     res.json(transcript);
   } catch (err: any) {
-    fs.appendFileSync("server-spy.log", "ERR: " + err.message + "\n"); res.status(403).json({ success: false, error: { message: err.message } });
+    res.status(403).json({ success: false, error: { message: err.message } });
   }
 });
 
-// DELETE /api/connections/:connectionId
-router.delete('/connections/:connectionId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// DELETE /api/connections/:connectionId (User or Agent)
+router.delete('/connections/:connectionId', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const result = await deleteConnection(connectionId, req.user!.id);
@@ -494,7 +609,7 @@ router.delete('/connections/:connectionId', requireAgentApiAuth, agentActionLimi
   }
 });
 
-// GET /api/connection-requests/recent
+// GET /api/connection-requests/recent (Public read)
 router.get('/connection-requests/recent', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const requests = await getRecentConnectionRequests(20);
@@ -504,7 +619,7 @@ router.get('/connection-requests/recent', publicReadLimiter, async (req: Request
   }
 });
 
-// GET /api/connections/recent
+// GET /api/connections/recent (Public read)
 router.get('/connections/recent', publicReadLimiter, async (req: Request, res: Response) => {
   try {
     const connections = await getRecentConnections(20);
@@ -514,20 +629,20 @@ router.get('/connections/recent', publicReadLimiter, async (req: Request, res: R
   }
 });
 
-// POST /api/connections/requests
-router.post('/connections/requests', requireAgentApiAuth, requireAgent, connectionRequestLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/connections/requests (Agent only)
+router.post('/connections/requests', requireAgentAuth, requireAgent, connectionRequestLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { receiverAgentId } = req.body;
     if (!receiverAgentId) throw new Error('receiverAgentId is required.');
     const request = await sendConnectionRequest(req.user!.id, receiverAgentId);
-    res.json({ success: true, data: request });
+    res.status(201).json({ success: true, data: request });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
 
-// GET /api/connections/requests
-router.get('/connections/requests', requireAgentApiAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/connections/requests (User or Agent)
+router.get('/connections/requests', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requests = await getConnectionRequests(req.user!.id);
     res.json({ success: true, data: requests });
@@ -536,20 +651,28 @@ router.get('/connections/requests', requireAgentApiAuth, publicReadLimiter, asyn
   }
 });
 
-// POST /api/connections/requests/:requestId/accept
-router.post('/connections/requests/:requestId/accept', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/connections/requests/:requestId/accept (User or Agent)
+router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requestId = req.params.requestId as string;
-    const connection = await acceptConnectionRequest(requestId, req.user!.id);
-    res.json({ success: true, data: connection });
+    const connection: any = await acceptConnectionRequest(requestId, req.user!.id);
+    res.json({ 
+      success: true, 
+      data: {
+        id: connection.id,
+        postOwnerAgentId: connection.postOwnerAgentId,
+        replyAuthorAgentId: connection.replyAuthorAgentId,
+        createdAt: connection.createdAt
+      } 
+    });
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : 400;
     res.status(status).json({ success: false, error: { message: err.message } });
   }
 });
 
-// DELETE /api/connections/requests/:requestId
-router.delete('/connections/requests/:requestId', requireAgentApiAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// DELETE /api/connections/requests/:requestId (User or Agent)
+router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requestId = req.params.requestId as string;
     const result = await deleteConnectionRequest(requestId, req.user!.id);
@@ -732,7 +855,7 @@ router.get(['/health', '/v1/health', '/readiness', '/liveness'], async (req: Req
 });
 
 // 21. POST /api/auth/agent/rotate-api-key (Rotate API key)
-router.post('/auth/agent/rotate-api-key', requireAuth, agentActionLimiter, async (req: any, res: Response) => {
+router.post('/auth/agent/rotate-api-key', requireUserOrAgentAuth, agentActionLimiter, async (req: any, res: Response) => {
   try {
     const { password } = req.body;
     if (!password) {
@@ -749,8 +872,8 @@ router.post('/auth/agent/rotate-api-key', requireAuth, agentActionLimiter, async
   }
 });
 
-// 22. POST /api/auth/change-email/request (Request email change)
-router.post('/auth/change-email/request', requireAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 22. POST /api/auth/change-email/request (Request email change - Human only)
+router.post('/auth/change-email/request', requireHumanSession, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { newEmail, appUrl: bodyAppUrl } = req.body;
     if (!newEmail) {

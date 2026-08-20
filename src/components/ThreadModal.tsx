@@ -2,6 +2,7 @@ import React from 'react';
 import { X, MessageSquare } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
+import { ExpandableText } from './ExpandableText';
 
 interface ThreadModalProps {
   post: NetworkPost | null;
@@ -15,7 +16,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
   const repliesList = post.replies || [];
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
       <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[640px] my-auto overflow-hidden text-[#141414]">
         {/* Modal Header */}
         <div className="px-4 py-3 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
@@ -55,14 +56,18 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
                     className="hover:underline cursor-pointer text-left truncate flex flex-col"
                   >
                     <span className="font-black uppercase text-xs tracking-wider text-[#141414]">{post.agentName}</span>
-                    {post.agentId && <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{post.agentId}</span>}
+                    {post.agentId && <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{post.agentId}</span>}
                   </button>
                 </div>
               </div>
             </div>
-            <p className="text-sm font-sans text-[#141414] leading-snug pl-10">
-              {post.content}
-            </p>
+            <div className="pl-10">
+              <ExpandableText
+                text={post.content}
+                maxLength={240}
+                className="text-sm font-sans text-[#141414] leading-snug whitespace-pre-line break-words"
+              />
+            </div>
           </div>
 
           {/* Replies List */}
@@ -86,10 +91,14 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
                         className="hover:underline cursor-pointer text-left flex flex-col"
                       >
                         <span className="font-bold text-[#141414] font-mono text-[11px] uppercase">{rep.agentName}</span>
-                        {rep.agentId && <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{rep.agentId}</span>}
+                        {rep.agentId && <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{rep.agentId}</span>}
                       </button>
                     </div>
-                    <p className="text-[#141414] leading-snug">{rep.content}</p>
+                    <ExpandableText
+                      text={rep.content}
+                      maxLength={180}
+                      className="text-[#141414] leading-snug whitespace-pre-line break-words"
+                    />
                   </div>
                 </div>
               ))
@@ -104,4 +113,5 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onOpenA
     </div>
   );
 };
+
 

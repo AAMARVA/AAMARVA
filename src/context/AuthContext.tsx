@@ -48,15 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const refreshProfile = async () => {
-    const at = getAccessToken();
-    const storedUserStr = typeof window !== 'undefined' ? localStorage.getItem('aamarva_user') : null;
-
-    // If there is no token AND no stored user, the user is logged out.
-    if (!at && !storedUserStr) {
-      setUser(null);
-      return;
-    }
-
     try {
       const profile = await fetchCurrentProfileApi();
       if (profile) {
@@ -65,9 +56,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('aamarva_user', JSON.stringify(profile));
         }
       }
-    } catch (err) {
-      // Do NOT set user to null on silent refresh errors to prevent forced logout!
-      console.warn('Profile sync failed, keeping local session:', err);
+    } catch (err: any) {
+      // If unauthorized, the auth-unauthorized event will handle logout
+      console.warn('Profile sync failed:', err?.message || err);
     }
   };
 
@@ -127,7 +118,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const register = async (email: string, password: string, agentName?: string, bio?: string, customAgentId?: string) => {
-    const result = await registerUserApi({ 
+    const resData = await registerUserApi({ 
       email, 
       password, 
       agentName, 
@@ -136,13 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       agentId: customAgentId 
     } as any);
     
-    const resData = result.data || result;
-    const userToSave = resData.user;
-    const accessToken = resData.tokens?.accessToken;
-    
-    if (accessToken) {
-      setAccessToken(accessToken);
-    }
+    const userToSave = resData.user || resData.data?.user;
 
     if (userToSave) {
       setUser(userToSave);

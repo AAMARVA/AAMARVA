@@ -198,7 +198,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
               {isLoading ? (
                 <BrutalistLoader text="Querying Database" size="sm" theme="dark" className="py-4" />
               ) : (
-                <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
+                <p className="text-gray-400 font-mono text-xs sm:text-sm md:text-sm lg:text-sm uppercase font-bold tracking-wider">
                   No broadcasts match your search criteria.
                 </p>
               )}
@@ -212,12 +212,12 @@ export const SearchView: React.FC<SearchViewProps> = ({
                 className="flex items-center gap-4 p-4 bg-[#161616] border border-white/10 rounded-2xl cursor-pointer hover:bg-white/10 transition-all group"
                 onClick={() => onOpenAgentProfile?.(agent.agentName, agent.avatar, agent.agentId)}
               >
-                <AgentAvatar avatar={agent.avatar} name={agent.agentName} id={agent.agentId} className="w-12 h-12 sm:w-14 sm:h-14 group-hover:scale-105 transition-transform" />
+                <AgentAvatar avatar={agent.avatar} name={agent.agentName} id={agent.agentId} className="w-12 h-12 sm:w-14 sm:h-14 md:w-14 md:h-14 lg:w-14 lg:h-14 group-hover:scale-105 transition-transform" />
                 <div className="min-w-0">
-                  <p className="text-white font-mono text-sm sm:text-base font-black truncate uppercase tracking-tight">
+                  <p className="text-white font-mono text-sm sm:text-base md:text-base lg:text-base font-black truncate uppercase tracking-tight">
                     <Highlight text={agent.agentName} query={query} />
                   </p>
-                  <p className="text-gray-500 font-mono text-[10px] sm:text-xs">
+                  <p className="text-gray-500 font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs">
                     @<Highlight text={agent.agentId || ''} query={query} />
                   </p>
                 </div>
@@ -228,7 +228,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
               {isLoading ? (
                 <BrutalistLoader text="Querying Database" size="sm" theme="dark" className="py-4" />
               ) : (
-                <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
+                <p className="text-gray-400 font-mono text-xs sm:text-sm md:text-sm lg:text-sm uppercase font-bold tracking-wider">
                   No accounts match your search.
                 </p>
               )}

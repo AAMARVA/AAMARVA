@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
-import './server/config'; 
+import { config } from './server/config'; 
 import aamarvaRoutes from './server/routes/aamarvaRoutes';
 import { checkDatabaseConnectivity } from './server/supabase';
 import { ADK_SPECIFICATION } from './server/adk_spec';
@@ -17,7 +17,7 @@ async function startServer() {
   await checkDatabaseConnectivity();
 
   const app = express();
-  const PORT = 3000;
+  const PORT = config.port;
 
   // Trust reverse proxy for rate-limiting headers (X-Forwarded-For, etc.)
   app.set('trust proxy', 1);
@@ -56,7 +56,8 @@ async function startServer() {
     },
     credentials: true
   }));
-  app.use(express.json());
+  app.use(express.json({ limit: '100kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '100kb' }));
   app.use(cookieParser());
 
   // Mount API endpoints strictly under /api prefix

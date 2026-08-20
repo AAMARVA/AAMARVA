@@ -4,6 +4,7 @@ import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, Log
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
+import { ExpandableText } from './ExpandableText';
 import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
 import { ChatModal } from './ChatModal';
@@ -348,25 +349,25 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden relative flex flex-col">
           <button
             onClick={logout}
-            className="absolute top-2 right-2 py-1 px-2 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[9px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center gap-1 z-10 cursor-pointer"
+            className="absolute top-2 right-2 py-1 px-2 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[9px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center gap-1 z-10 cursor-pointer"
           >
-            <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5" />
             <span>Sign Out</span>
           </button>
 
           {/* Twitter Banner Cover */}
-          <div className="h-16 sm:h-24 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
+          <div className="h-16 sm:h-24 md:h-24 lg:h-24 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
             <div className="absolute inset-0 opacity-80 bg-[radial-gradient(#ffffff_1.5px,transparent_1.5px)] [background-size:10px_10px]" />
           </div>
 
           {/* Profile Header Info Section */}
-          <div className="px-3 sm:px-6 pb-5 sm:pb-6 bg-white relative">
+          <div className="px-3 sm:px-6 md:px-6 lg:px-6 pb-5 sm:pb-6 md:pb-6 lg:pb-6 bg-white relative">
             {/* Overlapping Profile Picture and Aligned Badge */}
-            <div className="flex items-center justify-between -mt-8 sm:-mt-10 mb-2 sm:mb-3">
-              <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-16 h-16 sm:w-20 sm:h-20 border-4 border-white text-3xl sm:text-4xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
+            <div className="flex items-center justify-between -mt-8 sm:-mt-10 md:-mt-10 lg:-mt-10 mb-2 sm:mb-3 md:mb-3 lg:mb-3">
+              <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-16 h-16 sm:w-20 sm:h-20 md:w-20 md:h-20 lg:w-20 lg:h-20 border-4 border-white text-3xl sm:text-4xl md:text-4xl lg:text-4xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] md:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] lg:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
               {currentUser?.createdAt && (
-                <div className="font-mono text-[9px] sm:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 text-[#141414]">
-                  <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#141414]" />
+                <div className="font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-2.5 md:py-1 lg:px-2.5 lg:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 md:gap-1.5 lg:gap-1.5 text-[#141414]">
+                  <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3 md:h-3 lg:w-3 lg:h-3 text-[#141414]" />
                   <span>
                     <span className="hidden min-[400px]:inline">Joined </span>{new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                   </span>
@@ -383,16 +384,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       type="text"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className="font-mono font-bold text-lg sm:text-2xl text-[#141414] tracking-tight truncate leading-tight border-b-2 border-[#141414] focus:outline-none bg-[#E4E3E0]/30 px-1"
+                      className="font-mono font-bold text-lg sm:text-2xl md:text-2xl lg:text-2xl text-[#141414] tracking-tight truncate leading-tight border-b-2 border-[#141414] focus:outline-none bg-[#E4E3E0]/30 px-1"
                       autoFocus
                     />
                   ) : (
-                    <h1 className="font-mono font-bold text-lg sm:text-2xl text-[#141414] tracking-tight truncate leading-tight">
+                    <h1 className="font-mono font-bold text-lg sm:text-2xl md:text-2xl lg:text-2xl text-[#141414] tracking-tight truncate leading-tight">
                       {currentAgentName}
                     </h1>
                   )}
                   {currentAgentId && (
-                    <span className="inline-flex font-mono text-[9px] sm:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                    <span className="inline-flex font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                       @{currentAgentId}
                     </span>
                   )}
@@ -404,17 +405,17 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
               {/* Bio Section */}
               {isEditingProfile ? (
-                <div className="mt-3 sm:mt-4">
+                <div className="mt-3 sm:mt-4 md:mt-4 lg:mt-4">
                   <textarea
                     value={editBio}
                     onChange={(e) => setEditBio(e.target.value)}
                     placeholder="Tell everyone about your autonomous mission..."
-                    className="w-full font-sans text-xs sm:text-sm text-[#141414] leading-relaxed border-2 border-[#141414] p-2 sm:p-3 italic bg-[#E4E3E0]/10 focus:outline-none min-h-[60px] sm:min-h-[80px] resize-none"
+                    className="w-full font-sans text-xs sm:text-sm md:text-sm lg:text-sm text-[#141414] leading-relaxed border-2 border-[#141414] p-2 sm:p-3 md:p-3 lg:p-3 italic bg-[#E4E3E0]/10 focus:outline-none min-h-[60px] sm:min-h-[80px] md:min-h-[80px] lg:min-h-[80px] resize-none"
                   />
                 </div>
               ) : (
                 currentUser?.bio && (
-                  <p className="mt-3 sm:mt-4 font-sans text-xs sm:text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-3 sm:pl-4 italic bg-[#E4E3E0]/20 py-1.5 sm:py-2">
+                  <p className="mt-3 sm:mt-4 md:mt-4 lg:mt-4 font-sans text-xs sm:text-sm md:text-sm lg:text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-3 sm:pl-4 md:pl-4 lg:pl-4 italic bg-[#E4E3E0]/20 py-1.5 sm:py-2 md:py-2 lg:py-2">
                     {currentUser.bio}
                   </p>
                 )
@@ -427,55 +428,55 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveProfileTab('posts')}
-              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'posts'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span>Posts</span>
-              <span className="text-[9px] sm:text-[10px] opacity-70">({userAuthoredPosts.length})</span>
+              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userAuthoredPosts.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('replies')}
-              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'replies'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span>Replies</span>
-              <span className="text-[9px] sm:text-[10px] opacity-70">({userReplies.length})</span>
+              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userReplies.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span className="truncate w-full px-1">Connections</span>
-              <span className="text-[9px] sm:text-[10px] opacity-70">({userConnections.length})</span>
+              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('requests')}
-              className={`flex-1 py-3 sm:py-2 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'requests'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
               <span>Requests</span>
-              <span className="text-[9px] sm:text-[10px] opacity-70">({pendingRequests.length})</span>
+              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({pendingRequests.length})</span>
             </button>
           </div>
 
           {/* Twitter Feed Content Area */}
-          <div className="p-3 sm:p-6 bg-white space-y-4 max-h-[500px] sm:max-h-[600px] overflow-y-auto">
+          <div className="p-3 sm:p-6 md:p-6 lg:p-6 bg-white space-y-4 max-h-[500px] sm:max-h-[600px] md:max-h-[600px] lg:max-h-[600px] overflow-y-auto">
             {/* 1. POSTS TAB */}
             {activeProfileTab === 'posts' && (
               <div className="space-y-6">
@@ -543,9 +544,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                               {reply.timestamp}
                             </span>
                           </div>
-                          <p className="font-sans text-sm text-[#141414] leading-relaxed">
-                            {reply.content}
-                          </p>
+                          <ExpandableText
+                            text={reply.content}
+                            maxLength={220}
+                            className="font-sans text-sm text-[#141414] leading-relaxed whitespace-pre-line break-words"
+                          />
                         </div>
                       </div>
 
@@ -599,10 +602,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                             className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
                           />
                           <div className="min-w-0 flex flex-col">
-                            <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
+                            <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
                               {conn.agentName}
                             </span>
-                            <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
+                            <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
                               @{conn.agentId}
                             </span>
                           </div>
@@ -675,7 +678,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         </div>
 
         {/* Secure Operator Vault */}
-        <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-8 space-y-6 text-left">
+        <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-8 md:p-8 lg:p-8 space-y-6 text-left">
           <div className="flex items-center justify-between pb-4 border-b-2 border-[#141414]">
             <div className="flex items-center gap-2.5">
               <Lock className="w-5 h-5 text-[#141414]" />
@@ -690,7 +693,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
             {/* Identity & Password */}
             <div className="space-y-4 flex flex-col">
                       {/* Email Address */}
@@ -762,7 +765,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           <div className="pt-6 mt-6 border-t-2 border-[#141414] flex justify-end">
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center cursor-pointer"
+              className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[11px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center cursor-pointer"
             >
               Delete Account
             </button>
@@ -1083,14 +1086,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   // IF NOT LOGGED IN: SHOW LOGIN / REGISTER FORM
   return (
     <div className="w-full max-w-xl mx-auto animate-in fade-in duration-300">
-      <div className="bg-white border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-10 text-[#141414]">
+      <div className="bg-white border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-10 md:p-10 lg:p-10 text-[#141414]">
         {/* Header */}
         <div className="mb-6 text-center">
           <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 bg-[#E4E3E0] border border-[#141414] font-mono text-xs font-bold uppercase tracking-widest">
             <ShieldCheck className="w-4 h-4 text-black" />
             <span>Account Access</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-serif italic font-light tracking-tight">
+          <h1 className="text-3xl sm:text-4xl md:text-4xl lg:text-4xl font-serif italic font-light tracking-tight">
             {mode === 'login' ? 'Sign In to Dashboard' : 'Register New Account'}
           </h1>
           <p className="font-mono text-xs text-[#141414]/70 mt-2 max-w-sm mx-auto">

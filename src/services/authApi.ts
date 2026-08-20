@@ -59,9 +59,26 @@ export function getAccessToken(): string | null {
   return memoryAccessToken;
 }
 
+export interface ApiFetchOptions extends RequestInit {
+  authType?: 'human' | 'agent' | 'auto';
+}
+
 let refreshPromise: Promise<boolean> | null = null;
 
-export async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<any> {
+function isHumanEndpoint(endpoint: string): boolean {
+  return (
+    endpoint.startsWith('/api/agents/me') ||
+    endpoint.startsWith('/api/auth/agent/rotate-api-key') ||
+    endpoint.startsWith('/api/auth/change-email/request') ||
+    endpoint.startsWith('/api/auth/human/') ||
+    endpoint.startsWith('/api/connections') ||
+    endpoint === '/api/auth/human/login' ||
+    endpoint === '/api/auth/human/logout' ||
+    endpoint === '/api/auth/register'
+  );
+}
+
+export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}): Promise<any> {
   const fullUrl = buildApiUrl(endpoint);
   const headers = new Headers(options.headers || {});
 
@@ -69,9 +86,13 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
     headers.set('Content-Type', 'application/json');
   }
 
-  const requestToken = getAccessToken();
-  if (requestToken) {
-    headers.set('Authorization', `Bearer ${requestToken}`);
+  const isHuman = options.authType === 'human' || (options.authType !== 'agent' && isHumanEndpoint(endpoint));
+
+  if (!isHuman) {
+    const requestToken = getAccessToken();
+    if (requestToken) {
+      headers.set('Authorization', `Bearer ${requestToken}`);
+    }
   }
 
   let response = await fetch(fullUrl, {
@@ -80,7 +101,9 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
     credentials: 'include',
   });
 
-  if (response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/human/login' && endpoint !== '/api/auth/login') {
+  // Handle agent token refresh ONLY for agent requests with an existing token (never for human sessions)
+  if (!isHuman && response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/login' && getAccessToken()) {
+    const requestToken = getAccessToken();
     const currentToken = getAccessToken();
     if (requestToken && currentToken && requestToken !== currentToken) {
       headers.set('Authorization', `Bearer ${currentToken}`);
@@ -108,15 +131,9 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
               }
               return true;
             } else {
-              if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('auth-unauthorized'));
-              }
               return false;
             }
           } catch (err) {
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('auth-unauthorized'));
-            }
             return false;
           } finally {
             refreshPromise = null;
@@ -142,7 +159,8 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/human/login' && endpoint !== '/api/auth/login') {
+    // Only dispatch auth-unauthorized if the user's primary session profile check (/api/agents/me) fails with 401
+    if (response.status === 401 && endpoint === '/api/agents/me') {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('auth-unauthorized'));
       }
@@ -159,6 +177,7 @@ export async function registerUserApi(payload: {
   name?: string;
   agentName?: string;
   bio?: string;
+  agentId?: string;
 }) {
   const res = await fetch(buildApiUrl('/api/auth/register'), {
     method: 'POST',
@@ -172,6 +191,7 @@ export async function registerUserApi(payload: {
     throw new Error(responseJson.error?.message || 'Registration failed');
   }
 
+  // Registration establishes human management session via cookie, returns agentId, apiKey, user
   return responseJson.data;
 }
 
@@ -188,11 +208,8 @@ export async function loginUserApi(payload: { agentId: string; password: string;
     throw new Error(responseJson.error?.message || 'Login failed');
   }
 
-  const payloadData = responseJson.data;
-  if (payloadData.tokens?.accessToken) {
-    setAccessToken(payloadData.tokens.accessToken);
-  }
-  return payloadData;
+  // Human authentication is backed exclusively by HTTP-only cookie
+  return responseJson.data;
 }
 
 export async function loginAgentApi(payload: { agentId: string; apiKey: string; }) {
@@ -215,7 +232,17 @@ export async function loginAgentApi(payload: { agentId: string; apiKey: string; 
   return payloadData;
 }
 
-export async function logoutUserApi() {
+export async function logoutHumanApi() {
+  try {
+    await fetch(buildApiUrl('/api/auth/human/logout'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    });
+  } catch (e) {}
+}
+
+export async function logoutAgentApi() {
   try {
     await fetch(buildApiUrl('/api/auth/logout'), {
       method: 'POST',
@@ -223,6 +250,11 @@ export async function logoutUserApi() {
       credentials: 'include',
     });
   } catch (e) {}
+  setAccessToken(null);
+}
+
+export async function logoutUserApi() {
+  await logoutHumanApi();
   setAccessToken(null);
 }
 

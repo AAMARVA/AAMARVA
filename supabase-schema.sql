@@ -11,9 +11,11 @@ CREATE TABLE IF NOT EXISTS users (
   status TEXT NOT NULL DEFAULT 'active',
   avatar TEXT,
   "apiKeyHash" TEXT,
+  "apiKeyFingerprint" TEXT,
   bio TEXT,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "passwordChangedAt" TIMESTAMPTZ
 );
 
 -- 2. Posts Table
@@ -23,6 +25,7 @@ CREATE TABLE IF NOT EXISTS posts (
   "agentId" TEXT NOT NULL,
   "agentName" TEXT NOT NULL,
   avatar TEXT,
+  category TEXT DEFAULT 'General',
   content TEXT NOT NULL,
   type TEXT CHECK (type IN ('intake', 'emit')),
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -89,6 +92,351 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Fix for specific error: Ensure createdAt exists on connection_requests
--- If the table already exists but is missing the column, run this:
--- ALTER TABLE connection_requests ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMPTZ DEFAULT NOW();
+-- 8. Password Reset Tokens Table
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "tokenHash" TEXT NOT NULL,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "usedAt" TIMESTAMPTZ,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 9. Human Sessions Table (Opaque session IDs hashed server-side)
+CREATE TABLE IF NOT EXISTS human_sessions (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "sessionHash" TEXT UNIQUE NOT NULL,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Performance & Integrity Indexes
+CREATE INDEX IF NOT EXISTS idx_users_agent_id ON users("agentId");
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_api_key_fingerprint ON users("apiKeyFingerprint");
+
+CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts("userId");
+CREATE INDEX IF NOT EXISTS idx_posts_agent_id ON posts("agentId");
+CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts("createdAt" DESC);
+
+CREATE INDEX IF NOT EXISTS idx_replies_post_id ON replies("postId");
+CREATE INDEX IF NOT EXISTS idx_replies_user_id ON replies("userId");
+
+CREATE INDEX IF NOT EXISTS idx_connection_requests_sender ON connection_requests("senderUserId");
+CREATE INDEX IF NOT EXISTS idx_connection_requests_receiver ON connection_requests("receiverUserId");
+
+CREATE INDEX IF NOT EXISTS idx_connections_post_id ON connections("postId");
+CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_reply_id_unique ON connections("replyId") WHERE "replyId" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_request_id_unique ON connections("requestId") WHERE "requestId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_connections_post_owner ON connections("postOwnerUserId");
+CREATE INDEX IF NOT EXISTS idx_connections_reply_author ON connections("replyAuthorUserId");
+
+CREATE INDEX IF NOT EXISTS idx_messages_connection_id ON messages("connectionId");
+CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages("senderUserId");
+
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens("tokenHash");
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens("userId");
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family_id ON refresh_tokens("familyId");
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token_hash ON password_reset_tokens("tokenHash");
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens("userId");
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_reset_tokens("expiresAt");
+
+CREATE INDEX IF NOT EXISTS idx_human_sessions_session_hash ON human_sessions("sessionHash");
+CREATE INDEX IF NOT EXISTS idx_human_sessions_user_id ON human_sessions("userId");
+CREATE INDEX IF NOT EXISTS idx_human_sessions_expires_at ON human_sessions("expiresAt");
+
+-- 10. Transactional Connection Creation Functions (RPC)
+
+-- Function: create_connection_from_reply
+-- Atomically validates post/reply/user, inserts connection, and inserts initial context messages in a single transaction
+CREATE OR REPLACE FUNCTION create_connection_from_reply(
+  p_user_id TEXT,
+  p_reply_id TEXT,
+  p_connection_id TEXT DEFAULT NULL,
+  p_post_msg_id TEXT DEFAULT NULL,
+  p_reply_msg_id TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_reply RECORD;
+  v_post RECORD;
+  v_current_user RECORD;
+  v_reply_author RECORD;
+  v_reply_author_name TEXT;
+  v_existing_conn RECORD;
+  v_conn_id TEXT;
+  v_post_msg_id TEXT;
+  v_reply_msg_id TEXT;
+  v_now TIMESTAMPTZ := NOW();
+  v_result JSONB;
+BEGIN
+  -- 1. Find reply
+  SELECT * INTO v_reply FROM replies WHERE id = p_reply_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Reply not found.';
+  END IF;
+
+  -- 2. Find associated post
+  SELECT * INTO v_post FROM posts WHERE id = v_reply."postId";
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Associated post not found.';
+  END IF;
+
+  -- 3. Find current user
+  SELECT * INTO v_current_user FROM users WHERE id = p_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'User profile not found.';
+  END IF;
+
+  -- 4. Check post ownership
+  IF v_post."userId" <> v_current_user.id AND UPPER(v_post."agentId") <> UPPER(v_current_user."agentId") THEN
+    RAISE EXCEPTION 'Forbidden: Only the owner of the original post can establish a connection.';
+  END IF;
+
+  -- 5. Check self-reply
+  IF (v_post."userId" IS NOT NULL AND v_reply."userId" IS NOT NULL AND v_post."userId" = v_reply."userId") OR
+     (v_post."agentId" IS NOT NULL AND v_reply."agentId" IS NOT NULL AND UPPER(v_post."agentId") = UPPER(v_reply."agentId")) THEN
+    RAISE EXCEPTION 'Forbidden: Post owner cannot establish a connection with their own reply.';
+  END IF;
+
+  -- 6. Check existing connection
+  SELECT * INTO v_existing_conn FROM connections WHERE "replyId" = v_reply.id;
+  IF FOUND THEN
+    RAISE EXCEPTION 'DUPLICATE_CONNECTION';
+  END IF;
+
+  -- 7. Find reply author profile
+  IF v_reply."userId" IS NOT NULL THEN
+    SELECT * INTO v_reply_author FROM users WHERE id = v_reply."userId";
+  END IF;
+  IF v_reply_author.id IS NULL AND v_reply."agentId" IS NOT NULL THEN
+    SELECT * INTO v_reply_author FROM users WHERE "agentId" = v_reply."agentId";
+  END IF;
+
+  IF v_reply_author.name IS NOT NULL THEN
+    v_reply_author_name := v_reply_author.name;
+  ELSE
+    v_reply_author_name := v_reply."agentName";
+  END IF;
+
+  -- 8. Assign IDs
+  v_conn_id := COALESCE(p_connection_id, 'conn_' || gen_random_uuid()::TEXT);
+  v_post_msg_id := COALESCE(p_post_msg_id, 'msg_post_' || gen_random_uuid()::TEXT);
+  v_reply_msg_id := COALESCE(p_reply_msg_id, 'msg_reply_' || gen_random_uuid()::TEXT);
+
+  -- 9. Insert connection
+  INSERT INTO connections (
+    id,
+    "postId",
+    "replyId",
+    "postOwnerUserId",
+    "postOwnerAgentId",
+    "postOwnerAgentName",
+    "replyAuthorUserId",
+    "replyAuthorAgentId",
+    "replyAuthorAgentName",
+    "createdAt"
+  ) VALUES (
+    v_conn_id,
+    v_post.id,
+    v_reply.id,
+    v_current_user.id,
+    v_current_user."agentId",
+    v_current_user.name,
+    v_reply."userId",
+    v_reply."agentId",
+    v_reply_author_name,
+    v_now
+  );
+
+  -- 10. Insert initial interaction context messages
+  INSERT INTO messages (
+    id,
+    "connectionId",
+    "senderUserId",
+    "senderAgentId",
+    content,
+    "createdAt"
+  ) VALUES (
+    v_post_msg_id,
+    v_conn_id,
+    v_current_user.id,
+    v_current_user."agentId",
+    v_post.content,
+    COALESCE(v_post."createdAt", v_now)
+  ), (
+    v_reply_msg_id,
+    v_conn_id,
+    COALESCE(v_reply."userId", v_current_user.id),
+    v_reply."agentId",
+    v_reply.content,
+    COALESCE(v_reply."createdAt", v_now)
+  );
+
+  -- 11. Return created connection object
+  v_result := jsonb_build_object(
+    'id', v_conn_id,
+    'postId', v_post.id,
+    'replyId', v_reply.id,
+    'postOwnerUserId', v_current_user.id,
+    'postOwnerAgentId', v_current_user."agentId",
+    'postOwnerAgentName', v_current_user.name,
+    'replyAuthorUserId', v_reply."userId",
+    'replyAuthorAgentId', v_reply."agentId",
+    'replyAuthorAgentName', v_reply_author_name,
+    'createdAt', to_jsonb(v_now)
+  );
+
+  RETURN v_result;
+EXCEPTION
+  WHEN unique_violation THEN
+    RAISE EXCEPTION 'DUPLICATE_CONNECTION';
+END;
+$$;
+
+-- Function: accept_connection_request
+-- Atomically updates connection_requests status to accepted and creates the connection record
+CREATE OR REPLACE FUNCTION accept_connection_request(
+  p_user_id TEXT,
+  p_request_id TEXT,
+  p_connection_id TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_request RECORD;
+  v_receiver RECORD;
+  v_existing_conn RECORD;
+  v_conn_id TEXT;
+  v_now TIMESTAMPTZ := NOW();
+  v_result JSONB;
+BEGIN
+  -- 1. Find request
+  SELECT * INTO v_request FROM connection_requests WHERE id = p_request_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Connection request not found.';
+  END IF;
+
+  IF v_request."receiverUserId" <> p_user_id THEN
+    RAISE EXCEPTION 'Forbidden: Not your connection request.';
+  END IF;
+
+  -- 2. Check if already accepted / existing connection
+  IF v_request.status <> 'pending' THEN
+    SELECT * INTO v_existing_conn FROM connections WHERE "requestId" = p_request_id;
+    IF FOUND THEN
+      RETURN jsonb_build_object(
+        'id', v_existing_conn.id,
+        'requestId', v_existing_conn."requestId",
+        'postOwnerUserId', v_existing_conn."postOwnerUserId",
+        'postOwnerAgentId', v_existing_conn."postOwnerAgentId",
+        'postOwnerAgentName', v_existing_conn."postOwnerAgentName",
+        'replyAuthorUserId', v_existing_conn."replyAuthorUserId",
+        'replyAuthorAgentId', v_existing_conn."replyAuthorAgentId",
+        'replyAuthorAgentName', v_existing_conn."replyAuthorAgentName",
+        'createdAt', to_jsonb(v_existing_conn."createdAt")
+      );
+    END IF;
+    RAISE EXCEPTION 'Connection request is no longer pending.';
+  END IF;
+
+  -- 3. Atomic status update
+  UPDATE connection_requests
+  SET status = 'accepted'
+  WHERE id = p_request_id AND status = 'pending';
+
+  IF NOT FOUND THEN
+    SELECT * INTO v_existing_conn FROM connections WHERE "requestId" = p_request_id;
+    IF FOUND THEN
+      RETURN jsonb_build_object(
+        'id', v_existing_conn.id,
+        'requestId', v_existing_conn."requestId",
+        'postOwnerUserId', v_existing_conn."postOwnerUserId",
+        'postOwnerAgentId', v_existing_conn."postOwnerAgentId",
+        'postOwnerAgentName', v_existing_conn."postOwnerAgentName",
+        'replyAuthorUserId', v_existing_conn."replyAuthorUserId",
+        'replyAuthorAgentId', v_existing_conn."replyAuthorAgentId",
+        'replyAuthorAgentName', v_existing_conn."replyAuthorAgentName",
+        'createdAt', to_jsonb(v_existing_conn."createdAt")
+      );
+    END IF;
+    RAISE EXCEPTION 'Connection request is no longer pending.';
+  END IF;
+
+  -- 4. Find receiver profile
+  SELECT * INTO v_receiver FROM users WHERE id = p_user_id;
+
+  -- 5. Insert connection
+  v_conn_id := COALESCE(p_connection_id, 'conn_' || gen_random_uuid()::TEXT);
+
+  INSERT INTO connections (
+    id,
+    "requestId",
+    "postOwnerUserId",
+    "postOwnerAgentId",
+    "postOwnerAgentName",
+    "replyAuthorUserId",
+    "replyAuthorAgentId",
+    "replyAuthorAgentName",
+    "createdAt"
+  ) VALUES (
+    v_conn_id,
+    v_request.id,
+    v_request."senderUserId",
+    v_request."senderAgentId",
+    v_request."senderAgentName",
+    v_request."receiverUserId",
+    v_request."receiverAgentId",
+    COALESCE(v_receiver.name, 'Agent'),
+    v_now
+  );
+
+  v_result := jsonb_build_object(
+    'id', v_conn_id,
+    'requestId', v_request.id,
+    'postOwnerUserId', v_request."senderUserId",
+    'postOwnerAgentId', v_request."senderAgentId",
+    'postOwnerAgentName', v_request."senderAgentName",
+    'replyAuthorUserId', v_request."receiverUserId",
+    'replyAuthorAgentId', v_request."receiverAgentId",
+    'replyAuthorAgentName', COALESCE(v_receiver.name, 'Agent'),
+    'createdAt', to_jsonb(v_now)
+  );
+
+  RETURN v_result;
+EXCEPTION
+  WHEN unique_violation THEN
+    SELECT * INTO v_existing_conn FROM connections WHERE "requestId" = p_request_id;
+    IF FOUND THEN
+      RETURN jsonb_build_object(
+        'id', v_existing_conn.id,
+        'requestId', v_existing_conn."requestId",
+        'postOwnerUserId', v_existing_conn."postOwnerUserId",
+        'postOwnerAgentId', v_existing_conn."postOwnerAgentId",
+        'postOwnerAgentName', v_existing_conn."postOwnerAgentName",
+        'replyAuthorUserId', v_existing_conn."replyAuthorUserId",
+        'replyAuthorAgentId', v_existing_conn."replyAuthorAgentId",
+        'replyAuthorAgentName', v_existing_conn."replyAuthorAgentName",
+        'createdAt', to_jsonb(v_existing_conn."createdAt")
+      );
+    END IF;
+    RAISE EXCEPTION 'DUPLICATE_CONNECTION';
+END;
+$$;
+
+-- Revoke default public execution privileges for safety
+REVOKE EXECUTE ON FUNCTION create_connection_from_reply(TEXT, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION accept_connection_request(TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+
+-- Grant execution privileges exclusively to service_role
+GRANT EXECUTE ON FUNCTION create_connection_from_reply(TEXT, TEXT, TEXT, TEXT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION accept_connection_request(TEXT, TEXT, TEXT) TO service_role;

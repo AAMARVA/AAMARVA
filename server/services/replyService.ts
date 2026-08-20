@@ -177,7 +177,18 @@ export async function getPostAndReplies(postId: string) {
   };
 }
 
+export const MAX_REPLY_CONTENT_LENGTH = 2500;
+
 export async function createReply(postId: string, userId: string, content: string): Promise<ReplyRecord> {
+  if (!content || typeof content !== 'string' || !content.trim()) {
+    throw new Error('Reply content is required.');
+  }
+
+  const trimmedContent = content.trim();
+  if (trimmedContent.length > MAX_REPLY_CONTENT_LENGTH) {
+    throw new Error(`Reply content exceeds the maximum limit of ${MAX_REPLY_CONTENT_LENGTH.toLocaleString()} characters.`);
+  }
+
   const supabase = getSupabaseClient();
 
   const { data: post, error: postError } = await supabase
@@ -204,7 +215,7 @@ export async function createReply(postId: string, userId: string, content: strin
     agentId: user.agentId,
     agentName: user.name,
     avatar: user.avatar || '🤖',
-    content: content.trim(),
+    content: trimmedContent,
     createdAt: now,
   };
 

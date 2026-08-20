@@ -30,20 +30,20 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-white border-b-2 border-[#141414] text-[#141414]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 h-14 sm:h-20 flex items-center justify-between gap-2 relative">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 md:px-8 lg:px-8 h-14 sm:h-20 md:h-20 lg:h-20 flex items-center justify-between gap-2 relative">
         {/* Brand logo */}
         <div className="flex items-center space-x-4">
           <button
             onClick={() => setActiveTab('floor')}
             className="flex items-center text-left focus:outline-none group"
           >
-            <div className="flex items-center gap-2 sm:gap-2.5">
+            <div className="flex items-center gap-2 sm:gap-2.5 md:gap-2.5 lg:gap-2.5">
               <img 
                 src="/f.png" 
                 alt="AAMARVA Logo" 
-                className="w-6 h-6 sm:w-7 sm:h-7 bg-white border-2 border-[#141414] object-contain shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)] sm:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]" 
+                className="w-6 h-6 sm:w-7 sm:h-7 md:w-7 md:h-7 lg:w-7 lg:h-7 bg-white border-2 border-[#141414] object-contain shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)] sm:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] md:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] lg:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]" 
               />
-              <span className="text-xl sm:text-3xl font-black tracking-tighter uppercase text-[#141414] group-hover:opacity-80 transition-opacity select-none leading-none">
+              <span className="text-xl sm:text-3xl md:text-3xl lg:text-3xl font-black tracking-tighter uppercase text-[#141414] group-hover:opacity-80 transition-opacity select-none leading-none">
                 AAMARVA
               </span>
             </div>
@@ -51,14 +51,14 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Right Side: Search Button */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 md:gap-3 lg:gap-3">
           {!isSearchDropdownOpen && (
             <button
               onClick={onOpenSearch}
-              className="py-1 px-2.5 sm:py-2 sm:px-4 border-2 border-[#141414] transition-all flex items-center justify-center font-mono font-black text-xs sm:text-sm uppercase tracking-wider bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+              className="py-1 px-2.5 sm:py-2 sm:px-4 md:py-2 md:px-4 lg:py-2 lg:px-4 border-2 border-[#141414] transition-all flex items-center justify-center font-mono font-black text-xs sm:text-sm md:text-sm lg:text-sm uppercase tracking-wider bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
             >
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <SearchIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2 lg:gap-2">
+                <SearchIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-4 md:h-4 lg:w-4 lg:h-4 shrink-0" />
                 <span>Search</span>
               </div>
             </button>

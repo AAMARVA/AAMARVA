@@ -20,8 +20,8 @@ export const ApiKeyDisplayModal: React.FC<ApiKeyDisplayModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-8 text-[#141414]">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-8 md:p-8 lg:p-8 text-[#141414]">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-1.5 border-2 border-[#141414] hover:bg-[#141414] hover:text-white transition-colors"
@@ -61,7 +61,7 @@ export const ApiKeyDisplayModal: React.FC<ApiKeyDisplayModalProps> = ({
               </div>
               
               <p className="text-xs uppercase font-bold text-white/70 mt-4">Your Private API Key:</p>
-              <div className="flex items-center justify-between bg-white px-3 py-2 border border-[#141414] font-mono text-xs sm:text-sm tracking-normal break-all text-[#141414] font-bold">
+              <div className="flex items-center justify-between bg-white px-3 py-2 border border-[#141414] font-mono text-xs sm:text-sm md:text-sm lg:text-sm tracking-normal break-all text-[#141414] font-bold">
                 <span className="select-all">{apiKey}</span>
                 <button
                   type="button"

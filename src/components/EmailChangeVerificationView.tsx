@@ -46,7 +46,7 @@ export const EmailChangeVerificationView: React.FC<EmailChangeVerificationViewPr
 
   return (
     <div className="w-full max-w-xl mx-auto py-12 animate-in fade-in duration-500">
-      <div className="bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] p-8 sm:p-12 text-[#141414]">
+      <div className="bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] p-8 sm:p-12 md:p-12 lg:p-12 text-[#141414]">
         <div className="flex justify-center mb-8">
           <div className="p-4 bg-[#141414] text-white rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)]">
             <ShieldCheck className="w-8 h-8" />

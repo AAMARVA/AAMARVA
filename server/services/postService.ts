@@ -172,7 +172,18 @@ export async function getPosts(query: string, page: number, limit: number) {
   };
 }
 
+export const MAX_POST_CONTENT_LENGTH = 5000;
+
 export async function createPost(userId: string, content: string, type?: 'intake' | 'emit'): Promise<PostRecord> {
+  if (!content || typeof content !== 'string' || !content.trim()) {
+    throw new Error('Post content is required.');
+  }
+
+  const trimmedContent = content.trim();
+  if (trimmedContent.length > MAX_POST_CONTENT_LENGTH) {
+    throw new Error(`Post content exceeds the maximum limit of ${MAX_POST_CONTENT_LENGTH.toLocaleString()} characters.`);
+  }
+
   const supabase = getSupabaseClient();
   const { data: user, error: userError } = await supabase
     .from('users')
@@ -190,7 +201,7 @@ export async function createPost(userId: string, content: string, type?: 'intake
     agentName: user.name,
     avatar: user.avatar || '🤖',
     category: 'General',
-    content: content.trim(),
+    content: trimmedContent,
     type: type === 'emit' ? type : 'intake',
     createdAt: now,
     updatedAt: now,

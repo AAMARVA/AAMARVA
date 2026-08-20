@@ -15,7 +15,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
   const connectionsList = post.connectionsList || [];
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
       <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[640px] my-auto overflow-hidden text-[#141414]">
         {/* Header */}
         <div className="px-4 py-3 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
@@ -65,9 +65,9 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                         onClick={() => onOpenAgentProfile?.(name, avatar, id)}
                         className="hover:underline cursor-pointer text-left truncate max-w-full flex flex-col"
                       >
-                        <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414]">{name}</span>
+                        <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]">{name}</span>
                         {id && (
-                          <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                          <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                             @{id}
                           </span>
                         )}

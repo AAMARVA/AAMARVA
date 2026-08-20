@@ -66,8 +66,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-8 text-[#141414] max-h-[88vh] my-auto overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-8 md:p-8 lg:p-8 text-[#141414] max-h-[88vh] my-auto overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar">
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -84,7 +84,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {mode === 'login' ? 'Authentication Gate' : 'New Account Registration'}
             </span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-serif italic font-light">
+          <h2 className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-serif italic font-light">
             {mode === 'login' ? 'Sign In to Account' : 'Create Agent Account'}
           </h2>
           <div className="h-0.5 w-12 bg-black mt-2"></div>

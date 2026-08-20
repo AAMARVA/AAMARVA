@@ -11,6 +11,21 @@ export interface UserTokenPayload {
   id: string;
   agentId: string;
   email: string;
+  type?: 'human' | 'agent';
+}
+
+export interface HumanSessionPayload {
+  id: string;
+  agentId: string;
+  email: string;
+  type: 'human';
+}
+
+export interface AgentTokenPayload {
+  id: string;
+  agentId: string;
+  email: string;
+  type: 'agent';
 }
 
 export interface AuthTokens {
@@ -19,10 +34,21 @@ export interface AuthTokens {
 }
 
 export const REFRESH_COOKIE_NAME = 'aamarva_rt';
+export const HUMAN_SESSION_COOKIE_NAME = 'aamarva_human_session';
 
 export const DEFAULT_BIO = "Hello World";
 
 export function getRefreshCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none' as const,
+    path: '/',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  };
+}
+
+export function getHumanSessionCookieOptions() {
   return {
     httpOnly: true,
     secure: true,
@@ -48,8 +74,11 @@ function getJwtRefreshSecret(): string {
 
 
 export function validatePasswordStrength(password: string): { valid: boolean; message?: string } {
-  if (!password || password.length < 1) {
+  if (!password || typeof password !== 'string') {
     return { valid: false, message: 'Password is required.' };
+  }
+  if (password.length < 12) {
+    return { valid: false, message: 'Password must be at least 12 characters long.' };
   }
   return { valid: true };
 }
@@ -100,7 +129,7 @@ export function invalidateAuthCache(): void {
   lastCacheFetchTime = 0;
 }
 
-async function getAuthUsersList(forceRefresh = false): Promise<any[]> {
+export async function getAuthUsersList(forceRefresh = false): Promise<any[]> {
   const now = Date.now();
   if (!forceRefresh && authUsersCache && (now - lastCacheFetchTime < CACHE_TTL_MS)) {
     return authUsersCache;
@@ -118,6 +147,24 @@ async function getAuthUsersList(forceRefresh = false): Promise<any[]> {
   return authUsers;
 }
 
+export async function getAuthUserForRecord(supabase: any, userRecord: { id?: string; email?: string }): Promise<any> {
+  if (!supabase || !supabase.auth?.admin || !userRecord?.id) return null;
+
+  try {
+    const { data: authUserData, error: idErr } = await supabase.auth.admin.getUserById(userRecord.id);
+    if (!idErr && authUserData?.user) {
+      return authUserData.user;
+    }
+    if (idErr) {
+      console.error(`[AuthUserLookup] Failed to retrieve Auth user by ID ${userRecord.id}:`, idErr.message);
+    }
+  } catch (e: any) {
+    console.error(`[AuthUserLookup] Exception during Auth user lookup for ID ${userRecord.id}:`, e?.message || e);
+  }
+
+  return null;
+}
+
 export function generateAgentId(): string {
   const randomHex = crypto.randomBytes(3).toString('hex').toUpperCase();
   return `AMR-${randomHex}`;
@@ -127,17 +174,133 @@ export function generateApiKey(): string {
   return `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
 }
 
-export function generateAccessToken(user: UserRecord): string {
-  const payload: UserTokenPayload = {
+export async function createHumanSession(userId: string): Promise<string> {
+  const payload = {
+    userId,
+    type: 'human',
+    iat: Math.floor(Date.now() / 1000)
+  };
+  const token = jwt.sign(payload, getJwtSecret(), { expiresIn: '7d' });
+  return token;
+}
+
+export async function verifyHumanSession(rawSessionId: string): Promise<HumanSessionPayload | null> {
+  if (!rawSessionId || typeof rawSessionId !== 'string' || rawSessionId.trim() === '') {
+    return null;
+  }
+
+  try {
+    const decoded = jwt.verify(rawSessionId.trim(), getJwtSecret()) as any;
+    if (!decoded || !decoded.userId || decoded.type !== 'human') {
+      return null;
+    }
+
+    const supabase = getSupabaseClient();
+    const user = await findUserById(supabase, decoded.userId);
+    if (!user || user.status !== 'active') {
+      return null;
+    }
+
+    // Invalidation check: Only revoke if user password/credentials were explicitly rotated after this session was issued
+    if (user.passwordChangedAt && decoded.iat) {
+      const pwdChangedSeconds = Math.floor(new Date(user.passwordChangedAt).getTime() / 1000);
+      if (decoded.iat < pwdChangedSeconds) {
+        return null;
+      }
+    }
+
+    return {
+      id: user.id,
+      agentId: user.agentId,
+      email: user.email,
+      type: 'human',
+    };
+  } catch (err: any) {
+    return null;
+  }
+}
+
+export async function invalidateHumanSession(rawSessionId: string): Promise<void> {
+  if (!rawSessionId || typeof rawSessionId !== 'string') return;
+  try {
+    const decoded = jwt.verify(rawSessionId.trim(), getJwtSecret()) as any;
+    if (decoded && decoded.userId) {
+      await invalidateAllHumanSessionsForUser(decoded.userId);
+    }
+  } catch (e: any) {}
+}
+
+export async function invalidateAllHumanSessionsForUser(userId: string): Promise<void> {
+  if (!userId) return;
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('users')
+    .update({ passwordChangedAt: new Date().toISOString() })
+    .eq('id', userId);
+
+  if (error) {
+    console.error(`[SessionInvalidation] Failed to invalidate human sessions for user ${userId}:`, error.message || error);
+    throw new Error(`Failed to invalidate existing human sessions: ${error.message || 'Database error'}`);
+  }
+}
+
+export function generateAgentAccessToken(user: UserRecord): string {
+  const payload: AgentTokenPayload = {
     id: user.id,
     agentId: user.agentId,
     email: user.email,
+    type: 'agent',
   };
   return jwt.sign(payload, getJwtSecret(), { expiresIn: '1d' });
 }
 
+export function verifyAgentAccessToken(token: string): AgentTokenPayload | null {
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
+    if (!decoded || !decoded.id || !decoded.agentId) {
+      return null;
+    }
+    // Human sessions are explicitly rejected as agent tokens
+    if (decoded.type === 'human') {
+      return null;
+    }
+    return {
+      id: decoded.id,
+      agentId: decoded.agentId,
+      email: decoded.email,
+      type: 'agent',
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+export function generateAccessToken(user: UserRecord): string {
+  return generateAgentAccessToken(user);
+}
+
 export function generateRefreshToken(userId: string, familyId: string): string {
   return jwt.sign({ userId, familyId }, getJwtRefreshSecret(), { expiresIn: '7d' });
+}
+
+export async function persistRefreshToken(userId: string, familyId: string, refreshToken: string) {
+  const supabase = getSupabaseClient();
+  const tokenHash = hashToken(refreshToken);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { error } = await supabase.from('refresh_tokens').insert({
+    id: crypto.randomUUID(),
+    userId,
+    tokenHash,
+    familyId,
+    isRevoked: false,
+    expiresAt,
+    createdAt: new Date().toISOString()
+  });
+
+  if (error) {
+    console.error("persistRefreshToken DB Error:", error);
+    throw new Error('Failed to persist refresh token.');
+  }
 }
 
 export function hashToken(token: string): string {
@@ -145,12 +308,7 @@ export function hashToken(token: string): string {
 }
 
 export function verifyAccessToken(token: string): UserTokenPayload | null {
-  try {
-    const decoded = jwt.verify(token, getJwtSecret()) as UserTokenPayload;
-    return decoded;
-  } catch (err) {
-    return null;
-  }
+  return verifyAgentAccessToken(token);
 }
 
 export function verifyRefreshToken(token: string): { userId: string; familyId: string } | null {
@@ -196,6 +354,7 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     bio: (raw.bio || '').trim() || DEFAULT_BIO,
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
+    passwordChangedAt: raw.passwordChangedAt,
   };
 }
 
@@ -256,8 +415,9 @@ export async function registerUser(data: {
 }): Promise<{
   agentId: string;
   apiKey: string;
-  user: Omit<UserRecord, 'passwordHash'>;
   tokens: { accessToken: string; refreshToken: string };
+  user: Omit<UserRecord, 'passwordHash'>;
+  sessionId: string;
 }> {
   const normalizedEmail = normalizeEmail(data.email || '');
   if (!normalizedEmail || !validateEmailFormat(normalizedEmail)) {
@@ -304,6 +464,12 @@ export async function registerUser(data: {
 
   // Generate unique API Key
   const apiKeyToUse = generateApiKey();
+  if (data.password) {
+    const passVal = validatePasswordStrength(data.password);
+    if (!passVal.valid) {
+      throw new Error(passVal.message || 'Password must be at least 12 characters long.');
+    }
+  }
   const passwordHash = data.password ? await hashPassword(data.password) : await hashPassword(crypto.randomBytes(32).toString('hex'));
   const apiKeyHash = await hashApiKey(apiKeyToUse);
   const apiKeyFingerprint = computeApiKeyFingerprint(apiKeyToUse);
@@ -313,20 +479,54 @@ export async function registerUser(data: {
 
   // 1. Create in Supabase Auth first if possible to satisfy foreign key constraints
   if (supabase) {
+    // Pre-check: If user already exists in the database table, fail early with standard duplicate error
+    const { data: existingDbUser } = await supabase.from('users').select('id').eq('email', normalizedEmail).maybeSingle();
+    if (existingDbUser) {
+      throw new Error('An agent or user with this email or Agent ID already exists.');
+    }
+
     try {
       if (supabase.auth?.admin?.createUser) {
-        const { data: createdAuthUser, error: authCreateErr } = await supabase.auth.admin.createUser({
-          email: normalizedEmail,
-          password: data.password || crypto.randomBytes(32).toString('hex'),
-          email_confirm: true,
-          user_metadata: {
-            agentId,
-            name: agentName,
-            avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
-            bio: (data.bio || '').trim() || DEFAULT_BIO
-          },
-          app_metadata: { apiKeyHash, apiKeyFingerprint }
-        });
+        let createdAuthUser: any = null;
+        let authCreateErr: any = null;
+
+        const attemptCreate = async () => {
+          const res = await supabase.auth.admin.createUser({
+            email: normalizedEmail,
+            password: data.password || crypto.randomBytes(32).toString('hex'),
+            email_confirm: true,
+            user_metadata: {
+              agentId,
+              name: agentName,
+              avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
+              bio: (data.bio || '').trim() || DEFAULT_BIO
+            },
+            app_metadata: { apiKeyHash, apiKeyFingerprint }
+          });
+          createdAuthUser = res.data;
+          authCreateErr = res.error;
+        };
+
+        await attemptCreate();
+
+        // If auth user already exists, but we verified they do NOT exist in the users table, it's an orphaned auth user.
+        // We can safely list users, find their ID, delete them, and retry to make registration completely retry-safe.
+        if (authCreateErr && (authCreateErr.message?.toLowerCase().includes('already exists') || authCreateErr.message?.toLowerCase().includes('already registered'))) {
+          console.warn(`Auth user exists for ${normalizedEmail} but no database record exists. Cleaning up orphaned auth user to allow retry...`);
+          const { data: listResult, error: listErr } = await supabase.auth.admin.listUsers({
+            perPage: 1000
+          });
+          if (!listErr && listResult?.users) {
+            const orphaned = listResult.users.find((u: any) => normalizeEmail(u.email || '') === normalizedEmail);
+            if (orphaned) {
+              await supabase.auth.admin.deleteUser(orphaned.id);
+              console.log(`Successfully deleted orphaned auth user ${orphaned.id}`);
+              // Retry creation
+              await attemptCreate();
+            }
+          }
+        }
+
         if (authCreateErr) {
           throw new Error(`Failed to create auth user: ${authCreateErr.message}`);
         }
@@ -372,6 +572,7 @@ export async function registerUser(data: {
     email: normalizedEmail,
     passwordHash,
     apiKeyHash: apiKeyHash,
+    apiKeyFingerprint: apiKeyFingerprint,
     name: agentName,
     status: 'active',
     avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
@@ -401,25 +602,43 @@ export async function registerUser(data: {
     invalidateAuthCache();
   }
   
-  const familyId = crypto.randomUUID();
-  const accessToken = generateAccessToken(newUser);
-  const refreshToken = generateRefreshToken(newUser.id, familyId);
-  const tokenHash = hashToken(refreshToken);
+  try {
+    const sessionId = await createHumanSession(newUser.id);
+    const familyId = crypto.randomUUID();
+    const accessToken = generateAccessToken(newUser);
+    const refreshToken = generateRefreshToken(newUser.id, familyId);
+    await persistRefreshToken(newUser.id, familyId, refreshToken);
+    const { passwordHash: _, apiKeyHash: __, ...safeUser } = newUser;
+    return {
+      agentId,
+      apiKey: apiKeyToUse,
+      tokens: { accessToken, refreshToken },
+      user: safeUser as any,
+      sessionId
+    };
+  } catch (postInsertErr: any) {
+    console.error('[Registration Recovery] Post-insert session/token creation failed. Initiating cleanup...', postInsertErr);
+    
+    // 1. Delete user from DB users table
+    try {
+      await supabase.from('users').delete().eq('id', newUser.id);
+      console.log(`[Registration Recovery] Cleaned up database user record for ID ${newUser.id}`);
+    } catch (dbCleanupErr) {
+      console.error(`[Registration Recovery] Failed to clean up database user record:`, dbCleanupErr);
+    }
 
-  const newRecord = {
-    id: `rt_${crypto.randomUUID()}`,
-    userId: newUser.id,
-    tokenHash,
-    familyId,
-    isRevoked: false,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: new Date().toISOString(),
-  };
+    // 2. Delete user from Supabase Auth
+    if (authUserCreated && supabase && supabase.auth?.admin?.deleteUser) {
+      try {
+        await supabase.auth.admin.deleteUser(authUserId);
+        console.log(`[Registration Recovery] Cleaned up Supabase Auth user ID ${authUserId}`);
+      } catch (authCleanupErr) {
+        console.error(`[Registration Recovery] Failed to clean up Supabase Auth user:`, authCleanupErr);
+      }
+    }
 
-  await supabase.from('refreshTokens').insert([newRecord]);
-  
-  const { passwordHash: _, apiKeyHash: __, ...safeUser } = newUser;
-  return { agentId, apiKey: apiKeyToUse, user: safeUser as any, tokens: { accessToken, refreshToken } };
+    throw postInsertErr;
+  }
 }
 
 async function findUserByAgentId(agentId: string) {
@@ -471,25 +690,10 @@ export async function loginHuman(data: { agentId: string; password: string }) {
     throw new Error('Authentication failed: Invalid password.');
   }
 
-  const familyId = crypto.randomUUID();
-  const accessToken = generateAccessToken(normalizedUser);
-  const refreshToken = generateRefreshToken(normalizedUser.id, familyId);
-  const tokenHash = hashToken(refreshToken);
-
-  const supabase = getSupabaseClient();
-  await supabase.from('refreshTokens').insert([{
-    id: `rt_${crypto.randomUUID()}`,
-    userId: normalizedUser.id,
-    tokenHash,
-    familyId,
-    isRevoked: false,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: new Date().toISOString()
-  }]);
-
+  const sessionId = await createHumanSession(normalizedUser.id);
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
 
-  return { user: safeUser, tokens: { accessToken, refreshToken } };
+  return { user: safeUser, sessionId };
 }
 
 export async function loginAgent(data: { agentId: string; apiKey: string }) {
@@ -506,28 +710,24 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     throw new Error('Agent Login failed: Agent ID not found.');
   }
 
-  // Fetch Supabase Auth user to get apiKeyHash from metadata (prefer app_metadata)
-  const { data: { users: authUsers } } = await supabase.auth.admin.listUsers();
-  const authUser = authUsers.find(u => u.email?.toLowerCase() === userRecord.email?.toLowerCase());
-
-  const normalizedUser = normalizeUserRecord(userRecord, authUser);
-
-  if (normalizedUser.status !== 'active') {
+  if (userRecord.status !== 'active') {
     throw new Error('This account is currently inactive.');
   }
 
-  let isApiKeyValid = false;
-  if (normalizedUser.apiKeyHash && (normalizedUser.apiKeyHash.startsWith('$2a$') || normalizedUser.apiKeyHash.startsWith('$2b$'))) {
-    isApiKeyValid = await compareApiKey(apiKey, normalizedUser.apiKeyHash);
+  // Fetch Supabase Auth user to get apiKeyHash from authoritative app_metadata
+  const authUser = await getAuthUserForRecord(supabase, userRecord);
+  if (!authUser || !authUser.app_metadata?.apiKeyHash) {
+    throw new Error('Agent Login failed: Invalid API Key.');
   }
 
+  const isApiKeyValid = await compareApiKey(apiKey, authUser.app_metadata.apiKeyHash);
   if (!isApiKeyValid) {
     throw new Error('Agent Login failed: Invalid API Key.');
   }
 
-  // Backfill fingerprint into app_metadata if missing
-  if (authUser && !authUser.app_metadata?.apiKeyFingerprint) {
-    const fingerprint = computeApiKeyFingerprint(apiKey);
+  // Backfill fingerprint into app_metadata and users table if missing
+  const fingerprint = computeApiKeyFingerprint(apiKey);
+  if (!authUser.app_metadata?.apiKeyFingerprint) {
     try {
       await supabase.auth.admin.updateUserById(authUser.id, {
         app_metadata: { ...authUser.app_metadata, apiKeyFingerprint: fingerprint }
@@ -538,20 +738,19 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     }
   }
 
+  if (!userRecord.apiKeyFingerprint) {
+    try {
+      await supabase.from('users').update({ apiKeyFingerprint: fingerprint }).eq('id', userRecord.id);
+    } catch (err) {
+      console.warn('Failed to backfill apiKeyFingerprint to users table on login:', err);
+    }
+  }
+
   const familyId = crypto.randomUUID();
+  const normalizedUser = normalizeUserRecord(userRecord, authUser);
   const accessToken = generateAccessToken(normalizedUser);
   const refreshToken = generateRefreshToken(normalizedUser.id, familyId);
-  const tokenHash = hashToken(refreshToken);
-
-  await supabase.from('refreshTokens').insert([{
-    id: `rt_${crypto.randomUUID()}`,
-    userId: normalizedUser.id,
-    tokenHash,
-    familyId,
-    isRevoked: false,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: new Date().toISOString()
-  }]);
+  await persistRefreshToken(normalizedUser.id, familyId, refreshToken);
 
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
 
@@ -616,9 +815,11 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   // Step 5: Delete Posts authored by the user
   await supabase.from('posts').delete().eq('userId', userId);
 
-  // Step 6: Delete Password Reset Tokens & Refresh Tokens
+  // Step 6: Delete Password Reset Tokens, Refresh Tokens, and Human Sessions
+  await invalidateAllHumanSessionsForUser(userId);
+  await supabase.from('human_sessions').delete().eq('userId', userId);
   await supabase.from('password_reset_tokens').delete().eq('userId', userId);
-  await supabase.from('refreshTokens').delete().eq('userId', userId);
+  await supabase.from('refresh_tokens').delete().eq('userId', userId);
 
   // Step 7: Delete User Record
   const { error } = await supabase.from('users').delete().eq('id', userId);
@@ -644,33 +845,22 @@ export async function deleteUserAccount(userId: string): Promise<void> {
     throw new Error('Account deletion verification failed: User record was not removed.');
   }
 
-  // Step G: Try deleting from Supabase Auth admin if initialized
+  // Step G: Try deleting from Supabase Auth admin directly using the known userId
   try {
-    if (supabase.auth?.admin?.deleteUser && userBefore?.email) {
-      const targetEmail = userBefore.email.toLowerCase();
-      const { data: listData, error: listError } = await supabase.auth.admin.listUsers({
-        page: 1,
-        perPage: 1000
-      });
-      if (listError) {
-        console.error('[Account Deletion Error] Failed to list Auth users:', listError);
-        throw new Error(`Failed to list Auth users to complete deletion: ${listError.message}`);
-      }
-      if (listData?.users) {
-        const authUser = listData.users.find(u => u.email?.toLowerCase() === targetEmail);
-        if (authUser) {
-          const { error: deleteError } = await supabase.auth.admin.deleteUser(authUser.id);
-          if (deleteError) {
-            console.error('[Account Deletion Error] Failed to delete Supabase Auth user:', deleteError);
-            throw new Error(`Failed to delete corresponding Auth user account: ${deleteError.message}`);
-          } else {
-            console.log(`[Account Deletion] Successfully deleted Supabase Auth user: ${targetEmail} (Auth ID: ${authUser.id})`);
-          }
+    if (supabase.auth?.admin?.deleteUser) {
+      const { error: deleteError } = await supabase.auth.admin.deleteUser(userId);
+      if (deleteError) {
+        // If user doesn't exist in Supabase Auth, log a warning but don't fail if the DB record was already cleanly deleted
+        if (deleteError.message?.toLowerCase().includes('not found')) {
+          console.warn(`[Account Deletion Warning] Corresponding Auth user for ID ${userId} was not found in Supabase Auth.`);
         } else {
-          console.log(`[Account Deletion Warning] Corresponding Auth user for email ${targetEmail} not found in Supabase Auth list.`);
+          console.error('[Account Deletion Error] Failed to delete Supabase Auth user directly:', deleteError);
+          throw new Error(`Failed to delete corresponding Auth user account: ${deleteError.message}`);
         }
+      } else {
+        console.log(`[Account Deletion] Successfully deleted Supabase Auth user ID: ${userId}`);
       }
-    } else if (userBefore?.email) {
+    } else {
       throw new Error('Supabase Auth admin client is not initialized or does not have deleteUser permissions.');
     }
   } catch (e: any) {
@@ -679,16 +869,26 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   }
 }
 
-export async function logoutUser(userId: string, refreshToken?: string) {
+export async function logoutHumanSession(rawSessionId?: string) {
+  if (rawSessionId) {
+    await invalidateHumanSession(rawSessionId);
+  }
+}
+
+export async function logoutAgent(userId: string, refreshToken?: string) {
   if (refreshToken) {
     try {
       const tokenHash = hashToken(refreshToken);
       const supabase = getSupabaseClient();
-      await supabase.from('refreshTokens').delete().eq('tokenHash', tokenHash).eq('userId', userId);
+      await supabase.from('refresh_tokens').delete().eq('tokenHash', tokenHash).eq('userId', userId);
     } catch (e) {
       console.error(`[Logout] Error deleting token: ${e}`);
     }
   }
+}
+
+export async function logoutUser(userId: string, refreshToken?: string) {
+  return logoutAgent(userId, refreshToken);
 }
 
 export async function refreshSessionToken(token: string): Promise<{ user: Omit<UserRecord, 'passwordHash'>; tokens: AuthTokens }> {
@@ -698,71 +898,60 @@ export async function refreshSessionToken(token: string): Promise<{ user: Omit<U
   }
 
   const { userId, familyId } = decoded;
-  const tokenHash = hashToken(token);
-  const now = new Date().toISOString();
-
   const supabase = getSupabaseClient();
-
-  const { data: record, error: findError } = await supabase
-    .from('refreshTokens')
-    .select('*')
-    .eq('tokenHash', tokenHash)
-    .maybeSingle();
-
-  if (findError || !record) {
-    throw new Error('Refresh token not found or invalid.');
-  }
-
-  if (record.isRevoked) {
-    await supabase
-      .from('refreshTokens')
-      .update({ isRevoked: true })
-      .eq('familyId', familyId);
-    throw new Error('Refresh token has been revoked. All family tokens invalidated.');
-  }
-
-  if (new Date(record.expiresAt).getTime() < Date.now()) {
-    throw new Error('Refresh token is expired.');
-  }
-
   const user = await findUserById(supabase, userId);
 
   if (!user || user.status !== 'active') {
     throw new Error('User is inactive or not found.');
   }
 
-  const { error: revokeError } = await supabase
-    .from('refreshTokens')
+  const tokenHash = hashToken(token);
+  const { data: storedToken, error: tokenError } = await supabase
+    .from('refresh_tokens')
+    .select('*')
+    .eq('tokenHash', tokenHash)
+    .maybeSingle();
+    
+  if (tokenError || !storedToken) {
+    throw new Error('Invalid refresh token.');
+  }
+  
+  if (storedToken.isRevoked) {
+    // Refresh token reuse detected! Revoke the whole family.
+    await supabase.from('refresh_tokens').update({ isRevoked: true }).eq('familyId', familyId);
+    throw new Error('Refresh token has been revoked.');
+  }
+  
+  if (storedToken.userId !== userId) {
+    throw new Error('Invalid refresh token ownership.');
+  }
+  
+  if (new Date(storedToken.expiresAt).getTime() < Date.now()) {
+    throw new Error('Refresh token has expired.');
+  }
+
+  // Atomic revoke the old token
+  const { data: revokedTokens, error: revokeError } = await supabase
+    .from('refresh_tokens')
     .update({ isRevoked: true })
-    .eq('id', record.id);
+    .eq('id', storedToken.id)
+    .eq('isRevoked', false)
+    .select();
 
-  if (revokeError) {
-    throw new Error(`Failed to revoke old session token: ${revokeError.message}`);
+  if (revokeError || !revokedTokens || revokedTokens.length === 0) {
+    // Concurrent reuse detected! Revoke the whole family.
+    await supabase.from('refresh_tokens').update({ isRevoked: true }).eq('familyId', familyId);
+    throw new Error('Refresh token has already been rotated or revoked concurrently.');
   }
 
-  const newAccessToken = generateAccessToken(user);
-  const newRefreshToken = generateRefreshToken(userId, familyId);
-  const newHash = hashToken(newRefreshToken);
+  const authUser = await getAuthUserForRecord(supabase, user);
+  const normalizedUser = normalizeUserRecord(user, authUser);
+  const newAccessToken = generateAccessToken(normalizedUser);
+  const nextFamilyId = familyId || crypto.randomUUID();
+  const newRefreshToken = generateRefreshToken(userId, nextFamilyId);
+  await persistRefreshToken(userId, nextFamilyId, newRefreshToken);
 
-  const newRecord: RefreshTokenRecord = {
-    id: `rt_${crypto.randomUUID()}`,
-    userId,
-    tokenHash: newHash,
-    familyId,
-    isRevoked: false,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: now,
-  };
-
-  const { error: insertError } = await supabase
-    .from('refreshTokens')
-    .insert([newRecord]);
-
-  if (insertError) {
-    throw new Error(`Failed to save rotated session token: ${insertError.message}`);
-  }
-
-  const { passwordHash: _, apiKeyHash: __, ...safeUser } = user;
+  const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
   return {
     user: safeUser as any,
     tokens: { accessToken: newAccessToken, refreshToken: newRefreshToken },
@@ -799,12 +988,8 @@ export async function rotateAgentApiKey(userId: string, password: string) {
   const apiKeyHash = await bcrypt.hash(newApiKey, 12);
   const apiKeyFingerprint = computeApiKeyFingerprint(newApiKey);
 
-  // 4. Find the Supabase Auth User ID (UUID) by email
-  // The users table ID (usr_...) is NOT the Supabase Auth UUID.
-  const { data: { users: authUsers }, error: listError } = await supabase.auth.admin.listUsers();
-  if (listError) throw new Error('Failed to access auth system.');
-
-  const authUser = authUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase());
+  // 4. Find the Supabase Auth User directly (O(1)) using getAuthUserForRecord
+  const authUser = await getAuthUserForRecord(supabase, user);
   if (!authUser) throw new Error('Auth account not found for this user.');
 
   // 5. Update Supabase Auth app_metadata (authoritative storage) using the UUID
@@ -819,8 +1004,20 @@ export async function rotateAgentApiKey(userId: string, password: string) {
 
   invalidateAuthCache();
 
-  // 6. Update the public users table updatedAt for redundancy/sync
-  await supabase.from('users').update({ updatedAt: new Date().toISOString() }).eq('id', user.id);
+  // 6. Update the public users table apiKeyFingerprint and updatedAt for timestamp sync
+  try {
+    await supabase
+      .from('users')
+      .update({
+        apiKeyFingerprint,
+        updatedAt: new Date().toISOString()
+      })
+      .eq('id', user.id);
+  } catch (err: any) {
+    console.warn('Non-fatal: Failed to update users.apiKeyFingerprint during rotation:', err.message);
+  }
+
+  invalidateAuthCache();
 
   return { apiKey: newApiKey };
 }
@@ -862,15 +1059,16 @@ export async function requestEmailChange(userId: string, data: { newEmail: strin
     throw new Error('Email address already in use.');
   }
 
-  // 4. Generate verification token
-  const token = crypto.randomBytes(32).toString('hex');
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  // 4. Generate verification token bound to user id
+  const secret = crypto.randomBytes(32).toString('hex');
+  const token = `${user.id}.${secret}`;
+  const tokenHash = crypto.createHash('sha256').update(secret).digest('hex');
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes
 
-  // 5. Store in Supabase Auth app_metadata
-  const { data: { users: authUsers } } = await supabase.auth.admin.listUsers();
-  const authUser = authUsers.find(u => u.email?.toLowerCase() === user.email.toLowerCase());
-  if (!authUser) throw new Error('Auth account not found.');
+  // 5. Store in Supabase Auth app_metadata directly using user.id
+  const { data: authUserData, error: authUserErr } = await supabase.auth.admin.getUserById(user.id);
+  const authUser = authUserData?.user;
+  if (authUserErr || !authUser) throw new Error('Auth account not found.');
 
   const { error: updateError } = await supabase.auth.admin.updateUserById(authUser.id, {
     app_metadata: {
@@ -897,21 +1095,23 @@ export async function requestEmailChange(userId: string, data: { newEmail: strin
  */
 export async function verifyEmailChange(token: string) {
   const supabase = getSupabaseClient();
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  let targetAuthUser: any = null;
+  let pendingData: any = null;
 
-  // 1. Find user with this pending token
-  const { data: { users: authUsers }, error: listError } = await supabase.auth.admin.listUsers();
-  if (listError) throw new Error('Failed to process verification.');
+  // 1. Direct O(1) Auth user lookup via userId encoded in the verification token
+  if (token && token.includes('.')) {
+    const parts = token.split('.');
+    const userId = parts[0];
+    const secret = parts.slice(1).join('.');
+    const secretHash = crypto.createHash('sha256').update(secret).digest('hex');
 
-  let targetAuthUser = null;
-  let pendingData = null;
-
-  for (const u of authUsers) {
-    const p = u.app_metadata?.pendingEmailChange;
-    if (p && p.tokenHash === tokenHash) {
-      targetAuthUser = u;
-      pendingData = p;
-      break;
+    const { data: authUserData, error: authUserErr } = await supabase.auth.admin.getUserById(userId);
+    if (!authUserErr && authUserData?.user) {
+      const p = authUserData.user.app_metadata?.pendingEmailChange;
+      if (p && (p.tokenHash === secretHash || p.tokenHash === crypto.createHash('sha256').update(token).digest('hex'))) {
+        targetAuthUser = authUserData.user;
+        pendingData = p;
+      }
     }
   }
 
@@ -1010,7 +1210,7 @@ export async function requestForgotPassword(email: string, appUrl: string) {
   const user = await findUserByEmail(supabase, normalizedEmail);
 
   if (!user) {
-    throw new Error("This email address is not registered in our database.");
+    return { success: true, message: genericSuccessMsg };
   }
 
   // User EXISTS.
@@ -1030,24 +1230,18 @@ export async function requestForgotPassword(email: string, appUrl: string) {
     // Non-blocking cleanup
   }
 
-  // 1. Invalidate existing active reset tokens in Supabase (Fail closed if invalidation fails)
+  // 1. Invalidate existing active reset tokens in Supabase
   try {
-    const { error: invalidateErr } = await supabase
+    await supabase
       .from('password_reset_tokens')
       .update({ usedAt: nowIso })
       .eq('userId', user.id)
       .is('usedAt', null);
-
-    if (invalidateErr) {
-      console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to invalidate previous reset tokens:', invalidateErr.message || invalidateErr);
-      throw new Error('Unable to process password reset at this time.');
-    }
   } catch (err: any) {
-    console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Exception during token invalidation in Supabase:', err?.message || err);
-    throw new Error('Unable to process password reset at this time.');
+    console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to invalidate previous reset tokens:', err?.message || err);
   }
 
-  // 2. Store new reset token record in password_reset_tokens table (Required persistent storage - no in-memory fallback)
+  // 2. Store new reset token record in password_reset_tokens table
   try {
     const { error: insertErr } = await supabase
       .from('password_reset_tokens')
@@ -1062,21 +1256,22 @@ export async function requestForgotPassword(email: string, appUrl: string) {
 
     if (insertErr) {
       console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to store password reset token in Supabase:', insertErr.message || insertErr);
-      throw new Error('Unable to process password reset at this time.');
+      return { success: true, message: genericSuccessMsg };
     }
   } catch (err: any) {
     console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Exception storing password reset token in Supabase:', err?.message || err);
-    throw new Error('Unable to process password reset at this time.');
+    return { success: true, message: genericSuccessMsg };
   }
 
-  // 3. Send email through Brevo email service
+  // 3. Send email through Brevo email service using server-side configuration
+  const targetAppUrl = appUrl || process.env.APP_URL || config.appUrl || 'https://ais-dev-sy4lhzb3bv4g4mm7spkr5c-89865814157.asia-southeast1.run.app';
   try {
-    await sendPasswordResetEmail(user.email, rawToken, appUrl, user.name);
-    return { success: true, message: "The verification link has been sent to your email." };
+    await sendPasswordResetEmail(user.email, rawToken, targetAppUrl, user.name);
   } catch (emailErr: any) {
     console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to dispatch password reset email:', emailErr?.message || emailErr);
-    throw new Error('Unable to send the password reset email. Please try again later.');
   }
+
+  return { success: true, message: genericSuccessMsg };
 }
 
 /**
@@ -1133,7 +1328,7 @@ export async function resetPassword(token: string, newPassword: string) {
 
   const newPasswordHash = await hashPassword(newPassword);
 
-  // Update user password
+  // Update user password and updatedAt
   const { error: updateError } = await supabase
     .from('users')
     .update({ passwordHash: newPasswordHash, updatedAt: new Date().toISOString() })
@@ -1141,6 +1336,19 @@ export async function resetPassword(token: string, newPassword: string) {
 
   if (updateError) {
     throw new Error('Failed to update password.');
+  }
+
+  // After the password update succeeds, invalidate all existing human sessions
+  await invalidateAllHumanSessionsForUser(user.id);
+
+  // Also update password in Supabase Auth if auth user exists
+  try {
+    const authUser = await getAuthUserForRecord(supabase, user);
+    if (authUser?.id && supabase.auth?.admin?.updateUserById) {
+      await supabase.auth.admin.updateUserById(authUser.id, { password: newPassword });
+    }
+  } catch (authErr) {
+    console.warn('Non-fatal: failed to update password in Supabase auth admin:', authErr);
   }
 
   return { message: 'Password has been successfully reset.' };

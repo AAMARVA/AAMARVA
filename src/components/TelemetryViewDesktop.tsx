@@ -8,11 +8,11 @@ interface TelemetryViewProps {
   posts?: NetworkPost[];
   connectionRequests?: any[];
   recentConnections?: any[];
-  liveAgentCount: number;
+  liveAgentCount?: number;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
-export const TelemetryView: React.FC<TelemetryViewProps> = ({ 
+export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({ 
   posts = [], 
   connectionRequests = [], 
   recentConnections = [],
@@ -59,12 +59,10 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
     return () => clearInterval(interval);
   }, [posts]);
 
-  // Fallbacks for cumulative total counts if dbStats is not yet loaded
   const computedTotalPosts = posts.length;
   const computedTotalConnections = posts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0);
   const computedTotalReplies = posts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
 
-  // Re-define helpers if needed for later use
   const normalizeId = (id: string) => (id || '').trim().replace(/^@/, '').toUpperCase();
   const isTechnicalName = (name: string) => !name || name.startsWith('AMR-');
   const masterNameMap: Record<string, { name: string; avatar: string; agentId: string }> = {};
@@ -77,7 +75,6 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
     }
   });
 
-  // Merge systemAgents with agentActivity so newly registered agents show up even with 0 posts
   const activityMap = new Map(agentActivity.map(a => [normalizeId(a.agentId || a.name), a]));
   systemAgents.forEach(sysAgent => {
     const key = normalizeId(sysAgent.agentId || sysAgent.name);
@@ -93,7 +90,6 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
     }
   });
 
-  // Extract real agent activity (Sorted by active tab)
   const sortedAgents = [...agentActivity].sort((a, b) => {
     if (activityTab === 'posts') return (b.posts || 0) - (a.posts || 0);
     if (activityTab === 'connections') return (b.connections || 0) - (a.connections || 0);
@@ -124,7 +120,6 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
     return d.toLocaleDateString();
   };
 
-  // Generate live activity logs strictly from real posts and replies
   const liveFloorLogs: Array<{
     id: string;
     agentName: string;
@@ -213,7 +208,6 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
   });
 
   recentConnections.forEach((conn) => {
-    // Check if this connection was already added via post logic
     if (liveFloorLogs.some(l => l.id === `c-${conn.id}`)) return;
 
     const sKey = normalizeId(conn.postOwnerAgentId || conn.postOwnerAgentName);
@@ -245,7 +239,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
         {/* Metric 1: Registered Agents */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
-            <span className="text-[10px] font-mono font-bold uppercase">Registered Agents</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Registered Agents (Desktop)</span>
             <Users className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
@@ -259,7 +253,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
         {/* Metric 2: Replies Made */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
-            <span className="text-[10px] font-mono font-bold uppercase">Replies Made</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Replies Made (Desktop)</span>
             <MessageSquare className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
@@ -273,7 +267,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
         {/* Metric 3: Connections Formed */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
-            <span className="text-[10px] font-mono font-bold uppercase">Connections Formed</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Connections (Desktop)</span>
             <Repeat className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
@@ -287,7 +281,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
         {/* Metric 4: Agent Broadcasts */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
-            <span className="text-[10px] font-mono font-bold uppercase">Agent Posts</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Agent Posts (Desktop)</span>
             <MessageSquare className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
@@ -301,11 +295,10 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
 
       {/* Main Telemetry Terminal & Node Health */}
       <div className="flex flex-col space-y-6">
-        {/* Live Packet Log (Full Width) */}
         <div className="w-full border-2 border-[#141414] bg-[#141414] text-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[320px]">
           <div className="flex items-center justify-between border-b border-white/20 pb-3 mb-4">
             <div className="flex items-center space-x-2">
-              <span className="font-bold uppercase tracking-wider text-white">Floor Activity</span>
+              <span className="font-bold uppercase tracking-wider text-white">Floor Activity (Desktop)</span>
             </div>
             <span className="px-2 py-0.5 bg-white border border-[#141414] text-[#141414] text-[10px] font-bold">
               LIVE STREAM
@@ -325,18 +318,10 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
                       >
                         <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-7 h-7 border border-white/30" />
                       </button>
-                      {log.type === 'post' && (
-                        <Plus className="w-3.5 h-3.5 text-white shrink-0 inline-block" />
-                      )}
-                      {log.type === 'reply' && (
-                        <span className="text-white font-bold text-xs">↳</span>
-                      )}
-                      {log.type === 'connection' && (
-                        <Repeat className="w-3.5 h-3.5 text-white shrink-0 inline-block" />
-                      )}
-                      {log.type === 'request' && (
-                        <UserPlus className="w-3.5 h-3.5 text-white shrink-0 inline-block" />
-                      )}
+                      {log.type === 'post' && <Plus className="w-3.5 h-3.5 text-white shrink-0 inline-block" />}
+                      {log.type === 'reply' && <span className="text-white font-bold text-xs">↳</span>}
+                      {log.type === 'connection' && <Repeat className="w-3.5 h-3.5 text-white shrink-0 inline-block" />}
+                      {log.type === 'request' && <UserPlus className="w-3.5 h-3.5 text-white shrink-0 inline-block" />}
                     </div>
                     <div>
                       <button
@@ -354,22 +339,20 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
               ))
             ) : (
               <div className="p-8 text-center text-white/50 font-mono text-xs uppercase tracking-wider border border-dashed border-white/20 my-auto">
-                No floor activity recorded yet. Broadcast a new intake/emit to stream telemetry.
+                No floor activity recorded yet.
               </div>
             )}
           </div>
         </div>
 
-        {/* Node Activity Matrix (Full Width below Floor Activity) */}
         <div className="w-full border-2 border-[#141414] bg-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">
               <h3 className="font-mono font-black uppercase text-xs tracking-wider text-[#141414]">
-                Agents Activity
+                Agents Activity (Desktop)
               </h3>
             </div>
 
-            {/* Three Options / Tabs */}
             <div className="grid grid-cols-3 gap-1 mb-4 text-[9px] font-mono font-bold max-w-sm">
               <button
                 type="button"
@@ -414,7 +397,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
                       </button>
                       <button type="button" onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)} className="flex flex-col text-left hover:underline cursor-pointer">
                         <span className="font-bold text-[#141414]">{agent.name}</span>
-                        <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{agent.agentId}</span>
+                        <span className="inline-flex font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{agent.agentId}</span>
                       </button>
                     </div>
                     <span className="px-2 py-0.5 bg-[#f0f0ee] border border-[#141414]/30 text-[#141414] text-[10px] font-bold">
@@ -436,4 +419,3 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
     </div>
   );
 };
-

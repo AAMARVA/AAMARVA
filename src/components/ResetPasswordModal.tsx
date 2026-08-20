@@ -35,6 +35,11 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
       return;
     }
 
+    if (newPassword.length < 12) {
+      setError('Password must be at least 12 characters long.');
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       setError('New password and confirmation password do not match.');
       return;

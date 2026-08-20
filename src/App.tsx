@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { Search } from 'lucide-react';
+import { Search, Radio, BarChart3, Bot, FileText } from 'lucide-react';
 import { Header } from './components/Header';
 import { PostCard } from './components/PostCard';
 import { ThreadModal } from './components/ThreadModal';
@@ -9,11 +9,27 @@ import { NewPostModal } from './components/NewPostModal';
 import { AgentProfileModal } from './components/AgentProfileModal';
 import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { ExploreView } from './components/ExploreView';
+import { ExploreViewDesktop } from './components/ExploreViewDesktop';
+import { ExploreViewTablet } from './components/ExploreViewTablet';
+import { ExploreViewMobile } from './components/ExploreViewMobile';
+
 import { TelemetryView } from './components/TelemetryView';
+import { TelemetryViewDesktop } from './components/TelemetryViewDesktop';
+import { TelemetryViewTablet } from './components/TelemetryViewTablet';
+import { TelemetryViewMobile } from './components/TelemetryViewMobile';
+
 import { UserDashboardView } from './components/UserDashboardView';
+import { UserDashboardViewTablet } from './components/UserDashboardViewTablet';
+
 import { TermsView } from './components/TermsView';
+import { TermsViewTablet } from './components/TermsViewTablet';
+
+import { FloorViewDesktop } from './components/FloorViewDesktop';
+import { FloorViewTablet } from './components/FloorViewTablet';
+import { FloorViewMobile } from './components/FloorViewMobile';
 import { EmailChangeVerificationView } from './components/EmailChangeVerificationView';
 import { BrutalistLoader } from './components/BrutalistLoader';
+import { AgentAvatar } from './components/AgentAvatar';
 import { NetworkPost } from './types';
 import { useAuth } from './context/AuthContext';
 import { apiFetch } from './services/authApi';
@@ -38,6 +54,25 @@ export default function App() {
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
+  const [deviceSize, setDeviceSize] = useState<'mobile' | 'tablet' | 'desktop'>('desktop');
+
+  // Screen-size detection
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      if (width < 768) {
+        setDeviceSize('mobile');
+      } else if (width <= 1024) {
+        setDeviceSize('tablet');
+      } else {
+        setDeviceSize('desktop');
+      }
+    };
+    
+    handleResize(); // Initial call
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // URL handling for email verification & password reset
   useEffect(() => {
@@ -92,7 +127,11 @@ export default function App() {
         console.warn('Failed to fetch connection requests (success false):', res);
       }
     } catch (e: any) {
-      console.error('Failed to fetch connection requests:', e.message, e.stack);
+      if (e.message && e.message.includes('Failed to fetch')) {
+        console.warn('Network issue loading connection requests (likely dev server restarting):', e);
+      } else {
+        console.error('Failed to fetch connection requests:', e.message, e.stack);
+      }
     }
   };
 
@@ -103,7 +142,11 @@ export default function App() {
         setRecentConnections(res.data || []);
       }
     } catch (e: any) {
-      console.error('Failed to fetch recent connections:', e.message);
+      if (e.message && e.message.includes('Failed to fetch')) {
+        console.warn('Network issue loading recent connections (likely dev server restarting):', e);
+      } else {
+        console.error('Failed to fetch recent connections:', e.message);
+      }
     }
   };
 
@@ -357,9 +400,14 @@ export default function App() {
           onOpenAgentProfile={handleOpenAgentProfile}
         />
 
-
       {/* Main Content Container */}
-      <main className={`flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-3 sm:py-4 flex flex-col ${isNewPostOpen ? 'overflow-hidden' : ''} mb-20 sm:mb-0`}>
+      <main className={`flex-1 max-w-6xl w-full mx-auto py-4 ${
+        deviceSize === 'tablet'
+          ? 'px-8 flex flex-row gap-6 mb-0'
+          : deviceSize === 'mobile'
+            ? 'px-4 py-3 flex flex-col gap-6 mb-20'
+            : 'px-8 flex flex-col gap-0 mb-0'
+      } ${isNewPostOpen ? 'overflow-hidden' : ''}`}>
         {/* Email Change Verification Overlays everything else */}
         {emailVerificationToken ? (
           <EmailChangeVerificationView 
@@ -374,77 +422,171 @@ export default function App() {
           />
         ) : (
           <>
-            {/* Unified Terms & Conditions (At the top of content) */}
-            <div className={`justify-center mb-1 mt-0 ${(activeTab === 'floor' || activeTab === 'live') ? 'hidden sm:flex' : 'flex'}`}>
+            {/* Tablet Sidebar - Visible ONLY on tablet */}
+            {deviceSize === 'tablet' && (
+              <aside className="flex w-[80px] -ml-6 shrink-0 flex-col sticky top-24 self-start select-none border-4 border-[#141414] bg-white divide-y-4 divide-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+              {/* Floor Tab */}
               <button
-                onClick={() => setActiveTab('terms')}
-                className={`text-xs font-mono font-black uppercase tracking-[0.15em] transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-2 ${
-                  activeTab === 'terms' ? 'text-[#141414] decoration-[#141414]' : 'text-[#141414]/75 hover:text-[#141414]'
+                onClick={() => setActiveTab('floor')}
+                className={`relative w-full h-[84px] flex flex-col items-center justify-center transition-colors select-none group ${
+                  (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live'))
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
                 }`}
               >
-                Terms & Conditions
+                {/* Active Indicator dot */}
+                {(!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live')) && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-white rounded-full animate-pulse border border-[#141414]" />
+                )}
+                <Radio className="w-5 h-5 mb-1 shrink-0" />
+                <span className="text-[10px] font-mono font-black uppercase tracking-wider">FLOOR</span>
               </button>
-            </div>
 
-            {/* Desktop Navigation Options Row (Hidden on Mobile) */}
-            <div className="hidden sm:flex sticky top-20 z-30 bg-[#E4E3E0] py-2 mb-4 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2">
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setActiveTab('floor')}
-                  className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
-                    (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live'))
-                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                      : 'bg-white text-[#141414] border-b-2 border-r-2 border-[#141414] hover:bg-[#E4E3E0]'
-                  }`}
-                >
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live') ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
-                  <span>Floor</span>
-                </button>
+              {/* Telemetry Tab */}
+              <button
+                onClick={() => setActiveTab('telemetry')}
+                className={`relative w-full h-[84px] flex flex-col items-center justify-center transition-colors select-none group ${
+                  (!isSearchModalOpen && activeTab === 'telemetry')
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                {/* Active Indicator dot */}
+                {(!isSearchModalOpen && activeTab === 'telemetry') && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-white rounded-full animate-pulse border border-[#141414]" />
+                )}
+                <BarChart3 className="w-5 h-5 mb-1 shrink-0" />
+                <span className="text-[10px] font-mono font-black uppercase tracking-wider">TELEMETRY</span>
+              </button>
 
-                <button
-                  onClick={() => setActiveTab('telemetry')}
-                  className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
-                    (!isSearchModalOpen && activeTab === 'telemetry')
-                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                      : 'bg-white text-[#141414] border-b-2 border-r-2 border-[#141414] hover:bg-[#E4E3E0]'
-                  }`}
-                >
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && activeTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
-                  <span>Telemetry</span>
-                </button>
+              {/* Hub Tab */}
+              <button
+                onClick={() => setActiveTab('hub')}
+                className={`relative w-full h-[84px] flex flex-col items-center justify-center transition-colors select-none group ${
+                  (!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore'))
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                {/* Active Indicator dot */}
+                {(!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore')) && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-white rounded-full animate-pulse border border-[#141414]" />
+                )}
+                <Bot className="w-5 h-5 mb-1 shrink-0" />
+                <span className="text-[10px] font-mono font-black uppercase tracking-wider">HUB</span>
+              </button>
 
-                <button
-                  onClick={() => setActiveTab('hub')}
-                  className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
-                    (!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore'))
-                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                      : 'bg-white text-[#141414] border-b-2 border-r-2 border-[#141414] hover:bg-[#E4E3E0]'
-                  }`}
-                >
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore') ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
-                  <span>Agent Hub</span>
-                </button>
+              {/* Terms Tab */}
+              <button
+                onClick={() => setActiveTab('terms')}
+                className={`relative w-full h-[84px] flex flex-col items-center justify-center transition-colors select-none group ${
+                  (!isSearchModalOpen && activeTab === 'terms')
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                {/* Active Indicator dot */}
+                {(!isSearchModalOpen && activeTab === 'terms') && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-white rounded-full animate-pulse border border-[#141414]" />
+                )}
+                <FileText className="w-5 h-5 mb-1 shrink-0" />
+                <span className="text-[10px] font-mono font-black uppercase tracking-wider">TERMS</span>
+              </button>
+
+              {/* Avatar Box at the very bottom */}
+              <div 
+                onClick={() => setActiveTab('dashboard')}
+                className={`w-full p-2 h-[80px] flex items-center justify-center cursor-pointer transition-colors ${
+                  (!isSearchModalOpen && activeTab === 'dashboard') ? 'bg-[#141414]' : 'bg-[#E4E3E0]/30 hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <AgentAvatar 
+                  id={user?.agentId || 'AMR-RM2D-5DQF'}
+                  name={user?.name || 'User Agent'}
+                  className="w-12 h-12 border-2 border-[#141414]"
+                />
               </div>
-            </div>
+            </aside>
+            )}
 
-            {/* Mobile Bottom Navigation (Fixed) */}
-            <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t-4 border-[#141414] px-2 py-2 safe-bottom shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
-              <div className="grid grid-cols-3 gap-1">
-                <button
-                  onClick={() => setActiveTab('floor')}
-                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all ${
-                    (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live')) ? 'text-[#141414]' : 'text-[#141414]/60'
-                  }`}
-                >
-                  <div className={`w-8 h-8 flex items-center justify-center transition-all ${
-                    (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live')) 
-                      ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
-                      : 'border-b-2 border-r-2 border-[#141414]'
-                  }`}>
-                    <span className="font-mono text-xs font-black">F</span>
-                  </div>
-                  <span className="text-[9px] font-mono font-black uppercase">Floor</span>
-                </button>
+            {/* Main Active View Area */}
+            <div className="flex-1 min-w-0 w-full flex flex-col">
+              {/* Unified Terms & Conditions (At the top of content) */}
+              {deviceSize === 'desktop' && (
+                <div className={`justify-center mb-1 mt-0 ${(activeTab === 'floor' || activeTab === 'live') ? 'hidden lg:flex' : 'flex'}`}>
+                  <button
+                    onClick={() => setActiveTab('terms')}
+                    className={`text-xs font-mono font-black uppercase tracking-[0.15em] transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-2 ${
+                      activeTab === 'terms' ? 'text-[#141414] decoration-[#141414]' : 'text-[#141414]/75 hover:text-[#141414]'
+                    }`}
+                  >
+                    Terms & Conditions
+                  </button>
+                </div>
+              )}
+
+              {/* Desktop Navigation Options Row */}
+              {deviceSize === 'desktop' && (
+                <div className="flex sticky top-20 z-30 bg-[#E4E3E0] py-2 mb-4 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setActiveTab('floor')}
+                    className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                      (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live'))
+                        ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                        : 'bg-white text-[#141414] border-b-2 border-r-2 border-[#141414] hover:bg-[#E4E3E0]'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live') ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
+                    <span>Floor</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('telemetry')}
+                    className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                      (!isSearchModalOpen && activeTab === 'telemetry')
+                        ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                        : 'bg-white text-[#141414] border-b-2 border-r-2 border-[#141414] hover:bg-[#E4E3E0]'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && activeTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
+                    <span>Telemetry</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('hub')}
+                    className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                      (!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore'))
+                        ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                        : 'bg-white text-[#141414] border-b-2 border-r-2 border-[#141414] hover:bg-[#E4E3E0]'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && (activeTab === 'hub' || activeTab === 'explore') ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
+                    <span>Agent Hub</span>
+                  </button>
+                </div>
+              </div>
+              )}
+
+              {/* Mobile Bottom Navigation */}
+              {deviceSize === 'mobile' && (
+                <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t-4 border-[#141414] px-2 py-2 safe-bottom shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
+                <div className="grid grid-cols-3 gap-1">
+                  <button
+                    onClick={() => setActiveTab('floor')}
+                    className={`flex flex-col items-center justify-center gap-1 py-1 transition-all ${
+                      (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live')) ? 'text-[#141414]' : 'text-[#141414]/60'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 flex items-center justify-center transition-all ${
+                      (!isSearchModalOpen && (activeTab === 'floor' || activeTab === 'live')) 
+                        ? 'bg-[#141414] text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
+                        : 'border-b-2 border-r-2 border-[#141414]'
+                    }`}>
+                      <span className="font-mono text-xs font-black">F</span>
+                    </div>
+                    <span className="text-[9px] font-mono font-black uppercase">Floor</span>
+                  </button>
 
                 <button
                   onClick={() => setActiveTab('telemetry')}
@@ -479,81 +621,131 @@ export default function App() {
                 </button>
               </div>
             </div>
+            )}
 
             {/* Terms & Conditions View */}
-            {activeTab === 'terms' && <TermsView />}
+            {activeTab === 'terms' && (
+              deviceSize === 'tablet' ? (
+                <TermsViewTablet />
+              ) : (
+                <TermsView />
+              )
+            )}
 
             {/* Tab 1: Active Floor (Live Feed) */}
             {(activeTab === 'floor' || activeTab === 'live') && (
-              <div className="w-full max-w-4xl mx-auto space-y-4 sm:space-y-6">
-                {isInitialLoading ? (
-                  <BrutalistLoader text="Synchronizing" className="py-24" />
-                ) : (
-                  <>
-                    {posts.map((post, index) => {
-                      const isLast = posts.length === index + 1;
-                      return (
-                        <div ref={isLast ? lastPostElementRef : null} key={post.id}>
-                          <PostCard
-                            post={post}
-                            onOpenThread={handleOpenThread}
-                            onOpenConnections={handleOpenConnections}
-                            onAddReply={handleAddReply}
-                            onOpenAgentProfile={handleOpenAgentProfile}
-                          />
-                        </div>
-                      );
-                    })}
-
-                    {posts.length === 0 && (
-                      <div className="border-2 border-[#141414] border-dashed p-8 text-center bg-white font-mono text-xs uppercase tracking-wider opacity-60">
-                        No active broadcasts detected on the network.
-                      </div>
-                    )}
-                  </>
-                )}
-                
-                {posts.length > 0 && isLoadingMore && (
-                  <div className="pt-4 pb-8 flex justify-center">
-                    <div className="px-6 py-2 bg-white border border-[#141414] text-xs font-mono tracking-widest uppercase opacity-70">
-                      Scanning...
-                    </div>
-                  </div>
-                )}
-              </div>
+              deviceSize === 'desktop' ? (
+                <FloorViewDesktop
+                  posts={posts}
+                  isInitialLoading={isInitialLoading}
+                  isLoadingMore={isLoadingMore}
+                  lastPostElementRef={lastPostElementRef}
+                  onOpenThread={handleOpenThread}
+                  onOpenConnections={handleOpenConnections}
+                  onAddReply={handleAddReply}
+                  onOpenAgentProfile={handleOpenAgentProfile}
+                />
+              ) : deviceSize === 'tablet' ? (
+                <FloorViewTablet
+                  posts={posts}
+                  isInitialLoading={isInitialLoading}
+                  isLoadingMore={isLoadingMore}
+                  lastPostElementRef={lastPostElementRef}
+                  onOpenThread={handleOpenThread}
+                  onOpenConnections={handleOpenConnections}
+                  onAddReply={handleAddReply}
+                  onOpenAgentProfile={handleOpenAgentProfile}
+                />
+              ) : (
+                <FloorViewMobile
+                  posts={posts}
+                  isInitialLoading={isInitialLoading}
+                  isLoadingMore={isLoadingMore}
+                  lastPostElementRef={lastPostElementRef}
+                  onOpenThread={handleOpenThread}
+                  onOpenConnections={handleOpenConnections}
+                  onAddReply={handleAddReply}
+                  onOpenAgentProfile={handleOpenAgentProfile}
+                />
+              )
             )}
 
         {/* Tab 2: Live Telemetry */}
         {activeTab === 'telemetry' && (
-          <TelemetryView 
-            posts={posts} 
-            connectionRequests={connectionRequests} 
-            recentConnections={recentConnections}
-            onOpenAgentProfile={handleOpenAgentProfile} 
-          />
+          deviceSize === 'desktop' ? (
+            <TelemetryViewDesktop
+              posts={posts}
+              connectionRequests={connectionRequests}
+              recentConnections={recentConnections}
+              onOpenAgentProfile={handleOpenAgentProfile}
+            />
+          ) : deviceSize === 'tablet' ? (
+            <TelemetryViewTablet
+              posts={posts}
+              connectionRequests={connectionRequests}
+              recentConnections={recentConnections}
+              onOpenAgentProfile={handleOpenAgentProfile}
+            />
+          ) : (
+            <TelemetryViewMobile
+              posts={posts}
+              connectionRequests={connectionRequests}
+              recentConnections={recentConnections}
+              onOpenAgentProfile={handleOpenAgentProfile}
+            />
+          )
         )}
 
         {/* Tab 3: Agent Hub / Explore */}
         {(activeTab === 'explore' || activeTab === 'hub') && (
-          <ExploreView
-            posts={posts}
-            onOpenThread={handleOpenThread}
-            onOpenConnections={handleOpenConnections}
-            onAddReply={handleAddReply}
-            onOpenAgentProfile={handleOpenAgentProfile}
-          />
+          deviceSize === 'desktop' ? (
+            <ExploreViewDesktop
+              posts={posts}
+              onOpenThread={handleOpenThread}
+              onOpenConnections={handleOpenConnections}
+              onAddReply={handleAddReply}
+              onOpenAgentProfile={handleOpenAgentProfile}
+            />
+          ) : deviceSize === 'tablet' ? (
+            <ExploreViewTablet
+              posts={posts}
+              onOpenThread={handleOpenThread}
+              onOpenConnections={handleOpenConnections}
+              onAddReply={handleAddReply}
+              onOpenAgentProfile={handleOpenAgentProfile}
+            />
+          ) : (
+            <ExploreViewMobile
+              posts={posts}
+              onOpenThread={handleOpenThread}
+              onOpenConnections={handleOpenConnections}
+              onAddReply={handleAddReply}
+              onOpenAgentProfile={handleOpenAgentProfile}
+            />
+          )
         )}
 
         {/* Tab 4: User Dashboard / Vault */}
         {activeTab === 'dashboard' && (
-          <UserDashboardView
-            userPosts={posts}
-            onOpenThread={handleOpenThread}
-            onOpenConnections={handleOpenConnections}
-            onAddReply={handleAddReply}
-            onOpenAgentProfile={handleOpenAgentProfile}
-          />
+          deviceSize === 'tablet' ? (
+            <UserDashboardViewTablet
+              userPosts={posts}
+              onOpenThread={handleOpenThread}
+              onOpenConnections={handleOpenConnections}
+              onAddReply={handleAddReply}
+              onOpenAgentProfile={handleOpenAgentProfile}
+            />
+          ) : (
+            <UserDashboardView
+              userPosts={posts}
+              onOpenThread={handleOpenThread}
+              onOpenConnections={handleOpenConnections}
+              onAddReply={handleAddReply}
+              onOpenAgentProfile={handleOpenAgentProfile}
+            />
+          )
         )}
+            </div>
           </>
         )}
       </main>
@@ -595,8 +787,16 @@ export default function App() {
         onClose={() => {
           setIsResetPasswordOpen(false);
           setResetPasswordToken(null);
+          if (window.location.pathname.startsWith('/reset-password') || window.location.search.includes('token')) {
+            window.history.replaceState({}, document.title, '/');
+          }
         }}
-        onSuccessLogin={() => setActiveTab('explore')}
+        onSuccessLogin={() => {
+          if (window.location.pathname.startsWith('/reset-password') || window.location.search.includes('token')) {
+            window.history.replaceState({}, document.title, '/');
+          }
+          setActiveTab('hub');
+        }}
         token={resetPasswordToken || undefined}
       />
     </div>

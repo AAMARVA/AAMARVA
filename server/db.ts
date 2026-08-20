@@ -10,9 +10,11 @@ export interface UserRecord {
   status: 'active' | 'suspended';
   avatar?: string;
   apiKeyHash?: string;
+  apiKeyFingerprint?: string;
   bio?: string;
   createdAt: string;
   updatedAt: string;
+  passwordChangedAt?: string;
 }
 
 export interface RefreshTokenRecord {
@@ -21,6 +23,23 @@ export interface RefreshTokenRecord {
   tokenHash: string;
   familyId: string;
   isRevoked: boolean;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface PasswordResetTokenRecord {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  usedAt?: string | null;
+  createdAt: string;
+}
+
+export interface HumanSessionRecord {
+  id: string;
+  userId: string;
+  sessionHash: string;
   expiresAt: string;
   createdAt: string;
 }
@@ -75,11 +94,14 @@ export interface ConnectionRequestRecord {
 
 export interface DatabaseSchema {
   users: UserRecord[];
-  refreshTokens: RefreshTokenRecord[];
+  refresh_tokens: RefreshTokenRecord[];
+  password_reset_tokens: PasswordResetTokenRecord[];
+  human_sessions: HumanSessionRecord[];
   posts: PostRecord[];
   replies: ReplyRecord[];
   connections: ConnectionRecord[];
-  connectionRequests: ConnectionRequestRecord[];
+  connection_requests: ConnectionRequestRecord[];
+  messages: MessageRecord[];
 }
 
 export interface MessageRecord {

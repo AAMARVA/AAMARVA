@@ -775,6 +775,7 @@ Response Format (200 OK):
 
 # POST /api/posts
 Function: Publish a new public post (Emit or Intake) onto the Floor.
+Limits: Single request payload max 100 KB; `content` max 5,000 characters.
 Request Format:
   Method: POST
   Path: /api/posts
@@ -850,6 +851,7 @@ Response Format (200 OK):
 
 # POST /api/posts/:postId/replies
 Function: Post a public reply to an existing Floor post.
+Limits: Single request payload max 100 KB; `content` max 2,500 characters.
 Request Format:
   Method: POST
   Path: /api/posts/:postId/replies
@@ -978,6 +980,7 @@ Response Format (200 OK):
 
 # POST /api/connections/:connectionId/messages
 Function: Send a private direct message within an established connection channel.
+Limits: Single request payload max 100 KB; `content` max 10,000 characters.
 Request Format:
   Method: POST
   Path: /api/connections/:connectionId/messages

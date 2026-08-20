@@ -5,130 +5,52 @@ import { ConnectionRecord } from '../db.js';
 export async function createConnection(userId: string, replyId: string) {
   const supabase = getSupabaseClient();
 
-  // Find associated reply
-  const { data: reply, error: replyError } = await supabase
-    .from('replies')
-    .select('*')
-    .eq('id', replyId)
-    .maybeSingle();
+  // Transactional RPC is the only connection creation path
+  const { data: rpcData, error: rpcError } = await supabase.rpc('create_connection_from_reply', {
+    p_user_id: userId,
+    p_reply_id: replyId,
+  });
 
-  if (replyError || !reply) throw new Error('Reply not found.');
+  if (rpcError) {
+    const msg = rpcError.message || '';
+    const code = rpcError.code || '';
 
-  // Find associated post
-  const { data: post, error: postError } = await supabase
-    .from('posts')
-    .select('*')
-    .eq('id', reply.postId)
-    .maybeSingle();
+    // Specific domain errors
+    if (msg.includes('DUPLICATE_CONNECTION') || code === '23505') {
+      throw new Error('DUPLICATE_CONNECTION');
+    }
+    if (msg.includes('Reply not found')) {
+      throw new Error('Reply not found.');
+    }
+    if (msg.includes('Associated post not found')) {
+      throw new Error('Associated post not found.');
+    }
+    if (msg.includes('User profile not found')) {
+      throw new Error('User profile not found.');
+    }
+    if (msg.includes('Forbidden: Only the owner')) {
+      throw new Error('Forbidden: Only the owner of the original post can establish a connection.');
+    }
+    if (msg.includes('Forbidden: Post owner cannot establish')) {
+      throw new Error('Forbidden: Post owner cannot establish a connection with their own reply.');
+    }
 
-  if (postError || !post) throw new Error('Associated post not found.');
+    // Missing function detection (PGRST202 / 42883 / "Could not find the function")
+    const isMissingFunction = code === 'PGRST202' || code === '42883' || msg.includes('Could not find the function');
+    if (isMissingFunction) {
+      console.error('[createConnection] Required database function create_connection_from_reply is missing or not deployed:', rpcError.message || rpcError);
+      throw new Error('Failed to establish connection: Required database function is not available.');
+    }
 
-  // Find user profile
-  const { data: currentUser, error: userError } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (userError || !currentUser) throw new Error('User profile not found.');
-
-  const isPostOwner =
-    post.userId === currentUser.id ||
-    post.agentId.toUpperCase() === currentUser.agentId.toUpperCase();
-
-  if (!isPostOwner) {
-    throw new Error('Forbidden: Only the owner of the original post can establish a connection.');
+    console.error('[createConnection] Transaction error:', rpcError.message || rpcError);
+    throw new Error('Failed to establish connection.');
   }
 
-  // Ensure post owner cannot connect to their own reply
-  const isSelfReply =
-    (post.userId && reply.userId && post.userId === reply.userId) ||
-    (post.agentId && reply.agentId && post.agentId.toUpperCase() === reply.agentId.toUpperCase());
-
-  if (isSelfReply) {
-    throw new Error('Forbidden: Post owner cannot establish a connection with their own reply.');
+  if (!rpcData) {
+    throw new Error('Failed to establish connection: No data returned.');
   }
 
-  // Check existing connection
-  const { data: existingConnection, error: connCheckError } = await supabase
-    .from('connections')
-    .select('id')
-    .eq('replyId', reply.id)
-    .maybeSingle();
-
-  if (existingConnection) {
-    throw new Error('DUPLICATE_CONNECTION');
-  }
-
-  // Find reply author profile
-  let replyAuthor = null;
-  if (reply.userId) {
-    const { data } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', reply.userId)
-      .maybeSingle();
-    replyAuthor = data;
-  }
-  if (!replyAuthor && reply.agentId) {
-    const { data } = await supabase
-      .from('users')
-      .select('*')
-      .eq('agentId', reply.agentId)
-      .maybeSingle();
-    replyAuthor = data;
-  }
-
-  const now = new Date().toISOString();
-  const newConnection: ConnectionRecord = {
-    id: `conn_${crypto.randomUUID()}`,
-    postId: post.id,
-    replyId: reply.id,
-    postOwnerUserId: currentUser.id,
-    postOwnerAgentId: currentUser.agentId,
-    postOwnerAgentName: currentUser.name,
-    replyAuthorUserId: reply.userId,
-    replyAuthorAgentId: reply.agentId,
-    replyAuthorAgentName: replyAuthor ? replyAuthor.name : reply.agentName,
-    createdAt: now,
-  };
-
-  const { error: insertError } = await supabase
-    .from('connections')
-    .insert([newConnection]);
-
-  if (insertError) {
-    throw new Error(`Failed to establish connection: ${insertError.message}`);
-  }
-
-  // Automatically record the initial post and reply contents as messages for the connection chat
-  const initialPostMessage = {
-    id: `msg_post_${crypto.randomUUID()}`,
-    connectionId: newConnection.id,
-    senderUserId: newConnection.postOwnerUserId,
-    senderAgentId: newConnection.postOwnerAgentId,
-    content: post.content,
-    createdAt: post.createdAt || now,
-  };
-
-  const initialReplyMessage = {
-    id: `msg_reply_${crypto.randomUUID()}`,
-    connectionId: newConnection.id,
-    senderUserId: newConnection.replyAuthorUserId || newConnection.postOwnerUserId,
-    senderAgentId: newConnection.replyAuthorAgentId,
-    content: reply.content,
-    createdAt: reply.createdAt || now,
-  };
-
-  const { error: msgInsertError } = await supabase
-    .from('messages')
-    .insert([initialPostMessage, initialReplyMessage]);
-  
-  if (msgInsertError) {
-    throw new Error(`Database error writing connection initial messages: ${msgInsertError.message}`);
-  }
-
-  return newConnection;
+  return rpcData as ConnectionRecord;
 }
 
 export async function getUserConnections(userId: string, page: number, limit: number) {
@@ -224,7 +146,18 @@ export async function getUserConnections(userId: string, page: number, limit: nu
   };
 }
 
+export const MAX_MESSAGE_CONTENT_LENGTH = 10000;
+
 export async function sendMessage(connectionId: string, userId: string, content: string) {
+  if (!content || typeof content !== 'string' || !content.trim()) {
+    throw new Error('Message content is required.');
+  }
+
+  const trimmedContent = content.trim();
+  if (trimmedContent.length > MAX_MESSAGE_CONTENT_LENGTH) {
+    throw new Error(`Message content exceeds the maximum limit of ${MAX_MESSAGE_CONTENT_LENGTH.toLocaleString()} characters.`);
+  }
+
   const supabase = getSupabaseClient();
   
   // Find connection
@@ -255,7 +188,7 @@ export async function sendMessage(connectionId: string, userId: string, content:
     connectionId,
     senderUserId: currentUser.id,
     senderAgentId: currentUser.agentId,
-    content,
+    content: trimmedContent,
     createdAt: now,
   };
 
@@ -458,61 +391,50 @@ export async function getConnectionRequests(userId: string) {
 export async function acceptConnectionRequest(requestId: string, userId: string) {
   const supabase = getSupabaseClient();
 
-  // Find request
-  const { data: request, error: reqError } = await supabase
-    .from('connection_requests')
-    .select('*')
-    .eq('id', requestId)
-    .maybeSingle();
-  
-  if (reqError || !request) {
-    throw new Error('Connection request not found.');
+  // Transactional RPC is the only connection acceptance path
+  const { data: rpcData, error: rpcError } = await supabase.rpc('accept_connection_request', {
+    p_user_id: userId,
+    p_request_id: requestId,
+  });
+
+  if (rpcError) {
+    const msg = rpcError.message || '';
+    const code = rpcError.code || '';
+
+    if (msg.includes('Connection request not found')) {
+      throw new Error('Connection request not found.');
+    }
+    if (msg.includes('Forbidden: Not your connection request')) {
+      throw new Error('Forbidden: Not your connection request.');
+    }
+    if (msg.includes('Connection request is no longer pending')) {
+      throw new Error('Connection request is no longer pending.');
+    }
+    if (msg.includes('DUPLICATE_CONNECTION') || code === '23505') {
+      const { data: existing } = await supabase
+        .from('connections')
+        .select('*')
+        .eq('requestId', requestId)
+        .maybeSingle();
+      if (existing) return existing;
+      throw new Error('DUPLICATE_CONNECTION');
+    }
+
+    const isMissingFunction = code === 'PGRST202' || code === '42883' || msg.includes('Could not find the function');
+    if (isMissingFunction) {
+      console.error('[acceptConnectionRequest] Required database function accept_connection_request is missing or not deployed:', rpcError.message || rpcError);
+      throw new Error('Database error establishing connection: Required database function is not available.');
+    }
+
+    console.error('[acceptConnectionRequest] Transaction error:', rpcError.message || rpcError);
+    throw new Error('Database error establishing connection.');
   }
 
-  if (request.receiverUserId !== userId) throw new Error('Forbidden: Not your connection request.');
-  if (request.status !== 'pending') throw new Error('Connection request is no longer pending.');
-
-  // Update request status
-  const { error: updateError } = await supabase
-    .from('connection_requests')
-    .update({ status: 'accepted' })
-    .eq('id', requestId);
-
-  if (updateError) {
-    throw new Error(`Database error updating connection request status: ${updateError.message}`);
+  if (!rpcData) {
+    throw new Error('Database error establishing connection: No data returned.');
   }
 
-  // Create connection
-  const now = new Date().toISOString();
-  const newConnection: ConnectionRecord = {
-    id: `conn_${crypto.randomUUID()}`,
-    requestId: request.id,
-    postOwnerUserId: request.senderUserId,
-    postOwnerAgentId: request.senderAgentId,
-    postOwnerAgentName: request.senderAgentName,
-    replyAuthorUserId: request.receiverUserId,
-    replyAuthorAgentId: request.receiverAgentId,
-    replyAuthorAgentName: '',
-    createdAt: now,
-  };
-
-  // Get receiver name
-  const { data: receiver } = await supabase
-    .from('users')
-    .select('name')
-    .eq('id', userId)
-    .maybeSingle();
-  newConnection.replyAuthorAgentName = receiver?.name || 'Agent';
-
-  const { error: connError } = await supabase
-    .from('connections')
-    .insert([newConnection]);
-
-  if (connError) {
-    throw new Error(`Database error establishing connection: ${connError.message}`);
-  }
-
-  return newConnection;
+  return rpcData as ConnectionRecord;
 }
 
 export async function getRecentConnectionRequests(limit = 20) {
