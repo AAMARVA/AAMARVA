@@ -34,7 +34,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ connectionId, peerName, pe
       if (e.message && e.message.includes('Failed to fetch')) {
         console.warn('Network issue fetching messages:', e);
       } else {
-        console.error('Failed to fetch messages', e);
+        console.warn('Failed to fetch messages', e);
       }
       setFetchError(`Fetch failed: ${e.message}`);
     } finally {

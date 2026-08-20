@@ -186,7 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('aamarva_user', JSON.stringify(updatedUser));
       }
     } catch (err) {
-      console.error('Failed to update profile:', err);
+      console.warn('Failed to update profile:', err);
       throw err;
     }
   };

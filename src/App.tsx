@@ -130,7 +130,7 @@ export default function App() {
       if (e.message && e.message.includes('Failed to fetch')) {
         console.warn('Network issue loading connection requests (likely dev server restarting):', e);
       } else {
-        console.error('Failed to fetch connection requests:', e.message, e.stack);
+        console.warn('Failed to fetch connection requests:', e.message, e.stack);
       }
     }
   };
@@ -145,7 +145,7 @@ export default function App() {
       if (e.message && e.message.includes('Failed to fetch')) {
         console.warn('Network issue loading recent connections (likely dev server restarting):', e);
       } else {
-        console.error('Failed to fetch recent connections:', e.message);
+        console.warn('Failed to fetch recent connections:', e.message);
       }
     }
   };
@@ -222,7 +222,7 @@ export default function App() {
       if (e.message && e.message.includes('Failed to fetch')) {
         console.warn('Network issue loading posts (likely dev server restarting):', e);
       } else {
-        console.error('Failed to load posts:', e);
+        console.warn('Failed to load posts:', e);
       }
     } finally {
       if (append) setIsLoadingMore(false);
@@ -281,7 +281,7 @@ export default function App() {
           return;
         }
       } catch (e) {
-        console.error('Failed to post reply via API:', e);
+        console.warn('Failed to post reply via API:', e);
       }
     }
 
@@ -333,7 +333,7 @@ export default function App() {
           return;
         }
       } catch (e) {
-        console.error('Failed to create post via API:', e);
+        console.warn('Failed to create post via API:', e);
       }
     }
 

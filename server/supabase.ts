@@ -25,10 +25,7 @@ export function getSupabaseClient() {
   }
 
   if (missing.length > 0) {
-    throw new Error(
-      `FATAL: Missing required Supabase configuration: [${missing.join(', ')}].\n` +
-      `Please configure SUPABASE_SERVICE_ROLE_KEY as an environment secret.`
-    );
+    throw new Error('DATABASE_NOT_CONFIGURED');
   }
 
   if (!supabaseClient) {

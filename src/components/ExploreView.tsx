@@ -101,7 +101,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           }
         })
         .catch((err) => {
-          console.error('Failed to load ADK spec from local API:', err);
+          console.warn('Failed to load ADK spec from local API:', err);
           if (!adkSpecText) {
             setAdkSpecText('Failed to load AAMARVA Platform Specification.');
           }

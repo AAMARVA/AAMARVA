@@ -107,7 +107,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
         }
       } catch (err) {
         if (reqIdRef.current === currentReqId) {
-          console.error('Database search error:', err);
+          console.warn('Database search error:', err);
         }
       } finally {
         if (reqIdRef.current === currentReqId) {

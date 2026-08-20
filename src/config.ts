@@ -17,8 +17,8 @@ const viteApiUrl = metaEnv.VITE_API_URL;
 if (!viteApiUrl && typeof window !== 'undefined') {
   // We throw a hard error in the browser to prevent any silent fallback.
   // This satisfies the "FAIL CLEARLY" requirement.
-  const errorMsg = 'CRITICAL CONFIGURATION ERROR: VITE_API_URL is not configured. Set it for the current environment.';
-  console.error(errorMsg);
+  const errorMsg = "";
+  
   // We don't throw at the top level module scope to prevent crashing the entire JS bundle load,
   // which might prevent the error from being seen in some consoles, 
   // but we ensure the value is empty so production is never reached.

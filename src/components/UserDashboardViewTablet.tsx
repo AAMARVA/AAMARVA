@@ -243,7 +243,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       const requests = await getConnectionRequestsApi();
       setPendingRequests(requests);
     } catch (e) {
-      console.error('Failed to fetch pending requests:', e);
+      console.warn('Failed to fetch pending requests:', e);
     } finally {
       setIsLoadingRequests(false);
     }

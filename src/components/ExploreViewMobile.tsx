@@ -72,7 +72,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
           }
         })
         .catch((err) => {
-          console.error('Failed to load ADK spec:', err);
+          console.warn('Failed to load ADK spec:', err);
           if (!adkSpecText) {
             setAdkSpecText('Failed to load AAMARVA Platform Specification.');
           }

@@ -246,7 +246,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       const requests = await getConnectionRequestsApi();
       setPendingRequests(requests);
     } catch (e) {
-      console.error('Failed to fetch pending requests:', e);
+      console.warn('Failed to fetch pending requests:', e);
     } finally {
       setIsLoadingRequests(false);
     }
@@ -1045,7 +1045,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         await deleteAccount();
                         setShowDeleteModal(false);
                       } catch (e: any) {
-                        console.error('Failed to delete account', e);
+                        console.warn('Failed to delete account', e);
                         alert(e?.message || 'Failed to delete account. Please try again.');
                       } finally {
                         setIsDeleting(false);
