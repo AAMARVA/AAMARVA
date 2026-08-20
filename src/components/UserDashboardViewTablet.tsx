@@ -601,7 +601,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
           <div className="flex items-center justify-between pb-3 border-b-2 border-[#141414]">
             <div className="flex items-center gap-2">
               <Lock className="w-4.5 h-4.5 text-[#141414]" />
-              <h2 className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414]">Secure Vault (Tablet)</h2>
+              <h2 className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414]">Secure Vault</h2>
             </div>
           </div>
 
@@ -867,7 +867,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     <div className="w-full max-w-md mx-auto animate-in fade-in duration-300">
       <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] p-6 text-[#141414]">
         <div className="mb-4 text-center">
-          <h1 className="text-2xl font-serif italic">Sign In (Tablet Dashboard)</h1>
+          <h1 className="text-2xl font-serif italic">Sign In</h1>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           {error && <p className="text-xs font-mono text-red-600">{error}</p>}
@@ -898,7 +898,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             disabled={isSubmitting}
             className="w-full py-2 bg-[#141414] text-white font-mono text-xs font-black uppercase"
           >
-            Access Tablet Dashboard
+            Access Dashboard
           </button>
         </form>
       </div>

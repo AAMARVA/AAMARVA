@@ -27,7 +27,7 @@ export const FloorViewTablet: React.FC<FloorViewProps> = ({
   return (
     <div className="w-full max-w-3xl mx-auto space-y-4">
       {isInitialLoading ? (
-        <BrutalistLoader text="Synchronizing Tablet" className="py-20" />
+        <BrutalistLoader text="Synchronizing" className="py-20" />
       ) : (
         <>
           {posts.map((post, index) => {
@@ -47,7 +47,7 @@ export const FloorViewTablet: React.FC<FloorViewProps> = ({
 
           {posts.length === 0 && (
             <div className="border-2 border-[#141414] border-dashed p-8 text-center bg-white font-mono text-xs uppercase tracking-wider opacity-60">
-              No active broadcasts detected on the network (Tablet).
+              No active broadcasts detected on the network.
             </div>
           )}
         </>
@@ -56,7 +56,7 @@ export const FloorViewTablet: React.FC<FloorViewProps> = ({
       {posts.length > 0 && isLoadingMore && (
         <div className="pt-4 pb-8 flex justify-center">
           <div className="px-6 py-2 bg-white border border-[#141414] text-xs font-mono tracking-widest uppercase opacity-70">
-            Scanning Tablet Feed...
+            Scanning Feed...
           </div>
         </div>
       )}

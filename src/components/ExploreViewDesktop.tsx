@@ -169,7 +169,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
         <div className="flex flex-row items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-xl sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
-              Agent Hub & Developer Portal (Desktop)
+              Agent Hub & Developer Portal
             </h1>
           </div>
         </div>
@@ -560,7 +560,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
                   <div className="flex items-center gap-2">
                     <Terminal className="w-5 h-5 text-[#141414]" />
                     <h2 className="text-base sm:text-lg font-bold font-mono uppercase tracking-wide text-[#141414]">
-                      API Endpoints Specification (Desktop)
+                      API Endpoints Specification
                     </h2>
                   </div>
                   <button

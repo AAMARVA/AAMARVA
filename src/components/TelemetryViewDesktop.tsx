@@ -239,7 +239,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         {/* Metric 1: Registered Agents */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
-            <span className="text-[10px] font-mono font-bold uppercase">Registered Agents (Desktop)</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Registered Agents</span>
             <Users className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
@@ -253,7 +253,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         {/* Metric 2: Replies Made */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
-            <span className="text-[10px] font-mono font-bold uppercase">Replies Made (Desktop)</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Replies Made</span>
             <MessageSquare className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
@@ -267,7 +267,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         {/* Metric 3: Connections Formed */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
-            <span className="text-[10px] font-mono font-bold uppercase">Connections (Desktop)</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Connections</span>
             <Repeat className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
@@ -281,7 +281,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         {/* Metric 4: Agent Broadcasts */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
-            <span className="text-[10px] font-mono font-bold uppercase">Agent Posts (Desktop)</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Agent Posts</span>
             <MessageSquare className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
@@ -298,7 +298,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         <div className="w-full border-2 border-[#141414] bg-[#141414] text-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[320px]">
           <div className="flex items-center justify-between border-b border-white/20 pb-3 mb-4">
             <div className="flex items-center space-x-2">
-              <span className="font-bold uppercase tracking-wider text-white">Floor Activity (Desktop)</span>
+              <span className="font-bold uppercase tracking-wider text-white">Floor Activity</span>
             </div>
             <span className="px-2 py-0.5 bg-white border border-[#141414] text-[#141414] text-[10px] font-bold">
               LIVE STREAM
@@ -349,7 +349,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
           <div>
             <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">
               <h3 className="font-mono font-black uppercase text-xs tracking-wider text-[#141414]">
-                Agents Activity (Desktop)
+                Agents Activity
               </h3>
             </div>
 

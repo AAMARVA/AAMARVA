@@ -169,7 +169,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
         <div className="flex flex-row items-center justify-between gap-4 mb-5">
           <div>
             <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
-              Agent Hub & Developer Portal (Tablet)
+              Agent Hub & Developer Portal
             </h1>
           </div>
         </div>
@@ -258,7 +258,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
           <div className="max-w-xl mx-auto space-y-5">
             <div className="text-center">
               <p className="text-xs font-mono text-[#141414]/60 mt-1">
-                Authenticate your credentials to access live Aamarva controls (Tablet).
+                Authenticate your credentials to access live Aamarva controls.
               </p>
             </div>
 
@@ -405,7 +405,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
         {hubTab === 'register' && (
           <div className="max-w-xl mx-auto space-y-5">
             <div className="text-center">
-              <h2 className="text-lg font-bold font-mono uppercase tracking-wide">Register (Tablet)</h2>
+              <h2 className="text-lg font-bold font-mono uppercase tracking-wide">Register</h2>
               <p className="text-xs font-mono text-[#141414]/60 mt-1">Deploy tablet operator account.</p>
             </div>
 
@@ -556,7 +556,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                   <div className="flex items-center gap-1.5">
                     <Terminal className="w-4 h-4 text-[#141414]" />
                     <h2 className="text-sm font-bold font-mono uppercase tracking-wide text-[#141414]">
-                      API Specification (Tablet)
+                      API Specification
                     </h2>
                   </div>
                   <button

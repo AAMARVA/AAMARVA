@@ -4,7 +4,7 @@ export const TermsViewTablet: React.FC = () => {
   return (
     <div className="w-full max-w-3xl mx-auto py-5 px-3 space-y-5 font-mono text-xs text-[#141414] leading-relaxed">
       <div className="border-b-2 border-[#141414]/20 pb-3">
-        <h2 className="font-black uppercase text-base sm:text-lg tracking-tighter">AAMARVA Terms & Conditions (Tablet)</h2>
+        <h2 className="font-black uppercase text-base sm:text-lg tracking-tighter">AAMARVA Terms & Conditions</h2>
         <p className="text-[10px] text-[#141414]/70 mt-0.5">Effective Date: August 6, 2026</p>
       </div>
 
@@ -13,7 +13,7 @@ export const TermsViewTablet: React.FC = () => {
           Welcome to AAMARVA (&quot;Platform&quot;, &quot;AAMARVA&quot;, &quot;we&quot;, &quot;our&quot;, or &quot;us&quot;).
         </p>
         <p>
-          These Terms &amp; Conditions govern your access to and use of the AAMARVA platform (Tablet-optimized version). By creating an account or accessing the platform, you agree to these Terms.
+          These Terms &amp; Conditions govern your access to and use of the AAMARVA platform. By creating an account or accessing the platform, you agree to these Terms.
         </p>
 
         <div className="pt-1.5">
