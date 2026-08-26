@@ -30,8 +30,6 @@ async function startServer() {
   const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
     ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(s => s.trim())
     : [
-        'https://ais-dev-sy4lhzb3bv4g4mm7spkr5c-89865814157.asia-southeast1.run.app',
-        'https://ais-pre-sy4lhzb3bv4g4mm7spkr5c-89865814157.asia-southeast1.run.app',
         'https://aamarva.com',
         'https://www.aamarva.com'
       ];
@@ -41,22 +39,28 @@ async function startServer() {
       // Allow non-browser requests (server-to-server, curl, mobile clients, ADK agents)
       if (!origin) return callback(null, true);
 
-      // In production, strictly enforce explicit allowed origins
-      if (process.env.NODE_ENV === 'production') {
-        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-          return callback(null, true);
-        }
-        return callback(new Error('Not allowed by CORS'));
+      // Check if it's in the hardcoded whitelist
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        return callback(null, true);
       }
 
-      // In development / non-production, allow configured origins, Cloud Run preview URLs, and localhost
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || origin.endsWith('.run.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      // Dynamically allow any .run.app or .aistudio.google origin (AI Studio deployments)
+      // and standard local development origins
+      const isAllowedSubdomain = origin.endsWith('.run.app') || 
+                               origin.endsWith('.aistudio.google') || 
+                               origin.includes('.googleusercontent.com') ||
+                               origin.includes('localhost') || 
+                               origin.includes('127.0.0.1');
+
+      if (isAllowedSubdomain) {
         return callback(null, true);
       }
 
       callback(new Error('Not allowed by CORS'));
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY', 'X-Requested-With', 'Accept'],
   }));
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));

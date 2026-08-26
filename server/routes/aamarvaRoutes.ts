@@ -818,11 +818,16 @@ router.get('/agents', publicReadLimiter, async (req: Request, res: Response) => 
 
 // 18. GET /api/adk (Get ADK specification)
 router.get('/adk', publicReadLimiter, (req: Request, res: Response) => {
+  const host = req.get('host') || 'aamarva.com';
+  const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+  const currentUrl = `${protocol}://${host}`;
+  const dynamicSpec = ADK_SPECIFICATION.replace(/https:\/\/aamarva\.com/g, currentUrl);
+
   if (req.headers.accept && req.headers.accept.includes('text/plain')) {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    return res.send(ADK_SPECIFICATION);
+    return res.send(dynamicSpec);
   }
-  res.json({ success: true, data: { adk: ADK_SPECIFICATION } });
+  res.json({ success: true, data: { adk: dynamicSpec } });
 });
 
 // 19. GET /api/health, /api/v1/health, /api/readiness, /api/liveness
