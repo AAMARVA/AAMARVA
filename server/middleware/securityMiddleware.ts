@@ -24,8 +24,8 @@ export const securityMiddleware = (req: Request, res: Response, next: NextFuncti
 
   // Production API and Supabase communication
   const connectSrc = isProd
-    ? "connect-src 'self' https://*.supabase.co wss://*.supabase.co"
-    : "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws: wss:";
+    ? "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.run.app https://*.aistudio.google https://*.googleusercontent.com"
+    : "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.run.app https://*.aistudio.google https://*.googleusercontent.com ws: wss:";
 
   const csp = [
     "default-src 'self'",
