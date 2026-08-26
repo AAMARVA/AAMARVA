@@ -54,7 +54,8 @@ import {
   acceptConnectionRequest,
   getRecentConnectionRequests,
   getRecentConnections,
-  deleteConnectionRequest
+  deleteConnectionRequest,
+  ConnectionError
 } from '../services/connectionService';
 
 const router = Router();
@@ -522,11 +523,12 @@ router.delete('/replies/:replyId', requireAgentAuth, agentActionLimiter, async (
 router.post('/connections', requireAgentAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { replyId } = req.body;
-    if (!replyId) throw new Error('replyId is required.');
+    if (!replyId) throw new ConnectionError('replyId is required.', 400, 'MISSING_PARAM');
     const result = await createConnection(req.user!.id, replyId);
     res.status(201).json({ success: true, data: result });
   } catch (err: any) {
-    res.status(400).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : err.message.includes('DUPLICATE_CONNECTION') ? 409 : err.message.includes('unavailable') ? 503 : 400);
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -542,7 +544,8 @@ router.get('/connections', requireUserOrAgentAuth, publicReadLimiter, async (req
     }));
     res.json({ success: true, data: connections });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || 500;
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -551,7 +554,7 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agent
   try {
     const connectionId = req.params.connectionId as string;
     const { content } = req.body;
-    if (!content) throw new Error('content is required.');
+    if (!content) throw new ConnectionError('content is required.', 400, 'MISSING_PARAM');
     
     const message: any = await sendMessage(connectionId, req.user!.id, content);
     res.status(201).json({ 
@@ -565,7 +568,8 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agent
       } 
     });
   } catch (err: any) {
-    res.status(400).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -593,7 +597,8 @@ router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, public
 
     res.json(transcript);
   } catch (err: any) {
-    res.status(403).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -604,8 +609,8 @@ router.delete('/connections/:connectionId', requireUserOrAgentAuth, agentActionL
     const result = await deleteConnection(connectionId, req.user!.id);
     res.json(result);
   } catch (err: any) {
-    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
-    res.status(status).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -615,7 +620,8 @@ router.get('/connection-requests/recent', publicReadLimiter, async (req: Request
     const requests = await getRecentConnectionRequests(20);
     res.json({ success: true, data: requests });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || 500;
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -625,7 +631,8 @@ router.get('/connections/recent', publicReadLimiter, async (req: Request, res: R
     const connections = await getRecentConnections(20);
     res.json({ success: true, data: connections });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || 500;
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -633,11 +640,12 @@ router.get('/connections/recent', publicReadLimiter, async (req: Request, res: R
 router.post('/connections/requests', requireAgentAuth, requireAgent, connectionRequestLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { receiverAgentId } = req.body;
-    if (!receiverAgentId) throw new Error('receiverAgentId is required.');
+    if (!receiverAgentId) throw new ConnectionError('receiverAgentId is required.', 400, 'MISSING_PARAM');
     const request = await sendConnectionRequest(req.user!.id, receiverAgentId);
     res.status(201).json({ success: true, data: request });
   } catch (err: any) {
-    res.status(400).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || (err.message.includes('already pending') || err.message.includes('Already connected') ? 409 : err.message.includes('not found') ? 404 : 400);
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -647,7 +655,8 @@ router.get('/connections/requests', requireUserOrAgentAuth, publicReadLimiter, a
     const requests = await getConnectionRequests(req.user!.id);
     res.json({ success: true, data: requests });
   } catch (err: any) {
-    res.status(400).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || 400;
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -666,8 +675,8 @@ router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, a
       } 
     });
   } catch (err: any) {
-    const status = err.message.includes('Forbidden') ? 403 : 400;
-    res.status(status).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : err.message.includes('no longer pending') || err.message.includes('DUPLICATE') ? 409 : err.message.includes('unavailable') ? 503 : 400);
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -678,8 +687,8 @@ router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, agentA
     const result = await deleteConnectionRequest(requestId, req.user!.id);
     res.json(result);
   } catch (err: any) {
-    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
-    res.status(status).json({ success: false, error: { message: err.message } });
+    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
+    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 

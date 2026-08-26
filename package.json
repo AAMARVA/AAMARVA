@@ -44,6 +44,8 @@
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.0",
     "png-to-ico": "^3.0.2",
     "pngjs": "^7.0.0",
     "sharp": "^0.35.3"

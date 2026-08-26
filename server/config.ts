@@ -39,7 +39,7 @@ export const config: AppConfig = {
   get supabaseServiceRoleKey() { return process.env.SUPABASE_SERVICE_ROLE_KEY; },
   get brevoApiKey() { return process.env.BREVO_API_KEY; },
 
-  port: 3000,
+  port: Number(process.env.PORT) || 3000,
   isProduction: process.env.NODE_ENV === 'production',
 };
 

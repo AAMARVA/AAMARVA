@@ -26,7 +26,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
 
   useEffect(() => {
     const fetchTelemetryData = () => {
-      apiFetch('/api/stats')
+      apiFetch('/api/stats', { authType: 'none' })
         .then(res => {
           const data = res?.data || res;
           if (data) {
@@ -35,7 +35,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
         })
         .catch(err => console.warn('Failed to fetch stats:', err));
         
-      apiFetch('/api/agents')
+      apiFetch('/api/agents', { authType: 'none' })
         .then(res => {
           if (res?.success && res.data) {
             setSystemAgents(res.data);

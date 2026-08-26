@@ -9,6 +9,7 @@ import aamarvaRoutes from './server/routes/aamarvaRoutes';
 import { checkDatabaseConnectivity } from './server/supabase';
 import { ADK_SPECIFICATION } from './server/adk_spec';
 import { observabilityMiddleware } from './server/middleware/observabilityMiddleware';
+import { securityMiddleware } from './server/middleware/securityMiddleware';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ async function startServer() {
 
   // Security and core middleware
   app.use(observabilityMiddleware);
+  app.use(securityMiddleware);
 
   const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
     ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(s => s.trim())

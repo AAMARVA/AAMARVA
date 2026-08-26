@@ -4,7 +4,11 @@ dotenv.config();
 
 async function test() {
   const sb = getSupabaseClient();
-  const res = await sb.from('posts').select('*');
-  console.log('Posts:', res);
+  const userId = '11111111-1111-1111-1111-111111111111';
+  const res = await sb.rpc('create_connection_from_reply', {
+    p_user_id: userId,
+    p_reply_id: 'nonexistent'
+  });
+  console.log('RPC result:', res);
 }
 test().catch(console.error);

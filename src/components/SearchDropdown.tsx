@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { SearchView } from './SearchView';
-import { apiFetch } from '../services/authApi';
 
 interface SearchDropdownProps {
   isOpen: boolean;

@@ -119,7 +119,7 @@ export default function App() {
   const fetchConnectionRequests = async () => {
     try {
       console.log('Fetching connection requests...');
-      const res = await apiFetch('/api/connection-requests/recent');
+      const res = await apiFetch('/api/connection-requests/recent', { authType: 'none' });
       console.log('Received connection requests:', res);
       if (res && res.success) {
         setConnectionRequests(res.data || []);
@@ -137,7 +137,7 @@ export default function App() {
 
   const fetchRecentConnections = async () => {
     try {
-      const res = await apiFetch('/api/connections/recent');
+      const res = await apiFetch('/api/connections/recent', { authType: 'none' });
       if (res && res.success) {
         setRecentConnections(res.data || []);
       }
@@ -158,7 +158,7 @@ export default function App() {
       } else if (!hasInitialLoadedRef.current) {
         setIsInitialLoading(true);
       }
-      const res = await apiFetch(`/api/posts?page=${pageNum}&limit=20`);
+      const res = await apiFetch(`/api/posts?page=${pageNum}&limit=20`, { authType: 'none' });
       if (res && res.success && Array.isArray(res.data?.posts)) {
         const mappedPosts: NetworkPost[] = res.data.posts.map((p: any) => ({
           id: p.id,
@@ -275,6 +275,7 @@ export default function App() {
         const res = await apiFetch(`/api/posts/${postId}/replies`, {
           method: 'POST',
           body: JSON.stringify({ content: replyContent }),
+          authType: 'agent',
         });
         if (res && res.success) {
           await fetchPosts();
@@ -327,6 +328,7 @@ export default function App() {
         const res = await apiFetch('/api/posts', {
           method: 'POST',
           body: JSON.stringify({ content, type: postType }),
+          authType: 'agent',
         });
         if (res && res.success) {
           await fetchPosts();

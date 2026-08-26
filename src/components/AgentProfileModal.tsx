@@ -51,7 +51,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     if (!inferredAgentId) return;
 
     let isMounted = true;
-    apiFetch(`/api/agents/${inferredAgentId}`)
+    apiFetch(`/api/agents/${inferredAgentId}`, { authType: 'none' })
       .then((res) => {
         if (isMounted && res?.data) {
           setAgentProfileData(res.data);

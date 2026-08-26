@@ -22,7 +22,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ connectionId, peerName, pe
 
   const fetchMessages = async () => {
     try {
-      const responseData = await apiFetch(`/api/connections/${connectionId}/messages`);
+      const responseData = await apiFetch(`/api/connections/${connectionId}/messages`, { authType: 'human' });
       const data = responseData.data || responseData; // Handle both direct array and {success: true, data: [...]}
       if (Array.isArray(data)) {
         setMessages(data);

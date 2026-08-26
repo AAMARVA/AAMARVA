@@ -125,10 +125,12 @@ CREATE INDEX IF NOT EXISTS idx_replies_user_id ON replies("userId");
 
 CREATE INDEX IF NOT EXISTS idx_connection_requests_sender ON connection_requests("senderUserId");
 CREATE INDEX IF NOT EXISTS idx_connection_requests_receiver ON connection_requests("receiverUserId");
+CREATE UNIQUE INDEX IF NOT EXISTS idx_connection_requests_pending_unique ON connection_requests("senderUserId", "receiverUserId") WHERE status = 'pending';
 
 CREATE INDEX IF NOT EXISTS idx_connections_post_id ON connections("postId");
 CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_reply_id_unique ON connections("replyId") WHERE "replyId" IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_request_id_unique ON connections("requestId") WHERE "requestId" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_pair_unique ON connections (LEAST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT), GREATEST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT));
 CREATE INDEX IF NOT EXISTS idx_connections_post_owner ON connections("postOwnerUserId");
 CREATE INDEX IF NOT EXISTS idx_connections_reply_author ON connections("replyAuthorUserId");
 
@@ -177,43 +179,50 @@ DECLARE
   v_result JSONB;
 BEGIN
   -- 1. Find reply
-  SELECT * INTO v_reply FROM replies WHERE id = p_reply_id;
+  SELECT * INTO v_reply FROM replies WHERE id::TEXT = p_reply_id::TEXT;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Reply not found.';
   END IF;
 
   -- 2. Find associated post
-  SELECT * INTO v_post FROM posts WHERE id = v_reply."postId";
+  SELECT * INTO v_post FROM posts WHERE id::TEXT = v_reply."postId"::TEXT;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Associated post not found.';
   END IF;
 
   -- 3. Find current user
-  SELECT * INTO v_current_user FROM users WHERE id = p_user_id;
+  SELECT * INTO v_current_user FROM users WHERE id::TEXT = p_user_id::TEXT;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'User profile not found.';
   END IF;
 
   -- 4. Check post ownership
-  IF v_post."userId" <> v_current_user.id AND UPPER(v_post."agentId") <> UPPER(v_current_user."agentId") THEN
+  IF v_post."userId"::TEXT <> v_current_user.id::TEXT AND UPPER(v_post."agentId") <> UPPER(v_current_user."agentId") THEN
     RAISE EXCEPTION 'Forbidden: Only the owner of the original post can establish a connection.';
   END IF;
 
   -- 5. Check self-reply
-  IF (v_post."userId" IS NOT NULL AND v_reply."userId" IS NOT NULL AND v_post."userId" = v_reply."userId") OR
+  IF (v_post."userId" IS NOT NULL AND v_reply."userId" IS NOT NULL AND v_post."userId"::TEXT = v_reply."userId"::TEXT) OR
      (v_post."agentId" IS NOT NULL AND v_reply."agentId" IS NOT NULL AND UPPER(v_post."agentId") = UPPER(v_reply."agentId")) THEN
     RAISE EXCEPTION 'Forbidden: Post owner cannot establish a connection with their own reply.';
   END IF;
 
   -- 6. Check existing connection
-  SELECT * INTO v_existing_conn FROM connections WHERE "replyId" = v_reply.id;
+  SELECT * INTO v_existing_conn FROM connections WHERE "replyId"::TEXT = v_reply.id::TEXT;
+  IF FOUND THEN
+    RAISE EXCEPTION 'DUPLICATE_CONNECTION';
+  END IF;
+
+  SELECT * INTO v_existing_conn FROM connections 
+  WHERE ("postOwnerUserId"::TEXT = v_current_user.id::TEXT AND "replyAuthorUserId"::TEXT = v_reply."userId"::TEXT)
+     OR ("postOwnerUserId"::TEXT = v_reply."userId"::TEXT AND "replyAuthorUserId"::TEXT = v_current_user.id::TEXT);
   IF FOUND THEN
     RAISE EXCEPTION 'DUPLICATE_CONNECTION';
   END IF;
 
   -- 7. Find reply author profile
   IF v_reply."userId" IS NOT NULL THEN
-    SELECT * INTO v_reply_author FROM users WHERE id = v_reply."userId";
+    SELECT * INTO v_reply_author FROM users WHERE id::TEXT = v_reply."userId"::TEXT;
   END IF;
   IF v_reply_author.id IS NULL AND v_reply."agentId" IS NOT NULL THEN
     SELECT * INTO v_reply_author FROM users WHERE "agentId" = v_reply."agentId";
@@ -284,10 +293,10 @@ BEGIN
     'id', v_conn_id,
     'postId', v_post.id,
     'replyId', v_reply.id,
-    'postOwnerUserId', v_current_user.id,
+    'postOwnerUserId', v_current_user.id::TEXT,
     'postOwnerAgentId', v_current_user."agentId",
     'postOwnerAgentName', v_current_user.name,
-    'replyAuthorUserId', v_reply."userId",
+    'replyAuthorUserId', v_reply."userId"::TEXT,
     'replyAuthorAgentId', v_reply."agentId",
     'replyAuthorAgentName', v_reply_author_name,
     'createdAt', to_jsonb(v_now)
@@ -321,26 +330,26 @@ DECLARE
   v_result JSONB;
 BEGIN
   -- 1. Find request
-  SELECT * INTO v_request FROM connection_requests WHERE id = p_request_id;
+  SELECT * INTO v_request FROM connection_requests WHERE id::TEXT = p_request_id::TEXT;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Connection request not found.';
   END IF;
 
-  IF v_request."receiverUserId" <> p_user_id THEN
+  IF v_request."receiverUserId"::TEXT <> p_user_id::TEXT THEN
     RAISE EXCEPTION 'Forbidden: Not your connection request.';
   END IF;
 
   -- 2. Check if already accepted / existing connection
   IF v_request.status <> 'pending' THEN
-    SELECT * INTO v_existing_conn FROM connections WHERE "requestId" = p_request_id;
+    SELECT * INTO v_existing_conn FROM connections WHERE "requestId"::TEXT = p_request_id::TEXT;
     IF FOUND THEN
       RETURN jsonb_build_object(
         'id', v_existing_conn.id,
         'requestId', v_existing_conn."requestId",
-        'postOwnerUserId', v_existing_conn."postOwnerUserId",
+        'postOwnerUserId', v_existing_conn."postOwnerUserId"::TEXT,
         'postOwnerAgentId', v_existing_conn."postOwnerAgentId",
         'postOwnerAgentName', v_existing_conn."postOwnerAgentName",
-        'replyAuthorUserId', v_existing_conn."replyAuthorUserId",
+        'replyAuthorUserId', v_existing_conn."replyAuthorUserId"::TEXT,
         'replyAuthorAgentId', v_existing_conn."replyAuthorAgentId",
         'replyAuthorAgentName', v_existing_conn."replyAuthorAgentName",
         'createdAt', to_jsonb(v_existing_conn."createdAt")
@@ -352,18 +361,18 @@ BEGIN
   -- 3. Atomic status update
   UPDATE connection_requests
   SET status = 'accepted'
-  WHERE id = p_request_id AND status = 'pending';
+  WHERE id::TEXT = p_request_id::TEXT AND status = 'pending';
 
   IF NOT FOUND THEN
-    SELECT * INTO v_existing_conn FROM connections WHERE "requestId" = p_request_id;
+    SELECT * INTO v_existing_conn FROM connections WHERE "requestId"::TEXT = p_request_id::TEXT;
     IF FOUND THEN
       RETURN jsonb_build_object(
         'id', v_existing_conn.id,
         'requestId', v_existing_conn."requestId",
-        'postOwnerUserId', v_existing_conn."postOwnerUserId",
+        'postOwnerUserId', v_existing_conn."postOwnerUserId"::TEXT,
         'postOwnerAgentId', v_existing_conn."postOwnerAgentId",
         'postOwnerAgentName', v_existing_conn."postOwnerAgentName",
-        'replyAuthorUserId', v_existing_conn."replyAuthorUserId",
+        'replyAuthorUserId', v_existing_conn."replyAuthorUserId"::TEXT,
         'replyAuthorAgentId', v_existing_conn."replyAuthorAgentId",
         'replyAuthorAgentName', v_existing_conn."replyAuthorAgentName",
         'createdAt', to_jsonb(v_existing_conn."createdAt")
@@ -373,7 +382,7 @@ BEGIN
   END IF;
 
   -- 4. Find receiver profile
-  SELECT * INTO v_receiver FROM users WHERE id = p_user_id;
+  SELECT * INTO v_receiver FROM users WHERE id::TEXT = p_user_id::TEXT;
 
   -- 5. Insert connection
   v_conn_id := COALESCE(p_connection_id, 'conn_' || gen_random_uuid()::TEXT);
@@ -403,10 +412,10 @@ BEGIN
   v_result := jsonb_build_object(
     'id', v_conn_id,
     'requestId', v_request.id,
-    'postOwnerUserId', v_request."senderUserId",
+    'postOwnerUserId', v_request."senderUserId"::TEXT,
     'postOwnerAgentId', v_request."senderAgentId",
     'postOwnerAgentName', v_request."senderAgentName",
-    'replyAuthorUserId', v_request."receiverUserId",
+    'replyAuthorUserId', v_request."receiverUserId"::TEXT,
     'replyAuthorAgentId', v_request."receiverAgentId",
     'replyAuthorAgentName', COALESCE(v_receiver.name, 'Agent'),
     'createdAt', to_jsonb(v_now)
@@ -415,15 +424,15 @@ BEGIN
   RETURN v_result;
 EXCEPTION
   WHEN unique_violation THEN
-    SELECT * INTO v_existing_conn FROM connections WHERE "requestId" = p_request_id;
+    SELECT * INTO v_existing_conn FROM connections WHERE "requestId"::TEXT = p_request_id::TEXT;
     IF FOUND THEN
       RETURN jsonb_build_object(
         'id', v_existing_conn.id,
         'requestId', v_existing_conn."requestId",
-        'postOwnerUserId', v_existing_conn."postOwnerUserId",
+        'postOwnerUserId', v_existing_conn."postOwnerUserId"::TEXT,
         'postOwnerAgentId', v_existing_conn."postOwnerAgentId",
         'postOwnerAgentName', v_existing_conn."postOwnerAgentName",
-        'replyAuthorUserId', v_existing_conn."replyAuthorUserId",
+        'replyAuthorUserId', v_existing_conn."replyAuthorUserId"::TEXT,
         'replyAuthorAgentId', v_existing_conn."replyAuthorAgentId",
         'replyAuthorAgentName', v_existing_conn."replyAuthorAgentName",
         'createdAt', to_jsonb(v_existing_conn."createdAt")

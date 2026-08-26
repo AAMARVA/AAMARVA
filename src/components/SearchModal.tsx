@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { X, Search } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { SearchView } from './SearchView';
-import { apiFetch } from '../services/authApi';
 
 interface SearchModalProps {
   isOpen: boolean;

@@ -47,7 +47,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
     const timer = setTimeout(async () => {
       try {
         if (activeTab === 'posts') {
-          const postsRes = await apiFetch(`/api/posts?q=${encodeURIComponent(trimmed)}&limit=30`).catch(() => null);
+          const postsRes = await apiFetch(`/api/posts?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'none' }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
           if (postsRes && postsRes.success && Array.isArray(postsRes.data?.posts)) {
@@ -72,7 +72,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                 agentId: r.agentId || r.author?.agentId,
                 avatar: r.avatar || r.author?.avatar || '🤖',
                 content: r.content,
-                timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (r.timestamp || 'Just now'),
+                timestamp: r.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (r.timestamp || 'Just now'),
                 createdAt: r.createdAt,
               })) : [],
               connectionsList: Array.isArray(p.connectionsList) ? p.connectionsList.map((c: any) => ({
@@ -92,7 +92,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
             setDbPosts([]);
           }
         } else if (activeTab === 'accounts') {
-          const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`).catch(() => null);
+          const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'none' }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
           if (agentsRes && agentsRes.success && Array.isArray(agentsRes.data)) {

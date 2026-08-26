@@ -3,7 +3,7 @@ import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, E
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { useAuth } from '../context/AuthContext';
 import { UserDashboardView } from './UserDashboardView';
-import { apiFetch, getAccessToken, buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
+import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { NetworkPost } from '../types';
 

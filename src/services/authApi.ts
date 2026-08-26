@@ -38,7 +38,7 @@ export function buildApiUrl(endpoint: string): string {
     return normalizedEndpoint;
   }
 
-  const baseUrl = frontendConfig.viteApiUrl;
+  const baseUrl = frontendConfig.viteApiUrl || (typeof process !== 'undefined' && (process.env.APP_URL || process.env.VITE_API_URL || 'http://localhost:3000')) || '';
   if (!baseUrl || typeof baseUrl !== 'string' || baseUrl.trim() === '') {
     const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     return normalizedEndpoint;
@@ -50,6 +50,7 @@ export function buildApiUrl(endpoint: string): string {
 }
 
 let memoryAccessToken: string | null = null;
+let memoryRefreshToken: string | null = null;
 
 export function setAccessToken(token: string | null) {
   memoryAccessToken = token;
@@ -59,24 +60,21 @@ export function getAccessToken(): string | null {
   return memoryAccessToken;
 }
 
+export function setRefreshToken(token: string | null) {
+  memoryRefreshToken = token;
+}
+
+export function getRefreshToken(): string | null {
+  return memoryRefreshToken;
+}
+
+export type AuthType = 'human' | 'agent' | 'none';
+
 export interface ApiFetchOptions extends RequestInit {
-  authType?: 'human' | 'agent' | 'auto';
+  authType?: AuthType;
 }
 
 let refreshPromise: Promise<boolean> | null = null;
-
-function isHumanEndpoint(endpoint: string): boolean {
-  return (
-    endpoint.startsWith('/api/agents/me') ||
-    endpoint.startsWith('/api/auth/agent/rotate-api-key') ||
-    endpoint.startsWith('/api/auth/change-email/request') ||
-    endpoint.startsWith('/api/auth/human/') ||
-    endpoint.startsWith('/api/connections') ||
-    endpoint === '/api/auth/human/login' ||
-    endpoint === '/api/auth/human/logout' ||
-    endpoint === '/api/auth/register'
-  );
-}
 
 export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}): Promise<any> {
   const fullUrl = buildApiUrl(endpoint);
@@ -86,11 +84,16 @@ export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}):
     headers.set('Content-Type', 'application/json');
   }
 
-  const isHuman = options.authType === 'human' || (options.authType !== 'agent' && isHumanEndpoint(endpoint));
+  const authType: AuthType = options.authType || 'none';
 
-  if (!isHuman) {
+  // If a refresh is currently running, wait for it before sending an agent request
+  if (authType === 'agent' && refreshPromise) {
+    await refreshPromise;
+  }
+
+  if (authType === 'agent') {
     const requestToken = getAccessToken();
-    if (requestToken) {
+    if (requestToken && !headers.has('Authorization')) {
       headers.set('Authorization', `Bearer ${requestToken}`);
     }
   }
@@ -102,65 +105,67 @@ export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}):
   });
 
   // Handle agent token refresh ONLY for agent requests with an existing token (never for human sessions)
-  if (!isHuman && response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/login' && getAccessToken()) {
-    const requestToken = getAccessToken();
-    const currentToken = getAccessToken();
-    if (requestToken && currentToken && requestToken !== currentToken) {
-      headers.set('Authorization', `Bearer ${currentToken}`);
+  if (authType === 'agent' && response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/login' && (getAccessToken() || getRefreshToken())) {
+    if (!refreshPromise) {
+      refreshPromise = (async () => {
+        try {
+          let refreshUrl = buildApiUrl('/api/auth/refresh');
+          try {
+            if (fullUrl.startsWith('http://') || fullUrl.startsWith('https://')) {
+              const urlObj = new URL(fullUrl);
+              refreshUrl = `${urlObj.origin}/api/auth/refresh`;
+            }
+          } catch (e) {}
+
+          const currentRt = getRefreshToken();
+          const refreshRes = await fetch(refreshUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: currentRt ? JSON.stringify({ refreshToken: currentRt }) : undefined,
+            credentials: 'include',
+          });
+
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json();
+            const resTokens = refreshData.data?.tokens || refreshData.tokens || refreshData.data || refreshData;
+            const newAt = resTokens?.accessToken;
+            const newRt = resTokens?.refreshToken;
+            if (newRt) {
+              setRefreshToken(newRt);
+            }
+            if (newAt) {
+              setAccessToken(newAt);
+              return true;
+            }
+          }
+          return false;
+        } catch (err) {
+          return false;
+        } finally {
+          refreshPromise = null;
+        }
+      })();
+    }
+
+    const refreshSuccess = await refreshPromise;
+
+    if (refreshSuccess) {
+      const newAt = getAccessToken();
+      if (newAt) {
+        headers.set('Authorization', `Bearer ${newAt}`);
+      }
       response = await fetch(fullUrl, {
         ...options,
         headers,
         credentials: 'include',
       });
-    } else {
-      if (!refreshPromise) {
-        refreshPromise = (async () => {
-          try {
-            const refreshRes = await fetch(buildApiUrl('/api/auth/refresh'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-            });
-
-            if (refreshRes.ok) {
-              const refreshData = await refreshRes.json();
-              const resTokens = refreshData.data?.tokens || refreshData.tokens || refreshData.data || refreshData;
-              const newAt = resTokens.accessToken;
-              if (newAt) {
-                setAccessToken(newAt);
-              }
-              return true;
-            } else {
-              return false;
-            }
-          } catch (err) {
-            return false;
-          } finally {
-            refreshPromise = null;
-          }
-        })();
-      }
-
-      const refreshSuccess = await refreshPromise;
-
-      if (refreshSuccess) {
-        const newAt = getAccessToken();
-        if (newAt) {
-          headers.set('Authorization', `Bearer ${newAt}`);
-        }
-        response = await fetch(fullUrl, {
-          ...options,
-          headers,
-          credentials: 'include',
-        });
-      }
     }
   }
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    // Only dispatch auth-unauthorized if the user's primary session profile check (/api/agents/me) fails with 401
-    if (response.status === 401 && endpoint === '/api/agents/me') {
+    // Dispatch auth-unauthorized if the user's primary session profile check (/api/agents/me) fails with 401
+    if (response.status === 401 && endpoint === '/api/agents/me' && authType === 'human') {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('auth-unauthorized'));
       }
@@ -169,6 +174,18 @@ export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}):
   }
 
   return data;
+}
+
+export function apiFetchHuman(endpoint: string, options: Omit<ApiFetchOptions, 'authType'> = {}): Promise<any> {
+  return apiFetch(endpoint, { ...options, authType: 'human' });
+}
+
+export function apiFetchAgent(endpoint: string, options: Omit<ApiFetchOptions, 'authType'> = {}): Promise<any> {
+  return apiFetch(endpoint, { ...options, authType: 'agent' });
+}
+
+export function apiFetchPublic(endpoint: string, options: Omit<ApiFetchOptions, 'authType'> = {}): Promise<any> {
+  return apiFetch(endpoint, { ...options, authType: 'none' });
 }
 
 export async function registerUserApi(payload: {
@@ -229,6 +246,9 @@ export async function loginAgentApi(payload: { agentId: string; apiKey: string; 
   if (payloadData.tokens?.accessToken) {
     setAccessToken(payloadData.tokens.accessToken);
   }
+  if (payloadData.tokens?.refreshToken) {
+    setRefreshToken(payloadData.tokens.refreshToken);
+  }
   return payloadData;
 }
 
@@ -251,47 +271,58 @@ export async function logoutAgentApi() {
     });
   } catch (e) {}
   setAccessToken(null);
+  setRefreshToken(null);
 }
 
 export async function logoutUserApi() {
   await logoutHumanApi();
   setAccessToken(null);
+  setRefreshToken(null);
 }
 
-export async function deleteAccountApi() {
+export async function deleteAccountApi(authType: 'human' | 'agent' = 'human') {
   const res = await apiFetch('/api/agents/me', {
     method: 'DELETE',
+    authType,
   });
   setAccessToken(null);
+  setRefreshToken(null);
   return res;
 }
 
-export async function fetchCurrentProfileApi(): Promise<UserProfile> {
-  const res = await apiFetch('/api/agents/me');
-  return res.data;
-}
-
-export async function updateProfileApi(updates: any): Promise<UserProfile> {
+export async function fetchCurrentProfileApi(authType?: 'human' | 'agent'): Promise<UserProfile> {
+  const resolvedAuth: AuthType = authType || (getAccessToken() ? 'agent' : 'human');
   const res = await apiFetch('/api/agents/me', {
-    method: 'PATCH',
-    body: JSON.stringify(updates),
+    method: 'GET',
+    authType: resolvedAuth,
   });
   return res.data;
 }
 
-export async function rotateApiKey(password: string): Promise<{ apiKey: string }> {
+export async function updateProfileApi(updates: any, authType: 'human' | 'agent' = 'human'): Promise<UserProfile> {
+  const res = await apiFetch('/api/agents/me', {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+    authType,
+  });
+  return res.data;
+}
+
+export async function rotateApiKey(password: string, authType: 'human' | 'agent' = 'human'): Promise<{ apiKey: string }> {
   const res = await apiFetch('/api/auth/agent/rotate-api-key', {
     method: 'POST',
     body: JSON.stringify({ password }),
+    authType,
   });
   return res.data;
 }
 
 export async function requestEmailChangeApi(newEmail: string): Promise<{ message: string }> {
-  const appUrl = window.location.origin;
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const res = await apiFetch('/api/auth/change-email/request', {
     method: 'POST',
     body: JSON.stringify({ newEmail, appUrl }),
+    authType: 'human',
   });
   return res.data;
 }
@@ -300,6 +331,7 @@ export async function verifyEmailChangeApi(token: string): Promise<{ email: stri
   const res = await apiFetch('/api/auth/change-email/verify', {
     method: 'POST',
     body: JSON.stringify({ token }),
+    authType: 'none',
   });
   return res.data;
 }
@@ -307,10 +339,11 @@ export async function verifyEmailChangeApi(token: string): Promise<{ email: stri
 export async function requestForgotPasswordApi(email: string): Promise<{ success?: boolean; message: string }> {
   const startTime = Date.now();
   try {
-    const appUrl = window.location.origin;
+    const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
     const res = await apiFetch('/api/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email, appUrl }),
+      authType: 'none',
     });
     return res;
   } catch (err: any) {
@@ -322,25 +355,31 @@ export async function resetPasswordApi(token: string, newPassword: string): Prom
   const res = await apiFetch('/api/auth/reset-password', {
     method: 'POST',
     body: JSON.stringify({ token, newPassword }),
+    authType: 'none',
   });
   return res.data;
 }
 
-export async function getConnectionRequestsApi(): Promise<any[]> {
-  const res = await apiFetch('/api/connections/requests');
+export async function getConnectionRequestsApi(authType: 'human' | 'agent' = 'human'): Promise<any[]> {
+  const res = await apiFetch('/api/connections/requests', {
+    method: 'GET',
+    authType,
+  });
   return res.data || [];
 }
 
-export async function acceptConnectionRequestApi(requestId: string): Promise<any> {
+export async function acceptConnectionRequestApi(requestId: string, authType: 'human' | 'agent' = 'human'): Promise<any> {
   const res = await apiFetch(`/api/connections/requests/${requestId}/accept`, {
     method: 'POST',
+    authType,
   });
   return res.data;
 }
 
-export async function deleteConnectionRequestApi(requestId: string): Promise<any> {
+export async function deleteConnectionRequestApi(requestId: string, authType: 'human' | 'agent' = 'human'): Promise<any> {
   const res = await apiFetch(`/api/connections/requests/${requestId}`, {
     method: 'DELETE',
+    authType,
   });
   return res.data;
 }

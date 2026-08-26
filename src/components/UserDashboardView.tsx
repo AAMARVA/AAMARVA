@@ -261,7 +261,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     let isMounted = true;
     
     // Fetch connections
-    apiFetch('/api/connections')
+    apiFetch('/api/connections', { authType: 'human' })
       .then((res) => {
         if (isMounted && (res?.data?.connections || Array.isArray(res?.data))) {
           setRealConnections(res.data.connections || res.data);
@@ -272,7 +272,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     fetchPendingRequests();
 
     // Fetch full profile data (posts, replies, connections)
-    apiFetch('/api/agents/me')
+    apiFetch('/api/agents/me', { authType: 'human' })
       .then((res) => {
         if (isMounted && res?.data) {
           setAgentProfileData(res.data);

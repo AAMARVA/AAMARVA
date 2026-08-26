@@ -256,7 +256,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     if (!isAuthenticated || !user) return;
     let isMounted = true;
     
-    apiFetch('/api/connections')
+    apiFetch('/api/connections', { authType: 'human' })
       .then((res) => {
         if (isMounted && (res?.data?.connections || Array.isArray(res?.data))) {
           setRealConnections(res.data.connections || res.data);
@@ -266,7 +266,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
     fetchPendingRequests();
 
-    apiFetch('/api/agents/me')
+    apiFetch('/api/agents/me', { authType: 'human' })
       .then((res) => {
         if (isMounted && res?.data) {
           setAgentProfileData(res.data);
