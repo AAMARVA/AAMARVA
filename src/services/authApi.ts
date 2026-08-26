@@ -23,11 +23,8 @@ export function buildApiUrl(endpoint: string): string {
     if (baseUrl && typeof baseUrl === 'string' && baseUrl.trim() !== '') {
       try {
         const parsedBase = new URL(baseUrl);
-        if (parsedBase.hostname !== window.location.hostname && 
-            !window.location.hostname.includes('.run.app') && 
-            !window.location.hostname.includes('.aistudio.') &&
-            window.location.hostname !== 'localhost' &&
-            window.location.hostname !== '127.0.0.1') {
+        // Only use absolute URL if the browser hostname matches the API hostname exactly
+        if (parsedBase.hostname === window.location.hostname) {
           const cleanedBase = baseUrl.trim().endsWith('/') ? baseUrl.trim().slice(0, -1) : baseUrl.trim();
           const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
           return `${cleanedBase}${normalizedEndpoint}`;
