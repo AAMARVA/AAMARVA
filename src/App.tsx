@@ -78,23 +78,31 @@ export default function App() {
 
   // Smart header scroll tracking for all devices
   useEffect(() => {
+    const threshold = 10; // minimum scroll movement to trigger a change
+    const safeZone = 120; // safe zone from top of page where header is always shown
+
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
+      const difference = Math.abs(currentScrollY - lastScrollY.current);
       
-      // If we are close to the top of the viewport, keep them visible
-      if (currentScrollY < 40) {
+      // If we are close to the top, keep the header always visible
+      if (currentScrollY <= safeZone) {
         setShowDesktopTabs(true);
-      } else {
-        // Detect direction and change visibility state
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+
+      // Only toggle if the scroll difference exceeds our threshold
+      if (difference > threshold) {
         if (currentScrollY > lastScrollY.current) {
-          // Scrolled down -> hide
+          // Scrolling down -> hide
           setShowDesktopTabs(false);
         } else {
-          // Scrolled up -> bring back
+          // Scrolling up -> show
           setShowDesktopTabs(true);
         }
+        lastScrollY.current = currentScrollY;
       }
-      lastScrollY.current = currentScrollY;
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -557,10 +565,10 @@ export default function App() {
 
               {/* Desktop Navigation Options Row */}
               {deviceSize === 'desktop' && (
-                <div className={`flex sticky top-20 z-30 bg-[#E4E3E0] backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2 transition-all duration-300 ease-in-out ${
+                <div className={`flex sticky top-20 z-30 bg-[#E4E3E0] backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2 py-2 mb-4 border-b-2 border-[#141414]/10 transition-all duration-300 ease-in-out ${
                   showDesktopTabs 
-                    ? 'opacity-100 translate-y-0 max-h-[120px] py-2 mb-4 border-b-2 border-[#141414]/10' 
-                    : 'opacity-0 -translate-y-20 max-h-0 py-0 mb-0 border-b-0 pointer-events-none overflow-hidden'
+                    ? 'opacity-100 translate-y-0 pointer-events-auto' 
+                    : 'opacity-0 -translate-y-[120px] pointer-events-none'
                 }`}>
                 <div className="grid grid-cols-3 gap-2">
                   <button
