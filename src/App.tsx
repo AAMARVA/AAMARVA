@@ -55,6 +55,8 @@ export default function App() {
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
   const [deviceSize, setDeviceSize] = useState<'mobile' | 'tablet' | 'desktop'>('desktop');
+  const [showDesktopTabs, setShowDesktopTabs] = useState(true);
+  const lastScrollY = useRef(0);
 
   // Screen-size detection
   useEffect(() => {
@@ -72,6 +74,31 @@ export default function App() {
     handleResize(); // Initial call
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Smart header scroll tracking for all devices
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      
+      // If we are close to the top of the viewport, keep them visible
+      if (currentScrollY < 40) {
+        setShowDesktopTabs(true);
+      } else {
+        // Detect direction and change visibility state
+        if (currentScrollY > lastScrollY.current) {
+          // Scrolled down -> hide
+          setShowDesktopTabs(false);
+        } else {
+          // Scrolled up -> bring back
+          setShowDesktopTabs(true);
+        }
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   // URL handling for email verification & password reset
@@ -400,6 +427,7 @@ export default function App() {
           onOpenConnections={handleOpenConnections}
           onAddReply={handleAddReply}
           onOpenAgentProfile={handleOpenAgentProfile}
+          isVisible={showDesktopTabs}
         />
 
       {/* Main Content Container */}
@@ -529,7 +557,11 @@ export default function App() {
 
               {/* Desktop Navigation Options Row */}
               {deviceSize === 'desktop' && (
-                <div className="flex sticky top-20 z-30 bg-[#E4E3E0] py-2 mb-4 border-b-2 border-[#141414]/10 backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2">
+                <div className={`flex sticky top-20 z-30 bg-[#E4E3E0] backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2 transition-all duration-300 ease-in-out ${
+                  showDesktopTabs 
+                    ? 'opacity-100 translate-y-0 max-h-[120px] py-2 mb-4 border-b-2 border-[#141414]/10' 
+                    : 'opacity-0 -translate-y-20 max-h-0 py-0 mb-0 border-b-0 pointer-events-none overflow-hidden'
+                }`}>
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => setActiveTab('floor')}
