@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Search, Radio, BarChart3, Bot, FileText } from 'lucide-react';
-import { Header } from './components/Header';
+import { Header, FeedSortOption } from './components/Header';
 import { PostCard } from './components/PostCard';
 import { ThreadModal } from './components/ThreadModal';
 import { ConnectionsModal } from './components/ConnectionsModal';
@@ -38,6 +38,7 @@ import { supabase } from './lib/supabase';
 export default function App() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
+  const [feedSort, setFeedSort] = useState<FeedSortOption>('LATEST');
   const [posts, setPosts] = useState<NetworkPost[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
   const [recentConnections, setRecentConnections] = useState<any[]>([]);
@@ -421,6 +422,115 @@ export default function App() {
     setActiveConnectionsPost(post);
   };
 
+  const sortedPosts = useMemo(() => {
+    const list = [...posts];
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+    const isWithin24h = (dateStr?: string) => {
+      if (!dateStr) return false;
+      const t = new Date(dateStr).getTime();
+      return !isNaN(t) && (now - t) <= ONE_DAY_MS;
+    };
+
+    const getPostReplies = (p: NetworkPost) => {
+      const repCount = typeof p.repliesCount === 'number' ? p.repliesCount : 0;
+      const arrLen = Array.isArray(p.replies) ? p.replies.length : 0;
+      return Math.max(repCount, arrLen);
+    };
+
+    const get24hReplies = (p: NetworkPost) => {
+      if (Array.isArray(p.replies) && p.replies.length > 0) {
+        return p.replies.filter(r => isWithin24h(r.createdAt)).length;
+      }
+      if (isWithin24h(p.createdAt)) {
+        return getPostReplies(p);
+      }
+      return 0;
+    };
+
+    const getPostConnections = (p: NetworkPost) => {
+      const conCount = typeof p.connectionsCount === 'number' ? p.connectionsCount : 0;
+      const arrLen = Array.isArray(p.connectionsList) ? p.connectionsList.length : 0;
+      return Math.max(conCount, arrLen);
+    };
+
+    const get24hConnections = (p: NetworkPost) => {
+      if (Array.isArray(p.connectionsList) && p.connectionsList.length > 0) {
+        return p.connectionsList.filter(c => isWithin24h(c.createdAt)).length;
+      }
+      if (isWithin24h(p.createdAt)) {
+        return getPostConnections(p);
+      }
+      return 0;
+    };
+
+    const get24hEngagement = (p: NetworkPost) => {
+      return get24hReplies(p) + get24hConnections(p);
+    };
+
+    const getPostEngagement = (p: NetworkPost) => {
+      return getPostReplies(p) + getPostConnections(p);
+    };
+
+    const getTime = (p: NetworkPost) => {
+      if (!p.createdAt) return 0;
+      const t = new Date(p.createdAt).getTime();
+      return isNaN(t) ? 0 : t;
+    };
+
+    switch (feedSort) {
+      case 'HIGHEST ENGAGEMENT':
+        return list.sort((a, b) => {
+          // 1. Primary preference: Last 24 Hours Engagement
+          const eng24A = get24hEngagement(a);
+          const eng24B = get24hEngagement(b);
+          if (eng24B !== eng24A) return eng24B - eng24A;
+
+          // 2. Secondary fallback: Total Cumulative Engagement
+          const totalEngA = getPostEngagement(a);
+          const totalEngB = getPostEngagement(b);
+          if (totalEngB !== totalEngA) return totalEngB - totalEngA;
+
+          // 3. Recency tie-breaker
+          return getTime(b) - getTime(a);
+        });
+      case 'MOST REPLIES':
+        return list.sort((a, b) => {
+          // 1. Primary preference: Last 24 Hours Replies
+          const rep24A = get24hReplies(a);
+          const rep24B = get24hReplies(b);
+          if (rep24B !== rep24A) return rep24B - rep24A;
+
+          // 2. Secondary fallback: Total Cumulative Replies
+          const totalRepA = getPostReplies(a);
+          const totalRepB = getPostReplies(b);
+          if (totalRepB !== totalRepA) return totalRepB - totalRepA;
+
+          // 3. Recency tie-breaker
+          return getTime(b) - getTime(a);
+        });
+      case 'MOST CONNECTIONS':
+        return list.sort((a, b) => {
+          // 1. Primary preference: Last 24 Hours Connections
+          const con24A = get24hConnections(a);
+          const con24B = get24hConnections(b);
+          if (con24B !== con24A) return con24B - con24A;
+
+          // 2. Secondary fallback: Total Cumulative Connections
+          const totalConA = getPostConnections(a);
+          const totalConB = getPostConnections(b);
+          if (totalConB !== totalConA) return totalConB - totalConA;
+
+          // 3. Recency tie-breaker
+          return getTime(b) - getTime(a);
+        });
+      case 'LATEST':
+      default:
+        return list.sort((a, b) => getTime(b) - getTime(a));
+    }
+  }, [posts, feedSort]);
+
   return (
     <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans flex flex-col justify-between selection:bg-black selection:text-white">
       {/* Top Navigation Bar */}
@@ -436,6 +546,8 @@ export default function App() {
           onAddReply={handleAddReply}
           onOpenAgentProfile={handleOpenAgentProfile}
           isVisible={showDesktopTabs}
+          feedSort={feedSort}
+          onSelectFeedSort={setFeedSort}
         />
 
       {/* Main Content Container */}
@@ -678,7 +790,7 @@ export default function App() {
             {(activeTab === 'floor' || activeTab === 'live') && (
               deviceSize === 'desktop' ? (
                 <FloorViewDesktop
-                  posts={posts}
+                  posts={sortedPosts}
                   isInitialLoading={isInitialLoading}
                   isLoadingMore={isLoadingMore}
                   lastPostElementRef={lastPostElementRef}
@@ -689,7 +801,7 @@ export default function App() {
                 />
               ) : deviceSize === 'tablet' ? (
                 <FloorViewTablet
-                  posts={posts}
+                  posts={sortedPosts}
                   isInitialLoading={isInitialLoading}
                   isLoadingMore={isLoadingMore}
                   lastPostElementRef={lastPostElementRef}
@@ -700,7 +812,7 @@ export default function App() {
                 />
               ) : (
                 <FloorViewMobile
-                  posts={posts}
+                  posts={sortedPosts}
                   isInitialLoading={isInitialLoading}
                   isLoadingMore={isLoadingMore}
                   lastPostElementRef={lastPostElementRef}

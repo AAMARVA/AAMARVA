@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Search as SearchIcon } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Search as SearchIcon, ChevronDown, Check } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { SearchDropdown } from './SearchDropdown';
+
+export type FeedSortOption = 'LATEST' | 'HIGHEST ENGAGEMENT' | 'MOST REPLIES' | 'MOST CONNECTIONS';
 
 interface HeaderProps {
   activeTab: string;
@@ -15,7 +17,16 @@ interface HeaderProps {
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   isVisible?: boolean;
+  feedSort?: FeedSortOption;
+  onSelectFeedSort?: (sort: FeedSortOption) => void;
 }
+
+const SORT_OPTIONS: { id: FeedSortOption; label: string; description: string }[] = [
+  { id: 'LATEST', label: 'LATEST', description: 'Real-time broadcast order' },
+  { id: 'HIGHEST ENGAGEMENT', label: 'HIGHEST ENGAGEMENT', description: 'Total replies & connections [ 24 hrs ]' },
+  { id: 'MOST REPLIES', label: 'MOST REPLIES', description: 'Most discussed posts [ 24 hrs ]' },
+  { id: 'MOST CONNECTIONS', label: 'MOST CONNECTIONS', description: 'Most connected posts [ 24 hrs ]' },
+];
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
@@ -29,7 +40,34 @@ export const Header: React.FC<HeaderProps> = ({
   onAddReply,
   onOpenAgentProfile,
   isVisible = true,
+  feedSort = 'LATEST',
+  onSelectFeedSort,
 }) => {
+  const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsSortDropdownOpen(false);
+      }
+    };
+    if (isSortDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isSortDropdownOpen]);
+
+  const handleSelectOption = (option: FeedSortOption) => {
+    if (onSelectFeedSort) {
+      onSelectFeedSort(option);
+    }
+    setIsSortDropdownOpen(false);
+  };
+
   return (
     <header className={`sticky top-0 z-40 bg-white border-b-2 border-[#141414] text-[#141414] transition-all duration-300 ease-in-out ${
       !isVisible ? 'opacity-0 -translate-y-full pointer-events-none' : 'opacity-100 translate-y-0'
@@ -68,6 +106,54 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
         </div>
+
+        {/* Small Option Box located directly flush below the header (only shown on the Floor tab) */}
+        {activeTab === 'floor' && (
+          <div ref={dropdownRef} className="absolute right-4 sm:right-8 md:right-8 lg:right-8 top-full z-30 pointer-events-auto">
+            <button
+              onClick={() => setIsSortDropdownOpen(prev => !prev)}
+              aria-expanded={isSortDropdownOpen}
+              className="flex items-center justify-center gap-1.5 min-w-[100px] sm:min-w-[120px] md:min-w-[130px] border-x-2 border-b-2 border-t-0 border-[#141414] px-3 py-1 sm:px-4 sm:py-1.5 md:py-1.5 font-mono text-[10px] sm:text-xs md:text-xs font-black uppercase tracking-wider transition-all select-none cursor-pointer bg-[#141414] text-white hover:bg-[#2c2c2c] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              <span>{SORT_OPTIONS.find(opt => opt.id === feedSort)?.label || feedSort}</span>
+              <ChevronDown className={`w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[3] transition-transform duration-200 ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Menu */}
+            {isSortDropdownOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-64 sm:w-72 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-100 divide-y-2 divide-[#141414]">
+                {SORT_OPTIONS.map(option => {
+                  const isSelected = feedSort === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() => handleSelectOption(option.id)}
+                      className={`w-full text-left px-3 py-2.5 sm:px-3.5 sm:py-2.5 transition-colors flex items-center justify-between group cursor-pointer ${
+                        isSelected 
+                          ? 'bg-[#141414] text-white' 
+                          : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                      }`}
+                    >
+                      <div className="flex flex-col min-w-0 pr-2">
+                        <span className="font-mono font-black text-[11px] sm:text-xs uppercase tracking-wider">
+                          {option.label}
+                        </span>
+                        <span className={`text-[9px] sm:text-[10px] font-mono font-bold leading-tight mt-0.5 ${
+                          isSelected ? 'text-white/90' : 'text-[#141414]'
+                        }`}>
+                          {option.description}
+                        </span>
+                      </div>
+                      {isSelected && (
+                        <Check className="w-4 h-4 shrink-0 stroke-[3] text-white" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <SearchDropdown
           isOpen={isSearchDropdownOpen}
