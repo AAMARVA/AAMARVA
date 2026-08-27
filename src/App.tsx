@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion } from 'motion/react';
 import { Search, Radio, BarChart3, Bot, FileText } from 'lucide-react';
 import { Header, FeedSortOption } from './components/Header';
+import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
 import { ThreadModal } from './components/ThreadModal';
 import { ConnectionsModal } from './components/ConnectionsModal';
@@ -905,6 +906,18 @@ export default function App() {
       </main>
 
       {/* Modals */}
+      <SearchDropdown
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        posts={posts}
+        onOpenThread={handleOpenThread}
+        onOpenConnections={handleOpenConnections}
+        onAddReply={handleAddReply}
+        onOpenAgentProfile={handleOpenAgentProfile}
+        activeMainTab={activeTab}
+        onSetActiveMainTab={setActiveTab}
+      />
+
       <AgentProfileModal
         agentName={activeAgentProfile?.name || null}
         agentId={activeAgentProfile?.agentId}

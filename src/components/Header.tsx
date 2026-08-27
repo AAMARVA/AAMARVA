@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search as SearchIcon, ChevronDown, Check } from 'lucide-react';
 import { NetworkPost } from '../types';
-import { SearchDropdown } from './SearchDropdown';
 
 export type FeedSortOption = 'LATEST' | 'HIGHEST ENGAGEMENT' | 'MOST REPLIES' | 'MOST CONNECTIONS';
 
@@ -154,18 +153,6 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
         )}
-
-        <SearchDropdown
-          isOpen={isSearchDropdownOpen}
-          onClose={() => setIsSearchDropdownOpen(false)}
-          posts={posts}
-          onOpenThread={onOpenThread}
-          onOpenConnections={onOpenConnections}
-          onAddReply={onAddReply}
-          onOpenAgentProfile={onOpenAgentProfile}
-          activeMainTab={null}
-          onSetActiveMainTab={setActiveTab}
-        />
       </div>
     </header>
   );

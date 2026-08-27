@@ -38,17 +38,17 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
         onClose();
       }
     };
 
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
     }
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
 
@@ -57,90 +57,96 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   return (
     <div 
       ref={dropdownRef}
-      className="fixed inset-0 z-50 w-full h-full bg-[#0F0F0F] flex flex-col animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] w-full h-full bg-[#050505] flex flex-col animate-in fade-in duration-150 select-none"
     >
-      <div className="max-w-xl mx-auto w-full flex flex-col h-full bg-black sm:border-x md:border-x lg:border-x border-white/5">
-        <div className="sticky top-0 z-30">
-          {/* Desktop Navigation Options Row (Hidden on Mobile) */}
+      <div className="max-w-2xl mx-auto w-full flex flex-col h-full bg-black sm:border-x border-white/10 shadow-2xl">
+        <div className="sticky top-0 z-30 bg-black">
+          {/* Top Navigation Options Row matching screenshot */}
           {onSetActiveMainTab && (
-            <div className="hidden md:flex lg:flex flex-col gap-2 p-3 border-b border-white/10 bg-black">
-              <div className="grid grid-cols-3 gap-2">
+            <div className="pt-4 px-4 pb-0 bg-black">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3 pb-3 border-b border-white">
                 <button
                   onClick={() => { onSetActiveMainTab('floor'); onClose(); }}
-                  className={`px-3 py-2 text-xs font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                  className={`py-2 px-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     (activeMainTab === 'floor' || activeMainTab === 'live')
-                      ? 'bg-white text-black border-2 border-white shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]'
-                      : 'bg-black text-white border-b-2 border-r-2 border-white hover:bg-white/10'
+                      ? 'bg-black text-white border border-white shadow-sm'
+                      : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                   }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeMainTab === 'floor' || activeMainTab === 'live' ? 'bg-black animate-pulse' : 'bg-white/40'}`}></span>
-                  <span>Floor</span>
+                  <span className="text-white text-xs leading-none">•</span>
+                  <span className="uppercase">FLOOR</span>
                 </button>
 
                 <button
                   onClick={() => { onSetActiveMainTab('telemetry'); onClose(); }}
-                  className={`px-3 py-2 text-xs font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                  className={`py-2 px-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     activeMainTab === 'telemetry'
-                      ? 'bg-white text-black border-2 border-white shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]'
-                      : 'bg-black text-white border-b-2 border-r-2 border-white hover:bg-white/10'
+                      ? 'bg-black text-white border border-white shadow-sm'
+                      : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                   }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeMainTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-white/40'}`}></span>
-                  <span>Telemetry</span>
+                  <span className="text-white text-xs leading-none">•</span>
+                  <span className="uppercase">TELEMETRY</span>
                 </button>
 
                 <button
                   onClick={() => { onSetActiveMainTab('hub'); onClose(); }}
-                  className={`px-3 py-2 text-xs font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
+                  className={`py-2 px-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     (activeMainTab === 'hub' || activeMainTab === 'explore')
-                      ? 'bg-white text-black border-2 border-white shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]'
-                      : 'bg-black text-white border-b-2 border-r-2 border-white hover:bg-white/10'
+                      ? 'bg-black text-white border border-white shadow-sm'
+                      : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                   }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${(activeMainTab === 'hub' || activeMainTab === 'explore') ? 'bg-black animate-pulse' : 'bg-white/40'}`}></span>
-                  <span>Agent Hub</span>
+                  <span className="text-white text-xs leading-none">•</span>
+                  <span className="uppercase">AGENT HUB</span>
                 </button>
               </div>
             </div>
           )}
 
           {/* Search Input Area */}
-          <div className="p-2 sm:p-3 md:p-3 lg:p-3 border-b border-white/10 bg-black">
-          <div className="flex items-center gap-3 bg-[#161616] rounded-lg px-3 py-1.5 border border-white/10 shadow-xl">
-            <Search className="w-4 h-4 text-gray-400 shrink-0" />
-            <input 
-              type="text" 
-              placeholder="Search posts or accounts"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              autoFocus
-              className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm font-mono"
-            />
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5 focus:outline-none"
-              title="Clear Search"
-            >
-              <X className="w-5 h-5 sm:w-4 sm:h-4 md:w-4 md:h-4 lg:w-4 lg:h-4" />
-            </button>
+          <div className="p-4 bg-black">
+            <div className="flex items-center gap-3 bg-[#111111] rounded-md px-3.5 py-2.5 border border-white/10 focus-within:border-white/20 transition-all">
+              <Search className="w-4 h-4 text-neutral-400 shrink-0" />
+              <input 
+                type="text" 
+                placeholder="Search posts or accounts"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                autoFocus
+                className="flex-1 bg-transparent text-white placeholder-neutral-500 outline-none text-sm font-mono tracking-tight"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (query) {
+                    setQuery('');
+                  } else {
+                    onClose();
+                  }
+                }}
+                className="text-neutral-400 hover:text-white transition-colors p-1 rounded hover:bg-white/10 focus:outline-none cursor-pointer"
+                title={query ? "Clear Search" : "Close Search"}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-        {/* Tabs */}
+        {/* Search Filter Tabs when typing */}
         {query.trim().length > 0 && (
-          <div className="flex border-b border-white/10 bg-black shrink-0 px-4 sm:px-8 md:px-8 lg:px-8">
-            <div className="flex w-full sm:w-auto md:w-auto lg:w-auto gap-8">
+          <div className="flex border-b border-white/10 bg-black shrink-0 px-4 sm:px-6">
+            <div className="flex w-full sm:w-auto gap-8">
               <button
                 onClick={() => setActiveTab('posts')}
-                className={`py-2 text-xs sm:text-sm md:text-sm lg:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all ${activeTab === 'posts' ? 'text-white border-b-2 border-white' : 'text-gray-500 hover:text-gray-300'}`}
+                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'posts' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
               >
                 Posts
               </button>
               <button
                 onClick={() => setActiveTab('accounts')}
-                className={`py-2 text-xs sm:text-sm md:text-sm lg:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all ${activeTab === 'accounts' ? 'text-white border-b-2 border-white' : 'text-gray-500 hover:text-gray-300'}`}
+                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'accounts' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
               >
                 Accounts
               </button>
@@ -149,22 +155,24 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
         )}
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto overscroll-contain bg-black text-white px-3 pt-4 pb-28 sm:px-8 md:px-8 lg:px-8 sm:py-6 md:py-6 lg:py-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain bg-black text-white px-4 pb-28 sm:px-6 flex flex-col">
           {query.trim().length > 0 ? (
-            <SearchView
-              posts={posts}
-              agents={agents}
-              query={query}
-              activeTab={activeTab}
-              onOpenThread={(p) => { onClose(); onOpenThread(p); }}
-              onOpenConnections={(p) => { onClose(); onOpenConnections(p); }}
-              onAddReply={onAddReply}
-              onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
-            />
+            <div className="pt-4">
+              <SearchView
+                posts={posts}
+                agents={agents}
+                query={query}
+                activeTab={activeTab}
+                onOpenThread={(p) => { onClose(); onOpenThread(p); }}
+                onOpenConnections={(p) => { onClose(); onOpenConnections(p); }}
+                onAddReply={onAddReply}
+                onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
+              />
+            </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center p-8 text-center space-y-6 opacity-40">
-              <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center border border-white/10">
-                <Search className="w-12 h-12 text-white" />
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+              <div className="w-28 h-28 rounded-full bg-white/[0.02] flex items-center justify-center border border-white/10 shadow-inner">
+                <Search className="w-14 h-14 text-neutral-600 stroke-[1.25]" />
               </div>
             </div>
           )}
