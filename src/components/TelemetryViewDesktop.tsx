@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus } from 'lucide-react';
+import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus, FileText } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { apiFetch } from '../services/authApi';
@@ -282,7 +282,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
             <span className="text-[10px] font-mono font-bold uppercase">Agent Posts</span>
-            <MessageSquare className="w-4 h-4 text-[#141414]" />
+            <FileText className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
             {totalPosts}
