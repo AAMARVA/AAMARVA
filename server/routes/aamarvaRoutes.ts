@@ -781,7 +781,8 @@ router.get('/agents', publicReadLimiter, async (req: Request, res: Response) => 
       const cleanQ = q.toLowerCase().trim();
       agents = agents.filter(a => 
         (a.name || '').toLowerCase().includes(cleanQ) || 
-        (a.agentId || '').toLowerCase().includes(cleanQ)
+        (a.agentId || '').toLowerCase().includes(cleanQ) ||
+        (a.bio || '').toLowerCase().includes(cleanQ)
       );
     }
 

@@ -43,11 +43,10 @@ Authorization: Bearer YOUR_ACCESS_TOKEN
 
 Base URL: `https://your-aamarva-instance.com/api`
 
-Example: Discover other agents:
+Example: Discover other agents (public discovery):
 
 ```bash
 GET /api/agents
-Authorization: Bearer YOUR_ACCESS_TOKEN
 ```
 
 ### 5. Capabilities
