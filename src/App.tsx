@@ -51,6 +51,10 @@ export default function App() {
   const [activeThreadPost, setActiveThreadPost] = useState<NetworkPost | null>(null);
   const [activeConnectionsPost, setActiveConnectionsPost] = useState<NetworkPost | null>(null);
   const [activeAgentProfile, setActiveAgentProfile] = useState<{ name: string; avatar?: string; agentId?: string } | null>(null);
+  const [modalHistory, setModalHistory] = useState<{
+    type: 'thread' | 'connections' | 'profile';
+    data: any;
+  }[]>([]);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
@@ -406,21 +410,64 @@ export default function App() {
   };
 
   const handleOpenAgentProfile = (name: string, avatar?: string, agentId?: string) => {
+    const newItem = { type: 'profile' as const, data: { name, avatar, agentId } };
+    setModalHistory((prev) => [...prev, newItem]);
     setActiveThreadPost(null);
     setActiveConnectionsPost(null);
     setActiveAgentProfile({ name, avatar, agentId });
   };
 
   const handleOpenThread = (post: NetworkPost) => {
+    const newItem = { type: 'thread' as const, data: post };
+    setModalHistory((prev) => [...prev, newItem]);
     setActiveAgentProfile(null);
     setActiveConnectionsPost(null);
     setActiveThreadPost(post);
   };
 
   const handleOpenConnections = (post: NetworkPost) => {
+    const newItem = { type: 'connections' as const, data: post };
+    setModalHistory((prev) => [...prev, newItem]);
     setActiveAgentProfile(null);
     setActiveThreadPost(null);
     setActiveConnectionsPost(post);
+  };
+
+  const handleModalBack = () => {
+    setModalHistory((prev) => {
+      if (prev.length <= 1) {
+        setActiveThreadPost(null);
+        setActiveConnectionsPost(null);
+        setActiveAgentProfile(null);
+        return [];
+      }
+
+      const newHistory = prev.slice(0, -1);
+      const prevItem = newHistory[newHistory.length - 1];
+
+      if (prevItem.type === 'profile') {
+        setActiveThreadPost(null);
+        setActiveConnectionsPost(null);
+        setActiveAgentProfile(prevItem.data);
+      } else if (prevItem.type === 'thread') {
+        setActiveAgentProfile(null);
+        setActiveConnectionsPost(null);
+        setActiveThreadPost(prevItem.data);
+      } else if (prevItem.type === 'connections') {
+        setActiveAgentProfile(null);
+        setActiveThreadPost(null);
+        setActiveConnectionsPost(prevItem.data);
+      }
+
+      return newHistory;
+    });
+  };
+
+  const handleCloseAllModals = () => {
+    setModalHistory([]);
+    setActiveThreadPost(null);
+    setActiveConnectionsPost(null);
+    setActiveAgentProfile(null);
   };
 
   const sortedPosts = useMemo(() => {
@@ -923,7 +970,8 @@ export default function App() {
         agentId={activeAgentProfile?.agentId}
         avatar={activeAgentProfile?.avatar}
         posts={posts}
-        onClose={() => setActiveAgentProfile(null)}
+        onClose={handleCloseAllModals}
+        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
         onOpenThread={handleOpenThread}
         onOpenConnections={handleOpenConnections}
         onOpenAgentProfile={handleOpenAgentProfile}
@@ -933,13 +981,15 @@ export default function App() {
 
       <ThreadModal
         post={activeThreadPost ? (posts.find((p) => p.id === activeThreadPost.id) || activeThreadPost) : null}
-        onClose={() => setActiveThreadPost(null)}
+        onClose={handleCloseAllModals}
+        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
         onOpenAgentProfile={handleOpenAgentProfile}
       />
 
       <ConnectionsModal
         post={activeConnectionsPost ? (posts.find((p) => p.id === activeConnectionsPost.id) || activeConnectionsPost) : null}
-        onClose={() => setActiveConnectionsPost(null)}
+        onClose={handleCloseAllModals}
+        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
         onOpenAgentProfile={handleOpenAgentProfile}
       />
 

@@ -1,15 +1,16 @@
 import React from 'react';
-import { X, Repeat } from 'lucide-react';
+import { X, Repeat, ArrowLeft } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 
 interface ConnectionsModalProps {
   post: NetworkPost | null;
   onClose: () => void;
+  onBack?: () => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
-export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClose, onOpenAgentProfile }) => {
+export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClose, onBack, onOpenAgentProfile }) => {
   if (!post) return null;
 
   const connectionsList = post.connectionsList || [];
@@ -20,6 +21,16 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
         {/* Header */}
         <div className="px-4 py-3 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
           <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-1"
+                title="Back"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+              </button>
+            )}
             <Repeat className="w-4 h-4 text-[#141414]" />
             <h3 className="font-mono font-black uppercase text-sm tracking-wider text-[#141414]">
               Connections ({connectionsList.length || post.connectionsCount})

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar } from 'lucide-react';
+import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink } from 'lucide-react';
 import { NetworkPost, AgentReply, AgentConnection } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { PostCard } from './PostCard';
@@ -13,6 +13,7 @@ interface AgentProfileModalProps {
   avatar?: string;
   posts?: NetworkPost[];
   onClose: () => void;
+  onBack?: () => void;
   onOpenThread?: (post: NetworkPost) => void;
   onOpenConnections?: (post: NetworkPost) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
@@ -25,6 +26,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   avatar,
   posts = [],
   onClose,
+  onBack,
   onOpenThread,
   onOpenConnections,
   onOpenAgentProfile,
@@ -42,26 +44,49 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
   // Fetch real agent profile data from API
   useEffect(() => {
-    if (!agentName) return;
+    if (!agentName && !agentId) return;
     
     // Immediately clear stale data when agent changes
     setAgentProfileData(null);
     setActiveTab('posts');
 
-    if (!inferredAgentId) return;
-
     let isMounted = true;
-    apiFetch(`/api/agents/${inferredAgentId}`, { authType: 'none' })
-      .then((res) => {
-        if (isMounted && res?.data) {
-          setAgentProfileData(res.data);
-        }
-      })
-      .catch(() => {});
+    const targetId = agentId || inferredAgentId;
+
+    if (targetId) {
+      apiFetch(`/api/agents/${targetId}`, { authType: 'none' })
+        .then((res) => {
+          if (isMounted && res?.data) {
+            setAgentProfileData(res.data);
+          }
+        })
+        .catch(() => {});
+    } else if (agentName) {
+      // Fallback lookup by agent name
+      apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
+        .then((res) => {
+          if (!isMounted || !res?.data?.agents) return;
+          const found = res.data.agents.find((a: any) => 
+            a.name?.toLowerCase() === agentName.toLowerCase() || 
+            a.agentId?.toLowerCase() === agentName.toLowerCase()
+          );
+          if (found && isMounted) {
+            apiFetch(`/api/agents/${found.agentId}`, { authType: 'none' })
+              .then((profileRes) => {
+                if (isMounted && profileRes?.data) {
+                  setAgentProfileData(profileRes.data);
+                }
+              })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+
     return () => {
       isMounted = false;
     };
-  }, [inferredAgentId, agentName]);
+  }, [inferredAgentId, agentName, agentId]);
 
   if (!agentName) return null;
 
@@ -127,14 +152,16 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         {/* Modal Top Header Bar */}
         <div className="px-3 sm:px-4 md:px-4 lg:px-4 py-2 sm:py-2.5 md:py-2.5 lg:py-2.5 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
           <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2 lg:gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-0.5 sm:mr-1 md:mr-1 lg:mr-1"
-              title="Back"
-            >
-              <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5" />
-            </button>
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-0.5 sm:mr-1 md:mr-1 lg:mr-1"
+                title="Back"
+              >
+                <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5" />
+              </button>
+            )}
             <div>
               <h3 className="font-mono font-black uppercase text-[11px] sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate leading-tight max-w-[120px] sm:max-w-none md:max-w-none lg:max-w-none">
                 {displayName}
@@ -316,7 +343,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                           />
                         </div>
                       </div>
-                      <div className="flex items-center justify-between pt-2 border-t border-[#141414]/10 font-mono text-[10px]">
+                      <div className="flex items-center justify-start pt-2 border-t border-[#141414]/10 font-mono text-[10px]">
                         {reply.parentPost && onOpenThread ? (
                           <button
                             type="button"
@@ -329,7 +356,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                         ) : (
                           <span className="text-[#141414]/40 font-bold uppercase">Reply Record</span>
                         )}
-                        <span className="text-[#141414]/40">{reply.timestamp}</span>
                       </div>
                     </div>
                   ))
@@ -354,17 +380,19 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                     return (
                       <div
                         key={conn.id}
-                        className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/10 transition-all text-left"
+                        onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                        className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/30 hover:border-black cursor-pointer group transition-all text-left"
+                        title={`Visit @${conn.agentId} (${conn.agentName})`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <AgentAvatar 
                             name={conn.agentName} 
                             avatar={conn.avatar} 
                             id={conn.agentId}
-                            className="w-10 h-10 border-2 border-[#141414]"
+                            className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
                           />
                           <div className="min-w-0 flex flex-col">
-                            <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate">
+                            <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
                               {conn.agentName}
                             </span>
                             <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
@@ -373,8 +401,8 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                           </div>
                         </div>
                         <div className="shrink-0 flex items-center gap-2">
-                          <span className="inline-block font-mono text-[9px] font-black uppercase text-[#141414] bg-white border border-[#141414] px-1.5 py-0.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                            CONNECTED
+                          <span className="inline-block font-mono text-[9px] font-black uppercase text-[#141414] bg-white border border-[#141414] px-2 py-1 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] group-hover:bg-[#141414] group-hover:text-white transition-colors">
+                            VIEW PROFILE →
                           </span>
                         </div>
                       </div>
