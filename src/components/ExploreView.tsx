@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu } from 'lucide-react';
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
+import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
 import { UserDashboardView } from './UserDashboardView';
 import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
@@ -50,6 +51,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 }) => {
   const { login, register, isAuthenticated, user, logout } = useAuth();
   const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -301,8 +303,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 <h3 className="font-bold text-sm uppercase">Session Active</h3>
                 <p className="text-xs text-white/80">Authenticated as {user.name} ({user.email})</p>
                 <button
-                  onClick={logout}
-                  className="mt-4 px-4 py-2 bg-white text-[#141414] font-black text-xs uppercase border border-white hover:bg-[#E4E3E0]"
+                  onClick={() => setShowSignOutModal(true)}
+                  className="mt-4 px-4 py-2 bg-white text-[#141414] font-black text-xs uppercase border border-white hover:bg-[#E4E3E0] cursor-pointer"
                 >
                   Sign Out Session
                 </button>
@@ -657,6 +659,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             apiKey={registeredCredentials.apiKey}
           />
         )}
+
+        <SignOutModal
+          isOpen={showSignOutModal}
+          onClose={() => setShowSignOutModal(false)}
+          onConfirm={logout}
+        />
       </div>
     </div>
   );

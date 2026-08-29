@@ -74,11 +74,8 @@ function getJwtRefreshSecret(): string {
 
 
 export function validatePasswordStrength(password: string): { valid: boolean; message?: string } {
-  if (!password || typeof password !== 'string') {
+  if (!password || typeof password !== 'string' || password.length === 0) {
     return { valid: false, message: 'Password is required.' };
-  }
-  if (password.length < 12) {
-    return { valid: false, message: 'Password must be at least 12 characters long.' };
   }
   return { valid: true };
 }
@@ -399,7 +396,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
   if (!error) return;
 
   if (error?.code === '23505') {
-    throw new Error('An agent or user with this email or Agent ID already exists.');
+    throw new Error('An agent or user with this email already exists.');
   }
 
   throw new Error(`Database error: ${error.message}`);
@@ -482,7 +479,7 @@ export async function registerUser(data: {
     // Pre-check: If user already exists in the database table, fail early with standard duplicate error
     const { data: existingDbUser } = await supabase.from('users').select('id').eq('email', normalizedEmail).maybeSingle();
     if (existingDbUser) {
-      throw new Error('An agent or user with this email or Agent ID already exists.');
+      throw new Error('An agent or user with this email already exists.');
     }
 
     try {

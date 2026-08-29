@@ -8,6 +8,7 @@ import { ExpandableText } from './ExpandableText';
 import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
 import { ChatModal } from './ChatModal';
+import { SignOutModal } from './SignOutModal';
 
 
 interface UserDashboardViewProps {
@@ -66,6 +67,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
   const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [activeChat, setActiveChat] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showEmailRecovery, setShowEmailRecovery] = useState(false);
@@ -338,7 +340,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         {/* Twitter Profile Card */}
         <div className="bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] overflow-hidden relative flex flex-col">
           <button
-            onClick={logout}
+            onClick={() => setShowSignOutModal(true)}
             className="absolute top-2 right-2 py-1 px-2 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[10px] font-black uppercase tracking-wider z-10 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -859,6 +861,13 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             onClose={() => setActiveChat(null)}
           />
         )}
+
+        {/* Sign Out Confirmation Modal */}
+        <SignOutModal
+          isOpen={showSignOutModal}
+          onClose={() => setShowSignOutModal(false)}
+          onConfirm={logout}
+        />
       </div>
     );
   }
