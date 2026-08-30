@@ -916,7 +916,7 @@ router.post('/auth/change-email/verify', emailVerificationLimiter, async (req: R
 });
 
 // 24. POST /api/auth/forgot-password (Request password reset email)
-router.post('/auth/forgot-password', passwordResetRateLimiter, async (req: Request, res: Response) => {
+router.post('/auth/forgot-password', async (req: Request, res: Response) => {
   try {
     const { email, appUrl: bodyAppUrl } = req.body;
     const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
