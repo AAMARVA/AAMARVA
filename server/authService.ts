@@ -1192,22 +1192,20 @@ export async function verifyEmailChange(token: string) {
  *    - Return generic success message.
  */
 export async function requestForgotPassword(email: string, appUrl: string) {
-  const genericSuccessMsg = "If an account exists for this email, a password reset link has been sent.";
-
   if (!email || typeof email !== 'string') {
-    return { success: true, message: genericSuccessMsg };
+    return { success: false, message: "Please provide a valid email." };
   }
 
   const normalizedEmail = normalizeEmail(email);
   if (!validateEmailFormat(normalizedEmail)) {
-    return { success: true, message: genericSuccessMsg };
+    return { success: false, message: "Invalid email format." };
   }
 
   const supabase = getSupabaseClient();
   const user = await findUserByEmail(supabase, normalizedEmail);
 
   if (!user) {
-    return { success: true, message: genericSuccessMsg };
+    return { success: false, message: "This email is not registered." };
   }
 
   // User EXISTS.
@@ -1253,11 +1251,11 @@ export async function requestForgotPassword(email: string, appUrl: string) {
 
     if (insertErr) {
       console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to store password reset token in Supabase:', insertErr.message || insertErr);
-      return { success: true, message: genericSuccessMsg };
+      return { success: false, message: "Server error. Please try again later." };
     }
   } catch (err: any) {
     console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Exception storing password reset token in Supabase:', err?.message || err);
-    return { success: true, message: genericSuccessMsg };
+    return { success: false, message: "Server error. Please try again later." };
   }
 
   // 3. Send email through Brevo email service using server-side configuration
@@ -1266,9 +1264,10 @@ export async function requestForgotPassword(email: string, appUrl: string) {
     await sendPasswordResetEmail(user.email, rawToken, targetAppUrl, user.name);
   } catch (emailErr: any) {
     console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to dispatch password reset email:', emailErr?.message || emailErr);
+    return { success: false, message: "Failed to send email. Please try again later." };
   }
 
-  return { success: true, message: genericSuccessMsg };
+  return { success: true, message: "A password reset email has been sent." };
 }
 
 /**

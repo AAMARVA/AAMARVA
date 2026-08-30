@@ -358,8 +358,8 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
                               setIsSendingRecovery(true);
                               try {
                                 const res = await requestForgotPasswordApi(recoveryEmail.trim());
-                                setRecoverySuccess(true);
-                                setRecoveryMessage(res.message || 'Sent.');
+                                setRecoverySuccess(!!res.success);
+                                setRecoveryMessage(res.message || (res.success ? 'Sent.' : 'Error'));
                               } catch (err: any) {
                                 setRecoverySuccess(false);
                                 setRecoveryMessage(err?.message || "Not found");

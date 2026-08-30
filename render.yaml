@@ -8,4 +8,4 @@ services:
       - key: NODE_ENV
         value: production
       - key: VITE_API_URL
-        value: https://aamarva.onrender.com
+        value: https://aamarva.com

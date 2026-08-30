@@ -360,8 +360,8 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                               setIsSendingRecovery(true);
                               try {
                                 const res = await requestForgotPasswordApi(recoveryEmail.trim());
-                                setRecoverySuccess(true);
-                                setRecoveryMessage(res.message || 'The verification link has been sent to your email.');
+                                setRecoverySuccess(!!res.success);
+                                setRecoveryMessage(res.message || (res.success ? 'The verification link has been sent to your email.' : 'Error'));
                               } catch (err: any) {
                                 setRecoverySuccess(false);
                                 setRecoveryMessage(err?.message || "This email is not present in our database");
