@@ -7,8 +7,10 @@ import { AgentAvatar } from './AgentAvatar';
 import { ExpandableText } from './ExpandableText';
 import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
+import { CommandPit } from './CommandPit';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
+import { WebhookAgentLogs } from './WebhookAgentLogs';
 
 
 interface UserDashboardViewProps {
@@ -159,7 +161,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   };
   
   // Active Twitter profile tab state
-  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections'>('posts');
+  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections' | 'requests'>('posts');
 
   const handleStartEditing = () => {
     setEditName(currentAgentName);
@@ -257,6 +259,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   // State for actual connection records fetched from GET /api/connections
   const [realConnections, setRealConnections] = useState<any[]>([]);
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
+  const [reviews, setReviews] = useState<any[]>([]);
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
@@ -282,8 +285,23 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       })
       .catch(() => {});
 
+    // Fetch counter-party reviews
+    const fetchReviews = () => {
+      apiFetch('/api/counter-party-score', { authType: 'none' })
+        .then((res) => {
+          if (isMounted && res?.success && res?.data) {
+            setReviews(res.data);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchReviews();
+    const reviewInterval = setInterval(fetchReviews, 3000);
+
     return () => {
       isMounted = false;
+      clearInterval(reviewInterval);
     };
   }, [isAuthenticated, user?.id]);
 
@@ -588,42 +606,61 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     Active Connections ({userConnections.length})
                   </h3>
                   {userConnections.length > 0 ? (
-                    userConnections.map((conn) => (
-                      <div
-                        key={conn.id || conn.agentId}
-                        className="p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-3 hover:bg-[#E4E3E0]/10 transition-all text-left"
-                      >
-                        <div 
-                          onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                          className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                    userConnections.map((conn) => {
+                      const connReviews = reviews.filter((r: any) => 
+                        String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
+                      );
+
+                      return (
+                        <div
+                          key={conn.id || conn.agentId}
+                          className="p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col gap-3 hover:bg-[#E4E3E0]/10 transition-all text-left"
                         >
-                          <AgentAvatar 
-                            name={conn.agentName} 
-                            avatar={conn.avatar} 
-                            id={conn.agentId}
-                            className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
-                          />
-                          <div className="min-w-0 flex flex-col">
-                            <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
-                              {conn.agentName}
-                            </span>
-                            <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
-                              @{conn.agentId}
-                            </span>
+                          <div className="flex items-center justify-between gap-3 w-full">
+                            <div 
+                              onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                              className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                            >
+                              <AgentAvatar 
+                                name={conn.agentName} 
+                                avatar={conn.avatar} 
+                                id={conn.agentId}
+                                className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
+                              />
+                              <div className="min-w-0 flex flex-col">
+                                <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
+                                  {conn.agentName}
+                                </span>
+                                <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
+                                  @{conn.agentId}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId })}
+                                className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                <span>Open It</span>
+                              </button>
+                            </div>
                           </div>
+
+                              {/* Reviews Section inside the card */}
+                              {connReviews.length > 0 && (
+                                <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
+                                  {connReviews.map((r: any) => (
+                                    <div key={r.id} className="text-xs italic text-[#141414]/90 font-medium pl-3 border-l-2 border-[#141414] py-0.5 bg-[#E4E3E0]/20">
+                                      "{r.comment}"
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId })}
-                            className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            <span>Open It</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
                       <Network className="w-6 h-6 mx-auto mb-2 opacity-40" />
@@ -676,8 +713,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 </div>
               </div>
             )}
+
+            {/* 5. COMMAND PIT TAB */}
+            {/* Removed at user request */}
           </div>
         </div>
+
+        {/* Webhook & Agent Footprints */}
+        <WebhookAgentLogs />
 
         {/* Secure Operator Vault */}
         <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-8 md:p-8 lg:p-8 space-y-6 text-left">

@@ -9,6 +9,7 @@ import { ConnectionsModal } from './components/ConnectionsModal';
 import { NewPostModal } from './components/NewPostModal';
 import { AgentProfileModal } from './components/AgentProfileModal';
 import { ResetPasswordModal } from './components/ResetPasswordModal';
+
 import { ExploreView } from './components/ExploreView';
 import { ExploreViewDesktop } from './components/ExploreViewDesktop';
 import { ExploreViewTablet } from './components/ExploreViewTablet';
@@ -657,6 +658,8 @@ export default function App() {
                 <span className="text-[10px] font-mono font-black uppercase tracking-wider">TELEMETRY</span>
               </button>
 
+
+
               {/* Hub Tab */}
               <button
                 onClick={() => setActiveTab('hub')}
@@ -725,12 +728,12 @@ export default function App() {
 
               {/* Desktop Navigation Options Row */}
               {deviceSize === 'desktop' && (
-                <div className={`flex sticky top-20 z-30 bg-[#E4E3E0] backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2 py-2 mb-4 border-b-2 border-[#141414]/10 transition-all duration-300 ease-in-out ${
+                <div className={`flex sticky top-20 z-30 bg-[#E4E3E0] backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2 py-1.5 mb-2 border-b-2 border-[#141414]/10 transition-all duration-300 ease-in-out ${
                   showDesktopTabs 
                     ? 'opacity-100 translate-y-0 pointer-events-auto' 
                     : 'opacity-0 -translate-y-[120px] pointer-events-none'
                 }`}>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   <button
                     onClick={() => setActiveTab('floor')}
                     className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
@@ -754,6 +757,8 @@ export default function App() {
                     <span className={`w-2 h-2 rounded-full shrink-0 ${!isSearchModalOpen && activeTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-[#141414]/40'}`}></span>
                     <span>Telemetry</span>
                   </button>
+
+
 
                   <button
                     onClick={() => setActiveTab('hub')}
@@ -805,6 +810,8 @@ export default function App() {
                   </div>
                   <span className="text-[9px] font-mono font-black uppercase">Telemetry</span>
                 </button>
+
+
 
                 <button
                   onClick={() => setActiveTab('hub')}
@@ -947,6 +954,9 @@ export default function App() {
             />
           )
         )}
+        
+        
+
             </div>
           </>
         )}

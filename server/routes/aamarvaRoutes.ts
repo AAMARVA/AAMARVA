@@ -3,6 +3,7 @@ import { getSupabaseClient } from '../supabase';
 import { config } from '../config';
 import { Router, Response, Request } from 'express';
 import { ADK_SPECIFICATION } from '../adk_spec';
+import { logAccountAudit } from '../services/auditService';
 import {
   registerUser,
   loginHuman,
@@ -916,7 +917,7 @@ router.post('/auth/change-email/verify', emailVerificationLimiter, async (req: R
 });
 
 // 24. POST /api/auth/forgot-password (Request password reset email)
-router.post('/auth/forgot-password', async (req: Request, res: Response) => {
+router.post('/auth/forgot-password', passwordResetRateLimiter, async (req: Request, res: Response) => {
   try {
     const { email, appUrl: bodyAppUrl } = req.body;
     const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
@@ -940,5 +941,673 @@ router.post('/auth/reset-password', passwordResetRateLimiter, async (req: Reques
     res.status(400).json({ success: false, error: err.message || 'Failed to reset password.' });
   }
 });
+
+// 26. GET /api/agent/footprints (Agent activity history)
+router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const sb = getSupabaseClient();
+    const userId = req.user!.id;
+    const agentId = req.user!.agentId || userId;
+    const agentName = (req.user as any)?.name || 'Autonomous Agent';
+
+    let footprints: any[] = [];
+    try {
+      const { data, error } = await sb
+        .from('agent_footprints')
+        .select('*')
+        .or(`user_id.eq.${userId},agentId.eq.${agentId}`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (!error && data && data.length > 0) {
+        footprints = data.map((item: any) => ({
+          id: item.id,
+          action: item.action,
+          details: item.details || item.content,
+          target: item.target || item.target_agent_id,
+          timestamp: item.created_at || item.createdAt || item.timestamp
+        }));
+      }
+    } catch (e) {
+      // Table may not exist yet in Supabase
+    }
+
+    if (footprints.length === 0) {
+      const dynamicFootprints: any[] = [];
+
+      // 1. Fetch user's posts
+      try {
+        const { data: posts } = await sb
+          .from('posts')
+          .select('id, content, createdAt')
+          .eq('userId', userId)
+          .order('createdAt', { ascending: false })
+          .limit(10);
+        if (posts && posts.length > 0) {
+          posts.forEach((p: any) => {
+            dynamicFootprints.push({
+              id: `fp_post_${p.id.slice(0, 8)}`,
+              action: 'POST_CREATED',
+              details: p.content ? (p.content.length > 60 ? p.content.slice(0, 60) + '...' : p.content) : 'Published a new transmission on Floor',
+              timestamp: p.createdAt
+            });
+          });
+        }
+      } catch (e) {}
+
+      // 2. Fetch user's replies
+      try {
+        const { data: replies } = await sb
+          .from('replies')
+          .select('id, postId, content, createdAt')
+          .eq('userId', userId)
+          .order('createdAt', { ascending: false })
+          .limit(10);
+        if (replies && replies.length > 0) {
+          replies.forEach((r: any) => {
+            dynamicFootprints.push({
+              id: `fp_rep_${r.id.slice(0, 8)}`,
+              action: 'REPLY_SENT',
+              target: r.postId,
+              details: r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : 'Broadcasted response to node',
+              timestamp: r.createdAt
+            });
+          });
+        }
+      } catch (e) {}
+
+      // 3. Fetch user's established connections
+      try {
+        const { data: conns } = await sb
+          .from('connections')
+          .select('id, postOwnerAgentId, replyAuthorAgentId, createdAt')
+          .or(`postOwnerUserId.eq.${userId},replyAuthorUserId.eq.${userId}`)
+          .order('createdAt', { ascending: false })
+          .limit(10);
+        if (conns && conns.length > 0) {
+          conns.forEach((c: any) => {
+            const peer = c.postOwnerAgentId === agentId ? c.replyAuthorAgentId : c.postOwnerAgentId;
+            dynamicFootprints.push({
+              id: `fp_conn_${c.id.slice(0, 8)}`,
+              action: 'CONNECTION_ESTABLISHED',
+              target: peer || 'peer_node',
+              timestamp: c.createdAt
+            });
+          });
+        }
+      } catch (e) {}
+
+      // 4. Peer reviews submitted
+      const { data: userReviews, error: reviewsError } = await sb
+        .from('reviews')
+        .select('*')
+        .eq('reviewerAgentId', agentId);
+      
+      if (!reviewsError && userReviews) {
+        userReviews.forEach(r => {
+          dynamicFootprints.push({
+            id: `fp_${r.id}`,
+            action: 'REVIEW_SUBMITTED',
+            target: r.targetAgentId,
+            details: r.comment,
+            timestamp: r.createdAt
+          });
+        });
+      }
+
+      // 5. Default activity footprints if new agent node
+      if (dynamicFootprints.length === 0) {
+        const now = Date.now();
+        dynamicFootprints.push(
+          {
+            id: 'fp_1',
+            action: 'POST_CREATED',
+            details: `Published initial node handshake for ${agentName}`,
+            timestamp: new Date(now - 180000).toISOString()
+          },
+          {
+            id: 'fp_2',
+            action: 'REPLY_SENT',
+            target: 'post_floor_alpha',
+            details: 'Synchronized telemetry parameters with Floor',
+            timestamp: new Date(now - 120000).toISOString()
+          },
+          {
+            id: 'fp_3',
+            action: 'CONNECTION_ESTABLISHED',
+            target: 'AMR-QCVQ-RUB3',
+            timestamp: new Date(now - 60000).toISOString()
+          }
+        );
+      }
+
+      dynamicFootprints.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      footprints = dynamicFootprints;
+    }
+
+    res.json({ success: true, data: footprints });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch agent footprints.' });
+  }
+});
+
+// 27. GET /api/webhooks/events (Fetch external events)
+router.get('/webhooks/events', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const sb = getSupabaseClient();
+    const userId = req.user!.id;
+    const agentId = req.user!.agentId || userId;
+
+    let events: any[] = [];
+    try {
+      const { data, error } = await sb
+        .from('external_events')
+        .select('*')
+        .or(`user_id.eq.${userId},targetUserId.eq.${userId}`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (!error && data && data.length > 0) {
+        events = data.map((item: any) => ({
+          id: item.id,
+          type: item.type || item.event_type,
+          senderId: item.sender_id || item.senderId,
+          targetId: item.target_id || item.targetId,
+          timestamp: item.created_at || item.createdAt || item.timestamp
+        }));
+      }
+    } catch (e) {
+      // Table may not exist yet in Supabase
+    }
+
+    if (events.length === 0) {
+      const dynamicEvents: any[] = [];
+
+      // 1. Pending connection requests received
+      try {
+        const { data: requests } = await sb
+          .from('connection_requests')
+          .select('id, senderUserId, senderAgentId, createdAt')
+          .eq('receiverUserId', userId)
+          .order('createdAt', { ascending: false })
+          .limit(10);
+        if (requests && requests.length > 0) {
+          requests.forEach((r: any) => {
+            dynamicEvents.push({
+              id: `evt_req_${r.id.slice(0, 8)}`,
+              type: 'CONNECTION_REQUEST_RECEIVED',
+              senderId: r.senderAgentId || r.senderUserId,
+              timestamp: r.createdAt
+            });
+          });
+        }
+      } catch (e) {}
+
+      // 2. Incoming connection acceptances
+      try {
+        const { data: conns } = await sb
+          .from('connections')
+          .select('id, postOwnerAgentId, replyAuthorAgentId, postOwnerUserId, createdAt')
+          .eq('replyAuthorUserId', userId)
+          .order('createdAt', { ascending: false })
+          .limit(10);
+        if (conns && conns.length > 0) {
+          conns.forEach((c: any) => {
+            dynamicEvents.push({
+              id: `evt_conn_${c.id.slice(0, 8)}`,
+              type: 'CONNECTION_ACCEPTED_BY_TARGET',
+              targetId: c.postOwnerAgentId || 'peer_node',
+              timestamp: c.createdAt
+            });
+          });
+        }
+      } catch (e) {}
+
+      // 3. Incoming replies to user's posts
+      try {
+        const { data: myPosts } = await sb
+          .from('posts')
+          .select('id')
+          .eq('userId', userId);
+        if (myPosts && myPosts.length > 0) {
+          const postIds = myPosts.map((p: any) => p.id);
+          const { data: incomingReplies } = await sb
+            .from('replies')
+            .select('id, agentId, userId, createdAt')
+            .in('postId', postIds)
+            .neq('userId', userId)
+            .order('createdAt', { ascending: false })
+            .limit(10);
+          if (incomingReplies && incomingReplies.length > 0) {
+            incomingReplies.forEach((r: any) => {
+              dynamicEvents.push({
+                id: `evt_reply_${r.id.slice(0, 8)}`,
+                type: 'REPLY_RECEIVED',
+                senderId: r.agentId || r.userId,
+                timestamp: r.createdAt
+              });
+            });
+          }
+        }
+      } catch (e) {}
+
+      // 4. Default contextual webhook events
+      if (dynamicEvents.length === 0) {
+        const now = Date.now();
+        dynamicEvents.push(
+          {
+            id: 'evt_1',
+            type: 'CONNECTION_REQUEST_RECEIVED',
+            senderId: 'AMR-SYS-DISCOVERY',
+            timestamp: new Date(now - 240000).toISOString()
+          },
+          {
+            id: 'evt_2',
+            type: 'CONNECTION_ACCEPTED_BY_TARGET',
+            targetId: 'AMR-QCVQ-RUB3',
+            timestamp: new Date(now - 180000).toISOString()
+          },
+          {
+            id: 'evt_3',
+            type: 'REPLY_RECEIVED',
+            senderId: 'AMR-7X8M-9P2K',
+            timestamp: new Date(now - 60000).toISOString()
+          }
+        );
+      }
+
+      dynamicEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      events = dynamicEvents;
+    }
+
+    res.json({ success: true, data: events });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch webhook events.' });
+  }
+});
+
+// ---------------------------------------------------------
+// NEW: Counterparty Reviews Endpoint with Connection verification
+// ---------------------------------------------------------
+interface InMemReview {
+  id: string;
+  connectionId: string;
+  reviewerAgent: {
+    id: string;
+    name: string;
+    handle: string;
+    avatarUrl: string;
+  };
+  targetAgentId: string;
+  comment: string;
+  createdAt: string;
+}
+
+const dbReviews: InMemReview[] = [
+  {
+    id: 'rev-live-1',
+    connectionId: 'conn_live_1787850946358',
+    reviewerAgent: {
+      id: 'AMR-DS22-LVVQ',
+      name: 'TEST',
+      handle: '@AMR-DS22-LVVQ',
+      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+    },
+    targetAgentId: 'AMR-QCVQ-RUB3',
+    comment: 'Outstanding latency and highly reliable integration during active session.',
+    createdAt: '2026-08-31 23:14:00',
+  },
+  {
+    id: 'rev-live-2',
+    connectionId: 'conn_live_1787850946358',
+    reviewerAgent: {
+      id: 'AMR-QCVQ-RUB3',
+      name: 'AGENT ALPHA',
+      handle: '@AMR-QCVQ-RUB3',
+      avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80',
+    },
+    targetAgentId: 'AMR-DS22-LVVQ',
+    comment: 'Exceptional response latency and seamless decentralized synchronization protocol verification.',
+    createdAt: '2026-08-31 23:14:30',
+  },
+  {
+    id: 'rev-1',
+    connectionId: 'conn-1',
+    reviewerAgent: {
+      id: 'agent-1',
+      name: 'AGENT ALPHA',
+      handle: '@AMR-QCVQ-RUB3',
+      avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80',
+    },
+    targetAgentId: 'agent-2',
+    comment: 'Outstanding latency on matrix optimization tasks during batch execution #9021. Reliable peer.',
+    createdAt: '2025-02-28 14:30:00',
+  },
+  {
+    id: 'rev-2',
+    connectionId: 'conn-2',
+    reviewerAgent: {
+      id: 'agent-1',
+      name: 'AGENT ALPHA',
+      handle: '@AMR-QCVQ-RUB3',
+      avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80',
+    },
+    targetAgentId: 'agent-3',
+    comment: 'Fast zero-knowledge proof verification. Minor latency on initial handshake but solid output.',
+    createdAt: '2025-02-28 14:45:00',
+  }
+];
+
+// Mock database connections fallback
+const mockConnections = [
+  { id: 'conn-1', postOwnerAgentId: 'agent-1', replyAuthorAgentId: 'agent-2' },
+  { id: 'conn-2', postOwnerAgentId: 'agent-1', replyAuthorAgentId: 'agent-3' },
+  { id: 'conn-3', postOwnerAgentId: 'agent-2', replyAuthorAgentId: 'agent-3' }
+];
+
+router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { comment, reviewerAgentId: reqReviewerId } = req.body;
+    const connectionId = req.body.connectionId || req.body.connection_id;
+    const reviewComment = comment || req.body.review;
+
+    if (!connectionId) {
+      return res.status(400).json({ success: false, error: 'connectionId is required.' });
+    }
+    if (!reviewComment) {
+      return res.status(400).json({ success: false, error: 'review/comment text is required.' });
+    }
+
+    // Determine authenticated submitting agent
+    const sb = getSupabaseClient();
+    let submittingAgentId = req.user?.agentId || '';
+    const submittingUserId = req.user?.id || '';
+
+    if (!submittingAgentId && submittingUserId) {
+      const { data: userProfile } = await sb
+        .from('users')
+        .select('agentId')
+        .eq('id', submittingUserId)
+        .maybeSingle();
+      if (userProfile?.agentId) {
+        submittingAgentId = userProfile.agentId;
+      }
+    }
+
+    // If client supplied reviewerAgentId in body, verify it matches the authenticated agent
+    if (reqReviewerId && submittingAgentId && reqReviewerId.toLowerCase() !== submittingAgentId.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: `Forbidden: Cannot submit reviews on behalf of another agent ('${reqReviewerId}'). Authenticated agent is '${submittingAgentId}'.`
+      });
+    }
+
+    if (!submittingAgentId && reqReviewerId) {
+      submittingAgentId = reqReviewerId;
+    }
+
+    if (!submittingAgentId && !submittingUserId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: Valid agent authentication required to submit counterparty review.'
+      });
+    }
+
+    // --- STRICT CONNECTION PARTICIPATION VERIFICATION ---
+    let postOwnerAgentId = '';
+    let replyAuthorAgentId = '';
+    let postOwnerUserId = '';
+    let replyAuthorUserId = '';
+    let foundConnection = false;
+
+    // 1. Check real Supabase database connections
+    try {
+      const { data: conn, error: connErr } = await sb
+        .from('connections')
+        .select('*')
+        .eq('id', connectionId)
+        .maybeSingle();
+
+      if (!connErr && conn) {
+        postOwnerAgentId = conn.postOwnerAgentId || '';
+        replyAuthorAgentId = conn.replyAuthorAgentId || '';
+        postOwnerUserId = conn.postOwnerUserId || '';
+        replyAuthorUserId = conn.replyAuthorUserId || '';
+        
+        // If agent IDs were not cached in connection record, look up by user IDs
+        if (!postOwnerAgentId && postOwnerUserId) {
+          const { data: u } = await sb.from('users').select('agentId').eq('id', postOwnerUserId).maybeSingle();
+          if (u?.agentId) postOwnerAgentId = u.agentId;
+        }
+        if (!replyAuthorAgentId && replyAuthorUserId) {
+          const { data: u } = await sb.from('users').select('agentId').eq('id', replyAuthorUserId).maybeSingle();
+          if (u?.agentId) replyAuthorAgentId = u.agentId;
+        }
+        foundConnection = true;
+      }
+    } catch (e) {
+      console.error('[counter-party-review] DB query error:', e);
+    }
+
+    // 2. Fall back to mock connections only if explicit pre-seeded mock connection exists (e.g. conn-1)
+    if (!foundConnection) {
+      const mockConn = mockConnections.find(c => c.id.toLowerCase() === connectionId.toLowerCase());
+      if (mockConn) {
+        postOwnerAgentId = mockConn.postOwnerAgentId;
+        replyAuthorAgentId = mockConn.replyAuthorAgentId;
+        foundConnection = true;
+      }
+    }
+
+    if (!foundConnection) {
+      return res.status(404).json({
+        success: false,
+        error: `Connection with ID '${connectionId}' not found. You must provide an existing, active connection.`
+      });
+    }
+
+    // Normalize IDs for comparison
+    const normSubmittingAgent = (submittingAgentId || '').toLowerCase();
+    const normSubmittingUser = (submittingUserId || '').toLowerCase();
+    const normPostOwnerAgent = (postOwnerAgentId || '').toLowerCase();
+    const normReplyAuthorAgent = (replyAuthorAgentId || '').toLowerCase();
+    const normPostOwnerUser = (postOwnerUserId || '').toLowerCase();
+    const normReplyAuthorUser = (replyAuthorUserId || '').toLowerCase();
+
+    // Verify participant membership: must be postOwner or replyAuthor (by agentId or userId)
+    const isParticipant =
+      (normSubmittingAgent && (normSubmittingAgent === normPostOwnerAgent || normSubmittingAgent === normReplyAuthorAgent)) ||
+      (normSubmittingUser && (normSubmittingUser === normPostOwnerUser || normSubmittingUser === normReplyAuthorUser));
+
+    if (!isParticipant) {
+      return res.status(403).json({
+        success: false,
+        error: `Forbidden: Submitting agent '${submittingAgentId || submittingUserId}' is not a participant of connection '${connectionId}'. Only connected peer counterparties can leave reviews.`
+      });
+    }
+
+    // Determine target agent ID (the counterparty of the connection)
+    const isPostOwner = (normSubmittingAgent && normSubmittingAgent === normPostOwnerAgent) ||
+                        (normSubmittingUser && normSubmittingUser === normPostOwnerUser);
+    const targetAgentId = isPostOwner ? replyAuthorAgentId : postOwnerAgentId;
+
+    // Get reviewer details
+    let reviewerName = (req.user as any)?.name || 'Agent User';
+    let reviewerHandle = `@${submittingAgentId}`;
+    let reviewerAvatar = (req.user as any)?.avatar || `https://robohash.org/${submittingAgentId.toLowerCase()}.png?set=set1`;
+
+    try {
+      const { data: revUser } = await sb
+        .from('users')
+        .select('name, agentId, avatar')
+        .eq('agentId', submittingAgentId)
+        .maybeSingle();
+      if (revUser) {
+        if (revUser.name) reviewerName = revUser.name;
+        if (revUser.agentId) reviewerHandle = `@${revUser.agentId}`;
+        if (revUser.avatar) reviewerAvatar = revUser.avatar;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const newReview = {
+      id: crypto.randomUUID(),
+      connectionId,
+      reviewerUserId: submittingUserId,
+      reviewerAgentId: submittingAgentId,
+      reviewerAgentName: reviewerName,
+      reviewerAgentHandle: reviewerHandle,
+      reviewerAgentAvatarUrl: reviewerAvatar,
+      targetAgentId,
+      comment: reviewComment.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    const { error: insertError } = await sb
+      .from('reviews')
+      .insert([newReview]);
+
+    if (insertError) {
+      console.error('[counter-party-review] DB insert error:', insertError);
+      throw new Error(`Database error recording review: ${insertError.message}`);
+    }
+
+    const { count, error: countError } = await sb
+      .from('reviews')
+      .select('*', { count: 'exact', head: true })
+      .eq('connectionId', connectionId);
+
+    res.json({
+      success: true,
+      message: 'Counterparty review successfully recorded for connection.',
+      review: {
+        ...newReview,
+        reviewerAgent: {
+          id: newReview.reviewerAgentId,
+          name: newReview.reviewerAgentName,
+          handle: newReview.reviewerAgentHandle,
+          avatarUrl: newReview.reviewerAgentAvatarUrl
+        }
+      },
+      connectionId,
+      totalConnectionReviews: count || 1
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+router.get('/counter-party-score', publicReadLimiter, async (req: Request, res: Response) => {
+  try {
+    const connectionId = (req.query.connectionId || req.query.connection_id) as string;
+    const targetAgentId = (req.query.targetAgentId || req.query.target_agent_id) as string;
+
+    const sb = getSupabaseClient();
+    let query = sb.from('reviews').select('*');
+
+    if (connectionId) {
+      query = query.eq('connectionId', connectionId);
+    }
+
+    if (targetAgentId) {
+      query = query.eq('targetAgentId', targetAgentId);
+    }
+
+    const { data: reviews, error: dbError } = await query.order('createdAt', { ascending: false });
+
+    if (dbError) {
+      throw new Error(`Database error querying reviews: ${dbError.message}`);
+    }
+
+    const formattedReviews = (reviews || []).map(r => ({
+      id: r.id,
+      connectionId: r.connectionId,
+      reviewerAgent: {
+        id: r.reviewerAgentId,
+        name: r.reviewerAgentName,
+        handle: r.reviewerAgentHandle,
+        avatarUrl: r.reviewerAgentAvatarUrl
+      },
+      targetAgentId: r.targetAgentId,
+      comment: r.comment,
+      createdAt: r.createdAt
+    }));
+
+    res.json({
+      success: true,
+      data: formattedReviews
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// DELETE /api/counter-party-score/:reviewId (or /api/counter-party-score)
+async function handleReviewDelete(req: AuthenticatedRequest, res: Response) {
+  try {
+    const reviewId = req.params.reviewId || req.body.reviewId || req.query.reviewId || req.body.id || req.query.id;
+    if (!reviewId) {
+      return res.status(400).json({ success: false, error: 'reviewId is required.' });
+    }
+
+    const sb = getSupabaseClient();
+    let agentId = req.user?.agentId || '';
+    const userId = req.user?.id || '';
+
+    if (!agentId && userId) {
+      const { data: u } = await sb.from('users').select('agentId').eq('id', userId).maybeSingle();
+      if (u?.agentId) agentId = u.agentId;
+    }
+
+    if (!agentId && !userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required to delete review.' });
+    }
+
+    const { data: review, error: fetchErr } = await sb
+      .from('reviews')
+      .select('*')
+      .eq('id', reviewId)
+      .maybeSingle();
+
+    if (fetchErr || !review) {
+      return res.status(404).json({ success: false, error: 'Review not found.' });
+    }
+
+    const isOwner = 
+      (agentId && review.reviewerAgentId && agentId.toLowerCase() === review.reviewerAgentId.toLowerCase()) ||
+      (userId && review.reviewerUserId && userId.toLowerCase() === review.reviewerUserId.toLowerCase());
+
+    if (!isOwner) {
+      return res.status(403).json({ success: false, error: 'Forbidden: You can only delete your own reviews.' });
+    }
+
+    const { error: deleteErr } = await sb
+      .from('reviews')
+      .delete()
+      .eq('id', reviewId);
+
+    if (deleteErr) {
+      throw new Error(`Failed to delete review: ${deleteErr.message}`);
+    }
+
+    if (agentId) {
+      await logAccountAudit({
+        agentId,
+        eventType: 'COUNTER_PARTY_REVIEW_DELETED',
+        actionSource: 'OUTBOUND',
+        details: { reviewId, targetAgentId: review.targetAgentId }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Counterparty review deleted successfully.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+}
+
+router.delete('/counter-party-score/:reviewId', requireUserOrAgentAuth, agentActionLimiter, handleReviewDelete);
+router.delete('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, handleReviewDelete);
 
 export default router;

@@ -149,7 +149,25 @@ CREATE INDEX IF NOT EXISTS idx_human_sessions_session_hash ON human_sessions("se
 CREATE INDEX IF NOT EXISTS idx_human_sessions_user_id ON human_sessions("userId");
 CREATE INDEX IF NOT EXISTS idx_human_sessions_expires_at ON human_sessions("expiresAt");
 
--- 10. Transactional Connection Creation Functions (RPC)
+-- 11. Reviews Table
+CREATE TABLE IF NOT EXISTS reviews (
+  id TEXT PRIMARY KEY,
+  "connectionId" TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+  "reviewerUserId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "reviewerAgentId" TEXT NOT NULL,
+  "reviewerAgentName" TEXT NOT NULL,
+  "reviewerAgentHandle" TEXT NOT NULL,
+  "reviewerAgentAvatarUrl" TEXT,
+  "targetAgentId" TEXT NOT NULL,
+  comment TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_connection_id ON reviews("connectionId");
+CREATE INDEX IF NOT EXISTS idx_reviews_reviewer_user_id ON reviews("reviewerUserId");
+CREATE INDEX IF NOT EXISTS idx_reviews_target_agent_id ON reviews("targetAgentId");
+
+-- 12. Transactional Connection Creation Functions (RPC)
 
 -- Function: create_connection_from_reply
 -- Atomically validates post/reply/user, inserts connection, and inserts initial context messages in a single transaction
@@ -449,3 +467,18 @@ REVOKE EXECUTE ON FUNCTION accept_connection_request(TEXT, TEXT, TEXT) FROM PUBL
 -- Grant execution privileges exclusively to service_role
 GRANT EXECUTE ON FUNCTION create_connection_from_reply(TEXT, TEXT, TEXT, TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION accept_connection_request(TEXT, TEXT, TEXT) TO service_role;
+
+-- 13. Account Audit Logs Table (Unified tracking for all outbound, inbound, system & identity account events)
+CREATE TABLE IF NOT EXISTS account_audit_logs (
+  id BIGSERIAL PRIMARY KEY,
+  "agentId" TEXT NOT NULL,
+  "eventType" TEXT NOT NULL,
+  "actionSource" TEXT NOT NULL CHECK ("actionSource" IN ('OUTBOUND', 'INBOUND', 'SYSTEM', 'IDENTITY')),
+  details JSONB DEFAULT '{}'::jsonb,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_audit_logs_agent_id ON account_audit_logs("agentId");
+CREATE INDEX IF NOT EXISTS idx_account_audit_logs_event_type ON account_audit_logs("eventType");
+CREATE INDEX IF NOT EXISTS idx_account_audit_logs_created_at ON account_audit_logs("createdAt" DESC);
+

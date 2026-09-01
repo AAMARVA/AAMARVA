@@ -9,6 +9,8 @@ import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChange
 import { supabase } from '../lib/supabase';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
+import { WebhookAgentLogs } from './WebhookAgentLogs';
+import { CommandPit } from './CommandPit';
 
 
 interface UserDashboardViewProps {
@@ -156,7 +158,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     }
   };
   
-  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections'>('posts');
+  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections' | 'requests'>('posts');
 
   const handleStartEditing = () => {
     setEditName(currentAgentName);
@@ -253,6 +255,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
   const [realConnections, setRealConnections] = useState<any[]>([]);
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
+  const [reviews, setReviews] = useState<any[]>([]);
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
@@ -276,8 +279,22 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       })
       .catch(() => {});
 
+    const fetchReviews = () => {
+      apiFetch('/api/counter-party-score', { authType: 'none' })
+        .then((res) => {
+          if (isMounted && res?.success && res?.data) {
+            setReviews(res.data);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchReviews();
+    const reviewInterval = setInterval(fetchReviews, 3000);
+
     return () => {
       isMounted = false;
+      clearInterval(reviewInterval);
     };
   }, [isAuthenticated, user?.id]);
 
@@ -420,7 +437,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveProfileTab('requests')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'requests' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
@@ -524,35 +541,54 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   Active Connections ({userConnections.length})
                 </h3>
                 {userConnections.length > 0 ? (
-                  userConnections.map((conn) => (
-                    <div
-                      key={conn.id || conn.agentId}
-                      className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-2.5 text-left"
-                    >
-                      <div 
-                        onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                        className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
+                  userConnections.map((conn) => {
+                    const connReviews = reviews.filter((r: any) => 
+                      String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
+                    );
+
+                    return (
+                      <div
+                        key={conn.id || conn.agentId}
+                        className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col gap-2.5 text-left"
                       >
-                        <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]" />
-                        <div className="min-w-0 flex flex-col">
-                          <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate group-hover:underline">
-                            {conn.agentName}
-                          </span>
-                          <span className="inline-flex font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start truncate">
-                            @{conn.agentId}
-                          </span>
+                        <div className="flex items-center justify-between gap-2.5 w-full">
+                          <div 
+                            onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                            className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
+                          >
+                            <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]" />
+                            <div className="min-w-0 flex flex-col">
+                              <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate group-hover:underline">
+                                {conn.agentName}
+                              </span>
+                              <span className="inline-flex font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start truncate">
+                                @{conn.agentId}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId })}
+                            className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
+                          >
+                            <MessageSquare className="w-3 h-3" />
+                            <span>Chat</span>
+                          </button>
                         </div>
+
+                        {/* Reviews Section */}
+                        {connReviews.length > 0 && (
+                          <div className="mt-0.5 pt-2 border-t border-[#141414]/20 space-y-1.5 animate-in fade-in duration-300">
+                            {connReviews.map((r: any) => (
+                              <div key={r.id} className="text-xs italic text-[#141414]/90 font-medium pl-2.5 border-l-2 border-[#141414] py-0.5 bg-[#E4E3E0]/20">
+                                "{r.comment}"
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId })}
-                        className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
-                      >
-                        <MessageSquare className="w-3 h-3" />
-                        <span>Chat</span>
-                      </button>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="py-10 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
                     No active connections found.
@@ -595,8 +631,12 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 )}
               </div>
             )}
+
           </div>
         </div>
+
+        {/* Webhook & Agent Footprints */}
+        <WebhookAgentLogs />
 
         {/* Secure Operator Vault */}
         <div className="bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] p-5 space-y-5 text-left">
