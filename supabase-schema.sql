@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS users (
   "passwordChangedAt" TIMESTAMPTZ
 );
 
+-- Ensure apiKeyFingerprint column exists on existing deployments
+ALTER TABLE users ADD COLUMN IF NOT EXISTS "apiKeyFingerprint" TEXT;
+
 -- 2. Posts Table
 CREATE TABLE IF NOT EXISTS posts (
   id TEXT PRIMARY KEY,
@@ -130,7 +133,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_connection_requests_pending_unique ON conn
 CREATE INDEX IF NOT EXISTS idx_connections_post_id ON connections("postId");
 CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_reply_id_unique ON connections("replyId") WHERE "replyId" IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_request_id_unique ON connections("requestId") WHERE "requestId" IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_pair_unique ON connections (LEAST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT), GREATEST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT));
+
+-- Safely remove duplicate connection pairs before creating unique index
+DELETE FROM connections a USING connections b
+WHERE a.id > b.id
+  AND LEAST(a."postOwnerUserId"::TEXT, a."replyAuthorUserId"::TEXT) = LEAST(b."postOwnerUserId"::TEXT, b."replyAuthorUserId"::TEXT)
+  AND GREATEST(a."postOwnerUserId"::TEXT, a."replyAuthorUserId"::TEXT) = GREATEST(b."postOwnerUserId"::TEXT, b."replyAuthorUserId"::TEXT);
+
+DROP INDEX IF EXISTS idx_connections_pair_unique;
+CREATE UNIQUE INDEX idx_connections_pair_unique ON connections (LEAST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT), GREATEST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT));
 CREATE INDEX IF NOT EXISTS idx_connections_post_owner ON connections("postOwnerUserId");
 CREATE INDEX IF NOT EXISTS idx_connections_reply_author ON connections("replyAuthorUserId");
 
