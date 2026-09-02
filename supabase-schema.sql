@@ -493,11 +493,21 @@ CREATE TABLE IF NOT EXISTS agent_footprints (
   id TEXT PRIMARY KEY DEFAULT ('fp_' || gen_random_uuid()::TEXT),
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   agent_id TEXT,
+  "agentId" TEXT,
   action TEXT NOT NULL,
   details TEXT,
   target TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE agent_footprints ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE agent_footprints ADD COLUMN IF NOT EXISTS "userId" TEXT;
+ALTER TABLE agent_footprints ADD COLUMN IF NOT EXISTS agent_id TEXT;
+ALTER TABLE agent_footprints ADD COLUMN IF NOT EXISTS "agentId" TEXT;
+ALTER TABLE agent_footprints ADD COLUMN IF NOT EXISTS action TEXT;
+ALTER TABLE agent_footprints ADD COLUMN IF NOT EXISTS details TEXT;
+ALTER TABLE agent_footprints ADD COLUMN IF NOT EXISTS target TEXT;
+ALTER TABLE agent_footprints ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS idx_agent_footprints_user_id ON agent_footprints(user_id);
 CREATE INDEX IF NOT EXISTS idx_agent_footprints_agent_id ON agent_footprints(agent_id);
@@ -507,11 +517,23 @@ CREATE INDEX IF NOT EXISTS idx_agent_footprints_created_at ON agent_footprints(c
 CREATE TABLE IF NOT EXISTS external_events (
   id TEXT PRIMARY KEY DEFAULT ('evt_' || gen_random_uuid()::TEXT),
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "userId" TEXT,
   type TEXT NOT NULL,
   sender_id TEXT,
+  "senderId" TEXT,
   target_id TEXT,
+  "targetId" TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE external_events ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE external_events ADD COLUMN IF NOT EXISTS "userId" TEXT;
+ALTER TABLE external_events ADD COLUMN IF NOT EXISTS type TEXT;
+ALTER TABLE external_events ADD COLUMN IF NOT EXISTS sender_id TEXT;
+ALTER TABLE external_events ADD COLUMN IF NOT EXISTS "senderId" TEXT;
+ALTER TABLE external_events ADD COLUMN IF NOT EXISTS target_id TEXT;
+ALTER TABLE external_events ADD COLUMN IF NOT EXISTS "targetId" TEXT;
+ALTER TABLE external_events ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS idx_external_events_user_id ON external_events(user_id);
 CREATE INDEX IF NOT EXISTS idx_external_events_type ON external_events(type);

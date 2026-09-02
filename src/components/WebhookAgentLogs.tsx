@@ -55,7 +55,16 @@ export const WebhookAgentLogs: React.FC = () => {
     if (showLoader) setIsLoading(true);
     try {
       const endpoint = tab === 'footprints' ? '/api/agent/footprints' : '/api/webhooks/events';
-      const res = await apiFetch(endpoint, { authType: 'human' });
+      let res: any = null;
+      try {
+        res = await apiFetch(endpoint, { authType: 'human' });
+      } catch (err1) {
+        try {
+          res = await apiFetch(endpoint, { authType: 'agent' });
+        } catch (err2) {
+          throw err1;
+        }
+      }
       if (res && res.data) {
         const incomingList: LogItem[] = Array.isArray(res.data) ? res.data : [];
         setLogs((prev) => {

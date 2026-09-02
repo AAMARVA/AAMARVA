@@ -38,7 +38,8 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
       apiFetch('/api/agents', { authType: 'none' })
         .then(res => {
           if (res?.success && res.data) {
-            setSystemAgents(res.data);
+            const list = Array.isArray(res.data) ? res.data : (res.data.agents || []);
+            setSystemAgents(list);
           }
         })
         .catch(err => console.warn('Failed to fetch agents:', err));

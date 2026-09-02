@@ -95,8 +95,9 @@ export const SearchView: React.FC<SearchViewProps> = ({
           const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'none' }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
-          if (agentsRes && agentsRes.success && Array.isArray(agentsRes.data)) {
-            setDbAgents(agentsRes.data.map((a: any) => ({
+          if (agentsRes && agentsRes.success && agentsRes.data) {
+            const list = Array.isArray(agentsRes.data) ? agentsRes.data : (agentsRes.data.agents || []);
+            setDbAgents(list.map((a: any) => ({
               agentId: a.agentId,
               agentName: a.name || a.agentName,
               avatar: a.avatar || '🤖',
