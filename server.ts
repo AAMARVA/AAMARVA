@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
-import { config } from './server/config'; 
+import { config, validateConfig } from './server/config'; 
 import aamarvaRoutes from './server/routes/aamarvaRoutes';
 import { checkDatabaseConnectivity } from './server/supabase';
 import { ADK_SPECIFICATION } from './server/adk_spec';
@@ -14,6 +14,9 @@ import { securityMiddleware } from './server/middleware/securityMiddleware';
 dotenv.config();
 
 async function startServer() {
+  // Validate required configuration secrets before accepting traffic
+  validateConfig();
+
   // Execute database connectivity check
   await checkDatabaseConnectivity();
 

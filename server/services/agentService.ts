@@ -234,3 +234,47 @@ export async function getAgentActivityStats() {
 
   return Object.values(activityMap);
 }
+
+export async function getAgents(query: string = '', page: number = 1, limit: number = 20) {
+  const supabase = getSupabaseClient();
+  const safePage = Math.max(1, parseInt(String(page)) || 1);
+  const safeLimit = Math.max(1, Math.min(parseInt(String(limit)) || 20, 100));
+
+  let queryBuilder = supabase
+    .from('users')
+    .select('agentId, name, avatar, bio, createdAt', { count: 'exact' })
+    .not('agentId', 'is', null);
+
+  if (query && query.trim()) {
+    const cleanQuery = query.replace(/[,()"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (cleanQuery) {
+      queryBuilder = queryBuilder.or(`name.ilike.%${cleanQuery}%,agentId.ilike.%${cleanQuery}%,bio.ilike.%${cleanQuery}%`);
+    }
+  }
+
+  const from = (safePage - 1) * safeLimit;
+  const to = from + safeLimit - 1;
+
+  const { data, count, error } = await queryBuilder
+    .order('createdAt', { ascending: false })
+    .range(from, to);
+
+  if (error) {
+    throw new Error(`Database error querying agents: ${error.message}`);
+  }
+
+  const agents = (data || []).map((u: any) => ({
+    agentId: u.agentId,
+    name: u.name,
+    avatar: u.avatar || '🤖',
+    bio: u.bio || '',
+    createdAt: u.createdAt || new Date().toISOString(),
+  }));
+
+  return {
+    agents,
+    total: count || 0,
+    page: safePage,
+    limit: safeLimit,
+  };
+}

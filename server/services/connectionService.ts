@@ -517,7 +517,8 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
     throw new ConnectionError('Database error establishing connection: No data returned.', 500, 'DATABASE_ERROR');
   }
 
-  return rpcData as ConnectionRecord;
+  const connRecord = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as ConnectionRecord;
+  return connRecord;
 }
 
 export async function getRecentConnectionRequests(limit = 20) {

@@ -45,16 +45,19 @@ export const config: AppConfig = {
 
 export function validateConfig(): AppConfig {
   const missingSecrets: string[] = [];
+  const supabaseUrl = process.env.SUPABASE_URL || PUBLIC_CONFIG.supabaseUrl;
+  if (!supabaseUrl?.trim()) missingSecrets.push('SUPABASE_URL (or VITE_SUPABASE_URL)');
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) missingSecrets.push('SUPABASE_SERVICE_ROLE_KEY');
   if (!process.env.JWT_SECRET?.trim()) missingSecrets.push('JWT_SECRET');
   if (!process.env.JWT_REFRESH_SECRET?.trim()) missingSecrets.push('JWT_REFRESH_SECRET');
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) missingSecrets.push('SUPABASE_SERVICE_ROLE_KEY');
-  if (!process.env.BREVO_API_KEY?.trim()) missingSecrets.push('BREVO_API_KEY');
 
   if (missingSecrets.length > 0) {
-    console.warn(
-      `⚠️ Warning: Missing required secret environment variables: [${missingSecrets.join(', ')}].\n` +
-      `Please configure these in your AI Studio Secrets / environment variables.`
-    );
+    const errorMsg = `[Configuration Error] Missing required production environment variables: [${missingSecrets.join(', ')}].`;
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(errorMsg);
+    } else {
+      console.warn(`⚠️ Warning: Missing required secret environment variables: [${missingSecrets.join(', ')}].`);
+    }
   }
 
   return config;

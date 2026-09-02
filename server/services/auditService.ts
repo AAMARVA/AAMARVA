@@ -1,4 +1,6 @@
+import crypto from 'crypto';
 import { getSupabaseClient } from '../supabase';
+import { realtimeService } from './realtimeService';
 
 export interface AuditLogParams {
   agentId: string;
@@ -22,34 +24,81 @@ export async function logAccountAudit(params: AuditLogParams) {
   }
 }
 
-export async function logAgentFootprint(userId: string, action: string, details: string, target?: string) {
+export async function logAgentFootprint(userId: string, action: string, details: string, target?: string, agentId?: string) {
+  const footprintId = `fp_${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  const footprintRecord = {
+    id: footprintId,
+    user_id: userId,
+    agent_id: agentId || null,
+    action,
+    details,
+    target: target || null,
+    created_at: now
+  };
+
   try {
     const supabase = getSupabaseClient();
-    await supabase.from('agent_footprints').insert({
-      user_id: userId,
-      action,
-      details,
-      target: target || null,
-      created_at: new Date().toISOString()
-    });
+    await supabase.from('agent_footprints').insert(footprintRecord);
   } catch (error) {
-    console.error('[AuditLog] Error recording agent footprint:', error);
+    console.error('[AuditLog] Error recording agent footprint in database:', error);
   }
+
+  // Real-time synchronization notification to the owning account
+  try {
+    realtimeService.notifyAccount(userId, {
+      id: footprintId,
+      type: action,
+      category: 'footprint',
+      accountId: userId,
+      actorId: agentId || userId,
+      targetId: target || undefined,
+      details,
+      timestamp: now
+    });
+  } catch (rtErr) {
+    console.error('[AuditLog] Error dispatching realtime footprint notification:', rtErr);
+  }
+
+  return footprintRecord;
 }
 
-export async function logExternalEvent(userId: string, type: string, senderId?: string, targetId?: string) {
+export async function logExternalEvent(userId: string, type: string, senderId?: string, targetId?: string, details?: any) {
+  const eventId = `evt_${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  const eventRecord = {
+    id: eventId,
+    user_id: userId,
+    type,
+    sender_id: senderId || null,
+    target_id: targetId || null,
+    created_at: now
+  };
+
   try {
     const supabase = getSupabaseClient();
-    await supabase.from('external_events').insert({
-      user_id: userId,
-      type,
-      sender_id: senderId || null,
-      target_id: targetId || null,
-      created_at: new Date().toISOString()
-    });
+    await supabase.from('external_events').insert(eventRecord);
   } catch (error) {
-    console.error('[AuditLog] Error recording external event:', error);
+    console.error('[AuditLog] Error recording external event in database:', error);
   }
+
+  // Real-time synchronization notification to the recipient account
+  try {
+    realtimeService.notifyAccount(userId, {
+      id: eventId,
+      type,
+      category: 'event',
+      accountId: userId,
+      actorId: senderId || undefined,
+      targetId: targetId || undefined,
+      details,
+      timestamp: now
+    });
+  } catch (rtErr) {
+    console.error('[AuditLog] Error dispatching realtime external event notification:', rtErr);
+  }
+
+  return eventRecord;
 }
 
 export async function cleanupOldAuditLogs() {

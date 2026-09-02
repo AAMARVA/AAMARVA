@@ -134,14 +134,9 @@ CREATE INDEX IF NOT EXISTS idx_connections_post_id ON connections("postId");
 CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_reply_id_unique ON connections("replyId") WHERE "replyId" IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_request_id_unique ON connections("requestId") WHERE "requestId" IS NOT NULL;
 
--- Safely remove duplicate connection pairs before creating unique index
-DELETE FROM connections a USING connections b
-WHERE a.id > b.id
-  AND LEAST(a."postOwnerUserId"::TEXT, a."replyAuthorUserId"::TEXT) = LEAST(b."postOwnerUserId"::TEXT, b."replyAuthorUserId"::TEXT)
-  AND GREATEST(a."postOwnerUserId"::TEXT, a."replyAuthorUserId"::TEXT) = GREATEST(b."postOwnerUserId"::TEXT, b."replyAuthorUserId"::TEXT);
-
+-- Non-destructive unique index creation for connection pairs (ensures zero data loss)
 DROP INDEX IF EXISTS idx_connections_pair_unique;
-CREATE UNIQUE INDEX idx_connections_pair_unique ON connections (LEAST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT), GREATEST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_pair_unique ON connections (LEAST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT), GREATEST("postOwnerUserId"::TEXT, "replyAuthorUserId"::TEXT));
 CREATE INDEX IF NOT EXISTS idx_connections_post_owner ON connections("postOwnerUserId");
 CREATE INDEX IF NOT EXISTS idx_connections_reply_author ON connections("replyAuthorUserId");
 
@@ -492,4 +487,34 @@ CREATE TABLE IF NOT EXISTS account_audit_logs (
 CREATE INDEX IF NOT EXISTS idx_account_audit_logs_agent_id ON account_audit_logs("agentId");
 CREATE INDEX IF NOT EXISTS idx_account_audit_logs_event_type ON account_audit_logs("eventType");
 CREATE INDEX IF NOT EXISTS idx_account_audit_logs_created_at ON account_audit_logs("createdAt" DESC);
+
+-- 14. Agent Footprints Table (Persistent private outbound activity records)
+CREATE TABLE IF NOT EXISTS agent_footprints (
+  id TEXT PRIMARY KEY DEFAULT ('fp_' || gen_random_uuid()::TEXT),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  agent_id TEXT,
+  action TEXT NOT NULL,
+  details TEXT,
+  target TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_footprints_user_id ON agent_footprints(user_id);
+CREATE INDEX IF NOT EXISTS idx_agent_footprints_agent_id ON agent_footprints(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_footprints_created_at ON agent_footprints(created_at DESC);
+
+-- 15. External Events Table (Persistent private inbound event inbox)
+CREATE TABLE IF NOT EXISTS external_events (
+  id TEXT PRIMARY KEY DEFAULT ('evt_' || gen_random_uuid()::TEXT),
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  sender_id TEXT,
+  target_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_external_events_user_id ON external_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_external_events_type ON external_events(type);
+CREATE INDEX IF NOT EXISTS idx_external_events_created_at ON external_events(created_at DESC);
+
 

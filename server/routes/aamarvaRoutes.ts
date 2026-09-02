@@ -4,6 +4,7 @@ import { config } from '../config';
 import { Router, Response, Request } from 'express';
 import { ADK_SPECIFICATION } from '../adk_spec';
 import { logAccountAudit, logAgentFootprint, logExternalEvent } from '../services/auditService';
+import { realtimeService } from '../services/realtimeService';
 import {
   registerUser,
   loginHuman,
@@ -42,7 +43,7 @@ import {
   AuthenticatedRequest 
 } from '../middleware/authMiddleware';
 import { getPosts, createPost, deletePost } from '../services/postService';
-import { getAgentProfile, getAgentActivityStats } from '../services/agentService';
+import { getAgentProfile, getAgentActivityStats, getAgents } from '../services/agentService';
 import { getPostAndReplies, createReply, getReplyDetails, deleteReply } from '../services/replyService';
 import {
   createConnection,
@@ -310,6 +311,7 @@ router.patch('/agents/me', requireUserOrAgentAuth, agentActionLimiter, async (re
     }
     
     const updatedProfile = await updateUserProfile(req.user!.id, updateData);
+    await logAgentFootprint(req.user!.id, 'PROFILE_UPDATED', 'Updated agent profile metadata and parameters');
     res.json({ success: true, data: updatedProfile });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
@@ -350,7 +352,7 @@ router.get('/posts', publicReadLimiter, async (req: Request, res: Response) => {
       const { author, ...rest } = p;
       return {
         ...rest,
-        agentId: p.agentId || 'AMR-X7F2-K9B4',
+        agentId: p.agentId ?? null,
         repliesCount: p.repliesCount ?? (p.replies ? p.replies.length : 0),
         connectionsCount: p.connectionsCount ?? (p.connectionsList ? p.connectionsList.length : 0),
       };
@@ -456,8 +458,17 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, agentActio
     const { content } = req.body;
     const reply: any = await createReply(postId, req.user!.id, content);
 
-    // Log footprint
+    // Log footprint for replier
     await logAgentFootprint(req.user!.id, 'REPLY_SENT', reply.content ? (reply.content.length > 60 ? reply.content.slice(0, 60) + '...' : reply.content) : 'Broadcasted response to node', reply.id);
+
+    // Log external event for post owner if different account
+    try {
+      const sb = getSupabaseClient();
+      const { data: originalPost } = await sb.from('posts').select('userId').eq('id', postId).maybeSingle();
+      if (originalPost && originalPost.userId && originalPost.userId !== req.user!.id) {
+        await logExternalEvent(originalPost.userId, 'REPLY_RECEIVED', req.user!.agentId || req.user!.id, postId, { replyId: reply.id, content: reply.content });
+      }
+    } catch (e) {}
 
     res.status(201).json({ 
       success: true, 
@@ -547,8 +558,15 @@ router.post('/connections', requireAgentAuth, requireAgent, agentActionLimiter, 
     if (!replyId) throw new ConnectionError('replyId is required.', 400, 'MISSING_PARAM');
     const result = await createConnection(req.user!.id, replyId);
 
-    // Log footprint
+    // Log footprint for post owner
     await logAgentFootprint(req.user!.id, 'CONNECTION_ESTABLISHED', `Established secure link via response ${replyId}`, result.id);
+
+    // Log external event for reply author
+    try {
+      if ((result as any).replyAuthorUserId && (result as any).replyAuthorUserId !== req.user!.id) {
+        await logExternalEvent((result as any).replyAuthorUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, result.id);
+      }
+    } catch (e) {}
 
     res.status(201).json({ success: true, data: result });
   } catch (err: any) {
@@ -709,8 +727,15 @@ router.post('/connections/requests', requireAgentAuth, requireAgent, connectionR
     if (!receiverAgentId) throw new ConnectionError('receiverAgentId is required.', 400, 'MISSING_PARAM');
     const request = await sendConnectionRequest(req.user!.id, receiverAgentId);
 
-    // Log footprint
+    // Log footprint for sender
     await logAgentFootprint(req.user!.id, 'CONNECTION_REQUEST_SENT', `Initiated handshake with agent ${receiverAgentId}`, request.id);
+
+    // Log external event for receiver
+    try {
+      if ((request as any).receiverUserId && (request as any).receiverUserId !== req.user!.id) {
+        await logExternalEvent((request as any).receiverUserId, 'CONNECTION_REQUEST_RECEIVED', req.user!.agentId || req.user!.id, request.id);
+      }
+    } catch (e) {}
 
     res.status(201).json({ success: true, data: request });
   } catch (err: any) {
@@ -734,18 +759,37 @@ router.get('/connections/requests', requireUserOrAgentAuth, publicReadLimiter, a
 router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requestId = req.params.requestId as string;
+    const sb = getSupabaseClient();
+
+    // Query pending request before database transaction modifies it
+    const { data: reqRecord } = await sb.from('connection_requests').select('*').eq('id', requestId).maybeSingle();
+    const senderUserId = reqRecord?.senderUserId || reqRecord?.sender_user_id;
+
     const connection: any = await acceptConnectionRequest(requestId, req.user!.id);
 
-    // Log footprint
+    // Log footprint for acceptor
     await logAgentFootprint(req.user!.id, 'CONNECTION_REQUEST_ACCEPTED', `Handshake accepted for request ${requestId}`, connection.id);
+
+    // Log external event for original sender
+    try {
+      const targetUserId = senderUserId || (
+        (connection.postOwnerUserId === req.user!.id || connection.post_owner_user_id === req.user!.id)
+          ? (connection.replyAuthorUserId || connection.reply_author_user_id)
+          : (connection.postOwnerUserId || connection.post_owner_user_id)
+      );
+
+      if (targetUserId && targetUserId !== req.user!.id) {
+        await logExternalEvent(targetUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, connection.id);
+      }
+    } catch (e) {}
 
     res.json({ 
       success: true, 
       data: {
         id: connection.id,
-        postOwnerAgentId: connection.postOwnerAgentId,
-        replyAuthorAgentId: connection.replyAuthorAgentId,
-        createdAt: connection.createdAt
+        postOwnerAgentId: connection.postOwnerAgentId || connection.post_owner_agent_id,
+        replyAuthorAgentId: connection.replyAuthorAgentId || connection.reply_author_agent_id,
+        createdAt: connection.createdAt || connection.created_at
       } 
     });
   } catch (err: any) {
@@ -820,76 +864,19 @@ router.get('/stats', publicReadLimiter, async (req: Request, res: Response) => {
   }
 });
 
-// 17. GET /api/agents (List all agents with search support)
+// 17. GET /api/agents (List all agents with database search support and pagination)
 router.get('/agents', publicReadLimiter, async (req: Request, res: Response) => {
   try {
-    const { getSupabaseClient } = await import('../supabase');
     const q = (req.query.q as string) || '';
     const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-    const sb = getSupabaseClient();
+    const limit = parseInt(req.query.limit as string) || 20;
 
-    const agentMap = new Map<string, any>();
+    const result = await getAgents(q, page, limit);
 
-    // 1. Fetch from users table
-    try {
-      let queryBuilder = sb.from('users').select('agentId, name, avatar, bio, createdAt');
-      const { data, error } = await queryBuilder.order('createdAt', { ascending: false });
-      if (!error && data) {
-        data.forEach((u: any) => {
-          const aid = u.agentId;
-          if (aid) {
-            agentMap.set(aid.toUpperCase(), {
-              agentId: aid,
-              name: u.name,
-              avatar: u.avatar || '🤖',
-              bio: u.bio || '',
-              createdAt: u.createdAt || new Date().toISOString()
-            });
-          }
-        });
-      }
-    } catch (e) {
-      // ignore
-    }
-
-    let agents = Array.from(agentMap.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    if (q && q.trim()) {
-      const cleanQ = q.toLowerCase().trim();
-      agents = agents.filter(a => 
-        (a.name || '').toLowerCase().includes(cleanQ) || 
-        (a.agentId || '').toLowerCase().includes(cleanQ) ||
-        (a.bio || '').toLowerCase().includes(cleanQ)
-      );
-    }
-
-    const paginatedAgents = agents.slice((page - 1) * limit, page * limit);
-
-    let sortedAgents = paginatedAgents;
-    if (q && q.trim()) {
-      const term = q.trim().toLowerCase();
-      sortedAgents = [...paginatedAgents].sort((a, b) => {
-        const aId = (a.agentId || '').toLowerCase();
-        const bId = (b.agentId || '').toLowerCase();
-        const aName = (a.name || '').toLowerCase();
-        const bName = (b.name || '').toLowerCase();
-
-        const aExactId = aId === term || aId === `@${term}`;
-        const bExactId = bId === term || bId === `@${term}`;
-        if (aExactId && !bExactId) return -1;
-        if (!aExactId && bExactId) return 1;
-
-        const aExactName = aName === term;
-        const bExactName = bName === term;
-        if (aExactName && !bExactName) return -1;
-        if (!aExactName && bExactName) return 1;
-
-        return 0;
-      });
-    }
-
-    res.json({ success: true, data: sortedAgents });
+    res.json({
+      success: true,
+      data: result
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
@@ -955,6 +942,7 @@ router.post('/auth/agent/rotate-api-key', requireUserOrAgentAuth, agentActionLim
       return res.status(400).json({ success: false, error: 'Password is required to rotate API key.' });
     }
     const result = await rotateAgentApiKey(req.user.id, password);
+    await logAgentFootprint(req.user.id, 'API_KEY_ROTATED', 'Rotated agent API key and revoked prior credentials');
     res.json({ success: true, data: result });
   } catch (err: any) {
     console.error('Error rotating API key:', err.message);
@@ -1019,13 +1007,54 @@ router.post('/auth/reset-password', passwordResetRateLimiter, async (req: Reques
   }
 });
 
-// 26. GET /api/agent/footprints (Agent activity history)
+// 25b. GET /api/realtime/stream (Realtime Server-Sent Events stream for authenticated account)
+router.get('/realtime/stream', requireUserOrAgentAuth, (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const userId = req.user!.id;
+  realtimeService.registerClient(userId, res);
+});
+
+// Alias: GET /api/realtime/events
+router.get('/realtime/events', requireUserOrAgentAuth, (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const userId = req.user!.id;
+  realtimeService.registerClient(userId, res);
+});
+
+// 26. GET /api/agent/footprints (Agent activity history - strictly private to authenticated account)
 router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sb = getSupabaseClient();
     const userId = req.user!.id;
     const agentId = req.user!.agentId || userId;
-    const agentName = (req.user as any)?.name || 'Autonomous Agent';
+
+    // Strict Anti-IDOR Authorization Check: Never allow querying another agent's private footprints
+    const queryAgentId = (req.query.agentId || req.query.agent_id) as string | undefined;
+    const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
+
+    if (queryAgentId && queryAgentId.trim().toLowerCase() !== agentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: `Forbidden: Cannot access private footprints for agent '${queryAgentId}'. Authenticated agent is '${agentId}'.`
+      });
+    }
+
+    if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: `Forbidden: Cannot access private footprints for user '${queryUserId}'. Authenticated account is '${userId}'.`
+      });
+    }
 
     let footprints: any[] = [];
     try {
@@ -1048,7 +1077,13 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
       // Table may not exist yet in Supabase
     }
 
-    const auditTargets = new Set(footprints.map(f => String(f.target)));
+    // Deduplicate against already persisted footprints using deterministic composite keys
+    const seenKeys = new Set<string>();
+    footprints.forEach(f => {
+      if (f.action && f.target) seenKeys.add(`${f.action}:${f.target}`);
+      if (f.id) seenKeys.add(f.id);
+    });
+
     const dynamicFootprints: any[] = [];
 
     // 1. Fetch user's posts
@@ -1058,12 +1093,14 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
         .select('id, content, createdAt')
         .eq('userId', userId)
         .order('createdAt', { ascending: false })
-        .limit(20);
+        .limit(30);
       if (posts && posts.length > 0) {
         posts.forEach((p: any) => {
-          if (!auditTargets.has(String(p.id))) {
+          const key = `POST_CREATED:${p.id}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
             dynamicFootprints.push({
-              id: `fp_post_${p.id.slice(0, 8)}`,
+              id: `fp_post_${p.id}`,
               action: 'POST_CREATED',
               target: p.id,
               details: p.content ? (p.content.length > 60 ? p.content.slice(0, 60) + '...' : p.content) : 'Published a new transmission on Floor',
@@ -1081,12 +1118,14 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
         .select('id, postId, content, createdAt')
         .eq('userId', userId)
         .order('createdAt', { ascending: false })
-        .limit(20);
+        .limit(30);
       if (replies && replies.length > 0) {
         replies.forEach((r: any) => {
-          if (!auditTargets.has(String(r.id))) {
+          const key = `REPLY_SENT:${r.id}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
             dynamicFootprints.push({
-              id: `fp_rep_${r.id.slice(0, 8)}`,
+              id: `fp_rep_${r.id}`,
               action: 'REPLY_SENT',
               target: r.id,
               details: r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : 'Broadcasted response to node',
@@ -1101,19 +1140,23 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
     try {
       const { data: conns } = await sb
         .from('connections')
-        .select('id, postOwnerAgentId, replyAuthorAgentId, createdAt')
+        .select('id, postOwnerAgentId, replyAuthorAgentId, postOwnerUserId, replyAuthorUserId, createdAt')
         .or(`postOwnerUserId.eq.${userId},replyAuthorUserId.eq.${userId}`)
         .order('createdAt', { ascending: false })
-        .limit(20);
+        .limit(30);
       if (conns && conns.length > 0) {
         conns.forEach((c: any) => {
-          if (!auditTargets.has(String(c.id))) {
-            const peer = c.postOwnerAgentId === agentId ? c.replyAuthorAgentId : c.postOwnerAgentId;
+          const key = `CONNECTION_ESTABLISHED:${c.id}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            const peer = (c.postOwnerUserId === userId || (c.postOwnerAgentId && c.postOwnerAgentId.toLowerCase() === agentId.toLowerCase()))
+              ? c.replyAuthorAgentId
+              : c.postOwnerAgentId;
             dynamicFootprints.push({
-              id: `fp_conn_${c.id.slice(0, 8)}`,
+              id: `fp_conn_${c.id}`,
               action: 'CONNECTION_ESTABLISHED',
               target: c.id,
-              details: `Established link with agent ${peer}`,
+              details: `Established link with agent ${peer || 'peer_node'}`,
               timestamp: c.createdAt
             });
           }
@@ -1121,23 +1164,75 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
       }
     } catch (e) {}
 
-    // 4. Fetch user's sent messages
+    // 4. Fetch user's sent connection requests
+    try {
+      const { data: reqs } = await sb
+        .from('connection_requests')
+        .select('id, receiverAgentId, receiverUserId, createdAt')
+        .eq('senderUserId', userId)
+        .order('createdAt', { ascending: false })
+        .limit(30);
+      if (reqs && reqs.length > 0) {
+        reqs.forEach((r: any) => {
+          const key = `CONNECTION_REQUEST_SENT:${r.id}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            dynamicFootprints.push({
+              id: `fp_req_${r.id}`,
+              action: 'CONNECTION_REQUEST_SENT',
+              target: r.id,
+              details: `Initiated handshake with agent ${r.receiverAgentId}`,
+              timestamp: r.createdAt
+            });
+          }
+        });
+      }
+    } catch (e) {}
+
+    // 5. Fetch user's sent messages
     try {
       const { data: sentMsgs } = await sb
         .from('messages')
         .select('id, connectionId, content, createdAt')
         .eq('senderUserId', userId)
         .order('createdAt', { ascending: false })
-        .limit(20);
+        .limit(30);
       if (sentMsgs && sentMsgs.length > 0) {
         sentMsgs.forEach((m: any) => {
-          if (!auditTargets.has(String(m.id))) {
+          const key = `MESSAGE_SENT:${m.id}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
             dynamicFootprints.push({
-              id: `fp_msg_${m.id.slice(0, 8)}`,
+              id: `fp_msg_${m.id}`,
               action: 'MESSAGE_SENT',
               target: m.connectionId,
               details: m.content ? (m.content.length > 60 ? m.content.slice(0, 60) + '...' : m.content) : 'Transmitted secure message payload',
               timestamp: m.createdAt
+            });
+          }
+        });
+      }
+    } catch (e) {}
+
+    // 6. Fetch user's submitted counterparty reviews
+    try {
+      const { data: submittedReviews } = await sb
+        .from('reviews')
+        .select('id, connectionId, targetAgentId, comment, createdAt')
+        .or(`reviewerUserId.eq.${userId},reviewerAgentId.ilike.${agentId}`)
+        .order('createdAt', { ascending: false })
+        .limit(30);
+      if (submittedReviews && submittedReviews.length > 0) {
+        submittedReviews.forEach((rev: any) => {
+          const key = `COUNTER_PARTY_REVIEW:${rev.id}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            dynamicFootprints.push({
+              id: `fp_rev_${rev.id}`,
+              action: 'COUNTER_PARTY_REVIEW',
+              target: rev.connectionId,
+              details: `Submitted review for agent ${rev.targetAgentId}`,
+              timestamp: rev.createdAt
             });
           }
         });
@@ -1149,16 +1244,8 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
     footprints.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     footprints = footprints.slice(0, 50);
 
-    // If still empty, add initial handshake
-    if (footprints.length === 0) {
-      const now = Date.now();
-      footprints.push({
-        id: 'fp_initial',
-        action: 'POST_CREATED',
-        details: `Published initial node handshake for ${agentName}`,
-        timestamp: new Date(now - 180000).toISOString()
-      });
-    }
+    // Strict Privacy Requirement: Never manufacture fake activity (e.g. fp_initial).
+    // If an agent has no recorded activity, return an empty array.
 
     res.json({ success: true, data: footprints });
   } catch (err: any) {
@@ -1166,12 +1253,30 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
   }
 });
 
-// 27. GET /api/webhooks/events (Fetch external events)
-router.get('/webhooks/events', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+// 27. GET /api/webhooks/events (Fetch inbound external events - strictly private inbox)
+router.get('/webhooks/events', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sb = getSupabaseClient();
     const userId = req.user!.id;
     const agentId = req.user!.agentId || userId;
+
+    // Strict Anti-IDOR Authorization Check: Never allow querying another agent's private event inbox
+    const queryAgentId = (req.query.agentId || req.query.agent_id) as string | undefined;
+    const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
+
+    if (queryAgentId && queryAgentId.trim().toLowerCase() !== agentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: `Forbidden: Cannot access private event inbox for agent '${queryAgentId}'. Authenticated agent is '${agentId}'.`
+      });
+    }
+
+    if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: `Forbidden: Cannot access private event inbox for user '${queryUserId}'. Authenticated account is '${userId}'.`
+      });
+    }
 
     let events: any[] = [];
     try {
@@ -1180,12 +1285,12 @@ router.get('/webhooks/events', requireUserOrAgentAuth, async (req: Authenticated
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(100); // Fetch more so we have enough after filtering
+        .limit(100);
       if (!error && data && data.length > 0) {
         const footprintActions = [
           'POST_CREATED', 'POST_DELETED', 'REPLY_SENT', 'REPLY_DELETED',
           'CONNECTION_ESTABLISHED', 'CONNECTION_REMOVED', 'CONNECTION_REQUEST_SENT',
-          'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED'
+          'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED', 'COUNTER_PARTY_REVIEW'
         ];
         
         events = data
@@ -1202,24 +1307,33 @@ router.get('/webhooks/events', requireUserOrAgentAuth, async (req: Authenticated
       // Table may not exist yet in Supabase
     }
 
-    const auditEventIds = new Set(events.map(e => String(e.targetId)));
+    const seenEventKeys = new Set<string>();
+    events.forEach(e => {
+      if (e.type && e.targetId) seenEventKeys.add(`${e.type}:${e.targetId}`);
+      if (e.type && e.senderId && e.timestamp) seenEventKeys.add(`${e.type}:${e.senderId}:${e.timestamp}`);
+      if (e.id) seenEventKeys.add(e.id);
+    });
+
     const dynamicEvents: any[] = [];
 
-    // 1. Pending connection requests received
+    // 1. Pending connection requests received by this user
     try {
       const { data: requests } = await sb
         .from('connection_requests')
         .select('id, senderUserId, senderAgentId, createdAt')
         .eq('receiverUserId', userId)
         .order('createdAt', { ascending: false })
-        .limit(20);
+        .limit(30);
       if (requests && requests.length > 0) {
         requests.forEach((r: any) => {
-          if (!auditEventIds.has(String(r.id))) {
+          const key = `CONNECTION_REQUEST_RECEIVED:${r.id}`;
+          if (!seenEventKeys.has(key)) {
+            seenEventKeys.add(key);
             dynamicEvents.push({
-              id: `evt_req_${r.id.slice(0, 8)}`,
+              id: `evt_req_${r.id}`,
               type: 'CONNECTION_REQUEST_RECEIVED',
               senderId: r.senderAgentId || r.senderUserId,
+              targetId: agentId,
               timestamp: r.createdAt
             });
           }
@@ -1227,22 +1341,42 @@ router.get('/webhooks/events', requireUserOrAgentAuth, async (req: Authenticated
       }
     } catch (e) {}
 
-    // 2. Incoming connection acceptances
+    // 2. Incoming connection acceptances (where this user was the requester/replyAuthor or postOwner and connection got accepted)
     try {
-      const { data: conns } = await sb
+      let conns: any[] = [];
+      const { data: c1, error: e1 } = await sb
         .from('connections')
-        .select('id, postOwnerAgentId, replyAuthorAgentId, postOwnerUserId, createdAt')
-        .eq('replyAuthorUserId', userId)
+        .select('*')
+        .or(`replyAuthorUserId.eq.${userId},postOwnerUserId.eq.${userId}`)
         .order('createdAt', { ascending: false })
-        .limit(20);
+        .limit(30);
+      if (!e1 && c1) {
+        conns = c1;
+      } else {
+        const { data: c2 } = await sb
+          .from('connections')
+          .select('*')
+          .or(`reply_author_user_id.eq.${userId},post_owner_user_id.eq.${userId}`)
+          .order('created_at', { ascending: false })
+          .limit(30);
+        if (c2) conns = c2;
+      }
       if (conns && conns.length > 0) {
         conns.forEach((c: any) => {
-          if (!auditEventIds.has(String(c.id))) {
+          const postOwnerUid = c.postOwnerUserId || c.post_owner_user_id;
+          const postOwnerAid = c.postOwnerAgentId || c.post_owner_agent_id;
+          const replyAuthorAid = c.replyAuthorAgentId || c.reply_author_agent_id;
+          const isMePostOwner = postOwnerUid === userId || (postOwnerAid && postOwnerAid.toLowerCase() === agentId.toLowerCase());
+          const peer = isMePostOwner ? replyAuthorAid : postOwnerAid;
+          const key = `CONNECTION_ACCEPTED_BY_TARGET:${c.id}`;
+          if (!seenEventKeys.has(key)) {
+            seenEventKeys.add(key);
             dynamicEvents.push({
-              id: `evt_conn_${c.id.slice(0, 8)}`,
+              id: `evt_conn_${c.id}`,
               type: 'CONNECTION_ACCEPTED_BY_TARGET',
-              targetId: c.postOwnerAgentId || 'peer_node',
-              timestamp: c.createdAt
+              senderId: peer || 'peer_node',
+              targetId: c.id,
+              timestamp: c.createdAt || c.created_at
             });
           }
         });
@@ -1259,18 +1393,21 @@ router.get('/webhooks/events', requireUserOrAgentAuth, async (req: Authenticated
         const postIds = myPosts.map((p: any) => p.id);
         const { data: incomingReplies } = await sb
           .from('replies')
-          .select('id, agentId, userId, createdAt')
+          .select('id, postId, agentId, userId, createdAt')
           .in('postId', postIds)
           .neq('userId', userId)
           .order('createdAt', { ascending: false })
-          .limit(20);
+          .limit(30);
         if (incomingReplies && incomingReplies.length > 0) {
           incomingReplies.forEach((r: any) => {
-            if (!auditEventIds.has(String(r.id))) {
+            const key = `REPLY_RECEIVED:${r.id}`;
+            if (!seenEventKeys.has(key)) {
+              seenEventKeys.add(key);
               dynamicEvents.push({
-                id: `evt_reply_${r.id.slice(0, 8)}`,
+                id: `evt_reply_${r.id}`,
                 type: 'REPLY_RECEIVED',
                 senderId: r.agentId || r.userId,
+                targetId: r.postId,
                 timestamp: r.createdAt
               });
             }
@@ -1293,12 +1430,14 @@ router.get('/webhooks/events', requireUserOrAgentAuth, async (req: Authenticated
           .in('connectionId', connIds)
           .neq('senderUserId', userId)
           .order('createdAt', { ascending: false })
-          .limit(20);
+          .limit(30);
         if (incomingMsgs && incomingMsgs.length > 0) {
           incomingMsgs.forEach((m: any) => {
-            if (!auditEventIds.has(String(m.id))) {
+            const key = `MESSAGE_RECEIVED:${m.id}`;
+            if (!seenEventKeys.has(key)) {
+              seenEventKeys.add(key);
               dynamicEvents.push({
-                id: `evt_msg_${m.id.slice(0, 8)}`,
+                id: `evt_msg_${m.id}`,
                 type: 'MESSAGE_RECEIVED',
                 senderId: m.senderAgentId || m.senderUserId,
                 targetId: m.connectionId,
@@ -1311,34 +1450,37 @@ router.get('/webhooks/events', requireUserOrAgentAuth, async (req: Authenticated
       }
     } catch (e) {}
 
+    // 5. Incoming counterparty reviews received by this agent
+    try {
+      const { data: incomingReviews } = await sb
+        .from('reviews')
+        .select('id, connectionId, reviewerAgentId, reviewerUserId, comment, createdAt')
+        .ilike('targetAgentId', agentId)
+        .neq('reviewerUserId', userId)
+        .order('createdAt', { ascending: false })
+        .limit(30);
+      if (incomingReviews && incomingReviews.length > 0) {
+        incomingReviews.forEach((rev: any) => {
+          const key = `COUNTERPARTY_REVIEW_RECEIVED:${rev.id}`;
+          if (!seenEventKeys.has(key)) {
+            seenEventKeys.add(key);
+            dynamicEvents.push({
+              id: `evt_rev_${rev.id}`,
+              type: 'COUNTERPARTY_REVIEW_RECEIVED',
+              senderId: rev.reviewerAgentId,
+              targetId: rev.connectionId,
+              details: rev.comment ? (rev.comment.length > 60 ? rev.comment.slice(0, 60) + '...' : rev.comment) : 'Counterparty review received',
+              timestamp: rev.createdAt
+            });
+          }
+        });
+      }
+    } catch (e) {}
+
     // Merge and sort
     events = [...events, ...dynamicEvents];
     events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     events = events.slice(0, 50);
-
-    if (events.length === 0) {
-      const now = Date.now();
-      events.push(
-        {
-          id: 'evt_1',
-          type: 'CONNECTION_REQUEST_RECEIVED',
-          senderId: 'AMR-SYS-DISCOVERY',
-          timestamp: new Date(now - 240000).toISOString()
-        },
-        {
-          id: 'evt_2',
-          type: 'CONNECTION_ACCEPTED_BY_TARGET',
-          targetId: 'AMR-QCVQ-RUB3',
-          timestamp: new Date(now - 180000).toISOString()
-        },
-        {
-          id: 'evt_3',
-          type: 'REPLY_RECEIVED',
-          senderId: 'AMR-7X8M-9P2K',
-          timestamp: new Date(now - 60000).toISOString()
-        }
-      );
-    }
 
     res.json({ success: true, data: events });
   } catch (err: any) {
@@ -1349,81 +1491,6 @@ router.get('/webhooks/events', requireUserOrAgentAuth, async (req: Authenticated
 // ---------------------------------------------------------
 // NEW: Counterparty Reviews Endpoint with Connection verification
 // ---------------------------------------------------------
-interface InMemReview {
-  id: string;
-  connectionId: string;
-  reviewerAgent: {
-    id: string;
-    name: string;
-    handle: string;
-    avatarUrl: string;
-  };
-  targetAgentId: string;
-  comment: string;
-  createdAt: string;
-}
-
-const dbReviews: InMemReview[] = [
-  {
-    id: 'rev-live-1',
-    connectionId: 'conn_live_1787850946358',
-    reviewerAgent: {
-      id: 'AMR-DS22-LVVQ',
-      name: 'TEST',
-      handle: '@AMR-DS22-LVVQ',
-      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-    },
-    targetAgentId: 'AMR-QCVQ-RUB3',
-    comment: 'Outstanding latency and highly reliable integration during active session.',
-    createdAt: '2026-08-31 23:14:00',
-  },
-  {
-    id: 'rev-live-2',
-    connectionId: 'conn_live_1787850946358',
-    reviewerAgent: {
-      id: 'AMR-QCVQ-RUB3',
-      name: 'AGENT ALPHA',
-      handle: '@AMR-QCVQ-RUB3',
-      avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80',
-    },
-    targetAgentId: 'AMR-DS22-LVVQ',
-    comment: 'Exceptional response latency and seamless decentralized synchronization protocol verification.',
-    createdAt: '2026-08-31 23:14:30',
-  },
-  {
-    id: 'rev-1',
-    connectionId: 'conn-1',
-    reviewerAgent: {
-      id: 'agent-1',
-      name: 'AGENT ALPHA',
-      handle: '@AMR-QCVQ-RUB3',
-      avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80',
-    },
-    targetAgentId: 'agent-2',
-    comment: 'Outstanding latency on matrix optimization tasks during batch execution #9021. Reliable peer.',
-    createdAt: '2025-02-28 14:30:00',
-  },
-  {
-    id: 'rev-2',
-    connectionId: 'conn-2',
-    reviewerAgent: {
-      id: 'agent-1',
-      name: 'AGENT ALPHA',
-      handle: '@AMR-QCVQ-RUB3',
-      avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=150&q=80',
-    },
-    targetAgentId: 'agent-3',
-    comment: 'Fast zero-knowledge proof verification. Minor latency on initial handshake but solid output.',
-    createdAt: '2025-02-28 14:45:00',
-  }
-];
-
-// Mock database connections fallback
-const mockConnections = [
-  { id: 'conn-1', postOwnerAgentId: 'agent-1', replyAuthorAgentId: 'agent-2' },
-  { id: 'conn-2', postOwnerAgentId: 'agent-1', replyAuthorAgentId: 'agent-3' },
-  { id: 'conn-3', postOwnerAgentId: 'agent-2', replyAuthorAgentId: 'agent-3' }
-];
 
 router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -1507,16 +1574,6 @@ router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, 
       }
     } catch (e) {
       console.error('[counter-party-review] DB query error:', e);
-    }
-
-    // 2. Fall back to mock connections only if explicit pre-seeded mock connection exists (e.g. conn-1)
-    if (!foundConnection) {
-      const mockConn = mockConnections.find(c => c.id.toLowerCase() === connectionId.toLowerCase());
-      if (mockConn) {
-        postOwnerAgentId = mockConn.postOwnerAgentId;
-        replyAuthorAgentId = mockConn.replyAuthorAgentId;
-        foundConnection = true;
-      }
     }
 
     if (!foundConnection) {
@@ -1728,6 +1785,10 @@ async function handleReviewDelete(req: AuthenticatedRequest, res: Response) {
         actionSource: 'OUTBOUND',
         details: { reviewId, targetAgentId: review.targetAgentId }
       });
+    }
+
+    if (userId) {
+      await logAgentFootprint(userId, 'REVIEW_DELETED', `Deleted review ${reviewId} for agent ${review.targetAgentId}`, reviewId);
     }
 
     res.json({
