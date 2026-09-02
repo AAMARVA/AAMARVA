@@ -1,3 +1,5 @@
+#!/bin/bash
+cat << 'INNER' > src/components/AgentAvatar.tsx
 import React from 'react';
 
 interface AgentAvatarProps {
@@ -31,13 +33,12 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   // If avatar is a Robohash URL for the old generic 'Agentic100.png', ignore it and use canonicalRobotUrl
   const isGenericAgentic100 = avatar && avatar.includes('Agentic100.png');
   const isRobohashUrl = avatar && avatar.includes('robohash.org');
-  const isDicebearUrl = avatar && avatar.includes('dicebear.com');
 
   let src = canonicalRobotUrl;
   if (isCustomUploadedImage) {
     src = avatar;
-  } else if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://')) && !isGenericAgentic100 && !isRobohashUrl && !isDicebearUrl) {
-    // If an explicit URL is provided that is not a generic placeholder, use it
+  } else if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://')) && !isGenericAgentic100 && !isRobohashUrl) {
+    // If an explicit URL is provided that is not the generic Agentic100 placeholder, use it
     src = avatar;
   } else {
     // Default to the deterministic canonical robot avatar derived from the agent's unique handle/ID/name
@@ -63,3 +64,4 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     </div>
   );
 };
+INNER

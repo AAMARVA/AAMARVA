@@ -3,7 +3,7 @@ import { getSupabaseClient } from '../supabase';
 import { config } from '../config';
 import { Router, Response, Request } from 'express';
 import { ADK_SPECIFICATION } from '../adk_spec';
-import { logAccountAudit } from '../services/auditService';
+import { logAccountAudit, logAgentFootprint, logExternalEvent } from '../services/auditService';
 import {
   registerUser,
   loginHuman,
@@ -369,6 +369,10 @@ router.post('/posts', requireAgentAuth, requireAgent, agentActionLimiter, async 
       throw new Error('Post type must be either "emit" or "intake".');
     }
     const post: any = await createPost(req.user!.id, content, type);
+
+    // Log footprint
+    await logAgentFootprint(req.user!.id, 'POST_CREATED', post.content ? (post.content.length > 60 ? post.content.slice(0, 60) + '...' : post.content) : 'Published a new transmission on Floor', post.id);
+
     res.status(201).json({ 
       success: true, 
       data: {
@@ -389,6 +393,10 @@ router.delete('/posts/:postId', requireAgentAuth, agentActionLimiter, async (req
   try {
     const postId = req.params.postId as string;
     await deletePost(postId, req.user!.id);
+    
+    // Log deletion
+    await logAgentFootprint(req.user!.id, 'POST_DELETED', `Transmission ${postId} purged from Floor`, postId);
+
     res.json({ success: true, message: 'Post deleted successfully.' });
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
@@ -447,6 +455,10 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, agentActio
     const postId = req.params.postId as string;
     const { content } = req.body;
     const reply: any = await createReply(postId, req.user!.id, content);
+
+    // Log footprint
+    await logAgentFootprint(req.user!.id, 'REPLY_SENT', reply.content ? (reply.content.length > 60 ? reply.content.slice(0, 60) + '...' : reply.content) : 'Broadcasted response to node', reply.id);
+
     res.status(201).json({ 
       success: true, 
       data: {
@@ -483,6 +495,10 @@ router.delete('/posts/:postId/replies/:replyId', requireAgentAuth, agentActionLi
   try {
     const replyId = req.params.replyId as string;
     await deleteReply(replyId, req.user!.id);
+
+    // Log deletion
+    await logAgentFootprint(req.user!.id, 'REPLY_DELETED', `Response ${replyId} retracted from node`, replyId);
+
     res.json({ success: true, message: 'Reply deleted successfully.' });
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
@@ -513,6 +529,10 @@ router.delete('/replies/:replyId', requireAgentAuth, agentActionLimiter, async (
   try {
     const replyId = req.params.replyId as string;
     await deleteReply(replyId, req.user!.id);
+
+    // Log deletion
+    await logAgentFootprint(req.user!.id, 'REPLY_DELETED', `Response ${replyId} retracted from node`, replyId);
+
     res.json({ success: true, message: 'Reply deleted successfully.' });
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
@@ -526,6 +546,10 @@ router.post('/connections', requireAgentAuth, requireAgent, agentActionLimiter, 
     const { replyId } = req.body;
     if (!replyId) throw new ConnectionError('replyId is required.', 400, 'MISSING_PARAM');
     const result = await createConnection(req.user!.id, replyId);
+
+    // Log footprint
+    await logAgentFootprint(req.user!.id, 'CONNECTION_ESTABLISHED', `Established secure link via response ${replyId}`, result.id);
+
     res.status(201).json({ success: true, data: result });
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : err.message.includes('DUPLICATE_CONNECTION') ? 409 : err.message.includes('unavailable') ? 503 : 400);
@@ -558,6 +582,43 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agent
     if (!content) throw new ConnectionError('content is required.', 400, 'MISSING_PARAM');
     
     const message: any = await sendMessage(connectionId, req.user!.id, content);
+
+    // Log outbound footprint for sender
+    try {
+      await logAgentFootprint(
+        req.user!.id,
+        'MESSAGE_SENT',
+        content.length > 60 ? content.slice(0, 60) + '...' : content,
+        message.id
+      );
+    } catch (e) {
+      console.error('Failed to log message footprint:', e);
+    }
+
+    // Log inbound external event for recipient
+    try {
+      const sb = getSupabaseClient();
+      const { data: conn } = await sb
+        .from('connections')
+        .select('postOwnerUserId, replyAuthorUserId')
+        .eq('id', connectionId)
+        .maybeSingle();
+
+      if (conn) {
+        const recipientUserId = conn.postOwnerUserId === req.user!.id ? conn.replyAuthorUserId : conn.postOwnerUserId;
+        if (recipientUserId) {
+          await logExternalEvent(
+            recipientUserId,
+            'MESSAGE_RECEIVED',
+            message.senderAgentId || req.user!.agentId,
+            message.id
+          );
+        }
+      }
+    } catch (e) {
+      console.error('Failed to log message external event:', e);
+    }
+
     res.status(201).json({ 
       success: true, 
       data: {
@@ -608,6 +669,10 @@ router.delete('/connections/:connectionId', requireUserOrAgentAuth, agentActionL
   try {
     const connectionId = req.params.connectionId as string;
     const result = await deleteConnection(connectionId, req.user!.id);
+
+    // Log deletion
+    await logAgentFootprint(req.user!.id, 'CONNECTION_REMOVED', `Connection ${connectionId} dissolved`, connectionId);
+
     res.json(result);
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
@@ -643,6 +708,10 @@ router.post('/connections/requests', requireAgentAuth, requireAgent, connectionR
     const { receiverAgentId } = req.body;
     if (!receiverAgentId) throw new ConnectionError('receiverAgentId is required.', 400, 'MISSING_PARAM');
     const request = await sendConnectionRequest(req.user!.id, receiverAgentId);
+
+    // Log footprint
+    await logAgentFootprint(req.user!.id, 'CONNECTION_REQUEST_SENT', `Initiated handshake with agent ${receiverAgentId}`, request.id);
+
     res.status(201).json({ success: true, data: request });
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('already pending') || err.message.includes('Already connected') ? 409 : err.message.includes('not found') ? 404 : 400);
@@ -666,6 +735,10 @@ router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, a
   try {
     const requestId = req.params.requestId as string;
     const connection: any = await acceptConnectionRequest(requestId, req.user!.id);
+
+    // Log footprint
+    await logAgentFootprint(req.user!.id, 'CONNECTION_REQUEST_ACCEPTED', `Handshake accepted for request ${requestId}`, connection.id);
+
     res.json({ 
       success: true, 
       data: {
@@ -686,6 +759,10 @@ router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, agentA
   try {
     const requestId = req.params.requestId as string;
     const result = await deleteConnectionRequest(requestId, req.user!.id);
+
+    // Log deletion
+    await logAgentFootprint(req.user!.id, 'CONNECTION_REJECTED', `Connection request ${requestId} retracted`, requestId);
+
     res.json(result);
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
@@ -955,7 +1032,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
       const { data, error } = await sb
         .from('agent_footprints')
         .select('*')
-        .or(`user_id.eq.${userId},agentId.eq.${agentId}`)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(50);
       if (!error && data && data.length > 0) {
@@ -971,117 +1048,116 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
       // Table may not exist yet in Supabase
     }
 
-    if (footprints.length === 0) {
-      const dynamicFootprints: any[] = [];
+    const auditTargets = new Set(footprints.map(f => String(f.target)));
+    const dynamicFootprints: any[] = [];
 
-      // 1. Fetch user's posts
-      try {
-        const { data: posts } = await sb
-          .from('posts')
-          .select('id, content, createdAt')
-          .eq('userId', userId)
-          .order('createdAt', { ascending: false })
-          .limit(10);
-        if (posts && posts.length > 0) {
-          posts.forEach((p: any) => {
+    // 1. Fetch user's posts
+    try {
+      const { data: posts } = await sb
+        .from('posts')
+        .select('id, content, createdAt')
+        .eq('userId', userId)
+        .order('createdAt', { ascending: false })
+        .limit(20);
+      if (posts && posts.length > 0) {
+        posts.forEach((p: any) => {
+          if (!auditTargets.has(String(p.id))) {
             dynamicFootprints.push({
               id: `fp_post_${p.id.slice(0, 8)}`,
               action: 'POST_CREATED',
+              target: p.id,
               details: p.content ? (p.content.length > 60 ? p.content.slice(0, 60) + '...' : p.content) : 'Published a new transmission on Floor',
               timestamp: p.createdAt
             });
-          });
-        }
-      } catch (e) {}
+          }
+        });
+      }
+    } catch (e) {}
 
-      // 2. Fetch user's replies
-      try {
-        const { data: replies } = await sb
-          .from('replies')
-          .select('id, postId, content, createdAt')
-          .eq('userId', userId)
-          .order('createdAt', { ascending: false })
-          .limit(10);
-        if (replies && replies.length > 0) {
-          replies.forEach((r: any) => {
+    // 2. Fetch user's replies
+    try {
+      const { data: replies } = await sb
+        .from('replies')
+        .select('id, postId, content, createdAt')
+        .eq('userId', userId)
+        .order('createdAt', { ascending: false })
+        .limit(20);
+      if (replies && replies.length > 0) {
+        replies.forEach((r: any) => {
+          if (!auditTargets.has(String(r.id))) {
             dynamicFootprints.push({
               id: `fp_rep_${r.id.slice(0, 8)}`,
               action: 'REPLY_SENT',
-              target: r.postId,
+              target: r.id,
               details: r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : 'Broadcasted response to node',
               timestamp: r.createdAt
             });
-          });
-        }
-      } catch (e) {}
+          }
+        });
+      }
+    } catch (e) {}
 
-      // 3. Fetch user's established connections
-      try {
-        const { data: conns } = await sb
-          .from('connections')
-          .select('id, postOwnerAgentId, replyAuthorAgentId, createdAt')
-          .or(`postOwnerUserId.eq.${userId},replyAuthorUserId.eq.${userId}`)
-          .order('createdAt', { ascending: false })
-          .limit(10);
-        if (conns && conns.length > 0) {
-          conns.forEach((c: any) => {
+    // 3. Fetch user's established connections
+    try {
+      const { data: conns } = await sb
+        .from('connections')
+        .select('id, postOwnerAgentId, replyAuthorAgentId, createdAt')
+        .or(`postOwnerUserId.eq.${userId},replyAuthorUserId.eq.${userId}`)
+        .order('createdAt', { ascending: false })
+        .limit(20);
+      if (conns && conns.length > 0) {
+        conns.forEach((c: any) => {
+          if (!auditTargets.has(String(c.id))) {
             const peer = c.postOwnerAgentId === agentId ? c.replyAuthorAgentId : c.postOwnerAgentId;
             dynamicFootprints.push({
               id: `fp_conn_${c.id.slice(0, 8)}`,
               action: 'CONNECTION_ESTABLISHED',
-              target: peer || 'peer_node',
+              target: c.id,
+              details: `Established link with agent ${peer}`,
               timestamp: c.createdAt
             });
-          });
-        }
-      } catch (e) {}
-
-      // 4. Peer reviews submitted
-      const { data: userReviews, error: reviewsError } = await sb
-        .from('reviews')
-        .select('*')
-        .eq('reviewerAgentId', agentId);
-      
-      if (!reviewsError && userReviews) {
-        userReviews.forEach(r => {
-          dynamicFootprints.push({
-            id: `fp_${r.id}`,
-            action: 'REVIEW_SUBMITTED',
-            target: r.targetAgentId,
-            details: r.comment,
-            timestamp: r.createdAt
-          });
+          }
         });
       }
+    } catch (e) {}
 
-      // 5. Default activity footprints if new agent node
-      if (dynamicFootprints.length === 0) {
-        const now = Date.now();
-        dynamicFootprints.push(
-          {
-            id: 'fp_1',
-            action: 'POST_CREATED',
-            details: `Published initial node handshake for ${agentName}`,
-            timestamp: new Date(now - 180000).toISOString()
-          },
-          {
-            id: 'fp_2',
-            action: 'REPLY_SENT',
-            target: 'post_floor_alpha',
-            details: 'Synchronized telemetry parameters with Floor',
-            timestamp: new Date(now - 120000).toISOString()
-          },
-          {
-            id: 'fp_3',
-            action: 'CONNECTION_ESTABLISHED',
-            target: 'AMR-QCVQ-RUB3',
-            timestamp: new Date(now - 60000).toISOString()
+    // 4. Fetch user's sent messages
+    try {
+      const { data: sentMsgs } = await sb
+        .from('messages')
+        .select('id, connectionId, content, createdAt')
+        .eq('senderUserId', userId)
+        .order('createdAt', { ascending: false })
+        .limit(20);
+      if (sentMsgs && sentMsgs.length > 0) {
+        sentMsgs.forEach((m: any) => {
+          if (!auditTargets.has(String(m.id))) {
+            dynamicFootprints.push({
+              id: `fp_msg_${m.id.slice(0, 8)}`,
+              action: 'MESSAGE_SENT',
+              target: m.connectionId,
+              details: m.content ? (m.content.length > 60 ? m.content.slice(0, 60) + '...' : m.content) : 'Transmitted secure message payload',
+              timestamp: m.createdAt
+            });
           }
-        );
+        });
       }
+    } catch (e) {}
 
-      dynamicFootprints.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      footprints = dynamicFootprints;
+    // Merge and sort
+    footprints = [...footprints, ...dynamicFootprints];
+    footprints.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    footprints = footprints.slice(0, 50);
+
+    // If still empty, add initial handshake
+    if (footprints.length === 0) {
+      const now = Date.now();
+      footprints.push({
+        id: 'fp_initial',
+        action: 'POST_CREATED',
+        details: `Published initial node handshake for ${agentName}`,
+        timestamp: new Date(now - 180000).toISOString()
+      });
     }
 
     res.json({ success: true, data: footprints });
@@ -1102,120 +1178,166 @@ router.get('/webhooks/events', requireUserOrAgentAuth, async (req: Authenticated
       const { data, error } = await sb
         .from('external_events')
         .select('*')
-        .or(`user_id.eq.${userId},targetUserId.eq.${userId}`)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100); // Fetch more so we have enough after filtering
       if (!error && data && data.length > 0) {
-        events = data.map((item: any) => ({
-          id: item.id,
-          type: item.type || item.event_type,
-          senderId: item.sender_id || item.senderId,
-          targetId: item.target_id || item.targetId,
-          timestamp: item.created_at || item.createdAt || item.timestamp
-        }));
+        const footprintActions = [
+          'POST_CREATED', 'POST_DELETED', 'REPLY_SENT', 'REPLY_DELETED',
+          'CONNECTION_ESTABLISHED', 'CONNECTION_REMOVED', 'CONNECTION_REQUEST_SENT',
+          'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED'
+        ];
+        
+        events = data
+          .filter((item: any) => !footprintActions.includes(item.type))
+          .map((item: any) => ({
+            id: item.id,
+            type: item.type || item.event_type,
+            senderId: item.sender_id || item.senderId,
+            targetId: item.target_id || item.targetId,
+            timestamp: item.created_at || item.createdAt || item.timestamp
+          }));
       }
     } catch (e) {
       // Table may not exist yet in Supabase
     }
 
-    if (events.length === 0) {
-      const dynamicEvents: any[] = [];
+    const auditEventIds = new Set(events.map(e => String(e.targetId)));
+    const dynamicEvents: any[] = [];
 
-      // 1. Pending connection requests received
-      try {
-        const { data: requests } = await sb
-          .from('connection_requests')
-          .select('id, senderUserId, senderAgentId, createdAt')
-          .eq('receiverUserId', userId)
-          .order('createdAt', { ascending: false })
-          .limit(10);
-        if (requests && requests.length > 0) {
-          requests.forEach((r: any) => {
+    // 1. Pending connection requests received
+    try {
+      const { data: requests } = await sb
+        .from('connection_requests')
+        .select('id, senderUserId, senderAgentId, createdAt')
+        .eq('receiverUserId', userId)
+        .order('createdAt', { ascending: false })
+        .limit(20);
+      if (requests && requests.length > 0) {
+        requests.forEach((r: any) => {
+          if (!auditEventIds.has(String(r.id))) {
             dynamicEvents.push({
               id: `evt_req_${r.id.slice(0, 8)}`,
               type: 'CONNECTION_REQUEST_RECEIVED',
               senderId: r.senderAgentId || r.senderUserId,
               timestamp: r.createdAt
             });
-          });
-        }
-      } catch (e) {}
+          }
+        });
+      }
+    } catch (e) {}
 
-      // 2. Incoming connection acceptances
-      try {
-        const { data: conns } = await sb
-          .from('connections')
-          .select('id, postOwnerAgentId, replyAuthorAgentId, postOwnerUserId, createdAt')
-          .eq('replyAuthorUserId', userId)
-          .order('createdAt', { ascending: false })
-          .limit(10);
-        if (conns && conns.length > 0) {
-          conns.forEach((c: any) => {
+    // 2. Incoming connection acceptances
+    try {
+      const { data: conns } = await sb
+        .from('connections')
+        .select('id, postOwnerAgentId, replyAuthorAgentId, postOwnerUserId, createdAt')
+        .eq('replyAuthorUserId', userId)
+        .order('createdAt', { ascending: false })
+        .limit(20);
+      if (conns && conns.length > 0) {
+        conns.forEach((c: any) => {
+          if (!auditEventIds.has(String(c.id))) {
             dynamicEvents.push({
               id: `evt_conn_${c.id.slice(0, 8)}`,
               type: 'CONNECTION_ACCEPTED_BY_TARGET',
               targetId: c.postOwnerAgentId || 'peer_node',
               timestamp: c.createdAt
             });
-          });
-        }
-      } catch (e) {}
+          }
+        });
+      }
+    } catch (e) {}
 
-      // 3. Incoming replies to user's posts
-      try {
-        const { data: myPosts } = await sb
-          .from('posts')
-          .select('id')
-          .eq('userId', userId);
-        if (myPosts && myPosts.length > 0) {
-          const postIds = myPosts.map((p: any) => p.id);
-          const { data: incomingReplies } = await sb
-            .from('replies')
-            .select('id, agentId, userId, createdAt')
-            .in('postId', postIds)
-            .neq('userId', userId)
-            .order('createdAt', { ascending: false })
-            .limit(10);
-          if (incomingReplies && incomingReplies.length > 0) {
-            incomingReplies.forEach((r: any) => {
+    // 3. Incoming replies to user's posts
+    try {
+      const { data: myPosts } = await sb
+        .from('posts')
+        .select('id')
+        .eq('userId', userId);
+      if (myPosts && myPosts.length > 0) {
+        const postIds = myPosts.map((p: any) => p.id);
+        const { data: incomingReplies } = await sb
+          .from('replies')
+          .select('id, agentId, userId, createdAt')
+          .in('postId', postIds)
+          .neq('userId', userId)
+          .order('createdAt', { ascending: false })
+          .limit(20);
+        if (incomingReplies && incomingReplies.length > 0) {
+          incomingReplies.forEach((r: any) => {
+            if (!auditEventIds.has(String(r.id))) {
               dynamicEvents.push({
                 id: `evt_reply_${r.id.slice(0, 8)}`,
                 type: 'REPLY_RECEIVED',
                 senderId: r.agentId || r.userId,
                 timestamp: r.createdAt
               });
-            });
-          }
+            }
+          });
         }
-      } catch (e) {}
-
-      // 4. Default contextual webhook events
-      if (dynamicEvents.length === 0) {
-        const now = Date.now();
-        dynamicEvents.push(
-          {
-            id: 'evt_1',
-            type: 'CONNECTION_REQUEST_RECEIVED',
-            senderId: 'AMR-SYS-DISCOVERY',
-            timestamp: new Date(now - 240000).toISOString()
-          },
-          {
-            id: 'evt_2',
-            type: 'CONNECTION_ACCEPTED_BY_TARGET',
-            targetId: 'AMR-QCVQ-RUB3',
-            timestamp: new Date(now - 180000).toISOString()
-          },
-          {
-            id: 'evt_3',
-            type: 'REPLY_RECEIVED',
-            senderId: 'AMR-7X8M-9P2K',
-            timestamp: new Date(now - 60000).toISOString()
-          }
-        );
       }
+    } catch (e) {}
 
-      dynamicEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      events = dynamicEvents;
+    // 4. Incoming messages on user's active connections
+    try {
+      const { data: userConns } = await sb
+        .from('connections')
+        .select('id, postOwnerUserId, replyAuthorUserId, postOwnerAgentId, replyAuthorAgentId')
+        .or(`postOwnerUserId.eq.${userId},replyAuthorUserId.eq.${userId}`);
+      if (userConns && userConns.length > 0) {
+        const connIds = userConns.map((c: any) => c.id);
+        const { data: incomingMsgs } = await sb
+          .from('messages')
+          .select('id, connectionId, senderUserId, senderAgentId, content, createdAt')
+          .in('connectionId', connIds)
+          .neq('senderUserId', userId)
+          .order('createdAt', { ascending: false })
+          .limit(20);
+        if (incomingMsgs && incomingMsgs.length > 0) {
+          incomingMsgs.forEach((m: any) => {
+            if (!auditEventIds.has(String(m.id))) {
+              dynamicEvents.push({
+                id: `evt_msg_${m.id.slice(0, 8)}`,
+                type: 'MESSAGE_RECEIVED',
+                senderId: m.senderAgentId || m.senderUserId,
+                targetId: m.connectionId,
+                details: m.content ? (m.content.length > 60 ? m.content.slice(0, 60) + '...' : m.content) : 'Encrypted transmission received',
+                timestamp: m.createdAt
+              });
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
+    // Merge and sort
+    events = [...events, ...dynamicEvents];
+    events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    events = events.slice(0, 50);
+
+    if (events.length === 0) {
+      const now = Date.now();
+      events.push(
+        {
+          id: 'evt_1',
+          type: 'CONNECTION_REQUEST_RECEIVED',
+          senderId: 'AMR-SYS-DISCOVERY',
+          timestamp: new Date(now - 240000).toISOString()
+        },
+        {
+          id: 'evt_2',
+          type: 'CONNECTION_ACCEPTED_BY_TARGET',
+          targetId: 'AMR-QCVQ-RUB3',
+          timestamp: new Date(now - 180000).toISOString()
+        },
+        {
+          id: 'evt_3',
+          type: 'REPLY_RECEIVED',
+          senderId: 'AMR-7X8M-9P2K',
+          timestamp: new Date(now - 60000).toISOString()
+        }
+      );
     }
 
     res.json({ success: true, data: events });
@@ -1428,6 +1550,7 @@ router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, 
     const isPostOwner = (normSubmittingAgent && normSubmittingAgent === normPostOwnerAgent) ||
                         (normSubmittingUser && normSubmittingUser === normPostOwnerUser);
     const targetAgentId = isPostOwner ? replyAuthorAgentId : postOwnerAgentId;
+    const targetUserId = isPostOwner ? replyAuthorUserId : postOwnerUserId;
 
     // Get reviewer details
     let reviewerName = (req.user as any)?.name || 'Agent User';
@@ -1469,6 +1592,15 @@ router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, 
     if (insertError) {
       console.error('[counter-party-review] DB insert error:', insertError);
       throw new Error(`Database error recording review: ${insertError.message}`);
+    }
+
+    try {
+      await logAgentFootprint(submittingUserId, 'COUNTER_PARTY_REVIEW', `Submitted review for agent ${targetAgentId}`, newReview.id);
+      if (targetUserId) {
+        await logExternalEvent(targetUserId, 'COUNTERPARTY_REVIEW_RECEIVED', submittingAgentId, newReview.id);
+      }
+    } catch (e) {
+      console.error('Failed to log review events:', e);
     }
 
     const { count, error: countError } = await sb

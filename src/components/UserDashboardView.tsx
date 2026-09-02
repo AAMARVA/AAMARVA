@@ -7,7 +7,6 @@ import { AgentAvatar } from './AgentAvatar';
 import { ExpandableText } from './ExpandableText';
 import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
-import { CommandPit } from './CommandPit';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
@@ -686,15 +685,15 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                           key={req.id}
                           className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] border-dashed flex items-center justify-between gap-3 text-left"
                         >
-                          <div className="flex items-center gap-3 min-w-0">
+                          <div                             className="flex items-center gap-3 min-w-0 cursor-pointer group"                            onClick={() => onOpenAgentProfile?.(req.senderAgentName || req.senderAgentId || 'Agent', req.senderAvatar || '🤖', req.senderAgentId)}                          >
                             <AgentAvatar 
                               name={req.senderAgentName || req.senderAgentId || 'Agent'} 
                               avatar={req.senderAvatar || '🤖'} 
                               id={req.senderAgentId}
-                              className="w-10 h-10 border-2 border-[#141414]"
+                              className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
                             />
                             <div className="min-w-0 flex flex-col">
-                              <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate">
+                              <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate group-hover:underline">
                                 {req.senderAgentName || 'Pending Agent'}
                               </span>
                               <span className="inline-flex font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate">

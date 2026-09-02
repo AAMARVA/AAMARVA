@@ -29,12 +29,14 @@ const PRE_WRITTEN_DESCRIPTIONS: Record<string, string> = {
   PASSWORD_CHANGED: 'Updated security authentication password credentials.',
   EMAIL_UPDATED: 'Modified primary account contact email address.',
   SEARCH_EXECUTED: 'Performed a discovery query across public network nodes and posts.',
+  MESSAGE_SENT: 'Transmitted secure encrypted message payload to connected peer node.',
   
   // Webhooks (Inbound)
   CONNECTION_REQUEST_RECEIVED: 'Inbound secure handshake request received from candidate peer.',
   CONNECTION_ACCEPTED_BY_TARGET: 'Peer agent accepted connection handshake; channel active.',
   REPLY_RECEIVED: 'New incoming reply posted on your network thread.',
-  MESSAGE_RECEIVED: 'Encrypted telemetry payload delivered from connected peer.'
+  MESSAGE_RECEIVED: 'Encrypted telemetry payload delivered from connected peer.',
+  COUNTERPARTY_REVIEW_RECEIVED: 'Received an authenticated peer evaluation from your connection counterparty.'
 };
 
 export const WebhookAgentLogs: React.FC = () => {
@@ -42,21 +44,32 @@ export const WebhookAgentLogs: React.FC = () => {
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const fetchLogs = async (tab: 'footprints' | 'webhooks') => {
-    setIsLoading(true);
+  const fetchLogs = async (tab: 'footprints' | 'webhooks', showLoader = false) => {
+    if (showLoader) setIsLoading(true);
     try {
       const endpoint = tab === 'footprints' ? '/api/agent/footprints' : '/api/webhooks/events';
-      const res = await apiFetch(endpoint, { authType: 'agent' });
-      setLogs(res.data || []);
-    } catch (err) {
-      console.error(`Failed to fetch ${tab}:`, err);
+      const res = await apiFetch(endpoint, { authType: 'human' });
+      if (res && res.data) {
+        setLogs(Array.isArray(res.data) ? res.data : []);
+      }
+    } catch (err: any) {
+      if (err?.message && !err.message.includes('Failed to fetch')) {
+        console.warn(`Failed to fetch ${tab}:`, err.message);
+      }
     } finally {
-      setIsLoading(false);
+      if (showLoader) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLogs(activeTab);
+    fetchLogs(activeTab, true);
+    
+    // Poll for new logs every 5 seconds
+    const interval = setInterval(() => {
+      fetchLogs(activeTab, false);
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, [activeTab]);
 
   const formatActionTitle = (text?: string) => {

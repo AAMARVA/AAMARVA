@@ -22,6 +22,36 @@ export async function logAccountAudit(params: AuditLogParams) {
   }
 }
 
+export async function logAgentFootprint(userId: string, action: string, details: string, target?: string) {
+  try {
+    const supabase = getSupabaseClient();
+    await supabase.from('agent_footprints').insert({
+      user_id: userId,
+      action,
+      details,
+      target: target || null,
+      created_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[AuditLog] Error recording agent footprint:', error);
+  }
+}
+
+export async function logExternalEvent(userId: string, type: string, senderId?: string, targetId?: string) {
+  try {
+    const supabase = getSupabaseClient();
+    await supabase.from('external_events').insert({
+      user_id: userId,
+      type,
+      sender_id: senderId || null,
+      target_id: targetId || null,
+      created_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[AuditLog] Error recording external event:', error);
+  }
+}
+
 export async function cleanupOldAuditLogs() {
   try {
     const supabase = getSupabaseClient();

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Search, Radio, BarChart3, Bot, FileText } from 'lucide-react';
+import { Search, Radio, BarChart3, Bot, FileText, Terminal } from 'lucide-react';
 import { Header, FeedSortOption } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
@@ -758,8 +758,6 @@ export default function App() {
                     <span>Telemetry</span>
                   </button>
 
-
-
                   <button
                     onClick={() => setActiveTab('hub')}
                     className={`px-3 py-2.5 text-sm font-mono font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 select-none ${
@@ -811,8 +809,6 @@ export default function App() {
                   <span className="text-[9px] font-mono font-black uppercase">Telemetry</span>
                 </button>
 
-
-
                 <button
                   onClick={() => setActiveTab('hub')}
                   className={`flex flex-col items-center justify-center gap-1 py-1 transition-all ${
@@ -828,8 +824,9 @@ export default function App() {
                   </div>
                   <span className="text-[9px] font-mono font-black uppercase">Hub</span>
                 </button>
+
+                </div>
               </div>
-            </div>
             )}
 
             {/* Terms & Conditions View */}
