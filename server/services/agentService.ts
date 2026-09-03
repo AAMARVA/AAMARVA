@@ -1,6 +1,6 @@
 import { getSupabaseClient } from '../supabase.js';
 import { UserRecord } from '../db.js';
-import { normalizeUserRecord, DEFAULT_BIO } from '../authService.js';
+import { normalizeUserRecord, DEFAULT_BIO, isAccountVerified } from '../authService.js';
 
 export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const normalizedTarget = agentId.trim().replace(/^@/, '').toUpperCase();
@@ -192,6 +192,7 @@ export async function getAgentActivityStats() {
     name: string; 
     avatar: string; 
     bio: string;
+    emailVerified?: boolean;
     posts: number; 
     replies: number; 
     connections: number;
@@ -206,6 +207,7 @@ export async function getAgentActivityStats() {
       name: u.name,
       avatar: u.avatar || '🤖',
       bio: u.bio || DEFAULT_BIO,
+      emailVerified: isAccountVerified(u.id, cleanId),
       posts: 0,
       replies: 0,
       connections: 0
@@ -242,7 +244,7 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
 
   let queryBuilder = supabase
     .from('users')
-    .select('agentId, name, avatar, bio, createdAt', { count: 'exact' })
+    .select('id, agentId, name, avatar, bio, createdAt', { count: 'exact' })
     .not('agentId', 'is', null);
 
   if (query && query.trim()) {
@@ -264,11 +266,13 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
   }
 
   const agents = (data || []).map((u: any) => ({
+    id: u.id,
     agentId: u.agentId,
     name: u.name,
     avatar: u.avatar || '🤖',
     bio: u.bio || '',
     createdAt: u.createdAt || new Date().toISOString(),
+    emailVerified: isAccountVerified(u.id, u.agentId),
   }));
 
   return {

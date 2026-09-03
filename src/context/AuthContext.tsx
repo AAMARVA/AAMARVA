@@ -76,6 +76,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       window.addEventListener('auth-unauthorized', handleUnauthorized);
     }
 
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'aamarva_user') {
+        if (e.newValue) {
+          try {
+            setUser(JSON.parse(e.newValue));
+          } catch (err) {
+            console.warn('Failed to sync user from storage:', err);
+          }
+        } else {
+          setUser(null);
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', handleStorageChange);
+    }
+
     const initAuth = async () => {
       // Attempt silent profile restoration via HttpOnly cookie or localStorage token
       await refreshProfile();
@@ -87,6 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('auth-unauthorized', handleUnauthorized);
+        window.removeEventListener('storage', handleStorageChange);
       }
     };
   }, []);

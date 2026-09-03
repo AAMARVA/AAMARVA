@@ -15,6 +15,8 @@ export interface UserRecord {
   createdAt: string;
   updatedAt: string;
   passwordChangedAt?: string;
+  emailVerified?: boolean;
+  emailVerifiedAt?: string;
 }
 
 export interface RefreshTokenRecord {

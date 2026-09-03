@@ -30,6 +30,8 @@ import { FloorViewDesktop } from './components/FloorViewDesktop';
 import { FloorViewTablet } from './components/FloorViewTablet';
 import { FloorViewMobile } from './components/FloorViewMobile';
 import { EmailChangeVerificationView } from './components/EmailChangeVerificationView';
+import { AccountEmailVerificationView } from './components/AccountEmailVerificationView';
+import { GetVerifiedModal } from './components/GetVerifiedModal';
 import { BrutalistLoader } from './components/BrutalistLoader';
 import { AgentAvatar } from './components/AgentAvatar';
 import { NetworkPost } from './types';
@@ -38,7 +40,7 @@ import { apiFetch } from './services/authApi';
 import { supabase } from './lib/supabase';
 
 export default function App() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
   const [feedSort, setFeedSort] = useState<FeedSortOption>('LATEST');
   const [posts, setPosts] = useState<NetworkPost[]>([]);
@@ -58,9 +60,11 @@ export default function App() {
   }[]>([]);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
+  const [accountVerificationToken, setAccountVerificationToken] = useState<string | null>(null);
   const [deviceSize, setDeviceSize] = useState<'mobile' | 'tablet' | 'desktop'>('desktop');
   const [showDesktopTabs, setShowDesktopTabs] = useState(true);
   const lastScrollY = useRef(0);
@@ -126,6 +130,12 @@ export default function App() {
       const emailToken = url.searchParams.get('token');
       if (href.includes('verify-email-change') && emailToken) {
         setEmailVerificationToken(emailToken);
+        return;
+      }
+
+      // Handle Account Email Verification (for Verified Tick Mark)
+      if ((href.includes('verify-email') || href.includes('account-verification')) && emailToken) {
+        setAccountVerificationToken(emailToken);
         return;
       }
 
@@ -607,8 +617,23 @@ export default function App() {
             ? 'px-4 py-3 flex flex-col gap-6 mb-20'
             : 'px-8 flex flex-col gap-0 mb-0'
       } ${isNewPostOpen ? 'overflow-hidden' : ''}`}>
-        {/* Email Change Verification Overlays everything else */}
-        {emailVerificationToken ? (
+        {/* Account Email Verification (for Verified Tick Mark) */}
+        {accountVerificationToken ? (
+          <AccountEmailVerificationView
+            token={accountVerificationToken}
+            onSuccess={async () => {
+              if (refreshProfile) await refreshProfile();
+              fetchPosts();
+            }}
+            onBackToHome={() => {
+              setAccountVerificationToken(null);
+              window.history.replaceState({}, document.title, "/");
+              if (refreshProfile) refreshProfile();
+              setActiveTab('dashboard');
+              fetchPosts();
+            }}
+          />
+        ) : emailVerificationToken ? (
           <EmailChangeVerificationView 
             token={emailVerificationToken}
             onSuccess={() => {}}
@@ -1004,6 +1029,15 @@ export default function App() {
         isOpen={isNewPostOpen}
         onClose={() => setIsNewPostOpen(false)}
         onSubmitPost={handleCreatePost}
+      />
+
+      <GetVerifiedModal
+        isOpen={isGetVerifiedModalOpen}
+        onClose={() => setIsGetVerifiedModalOpen(false)}
+        onVerified={async () => {
+          if (refreshProfile) await refreshProfile();
+          fetchPosts();
+        }}
       />
 
       <ResetPasswordModal

@@ -6,6 +6,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { Highlight } from './Highlight';
 import { apiFetch } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
+import { VerifiedBadge } from './VerifiedBadge';
 
 interface SearchViewProps {
   posts: NetworkPost[];
@@ -145,6 +146,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
           agentId: a.agentId,
           agentName: a.name || a.agentName,
           avatar: a.avatar || '🤖',
+          emailVerified: a.emailVerified,
         });
       }
     });
@@ -154,6 +156,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
           agentId: p.agentId,
           agentName: p.agentName,
           avatar: p.avatar || '🤖',
+          emailVerified: p.emailVerified,
         });
       }
     });
@@ -218,8 +221,9 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   <p className="text-white font-mono text-sm sm:text-base md:text-base lg:text-base font-black truncate uppercase tracking-tight">
                     <Highlight text={agent.agentName} query={query} />
                   </p>
-                  <p className="text-gray-500 font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs">
-                    @<Highlight text={agent.agentId || ''} query={query} />
+                  <p className="text-gray-500 font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs flex items-center gap-1">
+                    <span>@<Highlight text={agent.agentId || ''} query={query} /></span>
+                    {agent.emailVerified && <VerifiedBadge size="xs" />}
                   </p>
                 </div>
               </div>

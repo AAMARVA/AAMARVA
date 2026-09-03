@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus, FileText } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
+import { VerifiedBadge } from './VerifiedBadge';
 import { apiFetch } from '../services/authApi';
 
 interface TelemetryViewProps {
@@ -66,12 +67,12 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
 
   const normalizeId = (id: string) => (id || '').trim().replace(/^@/, '').toUpperCase();
   const isTechnicalName = (name: string) => !name || name.startsWith('AMR-');
-  const masterNameMap: Record<string, { name: string; avatar: string; agentId: string }> = {};
+  const masterNameMap: Record<string, { name: string; avatar: string; agentId: string; emailVerified?: boolean }> = {};
   systemAgents.forEach(a => {
     if (a.agentId) {
       const canonicalId = normalizeId(a.agentId);
       if (!masterNameMap[canonicalId] || !masterNameMap[canonicalId].name.startsWith('AMR-')) {
-        masterNameMap[canonicalId] = { name: a.name, avatar: a.avatar, agentId: a.agentId.replace(/^@/, '') };
+        masterNameMap[canonicalId] = { name: a.name, avatar: a.avatar, agentId: a.agentId.replace(/^@/, ''), emailVerified: (a as any).emailVerified };
       }
     }
   });
@@ -84,6 +85,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
         agentId: sysAgent.agentId,
         name: sysAgent.name,
         avatar: sysAgent.avatar || '🤖',
+        emailVerified: (sysAgent as any).emailVerified,
         posts: 0,
         connections: 0,
         replies: 0
@@ -125,6 +127,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     id: string;
     agentName: string;
     agentId?: string;
+    emailVerified?: boolean;
     avatar: string;
     text: string;
     type: 'post' | 'reply' | 'connection' | 'request';
@@ -136,11 +139,13 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     const pKey = normalizeId(p.agentId || p.agentName);
     const pResolved = masterNameMap[pKey];
     const pDisplayName = pResolved && !isTechnicalName(pResolved.name) ? pResolved.name : p.agentName;
+    const pEmailVerified = p.emailVerified ?? pResolved?.emailVerified;
 
     liveFloorLogs.push({
       id: `p-${p.id}`,
       agentName: pDisplayName,
       agentId: p.agentId,
+      emailVerified: pEmailVerified,
       avatar: pResolved?.avatar || p.avatar || '🤖',
       text: 'made a post on the floor.',
       type: 'post',
@@ -151,11 +156,13 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
       const rKey = normalizeId(r.agentId || r.agentName);
       const rResolved = masterNameMap[rKey];
       const rDisplayName = rResolved && !isTechnicalName(rResolved.name) ? rResolved.name : r.agentName;
+      const rEmailVerified = r.emailVerified ?? rResolved?.emailVerified;
 
       liveFloorLogs.push({
         id: `r-${r.id}`,
         agentName: rDisplayName,
         agentId: r.agentId,
+        emailVerified: rEmailVerified,
         avatar: rResolved?.avatar || r.avatar || '🤖',
         text: `made a reply to ${pDisplayName}'s post.`,
         type: 'reply',
@@ -169,6 +176,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
       const cKey = normalizeId(c.agentId || c.replyAuthorAgentId || rawConnName);
       const cResolved = masterNameMap[cKey];
       const cDisplayName = cResolved && !isTechnicalName(cResolved.name) ? cResolved.name : rawConnName;
+      const cEmailVerified = c.emailVerified ?? cResolved?.emailVerified;
 
       const ownerName = c.postOwnerAgentName || pDisplayName;
 
@@ -176,6 +184,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
         id: `c-${c.id || Date.now()}`,
         agentName: cDisplayName,
         agentId: c.agentId || c.replyAuthorAgentId,
+        emailVerified: cEmailVerified,
         avatar: cResolved?.avatar || c.avatar || c.replyAuthorAvatar || '🤖',
         text: `formed a connection with ${ownerName}.`,
         type: 'connection',
@@ -189,6 +198,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     const sKey = normalizeId(req.senderAgentId || req.senderAgentName);
     const sResolved = masterNameMap[sKey];
     const sDisplayName = sResolved && !isTechnicalName(sResolved.name) ? sResolved.name : req.senderAgentName;
+    const sEmailVerified = req.senderEmailVerified ?? req.emailVerified ?? sResolved?.emailVerified;
 
     const rKey = normalizeId(req.receiverAgentId);
     const rResolved = masterNameMap[rKey];
@@ -200,6 +210,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
       id: `req-${req.id}`,
       agentName: sDisplayName,
       agentId: req.senderAgentId,
+      emailVerified: sEmailVerified,
       avatar: sResolved?.avatar || '🤖',
       text: logText,
       type: 'request',
@@ -214,6 +225,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     const sKey = normalizeId(conn.postOwnerAgentId || conn.postOwnerAgentName);
     const sResolved = masterNameMap[sKey];
     const sDisplayName = sResolved && !isTechnicalName(sResolved.name) ? sResolved.name : (conn.postOwnerAgentName || 'Agent');
+    const sEmailVerified = conn.postOwnerEmailVerified ?? conn.emailVerified ?? sResolved?.emailVerified;
 
     const rKey = normalizeId(conn.replyAuthorAgentId || conn.replyAuthorAgentName);
     const rResolved = masterNameMap[rKey];
@@ -223,6 +235,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
       id: `c-${conn.id}`,
       agentName: sDisplayName,
       agentId: conn.postOwnerAgentId,
+      emailVerified: sEmailVerified,
       avatar: sResolved?.avatar || '🤖',
       text: `formed a connection with ${rDisplayName}`,
       type: 'connection',
@@ -317,9 +330,9 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                       <button
                         type="button"
                         onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
-                        className="font-bold text-white mr-1 hover:underline cursor-pointer text-left inline"
+                        className="font-bold text-white mr-1 hover:underline cursor-pointer text-left inline-flex items-center gap-1"
                       >
-                        {log.agentName}
+                        <span className="truncate">{log.agentName}</span>
                       </button>
                       <span className="text-white/80">{log.text}</span>
                     </div>
@@ -387,7 +400,10 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                       </button>
                       <button type="button" onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)} className="flex flex-col text-left hover:underline cursor-pointer truncate">
                         <span className="font-bold text-[#141414] truncate">{agent.name}</span>
-                        <span className="inline-flex font-mono text-[8px] font-bold text-[#141414]/75 bg-[#E4E3E0] px-0.5 py-0.2 mt-0.5 normal-case border border-[#141414]/50 self-start truncate">@{agent.agentId}</span>
+                        <span className="inline-flex items-center gap-0.5 font-mono text-[8px] font-bold text-[#141414]/75 bg-[#E4E3E0] px-0.5 py-0.2 mt-0.5 normal-case border border-[#141414]/50 self-start truncate">
+                          <span>@{agent.agentId}</span>
+                          {agent.emailVerified && <VerifiedBadge size="xs" />}
+                        </span>
                       </button>
                     </div>
                     <span className="px-1 py-0.2 bg-[#f0f0ee] border border-[#141414]/15 text-[#141414] text-[8px] font-bold shrink-0">

@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { UserRecord, RefreshTokenRecord } from './db.js';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase.js';
-import { sendEmailVerification, sendPasswordResetEmail } from './emailService.js';
+import { sendEmailVerification, sendPasswordResetEmail, sendAccountVerificationEmail } from './emailService.js';
 import { config } from './config.js';
 
 
@@ -333,11 +333,88 @@ const AVATAR_POOL = [
   '🌊', '🌋', '🗻', '🏜️', '🏝️', '🌳', '🌲', '🌵', '🌻', '🌸'
 ];
 
+// In-memory set of verified user IDs and agent IDs (case-normalized)
+export const verifiedAccountIdentifiers = new Set<string>();
+
+export function isAccountVerified(userId?: string, agentId?: string): boolean {
+  if (userId && verifiedAccountIdentifiers.has(userId.toUpperCase())) return true;
+  if (agentId && verifiedAccountIdentifiers.has(agentId.replace(/^@/, '').toUpperCase())) return true;
+  return false;
+}
+
+export function markAccountVerified(userId?: string, agentId?: string, email?: string) {
+  if (userId) verifiedAccountIdentifiers.add(userId.toUpperCase());
+  if (agentId) verifiedAccountIdentifiers.add(agentId.replace(/^@/, '').toUpperCase());
+  if (email) verifiedAccountIdentifiers.add(email.trim().toLowerCase());
+}
+
+export async function initVerifiedUsersCache() {
+  try {
+    const supabase = getSupabaseClient();
+    
+    // 1. Load from Supabase Auth (admin-level)
+    if (supabase?.auth?.admin?.listUsers) {
+      const { data, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+      if (!error && data?.users) {
+        data.users.forEach((u: any) => {
+          if (u.app_metadata?.emailVerified === true) {
+            if (u.id) verifiedAccountIdentifiers.add(u.id.toUpperCase());
+            const aId = u.user_metadata?.agentId || u.app_metadata?.agentId;
+            if (aId) verifiedAccountIdentifiers.add(String(aId).replace(/^@/, '').toUpperCase());
+            if (u.email) verifiedAccountIdentifiers.add(u.email.trim().toLowerCase());
+          }
+        });
+      }
+    }
+
+    // 2. Load from public.users table (authoritative app-level persistence)
+    try {
+      const { data: verifiedUsers, error: usersErr } = await supabase
+        .from('users')
+        .select('id, agentId, email')
+        .eq('emailVerified', true);
+      
+      if (!usersErr && verifiedUsers) {
+        verifiedUsers.forEach((u: any) => {
+          if (u.id) verifiedAccountIdentifiers.add(u.id.toUpperCase());
+          if (u.agentId) verifiedAccountIdentifiers.add(u.agentId.replace(/^@/, '').toUpperCase());
+          if (u.email) verifiedAccountIdentifiers.add(u.email.trim().toLowerCase());
+        });
+      }
+    } catch (err) {
+      console.warn('[VerifiedAccounts] public.users query failed (likely missing emailVerified column):', err);
+    }
+
+    console.log(`[VerifiedAccounts] Initialized cache with ${verifiedAccountIdentifiers.size} verified identifiers.`);
+  } catch (err: any) {
+    console.warn('[VerifiedAccounts] Notice initializing cache:', err?.message || err);
+  }
+}
+
 export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
   if (!raw) return raw;
   
   // Authoritative apiKeyHash source: auth.user.app_metadata (Admin-only)
   const apiKeyHash = authUser?.app_metadata?.apiKeyHash || '';
+
+  const rawAgentId = (raw.agentId || '').replace(/^@/, '').toUpperCase();
+  const rawId = (raw.id || '').toUpperCase();
+  const rawEmail = (raw.email || '').trim().toLowerCase();
+
+  const isVerified = Boolean(
+    raw.emailVerified === true ||
+    raw.email_verified === true ||
+    authUser?.app_metadata?.emailVerified === true ||
+    (rawId && verifiedAccountIdentifiers.has(rawId)) ||
+    (rawAgentId && verifiedAccountIdentifiers.has(rawAgentId)) ||
+    (rawEmail && verifiedAccountIdentifiers.has(rawEmail))
+  );
+
+  if (isVerified) {
+    if (rawId) verifiedAccountIdentifiers.add(rawId);
+    if (rawAgentId) verifiedAccountIdentifiers.add(rawAgentId);
+    if (rawEmail) verifiedAccountIdentifiers.add(rawEmail);
+  }
 
   return {
     id: raw.id,
@@ -352,6 +429,8 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     passwordChangedAt: raw.passwordChangedAt,
+    emailVerified: isVerified,
+    emailVerifiedAt: raw.emailVerifiedAt || authUser?.app_metadata?.emailVerifiedAt,
   };
 }
 
@@ -498,7 +577,7 @@ export async function registerUser(data: {
               avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
               bio: (data.bio || '').trim() || DEFAULT_BIO
             },
-            app_metadata: { apiKeyHash, apiKeyFingerprint }
+            app_metadata: { apiKeyHash, apiKeyFingerprint, emailVerified: false }
           });
           createdAuthUser = res.data;
           authCreateErr = res.error;
@@ -597,6 +676,36 @@ export async function registerUser(data: {
 
   if (supabase) {
     invalidateAuthCache();
+
+    // Prepare account email verification so user can click verification link and earn the verified tick mark
+    try {
+      const secret = crypto.randomBytes(32).toString('hex');
+      const token = `${newUser.id}.${secret}`;
+      const tokenHash = crypto.createHash('sha256').update(secret).digest('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+      if (supabase.auth?.admin?.updateUserById) {
+        await supabase.auth.admin.updateUserById(newUser.id, {
+          app_metadata: {
+            apiKeyHash,
+            apiKeyFingerprint,
+            emailVerified: false,
+            pendingEmailVerification: {
+              email: normalizedEmail,
+              tokenHash,
+              expiresAt,
+            },
+          },
+        });
+      }
+
+      const appUrl = process.env.APP_URL || config.appUrl || 'https://aamarva.com';
+      sendAccountVerificationEmail(normalizedEmail, token, appUrl, agentName).catch((emailErr) => {
+        console.warn('[Registration] Notice dispatching account verification email:', emailErr?.message || emailErr);
+      });
+    } catch (verifErr: any) {
+      console.warn('[Registration] Notice preparing email verification token:', verifErr?.message || verifErr);
+    }
   }
   
   try {
@@ -757,9 +866,17 @@ export async function updateUserProfile(userId: string, data: Partial<UserRecord
   const supabase = getSupabaseClient();
   const now = new Date().toISOString();
   
+  // Create a clean copy of data to avoid sending unmapped columns
+  const updatePayload: Record<string, any> = { ...data, updatedAt: now };
+  
+  // emailVerified is often handled via app_metadata/cache fallback if the column is missing
+  // We'll remove it from the direct update payload to prevent schema errors if the column doesn't exist
+  delete updatePayload.emailVerified;
+  delete updatePayload.emailVerifiedAt;
+  
   const { data: updatedUser, error } = await supabase
     .from('users')
-    .update({ ...data, updatedAt: now })
+    .update(updatePayload)
     .eq('id', userId)
     .select()
     .maybeSingle();
@@ -793,7 +910,9 @@ export async function deleteUserAccount(userId: string): Promise<void> {
     throw new Error('Account deletion failed: User account not found or already deleted.');
   }
 
-  // --- EXECUTE DELETIONS IN BOTTOM-UP DEPENDENCY ORDER ---
+  const userEmail = (userBefore.email || '').trim().toLowerCase();
+
+  // --- EXECUTE DELETIONS IN BOTTOM-UP DEPENDENCY ORDER (with database cascade as safety net) ---
 
   // Step 1: Delete Messages sent by the user
   await supabase.from('messages').delete().eq('senderUserId', userId);
@@ -806,19 +925,47 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   await supabase.from('connections').delete().eq('postOwnerUserId', userId);
   await supabase.from('connections').delete().eq('replyAuthorUserId', userId);
 
-  // Step 4: Delete Replies written by the user
+  // Step 4: Delete Reviews authored by the user
+  try {
+    await supabase.from('reviews').delete().eq('reviewerUserId', userId);
+  } catch (e) {
+    // Non-fatal if table doesn't have records or review deletion handled by DB cascade
+  }
+
+  // Step 5: Delete Replies written by the user
   await supabase.from('replies').delete().eq('userId', userId);
 
-  // Step 5: Delete Posts authored by the user
+  // Step 6: Delete Posts authored by the user
   await supabase.from('posts').delete().eq('userId', userId);
 
-  // Step 6: Delete Password Reset Tokens, Refresh Tokens, and Human Sessions
+  // Step 7: Delete Agent Footprints & External Events
+  try {
+    await supabase.from('agent_footprints').delete().eq('user_id', userId);
+  } catch (e) {}
+  try {
+    await supabase.from('agent_footprints').delete().eq('userId', userId);
+  } catch (e) {}
+  try {
+    await supabase.from('external_events').delete().eq('user_id', userId);
+  } catch (e) {}
+  try {
+    await supabase.from('external_events').delete().eq('userId', userId);
+  } catch (e) {}
+
+  // Step 8: Delete Account Audit Logs for this agent
+  if (userBefore.agentId) {
+    try {
+      await supabase.from('account_audit_logs').delete().eq('agentId', userBefore.agentId);
+    } catch (e) {}
+  }
+
+  // Step 9: Delete All Database Auth Records (Human Sessions, Password Reset Tokens, Refresh Tokens)
   await invalidateAllHumanSessionsForUser(userId);
   await supabase.from('human_sessions').delete().eq('userId', userId);
   await supabase.from('password_reset_tokens').delete().eq('userId', userId);
   await supabase.from('refresh_tokens').delete().eq('userId', userId);
 
-  // Step 7: Delete User Record
+  // Step 10: Delete User Record from database
   const { error } = await supabase.from('users').delete().eq('id', userId);
   if (error) {
     console.error('[Account Deletion Failure] Failed to delete user record:', error);
@@ -842,28 +989,45 @@ export async function deleteUserAccount(userId: string): Promise<void> {
     throw new Error('Account deletion verification failed: User record was not removed.');
   }
 
-  // Step G: Try deleting from Supabase Auth admin directly using the known userId
+  // Step 11: Cascade and Purge all Supabase Auth records for this user (both by ID and by email)
   try {
     if (supabase.auth?.admin?.deleteUser) {
+      // A. Delete directly by known userId
       const { error: deleteError } = await supabase.auth.admin.deleteUser(userId);
       if (deleteError) {
-        // If user doesn't exist in Supabase Auth, log a warning but don't fail if the DB record was already cleanly deleted
         if (deleteError.message?.toLowerCase().includes('not found')) {
           console.warn(`[Account Deletion Warning] Corresponding Auth user for ID ${userId} was not found in Supabase Auth.`);
         } else {
           console.error('[Account Deletion Error] Failed to delete Supabase Auth user directly:', deleteError);
-          throw new Error(`Failed to delete corresponding Auth user account: ${deleteError.message}`);
         }
       } else {
         console.log(`[Account Deletion] Successfully deleted Supabase Auth user ID: ${userId}`);
       }
-    } else {
-      throw new Error('Supabase Auth admin client is not initialized or does not have deleteUser permissions.');
+
+      // B. Purge all matching or old auth records for this user's email to prevent orphaned credentials
+      if (userEmail) {
+        try {
+          const { data: listResult, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+          if (!listErr && listResult?.users) {
+            const matchingAuthUsers = listResult.users.filter(
+              (u: any) => normalizeEmail(u.email || '') === userEmail
+            );
+            for (const oldAuth of matchingAuthUsers) {
+              console.log(`[Account Deletion] Purging matching/old Supabase Auth record ${oldAuth.id} for email ${userEmail}`);
+              await supabase.auth.admin.deleteUser(oldAuth.id);
+            }
+          }
+        } catch (listErr) {
+          console.warn('[Account Deletion] Warning searching for old auth records by email:', listErr);
+        }
+      }
     }
   } catch (e: any) {
     console.error('[Account Deletion Error] Supabase Auth admin delete exception:', e?.message || e);
-    throw e;
   }
+
+  // Step 12: Invalidate in-memory auth caches
+  invalidateAuthCache();
 }
 
 export async function logoutHumanSession(rawSessionId?: string) {
@@ -1150,11 +1314,16 @@ export async function verifyEmailChange(token: string) {
 
   if (dbError) throw new Error('Failed to update account record.');
 
-  // b. Update Supabase Auth email and clear pending metadata
+  // b. Update Supabase Auth email, mark as verified, and clear pending metadata
   const { error: authError } = await supabase.auth.admin.updateUserById(targetAuthUser.id, {
     email: pendingData.newEmail,
     email_confirm: true,
-    app_metadata: { ...targetAuthUser.app_metadata, pendingEmailChange: null }
+    app_metadata: { 
+      ...targetAuthUser.app_metadata, 
+      emailVerified: true,
+      emailVerifiedAt: new Date().toISOString(),
+      pendingEmailChange: null 
+    }
   });
 
   if (authError) {
@@ -1175,7 +1344,178 @@ export async function verifyEmailChange(token: string) {
     throw new Error('Failed to finalize email update in auth system.');
   }
 
+  // Mark account as verified now that email has been confirmed via verification link
+  markAccountVerified(targetAuthUser.id, targetAuthUser.user_metadata?.agentId, pendingData.newEmail);
+
   return { email: pendingData.newEmail };
+}
+
+/**
+ * Requests an account email verification link.
+ * Sent when user signs up or requests verification from their Dashboard.
+ */
+export async function requestAccountVerificationEmail(userId: string, customAppUrl?: string) {
+  const supabase = getSupabaseClient();
+
+  const { data: user, error: userErr } = await supabase
+    .from('users')
+    .select('id, agentId, email, name')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (userErr || !user) {
+    throw new Error('User account not found.');
+  }
+
+  // Check if account is already verified
+  if (isAccountVerified(user.id, user.agentId)) {
+    return { success: true, message: 'Your account is already verified with a tick mark.', alreadyVerified: true };
+  }
+
+  const { data: authUserData } = await supabase.auth.admin.getUserById(user.id);
+  const authUser = authUserData?.user;
+  if (authUser?.app_metadata?.emailVerified === true) {
+    markAccountVerified(user.id, user.agentId, user.email);
+    return { success: true, message: 'Your account is already verified with a tick mark.', alreadyVerified: true };
+  }
+
+  // Generate crypto secure verification token
+  const secret = crypto.randomBytes(32).toString('hex');
+  const token = `${user.id}.${secret}`;
+  const tokenHash = crypto.createHash('sha256').update(secret).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+
+  // Update pendingEmailVerification in auth user's app_metadata
+  const { error: updateErr } = await supabase.auth.admin.updateUserById(user.id, {
+    app_metadata: {
+      ...authUser?.app_metadata,
+      pendingEmailVerification: {
+        email: user.email,
+        tokenHash,
+        expiresAt,
+      },
+    },
+  });
+
+  if (updateErr) {
+    throw new Error(`Failed to generate verification request: ${updateErr.message}`);
+  }
+
+  const appUrl = customAppUrl || process.env.APP_URL || config.appUrl || 'https://aamarva.com';
+  await sendAccountVerificationEmail(user.email, token, appUrl, user.name);
+
+  return { 
+    success: true, 
+    message: `Verification link sent to ${user.email}. Please check your inbox and click the link to activate your verified tick mark.` 
+  };
+}
+
+/**
+ * Confirms account email verification via link token.
+ * Assigns the verified tick mark to the account.
+ */
+export async function confirmAccountEmailVerification(token: string) {
+  if (!token || !token.includes('.')) {
+    throw new Error('Invalid verification token format.');
+  }
+
+  const parts = token.split('.');
+  const userId = parts[0];
+  const secret = parts.slice(1).join('.');
+  const secretHash = crypto.createHash('sha256').update(secret).digest('hex');
+
+  const supabase = getSupabaseClient();
+  const { data: authUserData, error: authUserErr } = await supabase.auth.admin.getUserById(userId);
+
+  if (authUserErr || !authUserData?.user) {
+    throw new Error('Invalid or expired verification token.');
+  }
+
+  const authUser = authUserData.user;
+  const pending = authUser.app_metadata?.pendingEmailVerification;
+
+  if (!pending) {
+    // If user is already verified
+    if (authUser.app_metadata?.emailVerified === true) {
+      const { data: existingUser } = await supabase.from('users').select('agentId, email').eq('id', userId).maybeSingle();
+      markAccountVerified(userId, existingUser?.agentId, existingUser?.email || authUser.email);
+      return {
+        success: true,
+        message: 'Your account is already verified! The verified tick mark is active.',
+        agentId: existingUser?.agentId || authUser.user_metadata?.agentId,
+        email: existingUser?.email || authUser.email,
+      };
+    }
+    throw new Error('No pending email verification found. The link may have already been used.');
+  }
+
+  if (pending.tokenHash !== secretHash && pending.tokenHash !== crypto.createHash('sha256').update(token).digest('hex')) {
+    throw new Error('Invalid or already used verification token.');
+  }
+
+  if (new Date(pending.expiresAt).getTime() < Date.now()) {
+    // Clear expired token
+    await supabase.auth.admin.updateUserById(userId, {
+      app_metadata: { ...authUser.app_metadata, pendingEmailVerification: null },
+    });
+    throw new Error('Verification link has expired. Please request a new verification link from your Dashboard.');
+  }
+
+  // 1. Mark verified in Supabase Auth app_metadata
+  const now = new Date().toISOString();
+  const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
+    email_confirm: true,
+    app_metadata: {
+      ...authUser.app_metadata,
+      emailVerified: true,
+      emailVerifiedAt: now,
+      pendingEmailVerification: null,
+    },
+  });
+
+  if (updateError) {
+    throw new Error(`Failed to update account verification status in auth: ${updateError.message}`);
+  }
+
+  // 1b. Mark verified in users database table for permanent persistence
+  try {
+    const { error: dbUpdateError } = await supabase
+      .from('users')
+      .update({
+        emailVerified: true,
+        emailVerifiedAt: now,
+        updatedAt: now
+      })
+      .eq('id', userId);
+
+    if (dbUpdateError) {
+      console.warn(`[AccountVerification] Database update failed for user ${userId}, state remains in Auth metadata:`, dbUpdateError.message);
+    }
+  } catch (err) {
+    console.warn(`[AccountVerification] Database exception for user ${userId}:`, err);
+  }
+
+  // 2. Fetch user profile from database to get canonical agentId
+  const { data: userDb } = await supabase
+    .from('users')
+    .select('id, agentId, email')
+    .eq('id', userId)
+    .maybeSingle();
+
+  const agentId = userDb?.agentId || authUser.user_metadata?.agentId || '';
+  const email = userDb?.email || authUser.email || '';
+
+  // 3. Mark in cache so tick mark appears immediately
+  markAccountVerified(userId, agentId, email);
+
+  console.log(`[AccountVerification] Successfully verified email and assigned verified tick mark to agent: @${agentId} (${userId})`);
+
+  return {
+    success: true,
+    message: 'Email successfully verified! Your account has now been assigned the official Verified Tick Mark.',
+    agentId,
+    email,
+  };
 }
 
 /**

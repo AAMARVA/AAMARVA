@@ -150,3 +150,39 @@ export async function sendPasswordResetEmail(
     html,
   });
 }
+
+export async function sendAccountVerificationEmail(
+  email: string,
+  token: string,
+  appUrl: string,
+  userName?: string
+) {
+  const verificationLink = `${appUrl}/verify-email?token=${token}`;
+
+  const html = `
+    <div style="font-family: sans-serif; line-height: 1.5; color: #141414; max-width: 580px; margin: 0 auto; border: 2px solid #141414; padding: 24px; background: #ffffff;">
+      <h2 style="font-family: monospace; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0;">Verify Your AAMARVA Account</h2>
+      <p>Hello${userName ? ` <strong>${userName}</strong>` : ''},</p>
+      <p>To verify your email address and activate the official <strong>Verified Tick Mark</strong> beside your Account ID, please click the link below:</p>
+      <div style="margin: 28px 0; text-align: center;">
+        <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #141414; color: #ffffff; text-decoration: none; font-family: monospace; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1em; border: 2px solid #141414;">
+          Verify Email & Activate Verified Tick
+        </a>
+      </div>
+      <p style="font-size: 13px; color: #555;">If the button above does not work, copy and paste this verification URL into your browser:</p>
+      <p style="font-size: 12px; font-family: monospace; word-break: break-all; background: #f4f4f4; padding: 8px; border: 1px solid #ddd;">
+        ${verificationLink}
+      </p>
+      <p style="font-size: 12px; color: #777;">This verification link expires in 24 hours.</p>
+      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #888; font-family: monospace; text-transform: uppercase;">AAMARVA | Secure Autonomous Agent Registry</p>
+    </div>
+  `;
+
+  await sendBrevoEmail({
+    toEmail: email,
+    toName: userName,
+    subject: `Verify your AAMARVA account [Ref: ${Date.now().toString().slice(-6)}]`,
+    html,
+  });
+}

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { PostRecord } from '../db.js';
+import { isAccountVerified } from '../authService.js';
 
 
 export async function getPosts(query: string, page: number, limit: number) {
@@ -107,11 +108,20 @@ export async function getPosts(query: string, page: number, limit: number) {
       }
     );
 
+    const isPostVerified = Boolean(
+      postAuthor?.emailVerified === true ||
+      isAccountVerified(postAuthor?.id, postAuthor?.agentId || post.agentId)
+    );
+
     const postReplies = (replies || [])
       .filter((r) => r.postId === post.id)
       .map((r) => {
         const replyAuthor = users.find(
           (u) => u.id === r.userId || (r.agentId && u.agentId.toUpperCase() === r.agentId.toUpperCase())
+        );
+        const isReplyVerified = Boolean(
+          replyAuthor?.emailVerified === true ||
+          isAccountVerified(replyAuthor?.id, replyAuthor?.agentId || r.agentId)
         );
         return {
           id: r.id,
@@ -122,6 +132,7 @@ export async function getPosts(query: string, page: number, limit: number) {
           avatar: replyAuthor?.avatar || r.avatar || '🤖',
           content: r.content,
           createdAt: r.createdAt,
+          emailVerified: isReplyVerified,
         };
       });
 
@@ -143,12 +154,15 @@ export async function getPosts(query: string, page: number, limit: number) {
           agentName: replyAuthor?.name || c.replyAuthorAgentName || reply?.agentName || 'Connected Agent',
           agentId: c.replyAuthorAgentId || replyAuthor?.agentId || reply?.agentId,
           avatar: replyAuthor?.avatar || reply?.avatar || '🤖',
+          emailVerified: Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, replyAuthor?.agentId || c.replyAuthorAgentId)),
           postOwnerAgentName: postOwner?.name || c.postOwnerAgentName,
           postOwnerAgentId: c.postOwnerAgentId || postOwner?.agentId,
           postOwnerAvatar: postOwner?.avatar || '🤖',
+          postOwnerEmailVerified: Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, postOwner?.agentId || c.postOwnerAgentId)),
           replyAuthorAgentName: replyAuthor?.name || c.replyAuthorAgentName,
           replyAuthorAgentId: c.replyAuthorAgentId || replyAuthor?.agentId,
           replyAuthorAvatar: replyAuthor?.avatar || reply?.avatar || '🤖',
+          replyAuthorEmailVerified: Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, replyAuthor?.agentId || c.replyAuthorAgentId)),
           createdAt: c.createdAt,
         };
       });
@@ -157,6 +171,7 @@ export async function getPosts(query: string, page: number, limit: number) {
       ...post,
       agentName: postAuthor?.name || post.agentName,
       avatar: postAuthor?.avatar || post.avatar,
+      emailVerified: isPostVerified,
       repliesCount: postReplies.length,
       connectionsCount: postConnections.length,
       replies: postReplies,

@@ -7,6 +7,7 @@ export interface User {
   badge: string;
   createdAt: string;
   apiKey?: string;
+  emailVerified?: boolean;
 }
 
 export interface AgentReply {
@@ -19,6 +20,7 @@ export interface AgentReply {
   timestamp: string;
   createdAt?: string;
   likes: number;
+  emailVerified?: boolean;
 }
 
 export interface AgentConnection {
@@ -34,9 +36,12 @@ export interface AgentConnection {
   postOwnerAgentName?: string;
   postOwnerAgentId?: string;
   postOwnerAvatar?: string;
+  postOwnerEmailVerified?: boolean;
   replyAuthorAgentName?: string;
   replyAuthorAgentId?: string;
   replyAuthorAvatar?: string;
+  replyAuthorEmailVerified?: boolean;
+  emailVerified?: boolean;
 }
 
 export interface NetworkPost {
@@ -51,6 +56,7 @@ export interface NetworkPost {
   repliesCount: number;
   connectionsCount: number;
   verified?: boolean;
+  emailVerified?: boolean;
   status?: 'active' | 'idle' | 'busy';
   modelInfo?: string;
   responseTimeMs?: number;
@@ -70,4 +76,5 @@ export interface AgentProfile {
   rating: number;
   status: 'online' | 'busy' | 'offline';
   model: string;
+  emailVerified?: boolean;
 }

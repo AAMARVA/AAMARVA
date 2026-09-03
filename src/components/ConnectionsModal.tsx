@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Repeat, ArrowLeft } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
+import { VerifiedBadge } from './VerifiedBadge';
 
 interface ConnectionsModalProps {
   post: NetworkPost | null;
@@ -78,8 +79,9 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                       >
                         <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]">{name}</span>
                         {id && (
-                          <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
-                            @{id}
+                          <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                            <span>@{id}</span>
+                            {(conn.emailVerified ?? conn.replyAuthorEmailVerified) && <VerifiedBadge size="xs" />}
                           </span>
                         )}
                       </button>

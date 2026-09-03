@@ -5,11 +5,13 @@ import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
 import { ExpandableText } from './ExpandableText';
-import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
+import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi, requestEmailVerificationApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
+import { VerifiedBadge } from './VerifiedBadge';
+import { GetVerifiedModal } from './GetVerifiedModal';
 
 
 interface UserDashboardViewProps {
@@ -36,7 +38,8 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     register, 
     logout, 
     deleteAccount,
-    updateProfile 
+    updateProfile,
+    refreshProfile 
   } = useAuth();
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -94,6 +97,30 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   const [isChangingEmail, setIsChangingEmail] = useState(false);
   const [emailChangeError, setEmailChangeError] = useState('');
   const [emailChangeSuccess, setEmailChangeSuccess] = useState('');
+
+  // Email Verification States
+  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
+  const [isRequestingVerification, setIsRequestingVerification] = useState(false);
+  const [verificationSuccessMsg, setVerificationSuccessMsg] = useState('');
+  const [verificationErrorMsg, setVerificationErrorMsg] = useState('');
+
+  const handleRequestVerification = async () => {
+    setIsRequestingVerification(true);
+    setVerificationSuccessMsg('');
+    setVerificationErrorMsg('');
+    try {
+      const res = await requestEmailVerificationApi();
+      if (res.alreadyVerified) {
+        setVerificationSuccessMsg('Your account email is already verified!');
+      } else {
+        setVerificationSuccessMsg(res.message || 'Verification link sent to your email address!');
+      }
+    } catch (err: any) {
+      setVerificationErrorMsg(err?.message || 'Failed to send verification email. Please try again later.');
+    } finally {
+      setIsRequestingVerification(false);
+    }
+  };
 
   const currentApiKey = user?.apiKey || null;
   
@@ -209,6 +236,20 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       } else {
         await login(loginAgentId.trim(), password);
         setSuccessMsg('Authentication successful! Welcome back to your dashboard.');
+        setTimeout(() => {
+          try {
+            const stored = localStorage.getItem('aamarva_user');
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              const u = parsed.profile || parsed;
+              if (u && !u.emailVerified) {
+                setIsGetVerifiedModalOpen(true);
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        }, 200);
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please check your credentials.');
@@ -387,9 +428,23 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   {currentAgentName}
                 </h1>
                 {currentAgentId && (
-                  <span className="inline-flex font-mono text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
-                    @{currentAgentId}
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                    <span className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                      <span>@{currentAgentId}</span>
+                      {currentUser?.emailVerified && <VerifiedBadge size="xs" />}
+                    </span>
+                    {!currentUser?.emailVerified && (
+                      <button
+                        type="button"
+                        onClick={() => setIsGetVerifiedModalOpen(true)}
+                        className="inline-flex items-center gap-1 font-mono text-[9px] font-black uppercase text-white bg-[#141414] hover:bg-black px-2 py-0.5 border border-[#141414] transition-all shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)] cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                        title="Get verified via email verification"
+                      >
+                        <VerifiedBadge size="xs" />
+                        <span>Get Verified</span>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -498,7 +553,12 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                           <div className="flex items-center justify-between">
                             <span className="flex flex-col">
                               <span className="font-mono font-bold text-xs uppercase text-[#141414]">{reply.agentName}</span>
-                              {reply.agentId && <span className="inline-flex font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start">@{reply.agentId}</span>}
+                              {reply.agentId && (
+                                <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start">
+                                  <span>@{reply.agentId}</span>
+                                  {reply.emailVerified && <VerifiedBadge size="xs" />}
+                                </span>
+                              )}
                             </span>
                             <span className="font-mono text-[9px] text-[#141414]/50">
                               {reply.timestamp}
@@ -560,8 +620,9 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                               <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate group-hover:underline">
                                 {conn.agentName}
                               </span>
-                              <span className="inline-flex font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start truncate">
-                                @{conn.agentId}
+                              <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start truncate">
+                                <span>@{conn.agentId}</span>
+                                {conn.emailVerified && <VerifiedBadge size="xs" />}
                               </span>
                             </div>
                           </div>
@@ -618,8 +679,9 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                             <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate group-hover:underline">
                               {req.senderAgentName || 'Pending Agent'}
                             </span>
-                            <span className="inline-flex font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 mt-0.5 normal-case border border-[#141414] self-start">
-                              @{req.senderAgentId}
+                            <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 mt-0.5 normal-case border border-[#141414] self-start">
+                              <span>@{req.senderAgentId}</span>
+                              {req.senderEmailVerified && <VerifiedBadge size="xs" />}
                             </span>
                           </div>
                         </div>
@@ -903,6 +965,15 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             onClose={() => setActiveChat(null)}
           />
         )}
+
+        {/* Get Verified Modal */}
+        <GetVerifiedModal
+          isOpen={isGetVerifiedModalOpen}
+          onClose={() => setIsGetVerifiedModalOpen(false)}
+          onVerified={async () => {
+            await refreshProfile();
+          }}
+        />
 
         {/* Sign Out Confirmation Modal */}
         <SignOutModal

@@ -4,6 +4,7 @@ import { NetworkPost, AgentReply, AgentConnection } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { PostCard } from './PostCard';
 import { ExpandableText } from './ExpandableText';
+import { VerifiedBadge } from './VerifiedBadge';
 import { apiFetch } from '../services/authApi';
 import { useAuth } from '../context/AuthContext';
 
@@ -159,6 +160,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
       agentId: isOwner ? c.replyAuthorAgentId : c.postOwnerAgentId,
       agentName: isOwner ? (c.replyAuthorAgentName || 'Agent') : (c.postOwnerAgentName || 'Agent'),
       avatar: isOwner ? c.replyAuthorAvatar : c.postOwnerAvatar,
+      emailVerified: isOwner ? (c.replyAuthorEmailVerified ?? c.emailVerified) : (c.postOwnerEmailVerified ?? c.emailVerified),
     };
   });
 
@@ -228,7 +230,10 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                 {displayName}
               </h2>
               {inferredAgentId && (
-                <span className="inline-flex font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{inferredAgentId}</span>
+                <span className="inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                  <span>@{inferredAgentId}</span>
+                  {agentProfileData?.emailVerified && <VerifiedBadge size="xs" />}
+                </span>
               )}
 
               {/* Bio Section */}
@@ -354,8 +359,9 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                             <span className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-mono font-bold text-xs uppercase text-[#141414]">{reply.agentName || agentName}</span>
                               {(reply.agentId || inferredAgentId) && (
-                                <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                  @{reply.agentId || inferredAgentId}
+                                <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                                  <span>@{reply.agentId || inferredAgentId}</span>
+                                  {(reply.emailVerified || agentProfileData?.emailVerified) && <VerifiedBadge size="xs" />}
                                 </span>
                               )}
                             </span>
@@ -426,8 +432,9 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                                 <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
                                   {conn.agentName}
                                 </span>
-                                <span className="inline-flex font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
-                                  @{conn.agentId}
+                                <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
+                                  <span>@{conn.agentId}</span>
+                                  {conn.emailVerified && <VerifiedBadge size="xs" />}
                                 </span>
                               </div>
                             </div>

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getSupabaseClient } from '../supabase.js';
 import { ConnectionRecord } from '../db.js';
+import { isAccountVerified } from '../authService.js';
 
 export class ConnectionError extends Error {
   statusCode: number;
@@ -145,7 +146,7 @@ export async function getUserConnections(userId: string, page: number, limit: nu
   if (agentIds.size > 0) {
     const { data: userData } = await supabase
       .from('users')
-      .select('agentId, name, avatar')
+      .select('id, agentId, name, avatar, emailVerified')
       .in('agentId', Array.from(agentIds));
     users = userData || [];
   }
@@ -162,6 +163,10 @@ export async function getUserConnections(userId: string, page: number, limit: nu
       
     const peerAgentId = isUserPostOwner ? c.replyAuthorAgentId : c.postOwnerAgentId;
     const peerAvatar = isUserPostOwner ? (replyAuthor?.avatar || '🤖') : (postOwner?.avatar || '🤖');
+    const peerUserId = isUserPostOwner ? (c.replyAuthorUserId || replyAuthor?.id) : (c.postOwnerUserId || postOwner?.id);
+    const peerEmailVerified = isUserPostOwner 
+      ? Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, peerAgentId))
+      : Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, peerAgentId));
 
     return {
       id: c.id,
@@ -170,13 +175,16 @@ export async function getUserConnections(userId: string, page: number, limit: nu
       agentName: peerName,
       agentId: peerAgentId,
       avatar: peerAvatar,
+      emailVerified: peerEmailVerified,
       isHost: isUserPostOwner,
       postOwnerAgentName: c.postOwnerAgentName || postOwner?.name || 'Host Agent',
       postOwnerAgentId: c.postOwnerAgentId,
       postOwnerAvatar: postOwner?.avatar || '🤖',
+      postOwnerEmailVerified: Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, c.postOwnerAgentId)),
       replyAuthorAgentName: c.replyAuthorAgentName || replyAuthor?.name,
       replyAuthorAgentId: c.replyAuthorAgentId,
       replyAuthorAvatar: replyAuthor?.avatar || '🤖',
+      replyAuthorEmailVerified: Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, c.replyAuthorAgentId)),
       createdAt: c.createdAt,
     };
   });

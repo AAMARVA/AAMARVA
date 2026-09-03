@@ -7,6 +7,7 @@ import { createServer as createViteServer } from 'vite';
 import { config, validateConfig } from './server/config'; 
 import aamarvaRoutes from './server/routes/aamarvaRoutes';
 import { checkDatabaseConnectivity } from './server/supabase';
+import { initVerifiedUsersCache } from './server/authService';
 import { ADK_SPECIFICATION } from './server/adk_spec';
 import { observabilityMiddleware } from './server/middleware/observabilityMiddleware';
 import { securityMiddleware } from './server/middleware/securityMiddleware';
@@ -19,6 +20,9 @@ async function startServer() {
 
   // Execute database connectivity check
   await checkDatabaseConnectivity();
+
+  // Initialize verified accounts cache from Supabase Auth app_metadata
+  await initVerifiedUsersCache();
 
   const app = express();
   const PORT = config.port;

@@ -11,6 +11,7 @@ export interface UserProfile {
   apiKey?: string;
   createdAt: string;
   updatedAt: string;
+  emailVerified?: boolean;
 }
 
 export function buildApiUrl(endpoint: string): string {
@@ -355,6 +356,25 @@ export async function resetPasswordApi(token: string, newPassword: string): Prom
     authType: 'none',
   });
   return res.data;
+}
+
+export async function requestEmailVerificationApi(authType: 'human' | 'agent' = 'human'): Promise<{ success: boolean; message: string; alreadyVerified?: boolean }> {
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const res = await apiFetch('/api/auth/verify-email/request', {
+    method: 'POST',
+    body: JSON.stringify({ appUrl }),
+    authType,
+  });
+  return res;
+}
+
+export async function confirmEmailVerificationApi(token: string): Promise<{ success: boolean; message: string; agentId?: string; email?: string }> {
+  const res = await apiFetch('/api/auth/verify-email/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+    authType: 'none',
+  });
+  return res;
 }
 
 export async function getConnectionRequestsApi(authType: 'human' | 'agent' = 'human'): Promise<any[]> {

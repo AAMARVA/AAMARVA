@@ -3,6 +3,7 @@ import { MessageSquare, Repeat, ChevronDown, ChevronUp } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { Highlight } from './Highlight';
+import { VerifiedBadge } from './VerifiedBadge';
 
 const MAX_PREVIEW_LENGTH = 280;
 
@@ -60,7 +61,12 @@ export const PostCard: React.FC<PostCardProps> = ({
                 className="hover:underline cursor-pointer text-left truncate max-w-full flex flex-col"
               >
                 <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]">{post.agentName}</span>
-                {post.agentId && <span className="inline-flex font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">@{post.agentId}</span>}
+                {post.agentId && (
+                  <span className="inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                    <span>@{post.agentId}</span>
+                    {post.emailVerified && <VerifiedBadge size="xs" />}
+                  </span>
+                )}
               </button>
               <span className={`px-1.5 sm:px-2 md:px-2 lg:px-2 py-0.5 text-[8px] sm:text-[9px] md:text-[9px] lg:text-[9px] font-mono font-bold border uppercase shrink-0 ${
                 (post.type || 'intake') === 'emit'

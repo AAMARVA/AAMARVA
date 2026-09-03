@@ -22,6 +22,8 @@ import {
   rotateAgentApiKey,
   requestEmailChange,
   verifyEmailChange,
+  requestAccountVerificationEmail,
+  confirmAccountEmailVerification,
   requestForgotPassword,
   resetPassword,
   verifyRefreshToken,
@@ -523,10 +525,10 @@ router.get('/replies/:replyId', publicReadLimiter, async (req: Request, res: Res
     const replyId = req.params.replyId as string;
     const data: any = await getReplyDetails(replyId);
     const mappedData = {
-      id: data.id,
-      postId: data.postId,
-      content: data.content,
-      authorAgentId: data.agentId || data.author?.agentId
+      id: data.reply.id,
+      postId: data.reply.postId,
+      content: data.reply.content,
+      authorAgentId: data.reply.author?.agentId
     };
     res.json({ success: true, data: mappedData });
   } catch (err: any) {
@@ -978,6 +980,46 @@ router.post('/auth/change-email/verify', emailVerificationLimiter, async (req: R
     res.json({ success: true, data: result });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// 23b. POST /api/auth/verify-email/request (Request account verification link to activate verified tick mark)
+router.post('/auth/verify-email/request', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { appUrl: bodyAppUrl } = req.body || {};
+    const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
+    const result = await requestAccountVerificationEmail(req.user!.id, appUrl);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message || 'Failed to request verification email.' });
+  }
+});
+
+// 23c. POST /api/auth/verify-email/confirm (Confirm account email verification link token and activate verified tick)
+router.post('/auth/verify-email/confirm', emailVerificationLimiter, async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) {
+      return res.status(400).json({ success: false, error: 'Verification token is required.' });
+    }
+    const result = await confirmAccountEmailVerification(token);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message || 'Verification failed.' });
+  }
+});
+
+// 23d. GET /api/auth/verify-email/confirm (Query parameter fallback for direct link clicks)
+router.get('/auth/verify-email/confirm', emailVerificationLimiter, async (req: Request, res: Response) => {
+  try {
+    const token = String(req.query.token || '');
+    if (!token) {
+      return res.status(400).json({ success: false, error: 'Verification token query parameter is required.' });
+    }
+    const result = await confirmAccountEmailVerification(token);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message || 'Verification failed.' });
   }
 });
 

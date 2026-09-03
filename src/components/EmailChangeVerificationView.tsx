@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, ShieldAlert, CheckCircle2, RotateCw, ArrowRight } from 'lucide-react';
+import { CheckCircle2, RotateCw, ArrowRight, AlertTriangle, Mail } from 'lucide-react';
 import { verifyEmailChangeApi } from '../services/authApi';
 
 interface EmailChangeVerificationViewProps {
@@ -49,7 +49,7 @@ export const EmailChangeVerificationView: React.FC<EmailChangeVerificationViewPr
       <div className="bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] p-8 sm:p-12 md:p-12 lg:p-12 text-[#141414]">
         <div className="flex justify-center mb-8">
           <div className="p-4 bg-[#141414] text-white rounded-full shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)]">
-            <ShieldCheck className="w-8 h-8" />
+            <Mail className="w-8 h-8" />
           </div>
         </div>
 
@@ -67,35 +67,26 @@ export const EmailChangeVerificationView: React.FC<EmailChangeVerificationViewPr
 
               <button
                 onClick={handleConfirm}
-                className="w-full py-5 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all flex items-center justify-center gap-3 group"
+                className="w-full py-4 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 Confirm Email Change
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </button>
-
-              <button
-                onClick={onBackToHome}
-                className="text-[10px] font-mono uppercase tracking-tighter text-[#141414]/50 hover:text-black underline underline-offset-4"
-              >
-                Cancel and return
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           )}
 
           {status === 'verifying' && (
-            <div className="space-y-4">
-              <div className="flex justify-center">
-                <RotateCw className="w-8 h-8 animate-spin text-[#141414]/30" />
-              </div>
-              <p className="font-mono text-sm uppercase tracking-widest text-[#141414]/60">Processing Verification Token...</p>
+            <div className="space-y-4 py-8">
+              <RotateCw className="w-8 h-8 animate-spin mx-auto text-[#141414]" />
+              <p className="font-mono text-xs uppercase tracking-widest text-[#141414]/70">Updating email record...</p>
             </div>
           )}
 
           {status === 'success' && (
             <div className="space-y-6 animate-in zoom-in-95 duration-300">
-              <div className="p-4 bg-green-50 border-2 border-green-800 text-green-900 flex items-center gap-3">
-                <CheckCircle2 className="w-6 h-6 shrink-0" />
-                <p className="text-sm font-mono font-bold uppercase tracking-tight text-left">Email Address Successfully Updated</p>
+              <div className="p-4 bg-[#E4E3E0]/30 border-2 border-[#141414] text-[#141414] flex items-center gap-3">
+                <CheckCircle2 className="w-6 h-6 text-[#141414] shrink-0" />
+                <p className="text-sm font-mono font-bold uppercase tracking-tight text-left">Email Address Updated</p>
               </div>
               
               <div className="space-y-2">
@@ -123,7 +114,7 @@ export const EmailChangeVerificationView: React.FC<EmailChangeVerificationViewPr
           {status === 'error' && (
             <div className="space-y-6 animate-in zoom-in-95 duration-300">
               <div className="p-4 bg-red-50 border-2 border-red-800 text-red-900 flex items-center gap-3">
-                <ShieldAlert className="w-6 h-6 shrink-0" />
+                <AlertTriangle className="w-6 h-6 shrink-0" />
                 <p className="text-sm font-mono font-bold uppercase tracking-tight text-left">Verification Error</p>
               </div>
 
