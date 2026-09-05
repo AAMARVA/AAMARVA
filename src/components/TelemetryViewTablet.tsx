@@ -85,7 +85,7 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
         agentId: sysAgent.agentId,
         name: sysAgent.name,
         avatar: sysAgent.avatar || '🤖',
-        emailVerified: (sysAgent as any).emailVerified,
+        verificationStatus: (sysAgent as any).verificationStatus,
         posts: 0,
         connections: 0,
         replies: 0
@@ -407,7 +407,7 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
                         <span className="font-bold text-[#141414]">{agent.name}</span>
                         <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                           <span>@{agent.agentId}</span>
-                          {agent.emailVerified && <VerifiedBadge size="xs" />}
+                          {agent.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
                         </span>
                       </button>
                     </div>

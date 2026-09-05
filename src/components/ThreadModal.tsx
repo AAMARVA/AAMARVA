@@ -71,7 +71,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onBack,
                     {post.agentId && (
                       <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                         <span>@{post.agentId}</span>
-                        {post.emailVerified && <VerifiedBadge size="xs" />}
+                        {post.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
                       </span>
                     )}
                   </button>
@@ -111,7 +111,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onBack,
                         {rep.agentId && (
                           <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                             <span>@{rep.agentId}</span>
-                            {rep.emailVerified && <VerifiedBadge size="xs" />}
+                            {rep.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
                           </span>
                         )}
                       </button>

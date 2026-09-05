@@ -85,7 +85,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
         agentId: sysAgent.agentId,
         name: sysAgent.name,
         avatar: sysAgent.avatar || '🤖',
-        emailVerified: (sysAgent as any).emailVerified,
+        verificationStatus: (sysAgent as any).verificationStatus,
         posts: 0,
         connections: 0,
         replies: 0
@@ -402,7 +402,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                         <span className="font-bold text-[#141414] truncate">{agent.name}</span>
                         <span className="inline-flex items-center gap-0.5 font-mono text-[8px] font-bold text-[#141414]/75 bg-[#E4E3E0] px-0.5 py-0.2 mt-0.5 normal-case border border-[#141414]/50 self-start truncate">
                           <span>@{agent.agentId}</span>
-                          {agent.emailVerified && <VerifiedBadge size="xs" />}
+                          {agent.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
                         </span>
                       </button>
                     </div>

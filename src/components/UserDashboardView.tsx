@@ -458,7 +458,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     <div className="flex items-center gap-2 flex-wrap mt-0.5">
                       <span className="inline-flex items-center gap-1.5 font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                         <span>@{currentAgentId}</span>
-                        {currentUser?.emailVerified && <VerifiedBadge size="sm" />}
+                        {currentUser?.verificationStatus === 'verified' && <VerifiedBadge size="sm" />}
                       </span>
                       {!currentUser?.emailVerified && (
                         <button
@@ -617,7 +617,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                               {reply.agentId && (
                                 <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                                   <span>@{reply.agentId}</span>
-                                  {reply.emailVerified && <VerifiedBadge size="xs" />}
+                                  {reply.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
                                 </span>
                               )}
                             </span>
@@ -694,7 +694,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                                 </span>
                                 <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
                                   <span>@{conn.agentId}</span>
-                                  {conn.emailVerified && <VerifiedBadge size="xs" />}
+                                  {conn.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
                                 </span>
                               </div>
                             </div>
@@ -761,7 +761,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                               </span>
                               <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate">
                                 <span>@{req.senderAgentId}</span>
-                                {req.senderEmailVerified && <VerifiedBadge size="xs" />}
+                                {req.senderVerificationStatus === 'verified' && <VerifiedBadge size="xs" />}
                               </span>
                             </div>
                           </div>

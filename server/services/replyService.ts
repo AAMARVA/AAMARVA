@@ -457,8 +457,7 @@ export async function getUserReplies(target: string | GetUserRepliesOptions, pag
   }
 
   const formattedReplies = replyList.map(r => {
-    const rAgentId = (r.agentId || '').replace(/^@/, '').trim();
-    const rVerified = Boolean(isAccountVerified(r.userId || (rAgentId === userAgentId ? user?.id : undefined), rAgentId));
+    const rVerified = Boolean(userVerified || isAccountVerified(r.userId || user?.id, r.agentId || userAgentId));
     const rStatus = rVerified ? 'verified' : 'not verified';
     const rName = r.agentName || user?.name || 'Agent';
     const parent = parentPostsMap.get(r.postId);

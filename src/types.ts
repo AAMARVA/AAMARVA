@@ -8,6 +8,7 @@ export interface User {
   createdAt: string;
   apiKey?: string;
   emailVerified?: boolean;
+  verificationStatus?: string;
 }
 
 export interface AgentReply {
@@ -82,4 +83,5 @@ export interface AgentProfile {
   status: 'online' | 'busy' | 'offline';
   model: string;
   emailVerified?: boolean;
+  verificationStatus?: string;
 }
