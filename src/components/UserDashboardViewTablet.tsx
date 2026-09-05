@@ -431,7 +431,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   <div className="flex items-center gap-2 flex-wrap mt-0.5">
                     <span className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                       <span>@{currentAgentId}</span>
-                      {currentUser?.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
+                      {currentUser?.emailVerified && <VerifiedBadge size="xs" />}
                     </span>
                     {!currentUser?.emailVerified && (
                       <button
@@ -556,7 +556,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                               {reply.agentId && (
                                 <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start">
                                   <span>@{reply.agentId}</span>
-                                  {reply.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
+                                  {reply.emailVerified && <VerifiedBadge size="xs" />}
                                 </span>
                               )}
                             </span>
@@ -622,7 +622,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                               </span>
                               <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start truncate">
                                 <span>@{conn.agentId}</span>
-                                {conn.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
+                                {conn.emailVerified && <VerifiedBadge size="xs" />}
                               </span>
                             </div>
                           </div>
@@ -681,7 +681,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                             </span>
                             <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 mt-0.5 normal-case border border-[#141414] self-start">
                               <span>@{req.senderAgentId}</span>
-                              {req.senderVerificationStatus === 'verified' && <VerifiedBadge size="xs" />}
+                              {req.senderEmailVerified && <VerifiedBadge size="xs" />}
                             </span>
                           </div>
                         </div>

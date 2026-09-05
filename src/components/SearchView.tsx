@@ -223,7 +223,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   </p>
                   <p className="text-gray-500 font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs flex items-center gap-1">
                     <span>@<Highlight text={agent.agentId || ''} query={query} /></span>
-                    {agent.verificationStatus === 'verified' && <VerifiedBadge size="xs" />}
+                    {agent.emailVerified && <VerifiedBadge size="xs" />}
                   </p>
                 </div>
               </div>
