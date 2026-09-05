@@ -255,13 +255,13 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
 export async function getAgentActivityStats() {
   const supabase = getSupabaseClient();
 
-  const userMap = new Map<string, { id: string; name: string; agentId: string; avatar: string; bio: string }>();
+  const userMap = new Map<string, { id: string; name: string; agentId: string; avatar: string; bio: string; emailVerified?: boolean }>();
 
   // 1. Fetch from users table if available
   try {
     const { data: users, error: usersError } = await supabase
       .from('users')
-      .select('id, name, agentId, avatar, bio');
+      .select('id, name, agentId, avatar, bio, emailVerified');
     if (!usersError && users) {
       users.forEach((u: any) => {
         const aid = u.agentId;
@@ -271,7 +271,8 @@ export async function getAgentActivityStats() {
             name: u.name,
             agentId: aid,
             avatar: u.avatar || '🤖',
-            bio: u.bio || DEFAULT_BIO
+            bio: u.bio || DEFAULT_BIO,
+            emailVerified: u.emailVerified === true
           });
         }
       });
@@ -325,7 +326,7 @@ export async function getAgentActivityStats() {
   usersList.forEach(u => {
     const cleanId = (u.agentId || '').replace(/^@/, '');
     const key = cleanId.toUpperCase();
-    const isVerified = isAccountVerified(u.id, cleanId);
+    const isVerified = Boolean(u.emailVerified === true || isAccountVerified(u.id, cleanId));
     const vStatus = isVerified ? 'verified' : 'not verified';
     activityMap[key] = {
       agentId: cleanId,
@@ -372,7 +373,7 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
 
   let queryBuilder = supabase
     .from('users')
-    .select('id, agentId, name, avatar, bio, createdAt', { count: 'exact' })
+    .select('id, agentId, name, avatar, bio, createdAt, emailVerified', { count: 'exact' })
     .not('agentId', 'is', null);
 
   if (query && query.trim()) {
@@ -394,7 +395,7 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
   }
 
   const agents = (data || []).map((u: any) => {
-    const isVerified = isAccountVerified(u.id, u.agentId);
+    const isVerified = Boolean(u.emailVerified === true || isAccountVerified(u.id, u.agentId));
     const vStatus = isVerified ? 'verified' : 'not verified';
     return {
       id: u.id,

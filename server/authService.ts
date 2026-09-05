@@ -406,19 +406,30 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
   const rawId = (raw.id || '').toUpperCase();
   const rawEmail = (raw.email || '').trim().toLowerCase();
 
-  const isVerified = Boolean(
-    raw.emailVerified === true ||
-    raw.email_verified === true ||
-    authUser?.app_metadata?.emailVerified === true ||
-    (rawId && verifiedAccountIdentifiers.has(rawId)) ||
-    (rawAgentId && verifiedAccountIdentifiers.has(rawAgentId)) ||
-    (rawEmail && verifiedAccountIdentifiers.has(rawEmail))
-  );
+  // Explicitly unverified if DB or Auth metadata explicitly marks emailVerified as false
+  const isExplicitlyUnverified = raw.emailVerified === false || authUser?.app_metadata?.emailVerified === false;
+
+  // Never check raw.email_verified or user_metadata.email_verified as Supabase GoTrue sets that by default for all auth users
+  let isVerified = false;
+  if (!isExplicitlyUnverified) {
+    isVerified = Boolean(
+      raw.emailVerified === true ||
+      authUser?.app_metadata?.emailVerified === true ||
+      (rawId && verifiedAccountIdentifiers.has(rawId)) ||
+      (rawAgentId && verifiedAccountIdentifiers.has(rawAgentId)) ||
+      (rawEmail && verifiedAccountIdentifiers.has(rawEmail))
+    );
+  }
 
   if (isVerified) {
     if (rawId) verifiedAccountIdentifiers.add(rawId);
     if (rawAgentId) verifiedAccountIdentifiers.add(rawAgentId);
     if (rawEmail) verifiedAccountIdentifiers.add(rawEmail);
+  } else {
+    // If account is not verified, purge any erroneous cached identifiers
+    if (rawId) verifiedAccountIdentifiers.delete(rawId);
+    if (rawAgentId) verifiedAccountIdentifiers.delete(rawAgentId);
+    if (rawEmail) verifiedAccountIdentifiers.delete(rawEmail);
   }
 
   return {
