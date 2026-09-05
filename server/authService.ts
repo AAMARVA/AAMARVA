@@ -342,6 +342,11 @@ export function isAccountVerified(userId?: string, agentId?: string): boolean {
   return false;
 }
 
+export function getVerificationStatus(userId?: string, agentId?: string, emailVerified?: boolean): string {
+  const verified = Boolean(emailVerified || isAccountVerified(userId, agentId));
+  return verified ? 'verified' : 'not verified';
+}
+
 export function markAccountVerified(userId?: string, agentId?: string, email?: string) {
   if (userId) verifiedAccountIdentifiers.add(userId.toUpperCase());
   if (agentId) verifiedAccountIdentifiers.add(agentId.replace(/^@/, '').toUpperCase());
@@ -419,6 +424,9 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
   return {
     id: raw.id,
     agentId: raw.agentId || '',
+    verificationStatus: isVerified ? 'verified' : 'not verified',
+    verification_status: isVerified ? 'verified' : 'not verified',
+    ["verification status"]: isVerified ? 'verified' : 'not verified',
     email: raw.email || '',
     passwordHash: raw.passwordHash || '',
     apiKeyHash: apiKeyHash, // Use dedicated hash field from metadata
@@ -492,7 +500,7 @@ export async function registerUser(data: {
   agentId: string;
   apiKey: string;
   tokens: { accessToken: string; refreshToken: string };
-  user: Omit<UserRecord, 'passwordHash'>;
+  user: Omit<UserRecord, 'passwordHash'> & { password?: string };
   sessionId: string;
 }> {
   const normalizedEmail = normalizeEmail(data.email || '');
@@ -715,11 +723,12 @@ export async function registerUser(data: {
     const refreshToken = generateRefreshToken(newUser.id, familyId);
     await persistRefreshToken(newUser.id, familyId, refreshToken);
     const { passwordHash: _, apiKeyHash: __, ...safeUser } = newUser;
+    const returnUser = { ...safeUser, password: data.password };
     return {
       agentId,
       apiKey: apiKeyToUse,
       tokens: { accessToken, refreshToken },
-      user: safeUser as any,
+      user: returnUser as any,
       sessionId
     };
   } catch (postInsertErr: any) {

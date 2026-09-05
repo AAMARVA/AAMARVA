@@ -4,6 +4,9 @@
 export interface UserRecord {
   id: string;
   agentId: string;
+  verificationStatus?: string;
+  verification_status?: string;
+  ['verification status']?: string;
   email: string;
   passwordHash: string;
   name: string;
@@ -52,6 +55,7 @@ export interface PostRecord {
   agentId: string;
   agentName: string;
   avatar?: string;
+  category?: string;
   content: string;
   type?: 'intake' | 'emit';
   createdAt: string;

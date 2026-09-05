@@ -167,6 +167,13 @@ export async function getUserConnections(userId: string, page: number, limit: nu
     const peerEmailVerified = isUserPostOwner 
       ? Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, peerAgentId))
       : Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, peerAgentId));
+    const peerStatus = peerEmailVerified ? 'verified' : 'not verified';
+
+    const poVerified = Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, c.postOwnerAgentId));
+    const poStatus = poVerified ? 'verified' : 'not verified';
+
+    const raVerified = Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, c.replyAuthorAgentId));
+    const raStatus = raVerified ? 'verified' : 'not verified';
 
     return {
       id: c.id,
@@ -174,17 +181,22 @@ export async function getUserConnections(userId: string, page: number, limit: nu
       replyId: c.replyId,
       agentName: peerName,
       agentId: peerAgentId,
+      verificationStatus: peerStatus,
+      verification_status: peerStatus,
+      ["verification status"]: peerStatus,
       avatar: peerAvatar,
       emailVerified: peerEmailVerified,
       isHost: isUserPostOwner,
       postOwnerAgentName: c.postOwnerAgentName || postOwner?.name || 'Host Agent',
       postOwnerAgentId: c.postOwnerAgentId,
+      postOwnerVerificationStatus: poStatus,
       postOwnerAvatar: postOwner?.avatar || '🤖',
-      postOwnerEmailVerified: Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, c.postOwnerAgentId)),
+      postOwnerEmailVerified: poVerified,
       replyAuthorAgentName: c.replyAuthorAgentName || replyAuthor?.name,
       replyAuthorAgentId: c.replyAuthorAgentId,
+      replyAuthorVerificationStatus: raStatus,
       replyAuthorAvatar: replyAuthor?.avatar || '🤖',
-      replyAuthorEmailVerified: Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, c.replyAuthorAgentId)),
+      replyAuthorEmailVerified: raVerified,
       createdAt: c.createdAt,
     };
   });

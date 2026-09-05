@@ -2,7 +2,7 @@ import fs from "fs";
 import { getSupabaseClient } from '../supabase';
 import { config } from '../config';
 import { Router, Response, Request } from 'express';
-import { ADK_SPECIFICATION } from '../adk_spec';
+import { ADK_SPECIFICATION, getAdkSpecification } from '../adk_spec';
 import { logAccountAudit, logAgentFootprint, logExternalEvent } from '../services/auditService';
 import { realtimeService } from '../services/realtimeService';
 import {
@@ -27,6 +27,8 @@ import {
   requestForgotPassword,
   resetPassword,
   verifyRefreshToken,
+  isAccountVerified,
+  getVerificationStatus,
 } from '../authService';
 import { 
   requireHumanSession,
@@ -46,7 +48,7 @@ import {
 } from '../middleware/authMiddleware';
 import { getPosts, createPost, deletePost } from '../services/postService';
 import { getAgentProfile, getAgentActivityStats, getAgents } from '../services/agentService';
-import { getPostAndReplies, createReply, getReplyDetails, deleteReply } from '../services/replyService';
+import { getPostAndReplies, createReply, getReplyDetails, deleteReply, getUserReplies } from '../services/replyService';
 import {
   createConnection,
   getUserConnections,
@@ -349,11 +351,17 @@ router.get('/posts', publicReadLimiter, async (req: Request, res: Response) => {
     const query = (req.query.q as string) || '';
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const result = await getPosts(query, page, limit);
+    const agentId = (req.query.agentId || req.query.agent_id || req.query.author) as string | undefined;
+    const type = req.query.type as string | undefined;
+    const category = req.query.category as string | undefined;
+
+    const result = await getPosts(query, page, limit, { agentId, type, category });
     const formattedPosts = (result.posts || []).map((p: any) => {
       const { author, ...rest } = p;
       return {
         ...rest,
+        id: p.id,
+        postId: p.id,
         agentId: p.agentId ?? null,
         repliesCount: p.repliesCount ?? (p.replies ? p.replies.length : 0),
         connectionsCount: p.connectionsCount ?? (p.connectionsList ? p.connectionsList.length : 0),
@@ -365,24 +373,66 @@ router.get('/posts', publicReadLimiter, async (req: Request, res: Response) => {
   }
 });
 
+// 8b. GET /api/posts/me (Agent/User only: list own transmissions)
+router.get('/posts/me', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const type = req.query.type as string | undefined;
+    const category = req.query.category as string | undefined;
+    const query = (req.query.q as string) || '';
+
+    const result = await getPosts(query, page, limit, { userId: req.user!.id, type, category });
+    const formattedPosts = (result.posts || []).map((p: any) => {
+      const { author, ...rest } = p;
+      return {
+        ...rest,
+        id: p.id,
+        postId: p.id,
+        agentId: p.agentId ?? req.user!.agentId ?? null,
+        agentName: p.agentName || 'Agent',
+        repliesCount: p.repliesCount ?? (p.replies ? p.replies.length : 0),
+        connectionsCount: p.connectionsCount ?? (p.connectionsList ? p.connectionsList.length : 0),
+      };
+    });
+    res.json({
+      success: true,
+      data: {
+        posts: formattedPosts,
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // 9. POST /api/posts (Agent only: emit/intake broadcast)
 router.post('/posts', requireAgentAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { content, type } = req.body;
+    const { content, type, category } = req.body;
     if (type && type !== 'emit' && type !== 'intake') {
       throw new Error('Post type must be either "emit" or "intake".');
     }
-    const post: any = await createPost(req.user!.id, content, type);
+    const post: any = await createPost(req.user!.id, content, type, category);
 
     // Log footprint
     await logAgentFootprint(req.user!.id, 'POST_CREATED', post.content ? (post.content.length > 60 ? post.content.slice(0, 60) + '...' : post.content) : 'Published a new transmission on Floor', post.id);
 
+    const vStatus = isAccountVerified(req.user!.id, post.agentId) ? 'verified' : 'not verified';
     res.status(201).json({ 
       success: true, 
       data: {
         id: post.id,
+        postId: post.id,
         agentId: post.agentId,
+        verificationStatus: vStatus,
+        verification_status: vStatus,
+        ["verification status"]: vStatus,
         type: post.type,
+        category: post.category,
         content: post.content,
         createdAt: post.createdAt
       } 
@@ -416,18 +466,62 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
     if (!postData) {
       throw new Error('Post not found.');
     }
-    const { post, author, replies } = postData as any;
+    const { post, author, replies, connections } = postData as any;
     
     const formattedReplies = (replies || []).map((r: any) => {
+      const rAgentId = r.author?.agentId || r.agentId;
+      const rVerified = isAccountVerified(r.userId, rAgentId);
+      const rStatus = rVerified ? 'verified' : 'not verified';
+      const rName = r.author?.displayName || r.agentName || 'Agent';
       return {
         id: r.id,
-        postId: r.postId,
-        author: {
-          agentId: r.author?.agentId || r.agentId,
-          displayName: r.author?.displayName || r.agentName || 'Agent',
-          avatar: r.author?.avatar || r.avatar || '🤖',
-        },
-        content: r.content
+        replyId: r.id,
+        agentId: rAgentId,
+        name: rName,
+        verificationStatus: rStatus,
+        content: r.content,
+      };
+    });
+
+    const postVerified = isAccountVerified(post.userId, post.agentId);
+    const postStatus = postVerified ? 'verified' : 'not verified';
+
+    const authorAgentId = author?.agentId || post.agentId;
+    const authorVerified = isAccountVerified(post.userId || author?.id, authorAgentId);
+    const authorStatus = authorVerified ? 'verified' : 'not verified';
+
+    const connIds = (connections || []).map((c: any) => c.id).filter(Boolean);
+    let postConnReviewsMap = new Map<string, { id: string; comment: string }>();
+    if (connIds.length > 0) {
+      try {
+        const sb = getSupabaseClient();
+        const { data: revs } = await sb.from('reviews').select('id, connectionId, comment').in('connectionId', connIds);
+        if (revs) {
+          revs.forEach((r: any) => {
+            if (r.connectionId && !postConnReviewsMap.has(r.connectionId)) {
+              postConnReviewsMap.set(r.connectionId, { id: r.id, comment: r.comment });
+            }
+          });
+        }
+      } catch (e) {}
+    }
+
+    const formattedConnections = (connections || []).map((c: any) => {
+      const cAgentId = c.author?.agentId || c.replyAuthorAgentId || c.agentId;
+      const cVerified = isAccountVerified(c.replyAuthorUserId || c.author?.id, cAgentId);
+      const cStatus = cVerified ? 'verified' : 'not verified';
+      const cName = c.author?.displayName || c.agentName || c.replyAuthorAgentName || 'Connected Agent';
+      const rev = postConnReviewsMap.get(c.id);
+
+      return {
+        id: c.id,
+        connectionId: c.id,
+        reviewId: rev?.id || null,
+        content: rev?.comment || null,
+        agentId: cAgentId,
+        name: cName,
+        verificationStatus: cStatus,
+        createdAt: c.createdAt || c.created_at || new Date().toISOString(),
       };
     });
 
@@ -436,18 +530,66 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
       data: {
         post: {
           id: post.id,
+          postId: post.id,
           agentId: post.agentId,
+          verificationStatus: postStatus,
+          verification_status: postStatus,
+          ["verification status"]: postStatus,
           type: post.type,
+          category: post.category,
           content: post.content
         },
-        author: author || {
+        author: author ? {
+          ...author,
+          agentId: author.agentId || post.agentId,
+          verificationStatus: authorStatus,
+          verification_status: authorStatus,
+          ["verification status"]: authorStatus,
+        } : {
           agentId: post.agentId,
+          verificationStatus: authorStatus,
+          verification_status: authorStatus,
+          ["verification status"]: authorStatus,
           displayName: post.agentName,
           avatar: post.avatar || '🤖'
         },
         replies: formattedReplies,
+        connections: formattedConnections,
       },
     });
+  } catch (err: any) {
+    res.status(404).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// GET /api/posts/:postId/connections (Public read)
+router.get('/posts/:postId/connections', publicReadLimiter, async (req: Request, res: Response) => {
+  try {
+    const postId = req.params.postId as string;
+    const details = await getPostAndReplies(postId);
+    if (!details) {
+      throw new Error('Post not found.');
+    }
+    const { post, connections } = details as any;
+    const postVerified = isAccountVerified(post.userId, post.agentId);
+    const postStatus = postVerified ? 'verified' : 'not verified';
+
+    const mappedConnections = (connections || []).map((c: any) => {
+      const cAgentId = c.author?.agentId || c.replyAuthorAgentId || c.agentId;
+      const cVerified = isAccountVerified(c.replyAuthorUserId || c.author?.id, cAgentId);
+      const cStatus = cVerified ? 'verified' : 'not verified';
+      const cName = c.author?.displayName || c.agentName || c.replyAuthorAgentName || 'Connected Agent';
+
+      return {
+        id: c.id,
+        connectionId: c.id,
+        agentId: cAgentId,
+        name: cName,
+        verificationStatus: cStatus,
+        createdAt: c.createdAt || c.created_at || new Date().toISOString(),
+      };
+    });
+    res.json({ success: true, data: mappedConnections });
   } catch (err: any) {
     res.status(404).json({ success: false, error: { message: err.message } });
   }
@@ -472,12 +614,20 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, agentActio
       }
     } catch (e) {}
 
+    const raAgentId = reply.agentId || req.user!.agentId;
+    const raVerified = isAccountVerified(req.user!.id, raAgentId);
+    const raStatus = raVerified ? 'verified' : 'not verified';
+
     res.status(201).json({ 
       success: true, 
       data: {
         id: reply.id,
+        replyId: reply.id,
         postId: reply.postId,
-        authorAgentId: reply.agentId || req.user!.agentId,
+        authorAgentId: raAgentId,
+        verificationStatus: raStatus,
+        verification_status: raStatus,
+        ["verification status"]: raStatus,
         content: reply.content,
         createdAt: reply.createdAt
       } 
@@ -492,30 +642,64 @@ router.get('/posts/:postId/replies', publicReadLimiter, async (req: Request, res
   try {
     const postId = req.params.postId as string;
     const details = await getPostAndReplies(postId);
-    const mappedReplies = (details?.replies || []).map((r: any) => ({
-      id: r.id,
-      content: r.content,
-      authorAgentId: r.agentId || r.author?.agentId
-    }));
+    const mappedReplies = (details?.replies || []).map((r: any) => {
+      const raAgentId = r.agentId || r.author?.agentId;
+      const raVerified = isAccountVerified(r.userId, raAgentId);
+      const raStatus = raVerified ? 'verified' : 'not verified';
+      return {
+        id: r.id,
+        replyId: r.id,
+        content: r.content,
+        authorAgentId: raAgentId,
+        verificationStatus: raStatus,
+        verification_status: raStatus,
+        ["verification status"]: raStatus,
+      };
+    });
     res.json({ success: true, data: mappedReplies });
   } catch (err: any) {
     res.status(404).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 11b. DELETE /api/posts/:postId/replies/:replyId (Agent only)
-router.delete('/posts/:postId/replies/:replyId', requireAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+// 12a. GET /api/replies/me (Agent/User only: list own replies)
+router.get('/replies/me', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const replyId = req.params.replyId as string;
-    await deleteReply(replyId, req.user!.id);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
 
-    // Log deletion
-    await logAgentFootprint(req.user!.id, 'REPLY_DELETED', `Response ${replyId} retracted from node`, replyId);
-
-    res.json({ success: true, message: 'Reply deleted successfully.' });
+    const result = await getUserReplies(req.user!.id, page, limit);
+    res.json({
+      success: true,
+      data: result,
+    });
   } catch (err: any) {
-    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
-    res.status(status).json({ success: false, error: { message: err.message } });
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 12b. GET /api/replies (Public read: optionally filter by agentId)
+router.get('/replies', publicReadLimiter, async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const agentId = (req.query.agentId || req.query.agent_id || req.query.author) as string | undefined;
+
+    const result = await getUserReplies({ agentId, page, limit });
+    const formattedReplies = (result.replies || []).map((r: any) => {
+      const { postId: _p, ...rest } = r;
+      return rest;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        replies: formattedReplies
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 
@@ -524,11 +708,18 @@ router.get('/replies/:replyId', publicReadLimiter, async (req: Request, res: Res
   try {
     const replyId = req.params.replyId as string;
     const data: any = await getReplyDetails(replyId);
+    const raAgentId = data.reply.author?.agentId || data.reply.agentId;
+    const raVerified = isAccountVerified(data.reply.userId, raAgentId);
+    const raStatus = raVerified ? 'verified' : 'not verified';
     const mappedData = {
       id: data.reply.id,
+        replyId: data.reply.id,
       postId: data.reply.postId,
       content: data.reply.content,
-      authorAgentId: data.reply.author?.agentId
+      authorAgentId: raAgentId,
+      verificationStatus: raStatus,
+      verification_status: raStatus,
+      ["verification status"]: raStatus,
     };
     res.json({ success: true, data: mappedData });
   } catch (err: any) {
@@ -570,7 +761,16 @@ router.post('/connections', requireAgentAuth, requireAgent, agentActionLimiter, 
       }
     } catch (e) {}
 
-    res.status(201).json({ success: true, data: result });
+    res.status(201).json({ 
+      success: true, 
+      data: {
+        ...result,
+        id: result.id,
+        connectionId: result.id,
+        reviewId: null,
+        content: null,
+      } 
+    });
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : err.message.includes('DUPLICATE_CONNECTION') ? 409 : err.message.includes('unavailable') ? 503 : 400);
     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
@@ -583,10 +783,33 @@ router.get('/connections', requireUserOrAgentAuth, publicReadLimiter, async (req
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const result = await getUserConnections(req.user!.id, page, limit);
-    const connections = (result.connections || []).map((c: any) => ({
-      id: c.id,
-      agentId: c.agentId,
-    }));
+
+    const connIds = (result.connections || []).map((c: any) => c.id).filter(Boolean);
+    const sb = getSupabaseClient();
+    let connReviewsMap = new Map<string, { id: string; comment: string }>();
+    if (connIds.length > 0) {
+      try {
+        const { data: revs } = await sb.from('reviews').select('id, connectionId, comment').in('connectionId', connIds);
+        if (revs) {
+          revs.forEach((r: any) => {
+            if (r.connectionId && !connReviewsMap.has(r.connectionId)) {
+              connReviewsMap.set(r.connectionId, { id: r.id, comment: r.comment });
+            }
+          });
+        }
+      } catch (e) {}
+    }
+
+    const connections = (result.connections || []).map((c: any) => {
+      const rev = connReviewsMap.get(c.id);
+      return {
+        id: c.id,
+        connectionId: c.id,
+        reviewId: rev?.id || null,
+        content: rev?.comment || null,
+        agentId: c.agentId,
+      };
+    });
     res.json({ success: true, data: connections });
   } catch (err: any) {
     const status = err.statusCode || 500;
@@ -643,6 +866,7 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agent
       success: true, 
       data: {
         id: message.id,
+        messageId: message.id,
         connectionId: message.connectionId,
         senderAgentId: message.senderAgentId,
         content: message.content,
@@ -789,6 +1013,9 @@ router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, a
       success: true, 
       data: {
         id: connection.id,
+        connectionId: connection.id,
+        reviewId: null,
+        content: null,
         postOwnerAgentId: connection.postOwnerAgentId || connection.post_owner_agent_id,
         replyAuthorAgentId: connection.replyAuthorAgentId || connection.reply_author_agent_id,
         createdAt: connection.createdAt || connection.created_at
@@ -889,7 +1116,8 @@ router.get('/adk', publicReadLimiter, (req: Request, res: Response) => {
   const host = req.get('host') || 'aamarva.com';
   const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
   const currentUrl = `${protocol}://${host}`;
-  const dynamicSpec = ADK_SPECIFICATION.replace(/https:\/\/aamarva\.com/g, currentUrl);
+  const rawSpec = getAdkSpecification();
+  const dynamicSpec = rawSpec.replace(/https:\/\/aamarva\.com/g, currentUrl);
 
   if (req.headers.accept && req.headers.accept.includes('text/plain')) {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -1707,11 +1935,17 @@ router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, 
       .select('*', { count: 'exact', head: true })
       .eq('connectionId', connectionId);
 
+    const { comment: _c, ...reviewWithoutComment } = newReview;
+
     res.json({
       success: true,
       message: 'Counterparty review successfully recorded for connection.',
       review: {
-        ...newReview,
+        ...reviewWithoutComment,
+        id: newReview.id,
+        reviewId: newReview.id,
+        connectionId,
+        content: newReview.comment,
         reviewerAgent: {
           id: newReview.reviewerAgentId,
           name: newReview.reviewerAgentName,
@@ -1719,6 +1953,8 @@ router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, 
           avatarUrl: newReview.reviewerAgentAvatarUrl
         }
       },
+      reviewId: newReview.id,
+      content: newReview.comment,
       connectionId,
       totalConnectionReviews: count || 1
     });
@@ -1751,6 +1987,7 @@ router.get('/counter-party-score', publicReadLimiter, async (req: Request, res: 
 
     const formattedReviews = (reviews || []).map(r => ({
       id: r.id,
+      reviewId: r.id,
       connectionId: r.connectionId,
       reviewerAgent: {
         id: r.reviewerAgentId,
@@ -1759,7 +1996,7 @@ router.get('/counter-party-score', publicReadLimiter, async (req: Request, res: 
         avatarUrl: r.reviewerAgentAvatarUrl
       },
       targetAgentId: r.targetAgentId,
-      comment: r.comment,
+      content: r.comment,
       createdAt: r.createdAt
     }));
 

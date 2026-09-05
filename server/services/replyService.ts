@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { ReplyRecord } from '../db.js';
+import { isAccountVerified } from '../authService.js';
 
 
 export async function getPostAndReplies(postId: string) {
@@ -355,6 +356,144 @@ export async function deleteReply(replyId: string, userId: string): Promise<void
   if (deleteError) {
     throw new Error(`Failed to delete reply: ${deleteError.message}`);
   }
+}
+
+export interface GetUserRepliesOptions {
+  userId?: string;
+  agentId?: string;
+  page?: number;
+  limit?: number;
+}
+
+export async function getUserReplies(target: string | GetUserRepliesOptions, pageArg = 1, limitArg = 20) {
+  const supabase = getSupabaseClient();
+  const options: GetUserRepliesOptions = typeof target === 'string'
+    ? { userId: target, page: pageArg, limit: limitArg }
+    : { page: pageArg, limit: limitArg, ...target };
+
+  const page = options.page || 1;
+  const limit = options.limit || 20;
+
+  // Find user to know their agentId / name / avatar / verification
+  let userQuery = supabase.from('users').select('id, agentId, name, avatar, emailVerified');
+  if (options.userId) {
+    userQuery = userQuery.eq('id', options.userId);
+  } else if (options.agentId) {
+    userQuery = userQuery.ilike('agentId', options.agentId.replace(/^@/, '').trim());
+  }
+
+  const { data: user } = await userQuery.maybeSingle();
+
+  const userAgentId = user?.agentId || (options.agentId ? options.agentId.replace(/^@/, '').trim() : '');
+  const userVerified = Boolean(user?.emailVerified || isAccountVerified(user?.id || options.userId, userAgentId));
+  const userStatus = userVerified ? 'verified' : 'not verified';
+
+  // Query replies with pagination
+  let repliesQuery = supabase
+    .from('replies')
+    .select('*', { count: 'exact' });
+
+  if (user?.id) {
+    repliesQuery = repliesQuery.or(`userId.eq.${user.id},agentId.ilike.${userAgentId}`);
+  } else if (options.userId) {
+    repliesQuery = repliesQuery.eq('userId', options.userId);
+  } else if (options.agentId) {
+    repliesQuery = repliesQuery.ilike('agentId', userAgentId);
+  }
+
+  const { data: replies, count, error: repliesError } = await repliesQuery
+    .order('createdAt', { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
+
+  if (repliesError) {
+    throw new Error(`Failed to retrieve replies: ${repliesError.message}`);
+  }
+
+  const total = count || 0;
+  const replyList = replies || [];
+
+  if (replyList.length === 0) {
+    return {
+      replies: [],
+      total,
+      page,
+      limit,
+    };
+  }
+
+  // Fetch parent posts
+  const postIds = Array.from(new Set(replyList.map(r => r.postId)));
+  const parentPostsMap = new Map();
+  const postRepliesCountMap = new Map();
+  const postConnectionsCountMap = new Map();
+
+  if (postIds.length > 0) {
+    const { data: parentPosts } = await supabase
+      .from('posts')
+      .select('*')
+      .in('id', postIds);
+
+    if (parentPosts) {
+      parentPosts.forEach(p => parentPostsMap.set(p.id, p));
+    }
+
+    const { data: allReplies } = await supabase
+      .from('replies')
+      .select('id, postId')
+      .in('postId', postIds);
+
+    (allReplies || []).forEach(r => {
+      postRepliesCountMap.set(r.postId, (postRepliesCountMap.get(r.postId) || 0) + 1);
+    });
+
+    const { data: allConnections } = await supabase
+      .from('connections')
+      .select('id, postId')
+      .in('postId', postIds);
+
+    (allConnections || []).forEach(c => {
+      postConnectionsCountMap.set(c.postId, (postConnectionsCountMap.get(c.postId) || 0) + 1);
+    });
+  }
+
+  const formattedReplies = replyList.map(r => {
+    const rVerified = Boolean(userVerified || isAccountVerified(r.userId || user?.id, r.agentId || userAgentId));
+    const rStatus = rVerified ? 'verified' : 'not verified';
+    const rName = r.agentName || user?.name || 'Agent';
+    const parent = parentPostsMap.get(r.postId);
+
+    return {
+      id: r.id,
+      replyId: r.id,
+      postId: r.postId,
+      agentId: r.agentId || userAgentId,
+      name: rName,
+      agentName: rName,
+      avatar: r.avatar || user?.avatar || '🤖',
+      verificationStatus: rStatus,
+      content: r.content,
+      createdAt: r.createdAt,
+      parentPost: parent ? {
+        id: parent.id,
+        postId: parent.id,
+        agentId: parent.agentId,
+        agentName: parent.agentName || 'Agent',
+        avatar: parent.avatar || '🤖',
+        content: parent.content,
+        type: parent.type || 'emit',
+        repliesCount: postRepliesCountMap.get(parent.id) || 0,
+        connectionsCount: postConnectionsCountMap.get(parent.id) || 0,
+        createdAt: parent.createdAt,
+      } : null,
+    };
+  });
+
+  return {
+    replies: formattedReplies,
+    total,
+    page,
+    limit,
+  };
 }
 
 

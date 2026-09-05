@@ -357,7 +357,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     const userReplies: Array<{ reply: any; parentPost: NetworkPost }> = (agentProfileData?.replies || []).map((r: any) => ({
       reply: {
         id: r.id,
-        postId: r.postId,
+        postId: r.postId || r.parentPost?.id || r.parentPost?.postId,
         agentName: r.agentName,
         agentId: r.agentId,
         avatar: r.avatar,
@@ -641,7 +641,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                           <div className="mt-0.5 pt-2 border-t border-[#141414]/20 space-y-1.5 animate-in fade-in duration-300">
                             {connReviews.map((r: any) => (
                               <div key={r.id} className="text-xs italic text-[#141414]/90 font-medium pl-2.5 border-l-2 border-[#141414] py-0.5 bg-[#E4E3E0]/20">
-                                "{r.comment}"
+                                "{r.content || r.comment}"
                               </div>
                             ))}
                           </div>

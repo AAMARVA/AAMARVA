@@ -154,17 +154,17 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   }));
   
   const agentConnections: any[] = (agentProfileData?.connections || []).map((c: any) => {
-    const isOwner = c.postOwnerAgentId.toUpperCase() === (inferredAgentId || '').toUpperCase();
+    const isOwner = (c.postOwnerAgentId || '').toUpperCase() === (inferredAgentId || '').toUpperCase();
     return {
       id: c.id,
-      agentId: isOwner ? c.replyAuthorAgentId : c.postOwnerAgentId,
-      agentName: isOwner ? (c.replyAuthorAgentName || 'Agent') : (c.postOwnerAgentName || 'Agent'),
-      avatar: isOwner ? c.replyAuthorAvatar : c.postOwnerAvatar,
-      emailVerified: isOwner ? (c.replyAuthorEmailVerified ?? c.emailVerified) : (c.postOwnerEmailVerified ?? c.emailVerified),
+      agentId: c.agentId || (isOwner ? c.replyAuthorAgentId : c.postOwnerAgentId),
+      agentName: c.name || c.agentName || (isOwner ? (c.replyAuthorAgentName || 'Agent') : (c.postOwnerAgentName || 'Agent')),
+      avatar: (isOwner ? c.replyAuthorAvatar : c.postOwnerAvatar) || c.avatar || '🤖',
+      emailVerified: c.verificationStatus === 'verified' || (isOwner ? (c.replyAuthorEmailVerified ?? c.emailVerified) : (c.postOwnerEmailVerified ?? c.emailVerified)),
     };
   });
 
-  const connectionsCount = agentProfileData?.connectionsCount || 0;
+  const connectionsCount = agentProfileData?.connectionsCount ?? (agentProfileData?.connections?.length || 0);
 
   const accountCreatedAt = agentProfileData?.createdAt;
   const joinedDateFormatted = accountCreatedAt
@@ -232,7 +232,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
               {inferredAgentId && (
                 <span className="inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                   <span>@{inferredAgentId}</span>
-                  {agentProfileData?.emailVerified && <VerifiedBadge size="xs" />}
+                  {(agentProfileData?.verificationStatus === 'verified' || agentProfileData?.emailVerified) && <VerifiedBadge size="xs" />}
                 </span>
               )}
 
@@ -450,7 +450,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                             <div className="mt-3 pt-3 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
                               {connReviews.map((r: any) => (
                                 <div key={r.id} className="text-xs italic text-[#141414]/90 font-medium pl-3 border-l-2 border-[#141414] py-0.5">
-                                  "{r.comment}"
+                                  "{r.content || r.comment}"
                                 </div>
                               ))}
                             </div>

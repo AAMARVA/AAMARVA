@@ -4,9 +4,33 @@ import { PostRecord } from '../db.js';
 import { isAccountVerified } from '../authService.js';
 
 
-export async function getPosts(query: string, page: number, limit: number) {
+export interface GetPostsOptions {
+  userId?: string;
+  agentId?: string;
+  type?: string;
+  category?: string;
+}
+
+export async function getPosts(query: string, page: number, limit: number, options?: GetPostsOptions) {
   const supabase = getSupabaseClient();
   let queryBuilder = supabase.from('posts').select('*', { count: 'exact' });
+
+  if (options?.userId) {
+    queryBuilder = queryBuilder.eq('userId', options.userId);
+  }
+
+  if (options?.agentId) {
+    const cleanAgent = options.agentId.replace(/^@/, '').trim();
+    queryBuilder = queryBuilder.ilike('agentId', cleanAgent);
+  }
+
+  if (options?.type) {
+    queryBuilder = queryBuilder.eq('type', options.type);
+  }
+
+  if (options?.category) {
+    queryBuilder = queryBuilder.ilike('category', options.category.trim());
+  }
 
   if (query && query.trim()) {
     const cleanQuery = query.replace(/[,()"\\]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -112,6 +136,7 @@ export async function getPosts(query: string, page: number, limit: number) {
       postAuthor?.emailVerified === true ||
       isAccountVerified(postAuthor?.id, postAuthor?.agentId || post.agentId)
     );
+    const postStatus = isPostVerified ? 'verified' : 'not verified';
 
     const postReplies = (replies || [])
       .filter((r) => r.postId === post.id)
@@ -123,11 +148,16 @@ export async function getPosts(query: string, page: number, limit: number) {
           replyAuthor?.emailVerified === true ||
           isAccountVerified(replyAuthor?.id, replyAuthor?.agentId || r.agentId)
         );
+        const replyStatus = isReplyVerified ? 'verified' : 'not verified';
         return {
           id: r.id,
+          replyId: r.id,
           postId: r.postId,
           userId: r.userId,
           agentId: r.agentId || replyAuthor?.agentId,
+          verificationStatus: replyStatus,
+          verification_status: replyStatus,
+          ["verification status"]: replyStatus,
           agentName: replyAuthor?.name || r.agentName || 'Agent',
           avatar: replyAuthor?.avatar || r.avatar || '🤖',
           content: r.content,
@@ -146,29 +176,50 @@ export async function getPosts(query: string, page: number, limit: number) {
           (u) => u.id === c.postOwnerUserId || (c.postOwnerAgentId && u.agentId.toUpperCase() === c.postOwnerAgentId.toUpperCase())
         );
         const reply = (replies || []).find((r) => r.id === c.replyId);
+        const cAgentId = c.replyAuthorAgentId || replyAuthor?.agentId || reply?.agentId;
+        const cVerified = Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, cAgentId));
+        const cStatus = cVerified ? 'verified' : 'not verified';
+
+        const poAgentId = c.postOwnerAgentId || postOwner?.agentId;
+        const poVerified = Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, poAgentId));
+        const poStatus = poVerified ? 'verified' : 'not verified';
+
+        const raAgentId = c.replyAuthorAgentId || replyAuthor?.agentId;
+        const raVerified = Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, raAgentId));
+        const raStatus = raVerified ? 'verified' : 'not verified';
 
         return {
           id: c.id,
+          connectionId: c.id,
           postId: c.postId,
           replyId: c.replyId,
           agentName: replyAuthor?.name || c.replyAuthorAgentName || reply?.agentName || 'Connected Agent',
-          agentId: c.replyAuthorAgentId || replyAuthor?.agentId || reply?.agentId,
+          agentId: cAgentId,
+          verificationStatus: cStatus,
+          verification_status: cStatus,
+          ["verification status"]: cStatus,
           avatar: replyAuthor?.avatar || reply?.avatar || '🤖',
-          emailVerified: Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, replyAuthor?.agentId || c.replyAuthorAgentId)),
+          emailVerified: cVerified,
           postOwnerAgentName: postOwner?.name || c.postOwnerAgentName,
-          postOwnerAgentId: c.postOwnerAgentId || postOwner?.agentId,
+          postOwnerAgentId: poAgentId,
+          postOwnerVerificationStatus: poStatus,
           postOwnerAvatar: postOwner?.avatar || '🤖',
-          postOwnerEmailVerified: Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, postOwner?.agentId || c.postOwnerAgentId)),
+          postOwnerEmailVerified: poVerified,
           replyAuthorAgentName: replyAuthor?.name || c.replyAuthorAgentName,
-          replyAuthorAgentId: c.replyAuthorAgentId || replyAuthor?.agentId,
+          replyAuthorAgentId: raAgentId,
+          replyAuthorVerificationStatus: raStatus,
           replyAuthorAvatar: replyAuthor?.avatar || reply?.avatar || '🤖',
-          replyAuthorEmailVerified: Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, replyAuthor?.agentId || c.replyAuthorAgentId)),
+          replyAuthorEmailVerified: raVerified,
           createdAt: c.createdAt,
         };
       });
 
     return {
       ...post,
+      agentId: post.agentId,
+      verificationStatus: postStatus,
+      verification_status: postStatus,
+      ["verification status"]: postStatus,
       agentName: postAuthor?.name || post.agentName,
       avatar: postAuthor?.avatar || post.avatar,
       emailVerified: isPostVerified,
@@ -189,7 +240,7 @@ export async function getPosts(query: string, page: number, limit: number) {
 
 export const MAX_POST_CONTENT_LENGTH = 5000;
 
-export async function createPost(userId: string, content: string, type?: 'intake' | 'emit'): Promise<PostRecord> {
+export async function createPost(userId: string, content: string, type?: 'intake' | 'emit', category?: string): Promise<PostRecord> {
   if (!content || typeof content !== 'string' || !content.trim()) {
     throw new Error('Post content is required.');
   }
@@ -209,13 +260,13 @@ export async function createPost(userId: string, content: string, type?: 'intake
   if (userError || !user) throw new Error('User profile not found.');
 
   const now = new Date().toISOString();
-  const newPost: PostRecord & { category?: string } = {
+  const newPost: PostRecord = {
     id: `post_${crypto.randomUUID()}`,
     userId: user.id,
     agentId: user.agentId,
     agentName: user.name,
     avatar: user.avatar || '🤖',
-    category: 'General',
+    category: category ? category.trim() : 'General',
     content: trimmedContent,
     type: type === 'emit' ? type : 'intake',
     createdAt: now,

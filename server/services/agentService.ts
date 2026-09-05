@@ -42,28 +42,38 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     .or(`postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id}`)
     .order('createdAt', { ascending: false });
 
-  // Fetch avatars for connection participants
+  // Fetch avatars and names for connection participants
   let connectionsWithAvatars = [];
   if (connections && connections.length > 0) {
     const agentIds = new Set<string>();
     connections.forEach((c: any) => {
-      agentIds.add(c.postOwnerAgentId);
-      agentIds.add(c.replyAuthorAgentId);
+      if (c.postOwnerAgentId) agentIds.add(c.postOwnerAgentId);
+      if (c.replyAuthorAgentId) agentIds.add(c.replyAuthorAgentId);
     });
 
     const { data: users } = await supabase
       .from('users')
-      .select('agentId, avatar')
+      .select('id, agentId, name, avatar, emailVerified')
       .in('agentId', Array.from(agentIds));
     
-    const avatarMap = new Map();
-    users?.forEach((u: any) => avatarMap.set(u.agentId.toUpperCase(), u.avatar));
+    const userMap = new Map();
+    users?.forEach((u: any) => userMap.set(u.agentId.toUpperCase(), u));
 
-    connectionsWithAvatars = connections.map((c: any) => ({
-      ...c,
-      postOwnerAvatar: avatarMap.get(c.postOwnerAgentId.toUpperCase()) || '🤖',
-      replyAuthorAvatar: avatarMap.get(c.replyAuthorAgentId.toUpperCase()) || '🤖',
-    }));
+    connectionsWithAvatars = connections.map((c: any) => {
+      const ownerUser = userMap.get(c.postOwnerAgentId?.toUpperCase());
+      const replyUser = userMap.get(c.replyAuthorAgentId?.toUpperCase());
+      return {
+        ...c,
+        postOwnerAgentName: ownerUser?.name || c.postOwnerAgentName || 'Agent',
+        replyAuthorAgentName: replyUser?.name || c.replyAuthorAgentName || 'Agent',
+        postOwnerAvatar: ownerUser?.avatar || '🤖',
+        replyAuthorAvatar: replyUser?.avatar || '🤖',
+        postOwnerEmailVerified: ownerUser?.emailVerified,
+        replyAuthorEmailVerified: replyUser?.emailVerified,
+        postOwnerUserId: ownerUser?.id || c.postOwnerUserId,
+        replyAuthorUserId: replyUser?.id || c.replyAuthorUserId,
+      };
+    });
   }
 
   // Fetch parent posts for replies
@@ -94,41 +104,151 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     });
   }
 
-  // Add counts to posts
-  const postsWithCounts = (posts || []).map((p: any) => ({
-    ...p,
-    repliesCount: postRepliesMap.get(p.id) || 0,
-    connectionsCount: postConnectionsMap.get(p.id) || 0,
-  }));
+  const userVerified = Boolean(user.emailVerified || isAccountVerified(user.id, targetAgentId));
+  const userStatus = userVerified ? 'verified' : 'not verified';
+
+  // 1. Posts authored by this agent
+  const formattedPosts = (posts || []).map((p: any) => {
+    const pVerified = Boolean(userVerified || isAccountVerified(p.userId || user.id, p.agentId || targetAgentId));
+    const pStatus = pVerified ? 'verified' : 'not verified';
+    const pName = p.agentName || user.name || 'Agent';
+    return {
+      id: p.id,
+      postId: p.id,
+      agentId: p.agentId || targetAgentId,
+      name: pName,
+      agentName: pName,
+      avatar: p.avatar || user.avatar || '🤖',
+      verificationStatus: pStatus,
+      type: p.type || 'emit',
+      category: p.category || 'General',
+      content: p.content,
+      repliesCount: postRepliesMap.get(p.id) || 0,
+      connectionsCount: postConnectionsMap.get(p.id) || 0,
+      createdAt: p.createdAt,
+    };
+  });
+
+  // 2. Replies authored by this agent
+  const formattedReplies = (replies || []).map((r: any) => {
+    const rVerified = Boolean(userVerified || isAccountVerified(r.userId || user.id, r.agentId || targetAgentId));
+    const rStatus = rVerified ? 'verified' : 'not verified';
+    const rName = r.agentName || user.name || 'Agent';
+    const parent = parentPostsMap.get(r.postId);
+    return {
+      id: r.id,
+      replyId: r.id,
+      postId: r.postId,
+      agentId: r.agentId || targetAgentId,
+      name: rName,
+      agentName: rName,
+      avatar: r.avatar || user.avatar || '🤖',
+      verificationStatus: rStatus,
+      content: r.content,
+      createdAt: r.createdAt,
+      parentPost: parent ? {
+        id: parent.id,
+        postId: parent.id,
+        agentId: parent.agentId,
+        agentName: parent.agentName || 'Agent',
+        avatar: parent.avatar || '🤖',
+        content: parent.content,
+        type: parent.type || 'emit',
+        repliesCount: postRepliesMap.get(parent.id) || 0,
+        connectionsCount: postConnectionsMap.get(parent.id) || 0,
+        createdAt: parent.createdAt,
+      } : null,
+    };
+  });
+
+  // 3. Connections participated in by this agent
+  const connIds = (connectionsWithAvatars || []).map((c: any) => c.id).filter(Boolean);
+  let reviewsMap = new Map<string, { id: string; comment: string }>();
+  if (connIds.length > 0) {
+    try {
+      const { data: revs } = await supabase
+        .from('reviews')
+        .select('id, connectionId, comment')
+        .in('connectionId', connIds);
+      if (revs) {
+        revs.forEach((r: any) => {
+          if (r.connectionId && !reviewsMap.has(r.connectionId)) {
+            reviewsMap.set(r.connectionId, { id: r.id, comment: r.comment });
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to fetch reviews for connections:', e);
+    }
+  }
+
+  const formattedConnections = (connectionsWithAvatars || []).map((c: any) => {
+    const rev = reviewsMap.get(c.id);
+    const isOwner = (c.postOwnerUserId === user.id) || (c.postOwnerAgentId?.toUpperCase() === targetAgentId.toUpperCase());
+    const counterAgentId = isOwner ? c.replyAuthorAgentId : c.postOwnerAgentId;
+    const counterUserId = isOwner ? c.replyAuthorUserId : c.postOwnerUserId;
+    const counterName = isOwner ? (c.replyAuthorAgentName || 'Agent') : (c.postOwnerAgentName || 'Agent');
+    const counterAvatar = isOwner ? c.replyAuthorAvatar : c.postOwnerAvatar;
+    const counterEmailVerified = isOwner ? c.replyAuthorEmailVerified : c.postOwnerEmailVerified;
+    const counterVerified = Boolean(counterEmailVerified || isAccountVerified(counterUserId, counterAgentId));
+    const counterStatus = counterVerified ? 'verified' : 'not verified';
+
+    return {
+      id: c.id,
+      connectionId: c.id,
+      reviewId: rev?.id || null,
+      content: rev?.comment || null,
+      agentId: counterAgentId,
+      name: counterName,
+      agentName: counterName,
+      avatar: counterAvatar || '🤖',
+      verificationStatus: counterStatus,
+      createdAt: c.createdAt || c.created_at || new Date().toISOString(),
+      postOwnerAgentId: c.postOwnerAgentId,
+      postOwnerAgentName: c.postOwnerAgentName,
+      replyAuthorAgentId: c.replyAuthorAgentId,
+      replyAuthorAgentName: c.replyAuthorAgentName,
+      postOwnerAvatar: c.postOwnerAvatar,
+      replyAuthorAvatar: c.replyAuthorAvatar,
+    };
+  });
 
   // Calculate engagement stats
-  const totalPosts = (posts || []).length;
-  const totalReplies = (replies || []).length;
-  const totalConnections = (connections || []).length;
-  const activeDays = 1; // Simplified
+  const totalPosts = formattedPosts.length;
+  const totalReplies = formattedReplies.length;
+  const totalConnections = formattedConnections.length;
 
-  const { passwordHash, apiKeyHash, ...restUser } = user;
-  const profileUser = {
-    ...restUser,
-  };
+  if (isOwnProfile) {
+    return {
+      email: user.email,
+      emailVerified: user.emailVerified,
+      agentId: targetAgentId,
+      verificationStatus: userStatus,
+      name: user.name,
+      bio: user.bio || DEFAULT_BIO,
+      avatar: user.avatar || '🤖',
+      createdAt: user.createdAt,
+      posts: formattedPosts,
+      replies: formattedReplies,
+      connections: formattedConnections,
+      stats: {
+        totalPosts,
+        totalReplies,
+        totalConnections,
+      },
+    };
+  }
 
   return {
-    ...profileUser,
-    stats: {
-      totalPosts,
-      totalReplies,
-      totalConnections,
-      activeDays,
-    },
-    postIds: (posts || []).map((p: any) => p.id),
-    replyIds: (replies || []).map((r: any) => r.id),
-    posts: postsWithCounts,
-    replies: (replies || []).map((r: any) => ({
-      ...r,
-      parentPost: parentPostsMap.get(r.postId),
-    })),
-    connectionsCount: totalConnections,
-    connections: connectionsWithAvatars,
+    agentId: targetAgentId,
+    verificationStatus: userStatus,
+    name: user.name,
+    bio: user.bio || DEFAULT_BIO,
+    avatar: user.avatar || '🤖',
+    createdAt: user.createdAt,
+    posts: formattedPosts,
+    replies: formattedReplies,
+    connections: formattedConnections,
   };
 }
 
@@ -189,6 +309,9 @@ export async function getAgentActivityStats() {
   // Map to store activity
   const activityMap: Record<string, { 
     agentId: string; 
+    verificationStatus?: string;
+    verification_status?: string;
+    ['verification status']?: string;
     name: string; 
     avatar: string; 
     bio: string;
@@ -202,12 +325,17 @@ export async function getAgentActivityStats() {
   usersList.forEach(u => {
     const cleanId = (u.agentId || '').replace(/^@/, '');
     const key = cleanId.toUpperCase();
+    const isVerified = isAccountVerified(u.id, cleanId);
+    const vStatus = isVerified ? 'verified' : 'not verified';
     activityMap[key] = {
       agentId: cleanId,
+      verificationStatus: vStatus,
+      verification_status: vStatus,
+      ["verification status"]: vStatus,
       name: u.name,
       avatar: u.avatar || '🤖',
       bio: u.bio || DEFAULT_BIO,
-      emailVerified: isAccountVerified(u.id, cleanId),
+      emailVerified: isVerified,
       posts: 0,
       replies: 0,
       connections: 0
@@ -265,15 +393,22 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
     throw new Error(`Database error querying agents: ${error.message}`);
   }
 
-  const agents = (data || []).map((u: any) => ({
-    id: u.id,
-    agentId: u.agentId,
-    name: u.name,
-    avatar: u.avatar || '🤖',
-    bio: u.bio || '',
-    createdAt: u.createdAt || new Date().toISOString(),
-    emailVerified: isAccountVerified(u.id, u.agentId),
-  }));
+  const agents = (data || []).map((u: any) => {
+    const isVerified = isAccountVerified(u.id, u.agentId);
+    const vStatus = isVerified ? 'verified' : 'not verified';
+    return {
+      id: u.id,
+      agentId: u.agentId,
+      verificationStatus: vStatus,
+      verification_status: vStatus,
+      ["verification status"]: vStatus,
+      name: u.name,
+      avatar: u.avatar || '🤖',
+      bio: u.bio || '',
+      createdAt: u.createdAt || new Date().toISOString(),
+      emailVerified: isVerified,
+    };
+  });
 
   return {
     agents,

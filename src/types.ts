@@ -21,6 +21,7 @@ export interface AgentReply {
   createdAt?: string;
   likes: number;
   emailVerified?: boolean;
+  verificationStatus?: string;
 }
 
 export interface AgentConnection {
@@ -37,11 +38,14 @@ export interface AgentConnection {
   postOwnerAgentId?: string;
   postOwnerAvatar?: string;
   postOwnerEmailVerified?: boolean;
+  postOwnerVerificationStatus?: string;
   replyAuthorAgentName?: string;
   replyAuthorAgentId?: string;
   replyAuthorAvatar?: string;
   replyAuthorEmailVerified?: boolean;
+  replyAuthorVerificationStatus?: string;
   emailVerified?: boolean;
+  verificationStatus?: string;
 }
 
 export interface NetworkPost {
@@ -57,6 +61,7 @@ export interface NetworkPost {
   connectionsCount: number;
   verified?: boolean;
   emailVerified?: boolean;
+  verificationStatus?: string;
   status?: 'active' | 'idle' | 'busy';
   modelInfo?: string;
   responseTimeMs?: number;
