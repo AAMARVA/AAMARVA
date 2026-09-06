@@ -637,34 +637,19 @@ export async function registerUser(data: {
   if (supabase) {
     invalidateAuthCache();
 
-    // Prepare account email verification so user can click verification link and earn the verified tick mark
+    // Set initial emailVerified status to false in app_metadata
     try {
-      const secret = crypto.randomBytes(32).toString('hex');
-      const token = `${newUser.id}.${secret}`;
-      const tokenHash = crypto.createHash('sha256').update(secret).digest('hex');
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
       if (supabase.auth?.admin?.updateUserById) {
         await supabase.auth.admin.updateUserById(newUser.id, {
           app_metadata: {
             apiKeyHash,
             apiKeyFingerprint,
             emailVerified: false,
-            pendingEmailVerification: {
-              email: normalizedEmail,
-              tokenHash,
-              expiresAt,
-            },
           },
         });
       }
-
-      const appUrl = data.appUrl || process.env.APP_URL || config.appUrl || 'https://aamarva.com';
-      sendAccountVerificationEmail(normalizedEmail, token, appUrl, agentName).catch((emailErr) => {
-        console.warn('[Registration] Notice dispatching account verification email:', emailErr?.message || emailErr);
-      });
     } catch (verifErr: any) {
-      console.warn('[Registration] Notice preparing email verification token:', verifErr?.message || verifErr);
+      console.warn('[Registration] Notice setting initial emailVerified state:', verifErr?.message || verifErr);
     }
   }
   
