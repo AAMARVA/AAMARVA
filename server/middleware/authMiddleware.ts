@@ -274,6 +274,7 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
         id: userRecord.id,
         agentId: userRecord.agentId,
         email: userRecord.email,
+        emailVerified: Boolean(userRecord.emailVerified === true),
         type: 'agent',
       };
       req.authType = 'agent';
@@ -320,7 +321,7 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
     const supabase = getSupabaseClient();
     const { data: user, error } = await supabase
       .from('users')
-      .select('status')
+      .select('status, emailVerified')
       .eq('id', payload.id)
       .maybeSingle();
 
@@ -335,7 +336,10 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
       return;
     }
 
-    req.user = payload;
+    req.user = {
+      ...payload,
+      emailVerified: Boolean(user.emailVerified === true),
+    };
     req.authType = 'agent';
     next();
   } catch (err: any) {

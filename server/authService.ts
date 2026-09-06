@@ -338,8 +338,6 @@ const AVATAR_POOL = [
 ];
 
 // The database (public.users.emailVerified) is the sole source of truth for verification.
-export const verifiedAccountIdentifiers = new Set<string>();
-
 export function isAccountVerified(userOrFlag?: any, _legacyAgentId?: string): boolean {
   if (!userOrFlag) return false;
   if (typeof userOrFlag === 'boolean') return userOrFlag;
@@ -354,10 +352,6 @@ export function getVerificationStatus(userOrFlag?: any, _agentId?: string, email
     return emailVerified ? 'verified' : 'not verified';
   }
   return isAccountVerified(userOrFlag) ? 'verified' : 'not verified';
-}
-
-export function markAccountVerified(_userId?: string, _agentId?: string, _email?: string) {
-  // Deprecated: public.users is the sole source of truth. No in-memory cache is maintained.
 }
 
 export async function initVerifiedUsersCache() {
@@ -535,7 +529,7 @@ export async function registerUser(data: {
           const res = await supabase.auth.admin.createUser({
             email: normalizedEmail,
             password: data.password || crypto.randomBytes(32).toString('hex'),
-            email_confirm: true,
+            email_confirm: false,
             user_metadata: {
               agentId,
               name: agentName,
@@ -643,19 +637,34 @@ export async function registerUser(data: {
   if (supabase) {
     invalidateAuthCache();
 
-    // Set initial emailVerified status to false in app_metadata
+    // Prepare account email verification so user can click verification link and earn the verified tick mark
     try {
+      const secret = crypto.randomBytes(32).toString('hex');
+      const token = `${newUser.id}.${secret}`;
+      const tokenHash = crypto.createHash('sha256').update(secret).digest('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
       if (supabase.auth?.admin?.updateUserById) {
         await supabase.auth.admin.updateUserById(newUser.id, {
           app_metadata: {
             apiKeyHash,
             apiKeyFingerprint,
             emailVerified: false,
+            pendingEmailVerification: {
+              email: normalizedEmail,
+              tokenHash,
+              expiresAt,
+            },
           },
         });
       }
+
+      const appUrl = data.appUrl || process.env.APP_URL || config.appUrl || 'https://aamarva.com';
+      sendAccountVerificationEmail(normalizedEmail, token, appUrl, agentName).catch((emailErr) => {
+        console.warn('[Registration] Notice dispatching account verification email:', emailErr?.message || emailErr);
+      });
     } catch (verifErr: any) {
-      console.warn('[Registration] Notice setting initial emailVerified state:', verifErr?.message || verifErr);
+      console.warn('[Registration] Notice preparing email verification token:', verifErr?.message || verifErr);
     }
   }
   
@@ -1259,21 +1268,23 @@ export async function verifyEmailChange(token: string) {
   const { error: dbError } = await supabase
     .from('users')
     .update({ 
-      email: pendingData.newEmail, 
+      email: pendingData.newEmail,
+      emailVerified: false,
+      emailVerifiedAt: null,
       updatedAt: new Date().toISOString() 
     })
     .ilike('email', oldEmail || '');
 
   if (dbError) throw new Error('Failed to update account record.');
 
-  // b. Update Supabase Auth email, mark as verified, and clear pending metadata
+  // b. Update Supabase Auth email and clear pending metadata
   const { error: authError } = await supabase.auth.admin.updateUserById(targetAuthUser.id, {
     email: pendingData.newEmail,
-    email_confirm: true,
+    email_confirm: true, // required by supabase to confirm the new email change
     app_metadata: { 
       ...targetAuthUser.app_metadata, 
-      emailVerified: true,
-      emailVerifiedAt: new Date().toISOString(),
+      emailVerified: false,
+      emailVerifiedAt: null,
       pendingEmailChange: null 
     }
   });
@@ -1296,9 +1307,6 @@ export async function verifyEmailChange(token: string) {
     throw new Error('Failed to finalize email update in auth system.');
   }
 
-  // Mark account as verified now that email has been confirmed via verification link
-  markAccountVerified(targetAuthUser.id, targetAuthUser.user_metadata?.agentId, pendingData.newEmail);
-
   return { email: pendingData.newEmail };
 }
 
@@ -1319,17 +1327,13 @@ export async function requestAccountVerificationEmail(userId: string, customAppU
     throw new Error('User account not found.');
   }
 
-  // Check if account is already verified
+  // Check if account is already verified in the database (sole source of truth)
   if (user.emailVerified === true) {
     return { success: true, message: 'Your account is already verified with a tick mark.', alreadyVerified: true };
   }
 
   const { data: authUserData } = await supabase.auth.admin.getUserById(user.id);
   const authUser = authUserData?.user;
-  if (authUser?.app_metadata?.emailVerified === true) {
-    markAccountVerified(user.id, user.agentId, user.email);
-    return { success: true, message: 'Your account is already verified with a tick mark.', alreadyVerified: true };
-  }
 
   // Generate crypto secure verification token
   const secret = crypto.randomBytes(32).toString('hex');
@@ -1387,15 +1391,14 @@ export async function confirmAccountEmailVerification(token: string) {
   const pending = authUser.app_metadata?.pendingEmailVerification;
 
   if (!pending) {
-    // If user is already verified
-    if (authUser.app_metadata?.emailVerified === true) {
-      const { data: existingUser } = await supabase.from('users').select('agentId, email').eq('id', userId).maybeSingle();
-      markAccountVerified(userId, existingUser?.agentId, existingUser?.email || authUser.email);
+    // Check authoritative database table just in case they are already verified
+    const { data: existingUser } = await supabase.from('users').select('agentId, email, emailVerified').eq('id', userId).maybeSingle();
+    if (existingUser?.emailVerified === true) {
       return {
         success: true,
         message: 'Your account is already verified! The verified tick mark is active.',
-        agentId: existingUser?.agentId || authUser.user_metadata?.agentId,
-        email: existingUser?.email || authUser.email,
+        agentId: existingUser.agentId,
+        email: existingUser.email,
       };
     }
     throw new Error('No pending email verification found. The link may have already been used.');
@@ -1430,21 +1433,23 @@ export async function confirmAccountEmailVerification(token: string) {
   }
 
   // 1b. Mark verified in users database table for permanent persistence
-  try {
-    const { error: dbUpdateError } = await supabase
-      .from('users')
-      .update({
-        emailVerified: true,
-        emailVerifiedAt: now,
-        updatedAt: now
-      })
-      .eq('id', userId);
+  const { error: dbUpdateError } = await supabase
+    .from('users')
+    .update({
+      emailVerified: true,
+      emailVerifiedAt: now,
+      updatedAt: now
+    })
+    .eq('id', userId);
 
-    if (dbUpdateError) {
-      console.warn(`[AccountVerification] Database update failed for user ${userId}, state remains in Auth metadata:`, dbUpdateError.message);
-    }
-  } catch (err) {
-    console.warn(`[AccountVerification] Database exception for user ${userId}:`, err);
+  if (dbUpdateError) {
+    // Rollback auth state to maintain consistency
+    await supabase.auth.admin.updateUserById(userId, {
+      email_confirm: false,
+      app_metadata: authUser.app_metadata,
+    });
+    console.error(`[AccountVerification] Database update failed for user ${userId}:`, dbUpdateError.message);
+    throw new Error('Verification failed: Could not synchronize authoritative database.');
   }
 
   // 2. Fetch user profile from database to get canonical agentId
@@ -1456,9 +1461,6 @@ export async function confirmAccountEmailVerification(token: string) {
 
   const agentId = userDb?.agentId || authUser.user_metadata?.agentId || '';
   const email = userDb?.email || authUser.email || '';
-
-  // 3. Mark in cache so tick mark appears immediately
-  markAccountVerified(userId, agentId, email);
 
   console.log(`[AccountVerification] Successfully verified email and assigned verified tick mark to agent: @${agentId} (${userId})`);
 
