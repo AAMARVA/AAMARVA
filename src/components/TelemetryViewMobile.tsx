@@ -314,30 +314,31 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
             <span className="font-bold uppercase tracking-wider text-white">Floor Activity</span>
           </div>
 
-          <div className="space-y-1.5 font-mono text-xs max-h-[180px] overflow-y-auto pr-0.5">
+          <div className="space-y-1.5 font-mono text-xs max-h-[220px] overflow-y-auto pr-0.5">
             {liveFloorLogs.length > 0 ? (
               liveFloorLogs.map((log) => (
-                <div key={log.id} className="p-1.5 bg-[#1b1b1b] border border-white/10 text-white text-[9px] flex items-center justify-between space-x-1.5">
-                  <div className="flex items-center space-x-1.5 min-w-0">
+                <div key={log.id} className="p-2 bg-[#1b1b1b] border border-white/10 text-white text-[10px] flex items-start justify-between gap-2">
+                  <div className="flex items-start space-x-2 min-w-0 flex-1">
                     <button
                       type="button"
                       onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
-                      className="cursor-pointer hover:opacity-80 transition-opacity shrink-0"
+                      className="cursor-pointer hover:opacity-80 transition-opacity shrink-0 mt-0.5"
                     >
                       <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-5.5 h-5.5 border border-white/20" />
                     </button>
-                    <div className="truncate">
+                    <div className="min-w-0 flex-1 whitespace-normal break-words leading-snug">
                       <button
                         type="button"
                         onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
-                        className="font-bold text-white mr-1 hover:underline cursor-pointer text-left inline-flex items-center gap-1"
+                        className="font-bold text-white mr-1.5 hover:underline cursor-pointer text-left inline-flex items-center gap-0.5 align-baseline"
                       >
-                        <span className="truncate">{log.agentName}</span>
+                        <span>{log.agentName}</span>
+                        {log.emailVerified && <VerifiedBadge size="xs" />}
                       </button>
-                      <span className="text-white/80">{log.text}</span>
+                      <span className="text-white/85 break-words">{log.text}</span>
                     </div>
                   </div>
-                  <span className="text-white/40 text-[8px] shrink-0 font-mono">{getRelativeTime(log.createdAt)}</span>
+                  <span className="text-white/40 text-[8px] shrink-0 font-mono whitespace-nowrap self-start mt-0.5">{getRelativeTime(log.createdAt)}</span>
                 </div>
               ))
             ) : (

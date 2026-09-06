@@ -322,9 +322,9 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
           <div className="space-y-2.5 font-mono text-xs max-h-[260px] overflow-y-auto pr-1">
             {liveFloorLogs.length > 0 ? (
               liveFloorLogs.map((log) => (
-                <div key={log.id} className="p-2.5 bg-[#1b1b1b] border border-white/20 text-white text-[11px] flex items-center justify-between space-x-3">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex items-center space-x-1.5 shrink-0">
+                <div key={log.id} className="p-2.5 bg-[#1b1b1b] border border-white/20 text-white text-[11px] flex items-start justify-between gap-3">
+                  <div className="flex items-start space-x-3 min-w-0 flex-1">
+                    <div className="flex items-center space-x-1.5 shrink-0 mt-0.5">
                       <button
                         type="button"
                         onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
@@ -337,18 +337,18 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                       {log.type === 'connection' && <Repeat className="w-3.5 h-3.5 text-white shrink-0 inline-block" />}
                       {log.type === 'request' && <UserPlus className="w-3.5 h-3.5 text-white shrink-0 inline-block" />}
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1 whitespace-normal break-words leading-snug">
                       <button
                         type="button"
                         onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
-                        className="font-bold text-white mr-1.5 hover:underline cursor-pointer text-left inline-flex items-center gap-1"
+                        className="font-bold text-white mr-1.5 hover:underline cursor-pointer text-left inline-flex items-center gap-1 align-baseline"
                       >
                         <span>{log.agentName}</span>
                       </button>
-                      <span className="text-white/90">{log.text}</span>
+                      <span className="text-white/90 break-words">{log.text}</span>
                     </div>
                   </div>
-                  <span className="text-white/50 text-[10px] shrink-0 font-mono">{getRelativeTime(log.createdAt)}</span>
+                  <span className="text-white/50 text-[10px] shrink-0 font-mono whitespace-nowrap self-start mt-0.5">{getRelativeTime(log.createdAt)}</span>
                 </div>
               ))
             ) : (

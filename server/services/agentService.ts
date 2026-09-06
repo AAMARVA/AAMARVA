@@ -1,6 +1,6 @@
 import { getSupabaseClient } from '../supabase.js';
 import { UserRecord } from '../db.js';
-import { normalizeUserRecord, DEFAULT_BIO, isAccountVerified } from '../authService.js';
+import { normalizeUserRecord, DEFAULT_BIO } from '../authService.js';
 
 export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const normalizedTarget = agentId.trim().replace(/^@/, '').toUpperCase();
@@ -104,12 +104,12 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     });
   }
 
-  const userVerified = Boolean(user.emailVerified || isAccountVerified(user.id, targetAgentId));
+  const userVerified = Boolean(user.emailVerified === true);
   const userStatus = userVerified ? 'verified' : 'not verified';
 
   // 1. Posts authored by this agent
   const formattedPosts = (posts || []).map((p: any) => {
-    const pVerified = Boolean(userVerified || isAccountVerified(p.userId || user.id, p.agentId || targetAgentId));
+    const pVerified = userVerified;
     const pStatus = pVerified ? 'verified' : 'not verified';
     const pName = p.agentName || user.name || 'Agent';
     return {
@@ -120,6 +120,9 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       agentName: pName,
       avatar: p.avatar || user.avatar || '🤖',
       verificationStatus: pStatus,
+      verification_status: pStatus,
+      ["verification status"]: pStatus,
+      emailVerified: pVerified,
       type: p.type || 'emit',
       category: p.category || 'General',
       content: p.content,
@@ -131,7 +134,7 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
 
   // 2. Replies authored by this agent
   const formattedReplies = (replies || []).map((r: any) => {
-    const rVerified = Boolean(userVerified || isAccountVerified(r.userId || user.id, r.agentId || targetAgentId));
+    const rVerified = userVerified;
     const rStatus = rVerified ? 'verified' : 'not verified';
     const rName = r.agentName || user.name || 'Agent';
     const parent = parentPostsMap.get(r.postId);
@@ -144,6 +147,9 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       agentName: rName,
       avatar: r.avatar || user.avatar || '🤖',
       verificationStatus: rStatus,
+      verification_status: rStatus,
+      ["verification status"]: rStatus,
+      emailVerified: rVerified,
       content: r.content,
       createdAt: r.createdAt,
       parentPost: parent ? {
@@ -190,7 +196,7 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     const counterName = isOwner ? (c.replyAuthorAgentName || 'Agent') : (c.postOwnerAgentName || 'Agent');
     const counterAvatar = isOwner ? c.replyAuthorAvatar : c.postOwnerAvatar;
     const counterEmailVerified = isOwner ? c.replyAuthorEmailVerified : c.postOwnerEmailVerified;
-    const counterVerified = Boolean(counterEmailVerified || isAccountVerified(counterUserId, counterAgentId));
+    const counterVerified = Boolean(counterEmailVerified === true);
     const counterStatus = counterVerified ? 'verified' : 'not verified';
 
     return {
@@ -203,6 +209,9 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       agentName: counterName,
       avatar: counterAvatar || '🤖',
       verificationStatus: counterStatus,
+      verification_status: counterStatus,
+      ["verification status"]: counterStatus,
+      emailVerified: counterVerified,
       createdAt: c.createdAt || c.created_at || new Date().toISOString(),
       postOwnerAgentId: c.postOwnerAgentId,
       postOwnerAgentName: c.postOwnerAgentName,
@@ -221,7 +230,7 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   if (isOwnProfile) {
     return {
       email: user.email,
-      emailVerified: user.emailVerified,
+      emailVerified: user.emailVerified === true,
       agentId: targetAgentId,
       verificationStatus: userStatus,
       name: user.name,
@@ -242,6 +251,7 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   return {
     agentId: targetAgentId,
     verificationStatus: userStatus,
+    emailVerified: userVerified,
     name: user.name,
     bio: user.bio || DEFAULT_BIO,
     avatar: user.avatar || '🤖',
@@ -255,13 +265,13 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
 export async function getAgentActivityStats() {
   const supabase = getSupabaseClient();
 
-  const userMap = new Map<string, { id: string; name: string; agentId: string; avatar: string; bio: string }>();
+  const userMap = new Map<string, { id: string; name: string; agentId: string; avatar: string; bio: string; emailVerified: boolean }>();
 
   // 1. Fetch from users table if available
   try {
     const { data: users, error: usersError } = await supabase
       .from('users')
-      .select('id, name, agentId, avatar, bio');
+      .select('id, name, agentId, avatar, bio, emailVerified');
     if (!usersError && users) {
       users.forEach((u: any) => {
         const aid = u.agentId;
@@ -271,7 +281,8 @@ export async function getAgentActivityStats() {
             name: u.name,
             agentId: aid,
             avatar: u.avatar || '🤖',
-            bio: u.bio || DEFAULT_BIO
+            bio: u.bio || DEFAULT_BIO,
+            emailVerified: u.emailVerified === true,
           });
         }
       });
@@ -325,7 +336,7 @@ export async function getAgentActivityStats() {
   usersList.forEach(u => {
     const cleanId = (u.agentId || '').replace(/^@/, '');
     const key = cleanId.toUpperCase();
-    const isVerified = isAccountVerified(u.id, cleanId);
+    const isVerified = Boolean(u.emailVerified === true);
     const vStatus = isVerified ? 'verified' : 'not verified';
     activityMap[key] = {
       agentId: cleanId,
@@ -372,7 +383,7 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
 
   let queryBuilder = supabase
     .from('users')
-    .select('id, agentId, name, avatar, bio, createdAt', { count: 'exact' })
+    .select('id, agentId, name, avatar, bio, createdAt, emailVerified', { count: 'exact' })
     .not('agentId', 'is', null);
 
   if (query && query.trim()) {
@@ -394,7 +405,7 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
   }
 
   const agents = (data || []).map((u: any) => {
-    const isVerified = isAccountVerified(u.id, u.agentId);
+    const isVerified = Boolean(u.emailVerified === true);
     const vStatus = isVerified ? 'verified' : 'not verified';
     return {
       id: u.id,

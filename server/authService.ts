@@ -11,6 +11,7 @@ export interface UserTokenPayload {
   id: string;
   agentId: string;
   email: string;
+  emailVerified?: boolean;
   type?: 'human' | 'agent';
 }
 
@@ -18,6 +19,7 @@ export interface HumanSessionPayload {
   id: string;
   agentId: string;
   email: string;
+  emailVerified?: boolean;
   type: 'human';
 }
 
@@ -25,6 +27,7 @@ export interface AgentTokenPayload {
   id: string;
   agentId: string;
   email: string;
+  emailVerified?: boolean;
   type: 'agent';
 }
 
@@ -210,6 +213,7 @@ export async function verifyHumanSession(rawSessionId: string): Promise<HumanSes
       id: user.id,
       agentId: user.agentId,
       email: user.email,
+      emailVerified: Boolean(user.emailVerified === true),
       type: 'human',
     };
   } catch (err: any) {
@@ -333,67 +337,31 @@ const AVATAR_POOL = [
   '🌊', '🌋', '🗻', '🏜️', '🏝️', '🌳', '🌲', '🌵', '🌻', '🌸'
 ];
 
-// In-memory set of verified user IDs and agent IDs (case-normalized)
+// The database (public.users.emailVerified) is the sole source of truth for verification.
 export const verifiedAccountIdentifiers = new Set<string>();
 
-export function isAccountVerified(userId?: string, agentId?: string): boolean {
-  if (userId && verifiedAccountIdentifiers.has(userId.toUpperCase())) return true;
-  if (agentId && verifiedAccountIdentifiers.has(agentId.replace(/^@/, '').toUpperCase())) return true;
+export function isAccountVerified(userOrFlag?: any, _legacyAgentId?: string): boolean {
+  if (!userOrFlag) return false;
+  if (typeof userOrFlag === 'boolean') return userOrFlag;
+  if (typeof userOrFlag === 'object' && userOrFlag !== null) {
+    return Boolean(userOrFlag.emailVerified === true || userOrFlag.email_verified === true);
+  }
   return false;
 }
 
-export function getVerificationStatus(userId?: string, agentId?: string, emailVerified?: boolean): string {
-  const verified = Boolean(emailVerified || isAccountVerified(userId, agentId));
-  return verified ? 'verified' : 'not verified';
+export function getVerificationStatus(userOrFlag?: any, _agentId?: string, emailVerified?: boolean): string {
+  if (typeof emailVerified === 'boolean') {
+    return emailVerified ? 'verified' : 'not verified';
+  }
+  return isAccountVerified(userOrFlag) ? 'verified' : 'not verified';
 }
 
-export function markAccountVerified(userId?: string, agentId?: string, email?: string) {
-  if (userId) verifiedAccountIdentifiers.add(userId.toUpperCase());
-  if (agentId) verifiedAccountIdentifiers.add(agentId.replace(/^@/, '').toUpperCase());
-  if (email) verifiedAccountIdentifiers.add(email.trim().toLowerCase());
+export function markAccountVerified(_userId?: string, _agentId?: string, _email?: string) {
+  // Deprecated: public.users is the sole source of truth. No in-memory cache is maintained.
 }
 
 export async function initVerifiedUsersCache() {
-  try {
-    const supabase = getSupabaseClient();
-    
-    // 1. Load from Supabase Auth (admin-level)
-    if (supabase?.auth?.admin?.listUsers) {
-      const { data, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-      if (!error && data?.users) {
-        data.users.forEach((u: any) => {
-          if (u.app_metadata?.emailVerified === true) {
-            if (u.id) verifiedAccountIdentifiers.add(u.id.toUpperCase());
-            const aId = u.user_metadata?.agentId || u.app_metadata?.agentId;
-            if (aId) verifiedAccountIdentifiers.add(String(aId).replace(/^@/, '').toUpperCase());
-            if (u.email) verifiedAccountIdentifiers.add(u.email.trim().toLowerCase());
-          }
-        });
-      }
-    }
-
-    // 2. Load from public.users table (authoritative app-level persistence)
-    try {
-      const { data: verifiedUsers, error: usersErr } = await supabase
-        .from('users')
-        .select('id, agentId, email')
-        .eq('emailVerified', true);
-      
-      if (!usersErr && verifiedUsers) {
-        verifiedUsers.forEach((u: any) => {
-          if (u.id) verifiedAccountIdentifiers.add(u.id.toUpperCase());
-          if (u.agentId) verifiedAccountIdentifiers.add(u.agentId.replace(/^@/, '').toUpperCase());
-          if (u.email) verifiedAccountIdentifiers.add(u.email.trim().toLowerCase());
-        });
-      }
-    } catch (err) {
-      console.warn('[VerifiedAccounts] public.users query failed (likely missing emailVerified column):', err);
-    }
-
-    console.log(`[VerifiedAccounts] Initialized cache with ${verifiedAccountIdentifiers.size} verified identifiers.`);
-  } catch (err: any) {
-    console.warn('[VerifiedAccounts] Notice initializing cache:', err?.message || err);
-  }
+  // Deprecated: public.users is the sole source of truth.
 }
 
 export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
@@ -402,24 +370,11 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
   // Authoritative apiKeyHash source: auth.user.app_metadata (Admin-only)
   const apiKeyHash = authUser?.app_metadata?.apiKeyHash || '';
 
-  const rawAgentId = (raw.agentId || '').replace(/^@/, '').toUpperCase();
-  const rawId = (raw.id || '').toUpperCase();
-  const rawEmail = (raw.email || '').trim().toLowerCase();
-
+  // Sole source of truth: public.users table (emailVerified column)
   const isVerified = Boolean(
     raw.emailVerified === true ||
-    raw.email_verified === true ||
-    authUser?.app_metadata?.emailVerified === true ||
-    (rawId && verifiedAccountIdentifiers.has(rawId)) ||
-    (rawAgentId && verifiedAccountIdentifiers.has(rawAgentId)) ||
-    (rawEmail && verifiedAccountIdentifiers.has(rawEmail))
+    raw.email_verified === true
   );
-
-  if (isVerified) {
-    if (rawId) verifiedAccountIdentifiers.add(rawId);
-    if (rawAgentId) verifiedAccountIdentifiers.add(rawAgentId);
-    if (rawEmail) verifiedAccountIdentifiers.add(rawEmail);
-  }
 
   return {
     id: raw.id,
@@ -428,6 +383,8 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     verification_status: isVerified ? 'verified' : 'not verified',
     ["verification status"]: isVerified ? 'verified' : 'not verified',
     email: raw.email || '',
+    emailVerified: isVerified,
+    emailVerifiedAt: raw.emailVerifiedAt || raw.email_verified_at || undefined,
     passwordHash: raw.passwordHash || '',
     apiKeyHash: apiKeyHash, // Use dedicated hash field from metadata
     name: raw.name || '',
@@ -437,8 +394,6 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     passwordChangedAt: raw.passwordChangedAt,
-    emailVerified: isVerified,
-    emailVerifiedAt: raw.emailVerifiedAt || authUser?.app_metadata?.emailVerifiedAt,
   };
 }
 
@@ -475,6 +430,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     status: newUser.status,
     avatar: newUser.avatar,
     bio: newUser.bio || DEFAULT_BIO,
+    emailVerified: false,
     createdAt: newUser.createdAt,
     updatedAt: newUser.updatedAt,
   };
@@ -496,6 +452,7 @@ export async function registerUser(data: {
   name?: string;
   agentId?: string;
   bio?: string;
+  appUrl?: string;
 }): Promise<{
   agentId: string;
   apiKey: string;
@@ -661,6 +618,7 @@ export async function registerUser(data: {
     status: 'active',
     avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
     bio: (data.bio || '').trim() || DEFAULT_BIO,
+    emailVerified: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -685,34 +643,19 @@ export async function registerUser(data: {
   if (supabase) {
     invalidateAuthCache();
 
-    // Prepare account email verification so user can click verification link and earn the verified tick mark
+    // Set initial emailVerified status to false in app_metadata
     try {
-      const secret = crypto.randomBytes(32).toString('hex');
-      const token = `${newUser.id}.${secret}`;
-      const tokenHash = crypto.createHash('sha256').update(secret).digest('hex');
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
       if (supabase.auth?.admin?.updateUserById) {
         await supabase.auth.admin.updateUserById(newUser.id, {
           app_metadata: {
             apiKeyHash,
             apiKeyFingerprint,
             emailVerified: false,
-            pendingEmailVerification: {
-              email: normalizedEmail,
-              tokenHash,
-              expiresAt,
-            },
           },
         });
       }
-
-      const appUrl = process.env.APP_URL || config.appUrl || 'https://aamarva.com';
-      sendAccountVerificationEmail(normalizedEmail, token, appUrl, agentName).catch((emailErr) => {
-        console.warn('[Registration] Notice dispatching account verification email:', emailErr?.message || emailErr);
-      });
     } catch (verifErr: any) {
-      console.warn('[Registration] Notice preparing email verification token:', verifErr?.message || verifErr);
+      console.warn('[Registration] Notice setting initial emailVerified state:', verifErr?.message || verifErr);
     }
   }
   
@@ -1377,7 +1320,7 @@ export async function requestAccountVerificationEmail(userId: string, customAppU
   }
 
   // Check if account is already verified
-  if (isAccountVerified(user.id, user.agentId)) {
+  if (user.emailVerified === true) {
     return { success: true, message: 'Your account is already verified with a tick mark.', alreadyVerified: true };
   }
 

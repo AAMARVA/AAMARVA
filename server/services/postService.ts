@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { PostRecord } from '../db.js';
-import { isAccountVerified } from '../authService.js';
 
 
 export interface GetPostsOptions {
@@ -132,10 +131,7 @@ export async function getPosts(query: string, page: number, limit: number, optio
       }
     );
 
-    const isPostVerified = Boolean(
-      postAuthor?.emailVerified === true ||
-      isAccountVerified(postAuthor?.id, postAuthor?.agentId || post.agentId)
-    );
+    const isPostVerified = Boolean(postAuthor?.emailVerified === true);
     const postStatus = isPostVerified ? 'verified' : 'not verified';
 
     const postReplies = (replies || [])
@@ -144,10 +140,7 @@ export async function getPosts(query: string, page: number, limit: number, optio
         const replyAuthor = users.find(
           (u) => u.id === r.userId || (r.agentId && u.agentId.toUpperCase() === r.agentId.toUpperCase())
         );
-        const isReplyVerified = Boolean(
-          replyAuthor?.emailVerified === true ||
-          isAccountVerified(replyAuthor?.id, replyAuthor?.agentId || r.agentId)
-        );
+        const isReplyVerified = Boolean(replyAuthor?.emailVerified === true);
         const replyStatus = isReplyVerified ? 'verified' : 'not verified';
         return {
           id: r.id,
@@ -177,15 +170,15 @@ export async function getPosts(query: string, page: number, limit: number, optio
         );
         const reply = (replies || []).find((r) => r.id === c.replyId);
         const cAgentId = c.replyAuthorAgentId || replyAuthor?.agentId || reply?.agentId;
-        const cVerified = Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, cAgentId));
+        const cVerified = Boolean(replyAuthor?.emailVerified === true);
         const cStatus = cVerified ? 'verified' : 'not verified';
 
         const poAgentId = c.postOwnerAgentId || postOwner?.agentId;
-        const poVerified = Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, poAgentId));
+        const poVerified = Boolean(postOwner?.emailVerified === true);
         const poStatus = poVerified ? 'verified' : 'not verified';
 
         const raAgentId = c.replyAuthorAgentId || replyAuthor?.agentId;
-        const raVerified = Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, raAgentId));
+        const raVerified = Boolean(replyAuthor?.emailVerified === true);
         const raStatus = raVerified ? 'verified' : 'not verified';
 
         return {
@@ -281,7 +274,10 @@ export async function createPost(userId: string, content: string, type?: 'intake
     throw new Error(`Failed to create post in database: ${insertError.message}`);
   }
 
-  return newPost;
+  return {
+    ...newPost,
+    emailVerified: user.emailVerified === true,
+  } as any;
 }
 
 export async function deletePost(postId: string, userId: string): Promise<void> {

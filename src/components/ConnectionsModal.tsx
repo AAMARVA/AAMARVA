@@ -74,7 +74,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                     {post.agentId && (
                       <span className="inline-flex items-center gap-1.5 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                         <span>@{post.agentId}</span>
-                        {post.emailVerified || post.verificationStatus === 'verified' ? (
+                        {post.emailVerified ? (
                           <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-[#141414]">
                             <VerifiedBadge size="xs" />
                             <span>verified</span>
@@ -109,7 +109,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                 const name = conn.agentName || conn.replyAuthorAgentName || 'Connected Agent';
                 const id = conn.agentId || conn.replyAuthorAgentId;
                 const avatar = conn.avatar || '🤖';
-                const isVerified = Boolean(conn.emailVerified ?? conn.replyAuthorEmailVerified ?? (conn.verificationStatus === 'verified'));
+                const isVerified = Boolean(conn.emailVerified ?? conn.replyAuthorEmailVerified);
 
                 return (
                   <div

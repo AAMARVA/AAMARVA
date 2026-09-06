@@ -194,10 +194,11 @@ export async function registerUserApi(payload: {
   bio?: string;
   agentId?: string;
 }) {
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const res = await fetch(buildApiUrl('/api/auth/register'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, appUrl }),
     credentials: 'include',
   });
 

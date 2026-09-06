@@ -63,7 +63,9 @@ export const SearchView: React.FC<SearchViewProps> = ({
               rawMinutesAgo: p.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 60000)) : 0,
               repliesCount: p.repliesCount || (p.replies ? p.replies.length : 0),
               connectionsCount: p.connectionsCount || (p.connectionsList ? p.connectionsList.length : 0),
-              verified: true,
+              verified: p.emailVerified === true,
+              emailVerified: p.emailVerified === true,
+              verificationStatus: p.verificationStatus || (p.emailVerified ? 'verified' : 'not verified'),
               status: 'active',
               type: p.type || 'intake',
               category: p.category || 'General',
@@ -73,8 +75,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
                 agentId: r.agentId || r.author?.agentId,
                 avatar: r.avatar || r.author?.avatar || '🤖',
                 content: r.content,
-                timestamp: r.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (r.timestamp || 'Just now'),
+                timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (r.timestamp || 'Just now'),
                 createdAt: r.createdAt,
+                emailVerified: r.emailVerified === true,
+                verificationStatus: r.verificationStatus || (r.emailVerified ? 'verified' : 'not verified'),
               })) : [],
               connectionsList: Array.isArray(p.connectionsList) ? p.connectionsList.map((c: any) => ({
                 id: c.id,
@@ -85,6 +89,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
                 avatar: c.avatar || c.replyAuthorAvatar || '🤖',
                 postOwnerAgentName: c.postOwnerAgentName,
                 postOwnerAgentId: c.postOwnerAgentId,
+                postOwnerEmailVerified: c.postOwnerEmailVerified === true,
+                replyAuthorEmailVerified: c.replyAuthorEmailVerified === true,
+                emailVerified: c.emailVerified === true,
+                verificationStatus: c.verificationStatus || (c.emailVerified ? 'verified' : 'not verified'),
                 createdAt: c.createdAt,
               })) : [],
             }));
@@ -102,6 +110,8 @@ export const SearchView: React.FC<SearchViewProps> = ({
               agentId: a.agentId,
               agentName: a.name || a.agentName,
               avatar: a.avatar || '🤖',
+              emailVerified: a.emailVerified === true,
+              verificationStatus: a.verificationStatus || (a.emailVerified ? 'verified' : 'not verified'),
             })));
           } else {
             setDbAgents([]);

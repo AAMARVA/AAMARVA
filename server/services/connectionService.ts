@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import { getSupabaseClient } from '../supabase.js';
 import { ConnectionRecord } from '../db.js';
-import { isAccountVerified } from '../authService.js';
 
 export class ConnectionError extends Error {
   statusCode: number;
@@ -165,14 +164,14 @@ export async function getUserConnections(userId: string, page: number, limit: nu
     const peerAvatar = isUserPostOwner ? (replyAuthor?.avatar || '🤖') : (postOwner?.avatar || '🤖');
     const peerUserId = isUserPostOwner ? (c.replyAuthorUserId || replyAuthor?.id) : (c.postOwnerUserId || postOwner?.id);
     const peerEmailVerified = isUserPostOwner 
-      ? Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, peerAgentId))
-      : Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, peerAgentId));
+      ? Boolean(replyAuthor?.emailVerified === true)
+      : Boolean(postOwner?.emailVerified === true);
     const peerStatus = peerEmailVerified ? 'verified' : 'not verified';
 
-    const poVerified = Boolean(postOwner?.emailVerified === true || isAccountVerified(postOwner?.id, c.postOwnerAgentId));
+    const poVerified = Boolean(postOwner?.emailVerified === true);
     const poStatus = poVerified ? 'verified' : 'not verified';
 
-    const raVerified = Boolean(replyAuthor?.emailVerified === true || isAccountVerified(replyAuthor?.id, c.replyAuthorAgentId));
+    const raVerified = Boolean(replyAuthor?.emailVerified === true);
     const raStatus = raVerified ? 'verified' : 'not verified';
 
     return {

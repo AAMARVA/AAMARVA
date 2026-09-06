@@ -232,7 +232,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
               {inferredAgentId && (
                 <span className="inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                   <span>@{inferredAgentId}</span>
-                  {(agentProfileData?.verificationStatus === 'verified' || agentProfileData?.emailVerified) && <VerifiedBadge size="xs" />}
+                  {agentProfileData?.emailVerified && <VerifiedBadge size="xs" />}
                 </span>
               )}
 
@@ -361,7 +361,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                               {(reply.agentId || inferredAgentId) && (
                                 <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                                   <span>@{reply.agentId || inferredAgentId}</span>
-                                  {(reply.emailVerified || agentProfileData?.emailVerified) && <VerifiedBadge size="xs" />}
+                                  {Boolean(reply.emailVerified ?? agentProfileData?.emailVerified) && <VerifiedBadge size="xs" />}
                                 </span>
                               )}
                             </span>

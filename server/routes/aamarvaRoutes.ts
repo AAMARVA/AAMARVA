@@ -27,7 +27,6 @@ import {
   requestForgotPassword,
   resetPassword,
   verifyRefreshToken,
-  isAccountVerified,
   getVerificationStatus,
 } from '../authService';
 import { 
@@ -421,7 +420,8 @@ router.post('/posts', requireAgentAuth, requireAgent, agentActionLimiter, async 
     // Log footprint
     await logAgentFootprint(req.user!.id, 'POST_CREATED', post.content ? (post.content.length > 60 ? post.content.slice(0, 60) + '...' : post.content) : 'Published a new transmission on Floor', post.id);
 
-    const vStatus = isAccountVerified(req.user!.id, post.agentId) ? 'verified' : 'not verified';
+    const isPostVerified = Boolean(req.user?.emailVerified === true || post.emailVerified === true);
+    const vStatus = isPostVerified ? 'verified' : 'not verified';
     res.status(201).json({ 
       success: true, 
       data: {
@@ -431,6 +431,7 @@ router.post('/posts', requireAgentAuth, requireAgent, agentActionLimiter, async 
         verificationStatus: vStatus,
         verification_status: vStatus,
         ["verification status"]: vStatus,
+        emailVerified: isPostVerified,
         type: post.type,
         category: post.category,
         content: post.content,
@@ -470,7 +471,7 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
     
     const formattedReplies = (replies || []).map((r: any) => {
       const rAgentId = r.author?.agentId || r.agentId;
-      const rVerified = isAccountVerified(r.userId, rAgentId);
+      const rVerified = Boolean(r.emailVerified === true || r.author?.emailVerified === true);
       const rStatus = rVerified ? 'verified' : 'not verified';
       const rName = r.author?.displayName || r.agentName || 'Agent';
       return {
@@ -479,15 +480,18 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
         agentId: rAgentId,
         name: rName,
         verificationStatus: rStatus,
+        verification_status: rStatus,
+        ["verification status"]: rStatus,
+        emailVerified: rVerified,
         content: r.content,
       };
     });
 
-    const postVerified = isAccountVerified(post.userId, post.agentId);
+    const postVerified = Boolean(post.emailVerified === true);
     const postStatus = postVerified ? 'verified' : 'not verified';
 
     const authorAgentId = author?.agentId || post.agentId;
-    const authorVerified = isAccountVerified(post.userId || author?.id, authorAgentId);
+    const authorVerified = Boolean(author?.emailVerified === true || post.emailVerified === true);
     const authorStatus = authorVerified ? 'verified' : 'not verified';
 
     const connIds = (connections || []).map((c: any) => c.id).filter(Boolean);
@@ -508,7 +512,7 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
 
     const formattedConnections = (connections || []).map((c: any) => {
       const cAgentId = c.author?.agentId || c.replyAuthorAgentId || c.agentId;
-      const cVerified = isAccountVerified(c.replyAuthorUserId || c.author?.id, cAgentId);
+      const cVerified = Boolean(c.emailVerified === true || c.replyAuthorEmailVerified === true || c.author?.emailVerified === true);
       const cStatus = cVerified ? 'verified' : 'not verified';
       const cName = c.author?.displayName || c.agentName || c.replyAuthorAgentName || 'Connected Agent';
       const rev = postConnReviewsMap.get(c.id);
@@ -521,6 +525,9 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
         agentId: cAgentId,
         name: cName,
         verificationStatus: cStatus,
+        verification_status: cStatus,
+        ["verification status"]: cStatus,
+        emailVerified: cVerified,
         createdAt: c.createdAt || c.created_at || new Date().toISOString(),
       };
     });
@@ -571,12 +578,12 @@ router.get('/posts/:postId/connections', publicReadLimiter, async (req: Request,
       throw new Error('Post not found.');
     }
     const { post, connections } = details as any;
-    const postVerified = isAccountVerified(post.userId, post.agentId);
+    const postVerified = Boolean(post.emailVerified === true);
     const postStatus = postVerified ? 'verified' : 'not verified';
 
     const mappedConnections = (connections || []).map((c: any) => {
       const cAgentId = c.author?.agentId || c.replyAuthorAgentId || c.agentId;
-      const cVerified = isAccountVerified(c.replyAuthorUserId || c.author?.id, cAgentId);
+      const cVerified = Boolean(c.emailVerified === true || c.replyAuthorEmailVerified === true || c.author?.emailVerified === true);
       const cStatus = cVerified ? 'verified' : 'not verified';
       const cName = c.author?.displayName || c.agentName || c.replyAuthorAgentName || 'Connected Agent';
 
@@ -586,6 +593,9 @@ router.get('/posts/:postId/connections', publicReadLimiter, async (req: Request,
         agentId: cAgentId,
         name: cName,
         verificationStatus: cStatus,
+        verification_status: cStatus,
+        ["verification status"]: cStatus,
+        emailVerified: cVerified,
         createdAt: c.createdAt || c.created_at || new Date().toISOString(),
       };
     });
@@ -615,7 +625,7 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, agentActio
     } catch (e) {}
 
     const raAgentId = reply.agentId || req.user!.agentId;
-    const raVerified = isAccountVerified(req.user!.id, raAgentId);
+    const raVerified = Boolean(req.user?.emailVerified === true || reply.emailVerified === true);
     const raStatus = raVerified ? 'verified' : 'not verified';
 
     res.status(201).json({ 
@@ -628,6 +638,7 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, agentActio
         verificationStatus: raStatus,
         verification_status: raStatus,
         ["verification status"]: raStatus,
+        emailVerified: raVerified,
         content: reply.content,
         createdAt: reply.createdAt
       } 
@@ -644,7 +655,7 @@ router.get('/posts/:postId/replies', publicReadLimiter, async (req: Request, res
     const details = await getPostAndReplies(postId);
     const mappedReplies = (details?.replies || []).map((r: any) => {
       const raAgentId = r.agentId || r.author?.agentId;
-      const raVerified = isAccountVerified(r.userId, raAgentId);
+      const raVerified = Boolean(r.emailVerified === true || r.author?.emailVerified === true);
       const raStatus = raVerified ? 'verified' : 'not verified';
       return {
         id: r.id,
@@ -654,6 +665,7 @@ router.get('/posts/:postId/replies', publicReadLimiter, async (req: Request, res
         verificationStatus: raStatus,
         verification_status: raStatus,
         ["verification status"]: raStatus,
+        emailVerified: raVerified,
       };
     });
     res.json({ success: true, data: mappedReplies });
@@ -709,17 +721,18 @@ router.get('/replies/:replyId', publicReadLimiter, async (req: Request, res: Res
     const replyId = req.params.replyId as string;
     const data: any = await getReplyDetails(replyId);
     const raAgentId = data.reply.author?.agentId || data.reply.agentId;
-    const raVerified = isAccountVerified(data.reply.userId, raAgentId);
+    const raVerified = Boolean(data.reply.emailVerified === true || data.reply.author?.emailVerified === true);
     const raStatus = raVerified ? 'verified' : 'not verified';
     const mappedData = {
       id: data.reply.id,
-        replyId: data.reply.id,
+      replyId: data.reply.id,
       postId: data.reply.postId,
       content: data.reply.content,
       authorAgentId: raAgentId,
       verificationStatus: raStatus,
       verification_status: raStatus,
       ["verification status"]: raStatus,
+      emailVerified: raVerified,
     };
     res.json({ success: true, data: mappedData });
   } catch (err: any) {

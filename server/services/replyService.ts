@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { ReplyRecord } from '../db.js';
-import { isAccountVerified } from '../authService.js';
 
 
 export async function getPostAndReplies(postId: string) {
@@ -97,18 +96,32 @@ export async function getPostAndReplies(postId: string) {
         return u.id === reply.userId || (rId && uId === rId);
       }
     );
+    const isVerified = replyAuthor ? replyAuthor.emailVerified === true : false;
+    const vStatus = isVerified ? 'verified' : 'not verified';
     return {
       ...reply,
+      emailVerified: isVerified,
+      verificationStatus: vStatus,
+      verification_status: vStatus,
+      ["verification status"]: vStatus,
       author: replyAuthor
         ? {
             agentId: replyAuthor.agentId,
             displayName: replyAuthor.name,
             avatar: replyAuthor.avatar || '🤖',
+            emailVerified: isVerified,
+            verificationStatus: vStatus,
+            verification_status: vStatus,
+            ["verification status"]: vStatus,
           }
         : {
             agentId: reply.agentId,
             displayName: reply.agentName,
             avatar: reply.avatar || '🤖',
+            emailVerified: false,
+            verificationStatus: 'not verified',
+            verification_status: 'not verified',
+            ["verification status"]: 'not verified',
           },
     };
   });
@@ -129,36 +142,68 @@ export async function getPostAndReplies(postId: string) {
       }
     );
 
+    const raVerified = replyAuthor ? replyAuthor.emailVerified === true : false;
+    const poVerified = postOwner ? postOwner.emailVerified === true : false;
+
     return {
       ...conn,
+      emailVerified: raVerified,
+      verificationStatus: raVerified ? 'verified' : 'not verified',
+      verification_status: raVerified ? 'verified' : 'not verified',
+      ["verification status"]: raVerified ? 'verified' : 'not verified',
+      postOwnerEmailVerified: poVerified,
+      replyAuthorEmailVerified: raVerified,
       author: replyAuthor
         ? {
             agentId: replyAuthor.agentId,
             displayName: replyAuthor.name,
             avatar: replyAuthor.avatar || '🤖',
+            emailVerified: raVerified,
+            verificationStatus: raVerified ? 'verified' : 'not verified',
+            verification_status: raVerified ? 'verified' : 'not verified',
+            ["verification status"]: raVerified ? 'verified' : 'not verified',
           }
         : {
             agentId: conn.replyAuthorAgentId,
             displayName: conn.replyAuthorAgentName,
             avatar: '🤖',
+            emailVerified: false,
+            verificationStatus: 'not verified',
+            verification_status: 'not verified',
+            ["verification status"]: 'not verified',
           },
       host: postOwner
         ? {
             agentId: postOwner.agentId,
             displayName: postOwner.name,
             avatar: postOwner.avatar || '🤖',
+            emailVerified: poVerified,
+            verificationStatus: poVerified ? 'verified' : 'not verified',
+            verification_status: poVerified ? 'verified' : 'not verified',
+            ["verification status"]: poVerified ? 'verified' : 'not verified',
           }
         : {
             agentId: conn.postOwnerAgentId,
             displayName: conn.postOwnerAgentName,
             avatar: '🤖',
+            emailVerified: false,
+            verificationStatus: 'not verified',
+            verification_status: 'not verified',
+            ["verification status"]: 'not verified',
           }
     };
   });
 
+  const postAuthorVerified = authorUser ? authorUser.emailVerified === true : false;
+  const postAuthorStatus = postAuthorVerified ? 'verified' : 'not verified';
+
   return {
     post: {
       ...post,
+      emailVerified: postAuthorVerified,
+      verificationStatus: postAuthorStatus,
+      verification_status: postAuthorStatus,
+      ["verification status"]: postAuthorStatus,
       repliesCount: numReplies,
       connectionsCount: numConnections,
     },
@@ -167,11 +212,19 @@ export async function getPostAndReplies(postId: string) {
           agentId: authorUser.agentId,
           displayName: authorUser.name,
           avatar: authorUser.avatar || '🤖',
+          emailVerified: postAuthorVerified,
+          verificationStatus: postAuthorStatus,
+          verification_status: postAuthorStatus,
+          ["verification status"]: postAuthorStatus,
         }
       : {
           agentId: post.agentId,
           displayName: post.agentName,
           avatar: post.avatar || '🤖',
+          emailVerified: false,
+          verificationStatus: 'not verified',
+          verification_status: 'not verified',
+          ["verification status"]: 'not verified',
         },
     replies: repliesWithAuthors,
     connections: connectionsWithAuthors,
@@ -228,7 +281,10 @@ export async function createReply(postId: string, userId: string, content: strin
     throw new Error(`Failed to create reply record: ${insertError.message}`);
   }
 
-  return newReply;
+  return {
+    ...newReply,
+    emailVerified: user.emailVerified === true,
+  } as any;
 }
 
 export async function getReplyDetails(replyId: string) {
@@ -262,10 +318,17 @@ export async function getReplyDetails(replyId: string) {
     replyAuthorUser = data;
   }
 
+  const isReplyVerified = replyAuthorUser ? replyAuthorUser.emailVerified === true : false;
+  const replyStatus = isReplyVerified ? 'verified' : 'not verified';
+
   const replyAuthor = {
     agentId: replyAuthorUser?.agentId || reply.agentId || 'Agent',
     displayName: replyAuthorUser?.name || reply.agentName || 'Agent',
     avatar: replyAuthorUser?.avatar || reply.avatar || '🤖',
+    emailVerified: isReplyVerified,
+    verificationStatus: replyStatus,
+    verification_status: replyStatus,
+    ["verification status"]: replyStatus,
   };
 
   const { data: post } = await supabase
@@ -305,10 +368,17 @@ export async function getReplyDetails(replyId: string) {
       .select('id')
       .eq('postId', post.id);
 
+    const isPostVerified = postAuthorUser ? postAuthorUser.emailVerified === true : false;
+    const postStatus = isPostVerified ? 'verified' : 'not verified';
+
     const postAuthor = {
       agentId: postAuthorUser?.agentId || post.agentId || 'Agent',
       displayName: postAuthorUser?.name || post.agentName || 'Agent',
       avatar: postAuthorUser?.avatar || post.avatar || '🤖',
+      emailVerified: isPostVerified,
+      verificationStatus: postStatus,
+      verification_status: postStatus,
+      ["verification status"]: postStatus,
     };
 
     postData = {
@@ -319,6 +389,10 @@ export async function getReplyDetails(replyId: string) {
       repliesCount: replies ? replies.length : 0,
       connectionsCount: connections ? connections.length : 0,
       author: postAuthor,
+      emailVerified: isPostVerified,
+      verificationStatus: postStatus,
+      verification_status: postStatus,
+      ["verification status"]: postStatus,
     };
   }
 
@@ -328,6 +402,10 @@ export async function getReplyDetails(replyId: string) {
       postId: reply.postId,
       content: reply.content,
       author: replyAuthor,
+      emailVerified: isReplyVerified,
+      verificationStatus: replyStatus,
+      verification_status: replyStatus,
+      ["verification status"]: replyStatus,
     },
     post: postData,
   };
@@ -385,7 +463,7 @@ export async function getUserReplies(target: string | GetUserRepliesOptions, pag
   const { data: user } = await userQuery.maybeSingle();
 
   const userAgentId = user?.agentId || (options.agentId ? options.agentId.replace(/^@/, '').trim() : '');
-  const userVerified = Boolean(user?.emailVerified || isAccountVerified(user?.id || options.userId, userAgentId));
+  const userVerified = Boolean(user?.emailVerified === true);
   const userStatus = userVerified ? 'verified' : 'not verified';
 
   // Query replies with pagination
@@ -457,7 +535,7 @@ export async function getUserReplies(target: string | GetUserRepliesOptions, pag
   }
 
   const formattedReplies = replyList.map(r => {
-    const rVerified = Boolean(userVerified || isAccountVerified(r.userId || user?.id, r.agentId || userAgentId));
+    const rVerified = userVerified;
     const rStatus = rVerified ? 'verified' : 'not verified';
     const rName = r.agentName || user?.name || 'Agent';
     const parent = parentPostsMap.get(r.postId);
@@ -471,6 +549,9 @@ export async function getUserReplies(target: string | GetUserRepliesOptions, pag
       agentName: rName,
       avatar: r.avatar || user?.avatar || '🤖',
       verificationStatus: rStatus,
+      verification_status: rStatus,
+      ["verification status"]: rStatus,
+      emailVerified: rVerified,
       content: r.content,
       createdAt: r.createdAt,
       parentPost: parent ? {
