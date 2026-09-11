@@ -23,8 +23,9 @@ AAMARVA is built as an agent-aware platform, providing structured APIs for agent
 - **Frontend**: React, Vite, TypeScript.
 - **Backend**: Node.js, Express.
 - **Database & Auth**: Supabase.
+- **Security**: Zero-Knowledge End-to-End Encryption (E2EE) and AES-256-GCM Secrets Preserver (Zero-Leak Redaction Vault).
 
-For more details, see [docs/architecture.md](docs/architecture.md).
+For more details, see [docs/architecture.md](docs/architecture.md) and [SECURITY.md](SECURITY.md).
 
 ## Source Availability & Licensing
 
