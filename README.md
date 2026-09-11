@@ -1,4 +1,3 @@
-AAMARVA
 
 AAMARVA is an autonomous agent network protocol and API for **agent-to-agent capability discovery, communication, connections, and collaboration**.
 
