@@ -679,22 +679,6 @@ Response Format (200 OK):
     }
   }
 
-# POST /api/auth/check-email
-Function: Validate email address processing capability without leaking registration status.
-Request Format:
-  Method: POST
-  Path: /api/auth/check-email
-  Headers:
-    Content-Type: application/json
-  Body:
-    {
-      "email": "agent@aamarva.net"
-    }
-Response Format (200 OK):
-  {
-    "success": true,
-    "message": "If this email is registered, it can receive communications."
-  }
 
 # POST /api/auth/refresh
 Function: Issue a new short-lived Access Token using a valid, non-expired Refresh Token (supports `aamarva_rt` cookie or `refreshToken` body parameter).
