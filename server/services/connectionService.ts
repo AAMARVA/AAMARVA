@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getSupabaseClient } from '../supabase.js';
 import { ConnectionRecord } from '../db.js';
+import { maskUserSecretsInText } from './secretsService.js';
 
 export class ConnectionError extends Error {
   statusCode: number;
@@ -148,12 +149,19 @@ export async function getUserConnections(userId: string, page: number, limit: nu
       .select('id, agentId, name, avatar, emailVerified')
       .in('agentId', Array.from(agentIds));
     users = userData || [];
+    
+    for (const u of users) {
+      if (u.id === userId) continue;
+      try {
+        const { data: authData } = await supabase.auth.admin.getUserById(u.id);
+        u.e2eePublicKey = authData?.user?.user_metadata?.e2eePublicKey || null;
+      } catch (e) {}
+    }
   }
 
   const mappedConnections = connections.map((c: any) => {
     const replyAuthor = users.find(u => u.agentId.toUpperCase() === c.replyAuthorAgentId.toUpperCase());
     const postOwner = users.find(u => u.agentId.toUpperCase() === c.postOwnerAgentId.toUpperCase());
-
     const isUserPostOwner = c.postOwnerUserId === userId;
     
     const peerName = isUserPostOwner 
@@ -163,6 +171,7 @@ export async function getUserConnections(userId: string, page: number, limit: nu
     const peerAgentId = isUserPostOwner ? c.replyAuthorAgentId : c.postOwnerAgentId;
     const peerAvatar = isUserPostOwner ? (replyAuthor?.avatar || '🤖') : (postOwner?.avatar || '🤖');
     const peerUserId = isUserPostOwner ? (c.replyAuthorUserId || replyAuthor?.id) : (c.postOwnerUserId || postOwner?.id);
+    const peerE2eePublicKey = isUserPostOwner ? replyAuthor?.e2eePublicKey : postOwner?.e2eePublicKey;
     const peerEmailVerified = isUserPostOwner 
       ? Boolean(replyAuthor?.emailVerified === true)
       : Boolean(postOwner?.emailVerified === true);
@@ -180,6 +189,7 @@ export async function getUserConnections(userId: string, page: number, limit: nu
       replyId: c.replyId,
       agentName: peerName,
       agentId: peerAgentId,
+      peerE2eePublicKey,
       verificationStatus: peerStatus,
       verification_status: peerStatus,
       ["verification status"]: peerStatus,
@@ -208,20 +218,52 @@ export async function getUserConnections(userId: string, page: number, limit: nu
   };
 }
 
-export const MAX_MESSAGE_CONTENT_LENGTH = 10000;
+export const MAX_MESSAGE_CONTENT_LENGTH = 100000;
 
-export async function sendMessage(connectionId: string, userId: string, content: string) {
-  if (!content || typeof content !== 'string' || !content.trim()) {
-    throw new ConnectionError('Message content is required.', 400, 'MISSING_CONTENT');
+export interface MessagePayload {
+  content?: string;
+  ciphertext?: string;
+  nonce?: string;
+  version?: number;
+  keyEpoch?: number;
+}
+
+export async function sendMessage(
+  connectionId: string,
+  userId: string,
+  payload: MessagePayload
+) {
+  const ciphertext = typeof payload?.ciphertext === 'string' ? payload.ciphertext.trim() : '';
+  const nonce = typeof payload?.nonce === 'string' ? payload.nonce.trim() : '';
+  const version = payload?.version;
+  const keyEpoch = payload?.keyEpoch;
+
+  if (!ciphertext || !nonce || typeof version !== 'number' || !Number.isInteger(version) || version < 1 || typeof keyEpoch !== 'number' || !Number.isInteger(keyEpoch) || keyEpoch < 1) {
+    throw new ConnectionError(
+      'Private messages must include ciphertext, nonce, version (positive integer), and keyEpoch (positive integer).',
+      400,
+      'MESSAGE_CIPHERTEXT_REQUIRED'
+    );
   }
 
-  const trimmedContent = content.trim();
-  if (trimmedContent.length > MAX_MESSAGE_CONTENT_LENGTH) {
-    throw new ConnectionError(`Message content exceeds the maximum limit of ${MAX_MESSAGE_CONTENT_LENGTH.toLocaleString()} characters.`, 400, 'CONTENT_TOO_LONG');
+  if (payload.content) {
+    throw new ConnectionError(
+      'Plaintext content is rejected for private messages.',
+      400,
+      'PLAINTEXT_REJECTED'
+    );
+  }
+
+  if (ciphertext.length > MAX_MESSAGE_CONTENT_LENGTH) {
+    throw new ConnectionError(
+      `Ciphertext payload exceeds the maximum limit.`,
+      400,
+      'PAYLOAD_TOO_LARGE'
+    );
   }
 
   const supabase = getSupabaseClient();
-  
+
   // Find connection
   const { data: connection, error: connError } = await supabase
     .from('connections')
@@ -232,14 +274,14 @@ export async function sendMessage(connectionId: string, userId: string, content:
   if (connError || !connection) {
     throw new ConnectionNotFoundError('Connection not found.', 'CONNECTION_NOT_FOUND');
   }
-  
+
   // Find user
   const { data: currentUser, error: userError } = await supabase
     .from('users')
     .select('*')
     .eq('id', userId)
     .maybeSingle();
-    
+
   if (userError || !currentUser) {
     throw new ConnectionNotFoundError('User profile not found.', 'USER_NOT_FOUND');
   }
@@ -249,29 +291,47 @@ export async function sendMessage(connectionId: string, userId: string, content:
   }
 
   const now = new Date().toISOString();
-  const newMessage = {
-    id: `msg_${crypto.randomUUID()}`,
+  const msgId = `msg_${crypto.randomUUID()}`;
+
+  // Store message record with strictly encrypted payload
+  const messageRecord: Record<string, any> = {
+    id: msgId,
     connectionId,
     senderUserId: currentUser.id,
     senderAgentId: currentUser.agentId,
-    content: trimmedContent,
+    content: null, // Strictly null for private E2EE messages
+    ciphertext: ciphertext,
+    nonce: nonce,
+    version,
+    keyEpoch,
     createdAt: now,
   };
 
   const { error: insertError } = await supabase
     .from('messages')
-    .insert([newMessage]);
+    .insert([messageRecord]);
 
   if (insertError) {
-    throw new ConnectionError(`Database error sending message: ${insertError.message}`, 500, 'DATABASE_ERROR');
+    throw new ConnectionError(`Database error sending encrypted message: ${insertError.message}`, 500, 'DATABASE_ERROR');
   }
 
-  return newMessage;
+  return {
+    id: msgId,
+    connectionId,
+    senderUserId: currentUser.id,
+    senderAgentId: currentUser.agentId,
+    content: null,
+    ciphertext: ciphertext,
+    nonce: nonce,
+    version,
+    keyEpoch,
+    createdAt: now,
+  };
 }
 
 export async function getConnectionMessages(connectionId: string, userId: string) {
   const supabase = getSupabaseClient();
-  
+
   const { data: connection, error: connError } = await supabase
     .from('connections')
     .select('*')
@@ -312,9 +372,39 @@ export async function getConnectionMessages(connectionId: string, userId: string
     throw new ConnectionError(`Database error querying messages: ${msgError.message}`, 500, 'DATABASE_ERROR');
   }
 
-  const combined = messages || [];
+  const rawMessages = messages || [];
 
-  return combined.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const sanitizedMessages = rawMessages.map((m: any) => {
+    let resolvedCiphertext = m.ciphertext !== undefined && m.ciphertext !== null ? m.ciphertext : null;
+    let resolvedNonce = m.nonce !== undefined && m.nonce !== null ? m.nonce : null;
+    let resolvedVersion = m.version !== undefined && m.version !== null ? m.version : 1;
+    let resolvedKeyEpoch = m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : 1;
+
+    let resolvedContent: string | null = null;
+
+    // For private E2EE messages (ciphertext exists), plaintext content must be null.
+    // Public context messages might still have content.
+    if (resolvedCiphertext) {
+      resolvedContent = null;
+    } else if (typeof m.content === 'string' && m.content.trim().length > 0) {
+      resolvedContent = m.content;
+    }
+
+    return {
+      id: m.id,
+      connectionId: m.connectionId,
+      senderUserId: m.senderUserId,
+      senderAgentId: m.senderAgentId,
+      content: resolvedContent,
+      ciphertext: resolvedCiphertext,
+      nonce: resolvedNonce,
+      version: resolvedVersion,
+      keyEpoch: resolvedKeyEpoch,
+      createdAt: m.createdAt,
+    };
+  });
+
+  return sanitizedMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
 export async function deleteConnection(connectionId: string, userId: string) {

@@ -8,7 +8,10 @@ export const securityMiddleware = (req: Request, res: Response, next: NextFuncti
   }
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  
+  // Allow framing by AI Studio for the preview to work
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN'); 
+  
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
 
@@ -34,6 +37,7 @@ export const securityMiddleware = (req: Request, res: Response, next: NextFuncti
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https:",
     connectSrc,
+    "frame-ancestors 'self' https://*.aistudio.google.com https://aistudio.google.com",
     "object-src 'none'",
     "base-uri 'self'"
   ].join('; ');

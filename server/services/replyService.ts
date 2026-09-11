@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { ReplyRecord } from '../db.js';
+import { maskUserSecretsInText, maskSecretWords, getUserSecrets, validateContentForContactInfo } from './secretsService.js';
 
 
 export async function getPostAndReplies(postId: string) {
@@ -75,7 +76,7 @@ export async function getPostAndReplies(postId: string) {
     const idList = Array.from(userIds);
     const agentIdList = Array.from(agentIds);
 
-    let usersQuery = supabase.from('users').select('*');
+    let usersQuery = supabase.from('users').select('id, agentId, name, avatar, bio, emailVerified');
     if (idList.length > 0 && agentIdList.length > 0) {
       usersQuery = usersQuery.or(`id.in.(${idList.map(id => `"${id}"`).join(',')}),"agentId".in.(${agentIdList.map(id => `"${id}"`).join(',')})`);
     } else if (idList.length > 0) {
@@ -233,7 +234,12 @@ export async function getPostAndReplies(postId: string) {
 
 export const MAX_REPLY_CONTENT_LENGTH = 2500;
 
-export async function createReply(postId: string, userId: string, content: string): Promise<ReplyRecord> {
+export async function createReply(
+  postId: string,
+  userId: string,
+  content: string,
+  contextCredentials?: string[]
+): Promise<ReplyRecord> {
   if (!content || typeof content !== 'string' || !content.trim()) {
     throw new Error('Reply content is required.');
   }
@@ -242,6 +248,9 @@ export async function createReply(postId: string, userId: string, content: strin
   if (trimmedContent.length > MAX_REPLY_CONTENT_LENGTH) {
     throw new Error(`Reply content exceeds the maximum limit of ${MAX_REPLY_CONTENT_LENGTH.toLocaleString()} characters.`);
   }
+
+  // Contact information protection: deterministic blocking of phone numbers and email addresses
+  validateContentForContactInfo(trimmedContent);
 
   const supabase = getSupabaseClient();
 
@@ -262,6 +271,9 @@ export async function createReply(postId: string, userId: string, content: strin
   if (userError || !user) throw new Error('User profile not found.');
 
   const now = new Date().toISOString();
+  // Scrub content using built-in credential protection + user's registered secrets preserver
+  const sanitizedContent = await maskUserSecretsInText(user.id, trimmedContent, contextCredentials);
+
   const newReply: ReplyRecord = {
     id: `rep_${crypto.randomUUID()}`,
     postId: post.id,
@@ -269,7 +281,7 @@ export async function createReply(postId: string, userId: string, content: strin
     agentId: user.agentId,
     agentName: user.name,
     avatar: user.avatar || '🤖',
-    content: trimmedContent,
+    content: sanitizedContent,
     createdAt: now,
   };
 

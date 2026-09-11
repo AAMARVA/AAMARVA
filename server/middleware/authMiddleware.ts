@@ -147,8 +147,11 @@ export const authRateLimiter = humanLoginRateLimiter;
  */
 export async function requireHumanSession(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
+  const authHeader = req.headers.authorization;
+  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : undefined;
+  const rawSession = (sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim()) ? sessionCookie.trim() : bearerToken;
 
-  if (!sessionCookie || typeof sessionCookie !== 'string' || !sessionCookie.trim()) {
+  if (!rawSession) {
     res.status(401).json({
       success: false,
       error: {
@@ -160,7 +163,7 @@ export async function requireHumanSession(req: AuthenticatedRequest, res: Respon
   }
 
   try {
-    const payload = await verifyHumanSession(sessionCookie.trim());
+    const payload = await verifyHumanSession(rawSession);
     if (!payload || payload.type !== 'human') {
       res.status(401).json({
         success: false,
@@ -185,6 +188,7 @@ export async function requireHumanSession(req: AuthenticatedRequest, res: Respon
     });
   }
 }
+
 
 /**
  * requireAgentAuth:
@@ -305,6 +309,8 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
     return;
   }
 
+
+
   const payload = verifyAgentAccessToken(token);
   if (!payload || payload.type !== 'agent') {
     res.status(401).json({
@@ -388,4 +394,98 @@ export async function requireUserOrAgentAuth(req: AuthenticatedRequest, res: Res
   // Fallback to agent auth verification
   return requireAgentAuth(req, res, next);
 }
+
+/**
+ * requireHumanSecretsAuth:
+ * STRICT ISOLATION GUARD FOR SECRETS PRESERVER.
+ * 
+ * Only human user sessions are permitted to access the Secrets Preserver.
+ * Autonomous agents are categorically FORBIDDEN from accessing secrets:
+ * - Agents cannot GET secrets or secret metadata
+ * - Agents cannot POST / create secrets
+ * - Agents cannot DELETE secrets
+ * - Any request bearing agent authentication (X-API-KEY, agent Bearer token, or sk_amr_*)
+ *   is strictly rejected with 403 Forbidden.
+ * Unauthenticated requests receive 401 Unauthorized.
+ */
+export async function requireHumanSecretsAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  const authHeader = req.headers.authorization;
+  const apiKeyHeader = req.headers['x-api-key'];
+
+  // 1. Explicitly reject agent API keys
+  if (apiKeyHeader || (authHeader && authHeader.startsWith('Bearer sk_amr_'))) {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'AGENT_ACCESS_FORBIDDEN',
+        message: 'Forbidden: Autonomous agent accounts cannot access the Secrets Preserver. Secrets are private to human users.',
+      },
+    });
+    return;
+  }
+
+  // 2. Check if Bearer token is an agent token
+  let bearerToken: string | undefined;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    bearerToken = authHeader.split(' ')[1]?.trim();
+  }
+
+  if (bearerToken && !bearerToken.startsWith('sk_amr_')) {
+    const agentPayload = verifyAgentAccessToken(bearerToken);
+    if (agentPayload && agentPayload.type === 'agent') {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'AGENT_ACCESS_FORBIDDEN',
+          message: 'Forbidden: Autonomous agent accounts cannot access the Secrets Preserver. Secrets are private to human users.',
+        },
+      });
+      return;
+    }
+  }
+
+  // 3. Resolve human session from HTTP-only cookie or human Bearer token
+  const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
+  const candidateSession = (sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim())
+    ? sessionCookie.trim()
+    : bearerToken;
+
+  if (!candidateSession) {
+    res.status(401).json({
+      success: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Human account authentication required to access the Secrets Preserver.',
+      },
+    });
+    return;
+  }
+
+  try {
+    const payload = await verifyHumanSession(candidateSession);
+    if (!payload || payload.type !== 'human') {
+      res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Invalid or expired human account session.',
+        },
+      });
+      return;
+    }
+
+    req.user = payload;
+    req.authType = 'human';
+    next();
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'An internal error occurred during secrets authentication verification.',
+      },
+    });
+  }
+}
+
 

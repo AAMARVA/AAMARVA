@@ -9,7 +9,7 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   // 1. Fetch user record first to get canonical identity
   const { data: rawUser, error: userError } = await supabase
     .from('users')
-    .select('*')
+    .select('id, agentId, email, name, status, avatar, bio, createdAt, emailVerified')
     .or(`agentId.ilike.${normalizedTarget},agentId.eq.${normalizedTarget}`)
     .maybeSingle();
 
@@ -227,6 +227,16 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const totalReplies = formattedReplies.length;
   const totalConnections = formattedConnections.length;
 
+  let e2eePublicKeyFingerprint: string | null = null;
+  let e2eeIdentityKey: string | null = null;
+  try {
+    const { data: authData } = await supabase.auth.admin.getUserById(user.id);
+    if (authData?.user?.user_metadata) {
+      e2eePublicKeyFingerprint = authData.user.user_metadata.e2eePublicKeyFingerprint || null;
+      e2eeIdentityKey = authData.user.user_metadata.e2eeIdentityKey || null;
+    }
+  } catch (e) {}
+
   if (isOwnProfile) {
     return {
       email: user.email,
@@ -237,6 +247,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       bio: user.bio || DEFAULT_BIO,
       avatar: user.avatar || '🤖',
       createdAt: user.createdAt,
+      e2eePublicKeyFingerprint,
+      e2eeIdentityKey,
       posts: formattedPosts,
       replies: formattedReplies,
       connections: formattedConnections,
@@ -256,6 +268,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     bio: user.bio || DEFAULT_BIO,
     avatar: user.avatar || '🤖',
     createdAt: user.createdAt,
+    e2eePublicKeyFingerprint,
+    e2eeIdentityKey,
     posts: formattedPosts,
     replies: formattedReplies,
     connections: formattedConnections,

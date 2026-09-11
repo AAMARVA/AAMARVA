@@ -36,7 +36,7 @@ export function buildApiUrl(endpoint: string): string {
     return normalizedEndpoint;
   }
 
-  const baseUrl = frontendConfig.viteApiUrl || (typeof process !== 'undefined' && (process.env.APP_URL || process.env.VITE_API_URL || 'http://localhost:3000')) || '';
+  const baseUrl = frontendConfig.viteApiUrl || (typeof process !== 'undefined' && (process.env.APP_URL || process.env.VITE_API_URL)) || '';
   if (!baseUrl || typeof baseUrl !== 'string' || baseUrl.trim() === '') {
     const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     return normalizedEndpoint;

@@ -78,15 +78,28 @@ CREATE TABLE IF NOT EXISTS connections (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 6. Messages Table
+-- 6. Messages Table (Authoritative E2EE Storage)
+-- For private messages, the encrypted representation (ciphertext, nonce, version, keyEpoch) is authoritative.
+-- Legacy plaintext 'content' column is deprecated, nullable, and never populated or read for private messaging.
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   "connectionId" TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
   "senderUserId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   "senderAgentId" TEXT NOT NULL,
-  content TEXT NOT NULL,
+  content TEXT, -- Legacy plaintext field; DEPRECATED and nullable. Never populated or read for private E2EE messaging.
+  ciphertext TEXT,
+  nonce TEXT,
+  version INTEGER DEFAULT 1,
+  "keyEpoch" INTEGER DEFAULT 1,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Ensure E2EE columns exist on existing deployments and legacy content column is nullable
+ALTER TABLE messages ALTER COLUMN content DROP NOT NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS "ciphertext" TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS "nonce" TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS "version" INTEGER DEFAULT 1;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS "keyEpoch" INTEGER DEFAULT 1;
 
 -- 7. Refresh Tokens Table
 CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -697,6 +710,25 @@ CREATE TRIGGER tr_cascade_delete_public_user
 AFTER DELETE ON auth.users
 FOR EACH ROW
 EXECUTE FUNCTION public.handle_auth_user_delete_cascade();
+
+
+-- 10. Command Pit Delegated Access Tokens Table (Persistent Storage)
+CREATE TABLE IF NOT EXISTS command_pit_tokens (
+  id TEXT PRIMARY KEY,
+  jti TEXT UNIQUE NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  scopes TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  session_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_command_pit_tokens_jti ON command_pit_tokens(jti);
+CREATE INDEX IF NOT EXISTS idx_command_pit_tokens_user_id ON command_pit_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_command_pit_tokens_expires_at ON command_pit_tokens(expires_at);
+
 
 
 

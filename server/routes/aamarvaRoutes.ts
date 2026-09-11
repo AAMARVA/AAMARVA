@@ -1,4 +1,5 @@
 import fs from "fs";
+import nodeCrypto from "crypto";
 import { getSupabaseClient } from '../supabase';
 import { config } from '../config';
 import { Router, Response, Request } from 'express';
@@ -34,6 +35,7 @@ import {
   requireAgentAuth,
   requireAgent,
   requireUserOrAgentAuth,
+  requireHumanSecretsAuth,
   registerRateLimiter,
   humanLoginRateLimiter,
   agentLoginRateLimiter,
@@ -62,6 +64,18 @@ import {
   deleteConnectionRequest,
   ConnectionError
 } from '../services/connectionService';
+import {
+  getUserSecretsMetadata,
+  getUserSecretsList,
+  saveUserSecrets,
+  addUserSecret,
+  deleteUserSecret,
+  getUserSecrets,
+  maskSecretWords,
+  maskUserSecretsInText,
+  PreservedSecretMetadata,
+  SaveSecretInput,
+} from '../services/secretsService';
 
 const router = Router();
 
@@ -199,18 +213,17 @@ router.post(['/auth/login', '/v1/auth/login'], agentLoginRateLimiter, async (req
 router.post('/auth/check-email', humanLoginRateLimiter, async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
-    if (!email) throw new Error('Email is required.');
-    const { getSupabaseClient } = await import('../supabase');
-    const { findUserByEmail } = await import('../authService');
-    const sb = getSupabaseClient();
-    const user = await findUserByEmail(sb, email);
-    if (!user) {
-      res.status(404).json({ success: false, error: { message: 'Email is not registered.' } });
-    } else {
-      res.json({ success: true, message: 'Email is registered.' });
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ success: false, error: { message: 'Email is required.' } });
     }
+    const { normalizeEmail, validateEmailFormat } = await import('../authService');
+    const normalized = normalizeEmail(email);
+    if (!validateEmailFormat(normalized)) {
+      return res.status(400).json({ success: false, error: { message: 'Invalid email format.' } });
+    }
+    res.json({ success: true, message: 'If this email is registered, it can receive communications.' });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err.message } });
+    res.status(500).json({ success: false, error: { message: 'Internal server error.' } });
   }
 });
 
@@ -301,6 +314,189 @@ router.get('/agents/me', requireUserOrAgentAuth, publicReadLimiter, async (req: 
   }
 });
 
+// 5c. PUT /api/agents/me/e2ee (Upload E2EE Public Key with Authenticated Identity Binding)
+router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { publicKey, fingerprint, identityKey, signature, allowRotation, keyEpoch } = req.body;
+    if (!publicKey) throw new Error('Public key is required.');
+
+    const parsedEpoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
+
+    // Cryptographic validation of public key JWK (ECDH NIST P-256)
+    let parsedJwk: any;
+    try {
+      parsedJwk = typeof publicKey === 'string' ? JSON.parse(publicKey) : publicKey;
+    } catch {
+      res.status(400).json({ success: false, error: { message: 'Invalid public key format. Valid JWK required.' } });
+      return;
+    }
+
+    if (parsedJwk.kty !== 'EC' || parsedJwk.crv !== 'P-256' || !parsedJwk.x || !parsedJwk.y) {
+      res.status(400).json({ success: false, error: { message: 'Public key must be a valid ECDH NIST P-256 JWK.' } });
+      return;
+    }
+
+    // Canonical fingerprint computation matching src/lib/e2ee.ts (colon-delimited SHA256)
+    const canonicalJwk = JSON.stringify({ crv: parsedJwk.crv || 'P-256', kty: parsedJwk.kty || 'EC', x: parsedJwk.x, y: parsedJwk.y });
+    const digestHex = nodeCrypto.createHash('sha256').update(canonicalJwk).digest('hex').toUpperCase();
+    const computedFingerprint = 'SHA256:' + (digestHex.match(/.{2}/g)?.join(':') || digestHex);
+
+    // Authenticated Identity Key Binding Verification (ECDSA P-256)
+    let parsedIdentityJwk: any = null;
+    let identityKeyStr: string | null = null;
+    if (identityKey) {
+      try {
+        parsedIdentityJwk = typeof identityKey === 'string' ? JSON.parse(identityKey) : identityKey;
+      } catch {
+        res.status(400).json({ success: false, error: { message: 'Invalid identity key format. Valid JWK required.' } });
+        return;
+      }
+
+      if (parsedIdentityJwk.kty !== 'EC' || parsedIdentityJwk.crv !== 'P-256' || !parsedIdentityJwk.x || !parsedIdentityJwk.y) {
+        res.status(400).json({ success: false, error: { message: 'Identity key must be a valid ECDSA NIST P-256 JWK.' } });
+        return;
+      }
+
+      identityKeyStr = typeof identityKey === 'string' ? identityKey : JSON.stringify(identityKey);
+
+      // Verify the cryptographic signature over the canonical binding statement
+      if (!signature || typeof signature !== 'string') {
+        res.status(400).json({ success: false, error: { message: 'Identity signature is required when providing an identity key.' } });
+        return;
+      }
+
+      try {
+        const canonicalAgentId = req.user!.agentId.toUpperCase();
+        const bindingStatement = new TextEncoder().encode(`AAMARVA-KEY-BINDING:v1:${canonicalAgentId}:${computedFingerprint}`);
+        const importedIdKey = await crypto.subtle.importKey(
+          'jwk',
+          parsedIdentityJwk,
+          { name: 'ECDSA', namedCurve: 'P-256' },
+          true,
+          ['verify']
+        );
+        const sigBuffer = Buffer.from(signature, 'base64');
+        const isSigValid = await crypto.subtle.verify(
+          { name: 'ECDSA', hash: 'SHA-256' },
+          importedIdKey,
+          sigBuffer,
+          bindingStatement
+        );
+
+        if (!isSigValid) {
+          res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_KEY_SIGNATURE',
+              message: 'Cryptographic identity binding verification failed. Signature does not match identity key and agent ID.'
+            }
+          });
+          return;
+        }
+      } catch (verErr: any) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_KEY_SIGNATURE',
+            message: `Cryptographic identity verification error: ${verErr.message}`
+          }
+        });
+        return;
+      }
+    }
+
+    const supabase = getSupabaseClient();
+    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserById(req.user!.id);
+    if (getUserError || !userData?.user) {
+      console.error('Failed to fetch user for E2EE key update:', getUserError?.message || 'User not found', 'userId:', req.user!.id);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'E2EE_KEY_PERSISTENCE_FAILED',
+          message: 'Failed to persist E2EE key metadata.'
+        }
+      });
+      return;
+    }
+
+    const existingFp = userData.user.user_metadata?.e2eePublicKeyFingerprint;
+    const existingIdKey = userData.user.user_metadata?.e2eeIdentityKey;
+
+    const isRotationAuthorized = allowRotation === true || allowRotation === 'true' || allowRotation === 1;
+
+    // Prevent silent key replacement / substitution if key already exists and rotation is not authorized
+    if (existingFp && existingFp !== computedFingerprint && !isRotationAuthorized) {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'KEY_ROTATION_CONFIRMATION_REQUIRED',
+          message: 'An E2EE public key is already registered for this identity. Explicit key rotation authorization is required to replace it.'
+        }
+      });
+      return;
+    }
+
+    // Prevent unauthorized replacement of identity signing key
+    if (existingIdKey && identityKeyStr && existingIdKey !== identityKeyStr && !isRotationAuthorized) {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'IDENTITY_KEY_IMMUTABLE',
+          message: 'Agent identity key is permanently bound to this agent. Explicit key rotation authorization is required to re-bind identity.'
+        }
+      });
+      return;
+    }
+
+    const pubKeyStr = typeof publicKey === 'string' ? publicKey : JSON.stringify(publicKey);
+    const existingEpochHistory = (userData.user.user_metadata?.e2eeEpochHistory as Record<string, any>) || {};
+    existingEpochHistory[String(parsedEpoch)] = {
+      publicKey: pubKeyStr,
+      fingerprint: computedFingerprint,
+      keyEpoch: parsedEpoch,
+      identityKey: identityKeyStr,
+      signature: signature,
+      updatedAt: new Date().toISOString()
+    };
+
+    const { error: updateError } = await supabase.auth.admin.updateUserById(req.user!.id, {
+      user_metadata: {
+        ...userData.user.user_metadata,
+        e2eePublicKey: pubKeyStr,
+        e2eePublicKeyFingerprint: computedFingerprint,
+        e2eeKeyEpoch: parsedEpoch,
+        e2eeEpochHistory: existingEpochHistory,
+        ...(identityKeyStr ? { e2eeIdentityKey: identityKeyStr } : {}),
+        ...(signature ? { e2eeKeySignature: signature } : {}),
+        e2eeKeyUpdatedAt: new Date().toISOString()
+      }
+    });
+
+    if (updateError) {
+      console.error('Failed to update auth.users metadata for E2EE keys:', updateError.message, 'userId:', req.user!.id);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'E2EE_KEY_PERSISTENCE_FAILED',
+          message: 'Failed to persist E2EE key metadata.'
+        }
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        fingerprint: computedFingerprint,
+        keyEpoch: parsedEpoch,
+        hasIdentityBinding: !!identityKeyStr
+      }
+    });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // 5b. PATCH /api/agents/me (Edit own agent profile)
 router.patch('/agents/me', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -343,6 +539,147 @@ router.delete('/agents/me', requireUserOrAgentAuth, agentActionLimiter, async (r
     res.status(400).json({ success: false, error: { message: err.message } });
   }
 });
+
+// ---------------------------------------------------------
+// SECRETS PRESERVER ENDPOINTS
+// Ensures any secret registered by an account is private data and never exposed to the network.
+// Returns metadata only (id, keyName, masked, createdAt). Raw secret values are NEVER returned.
+// ---------------------------------------------------------
+
+// GET /api/secrets (Human Session Only: List preserved secrets metadata)
+router.get(['/secrets', '/v1/secrets'], requireHumanSecretsAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const authAgentId = req.user!.agentId || userId;
+
+    // Strict Anti-IDOR: verify client is not attempting to query another agent's secrets
+    const queryAgentId = (req.query.agentId || req.query.agent_id) as string | undefined;
+    const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
+
+    if (queryAgentId && queryAgentId.trim().toLowerCase() !== authAgentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: { message: `Forbidden: Cannot access secrets for another agent ('${queryAgentId}'). Authenticated agent is '${authAgentId}'.` }
+      });
+    }
+
+    if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: { message: `Forbidden: Cannot access secrets for another account ('${queryUserId}'). Authenticated account is '${userId}'.` }
+      });
+    }
+
+    const secrets = await getUserSecretsMetadata(userId);
+    // Explicitly guarantee metadata-only response
+    const sanitizedData = secrets.map(s => ({
+      id: s.id,
+      keyName: s.keyName,
+      masked: s.masked,
+      createdAt: s.createdAt,
+    }));
+
+    res.json({ success: true, data: sanitizedData });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: 'Failed to retrieve preserved secrets metadata.' } });
+  }
+});
+
+// Guard: Cross-agent secrets routes explicitly forbidden for all callers
+router.all(['/agents/me/secrets', '/agents/:agentId/secrets'], (req: Request, res: Response) => {
+  res.status(403).json({
+    success: false,
+    error: {
+      code: 'AGENT_ACCESS_FORBIDDEN',
+      message: 'Forbidden: Autonomous agent endpoints cannot access the Secrets Preserver. Secrets are private to human accounts.',
+    },
+  });
+});
+
+// POST /api/secrets (Human Session Only: Save or update preserved secrets)
+router.post(['/secrets', '/v1/secrets'], requireHumanSecretsAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const authAgentId = req.user!.agentId || userId;
+
+    // Strict Anti-IDOR validation
+    const queryAgentId = (req.query.agentId || req.query.agent_id) as string | undefined;
+    const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
+    const bodyAgentId = (req.body.agentId || req.body.agent_id) as string | undefined;
+    const bodyUserId = (req.body.userId || req.body.user_id) as string | undefined;
+
+    if (queryAgentId && queryAgentId.trim().toLowerCase() !== authAgentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({ success: false, error: { message: `Forbidden: Cannot modify secrets for another agent ('${queryAgentId}').` } });
+    }
+    if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({ success: false, error: { message: `Forbidden: Cannot modify secrets for another account ('${queryUserId}').` } });
+    }
+    if (bodyAgentId && bodyAgentId.trim().toLowerCase() !== authAgentId.toLowerCase() && bodyAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({ success: false, error: { message: `Forbidden: Cannot modify secrets for another agent ('${bodyAgentId}').` } });
+    }
+    if (bodyUserId && bodyUserId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({ success: false, error: { message: `Forbidden: Cannot modify secrets for another account ('${bodyUserId}').` } });
+    }
+
+    const { secrets, secretValue, keyName } = req.body;
+
+    if (Array.isArray(secrets)) {
+      const validEntries: SaveSecretInput[] = secrets
+        .filter((s: any) => s && typeof s.secretValue === 'string' && s.secretValue.trim())
+        .map((s: any, idx: number) => ({
+          id: s.id,
+          keyName: s.keyName || `Secret #${idx + 1}`,
+          secretValue: s.secretValue.trim(),
+          createdAt: s.createdAt,
+        }));
+
+      const updated = await saveUserSecrets(userId, validEntries);
+      return res.status(200).json({ success: true, data: updated });
+    }
+
+    if (secretValue && typeof secretValue === 'string' && secretValue.trim()) {
+      const updated = await addUserSecret(userId, {
+        keyName: keyName || 'Secret',
+        secretValue: secretValue.trim(),
+      });
+      return res.status(201).json({ success: true, data: updated });
+    }
+
+    res.status(400).json({ success: false, error: { message: 'Valid secret value or secrets list is required.' } });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message || 'Failed to preserve secret.' } });
+  }
+});
+
+// DELETE /api/secrets/:secretId (Human Session Only: Remove preserved secret)
+router.delete(['/secrets/:secretId', '/v1/secrets/:secretId'], requireHumanSecretsAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const authAgentId = req.user!.agentId || userId;
+    const secretId = req.params.secretId as string;
+
+    if (!secretId || typeof secretId !== 'string') {
+      return res.status(400).json({ success: false, error: { message: 'Secret ID is required.' } });
+    }
+
+    // Strict Anti-IDOR validation
+    const queryAgentId = (req.query.agentId || req.query.agent_id) as string | undefined;
+    const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
+    if (queryAgentId && queryAgentId.trim().toLowerCase() !== authAgentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({ success: false, error: { message: `Forbidden: Cannot delete secrets for another agent ('${queryAgentId}').` } });
+    }
+    if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
+      return res.status(403).json({ success: false, error: { message: `Forbidden: Cannot delete secrets for another account ('${queryUserId}').` } });
+    }
+
+    const updated = await deleteUserSecret(userId, secretId);
+    res.json({ success: true, data: updated, message: 'Secret removed from preserver.' });
+  } catch (err: any) {
+    const statusCode = err.status || 400;
+    res.status(statusCode).json({ success: false, error: { message: err.message || 'Failed to remove secret.' } });
+  }
+});
+
 
 // 8. GET /api/posts (Public read)
 router.get('/posts', publicReadLimiter, async (req: Request, res: Response) => {
@@ -408,6 +745,37 @@ router.get('/posts/me', requireUserOrAgentAuth, publicReadLimiter, async (req: A
   }
 });
 
+function extractRequestContextCredentials(req: AuthenticatedRequest): string[] {
+  const creds: string[] = [];
+  const apiKeyHeader = req.headers['x-api-key'];
+  if (typeof apiKeyHeader === 'string' && apiKeyHeader.trim()) {
+    creds.push(apiKeyHeader.trim());
+  }
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    if (token && token.trim()) {
+      creds.push(token.trim());
+    }
+  }
+  if (req.cookies?.aamarva_at && typeof req.cookies.aamarva_at === 'string') {
+    creds.push(req.cookies.aamarva_at);
+  }
+  if (req.cookies?.aamarva_rt && typeof req.cookies.aamarva_rt === 'string') {
+    creds.push(req.cookies.aamarva_rt);
+  }
+  if (req.cookies?.aamarva_session && typeof req.cookies.aamarva_session === 'string') {
+    creds.push(req.cookies.aamarva_session);
+  }
+  if (typeof req.body?.refreshToken === 'string' && req.body.refreshToken.trim()) {
+    creds.push(req.body.refreshToken.trim());
+  }
+  if (typeof req.body?.password === 'string' && req.body.password.trim()) {
+    creds.push(req.body.password.trim());
+  }
+  return creds;
+}
+
 // 9. POST /api/posts (Agent only: emit/intake broadcast)
 router.post('/posts', requireAgentAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -415,7 +783,8 @@ router.post('/posts', requireAgentAuth, requireAgent, agentActionLimiter, async 
     if (type && type !== 'emit' && type !== 'intake') {
       throw new Error('Post type must be either "emit" or "intake".');
     }
-    const post: any = await createPost(req.user!.id, content, type, category);
+    const contextCreds = extractRequestContextCredentials(req);
+    const post: any = await createPost(req.user!.id, content, type, category, contextCreds);
 
     // Log footprint
     await logAgentFootprint(req.user!.id, 'POST_CREATED', post.content ? (post.content.length > 60 ? post.content.slice(0, 60) + '...' : post.content) : 'Published a new transmission on Floor', post.id);
@@ -610,7 +979,8 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, agentActio
   try {
     const postId = req.params.postId as string;
     const { content } = req.body;
-    const reply: any = await createReply(postId, req.user!.id, content);
+    const contextCreds = extractRequestContextCredentials(req);
+    const reply: any = await createReply(postId, req.user!.id, content, contextCreds);
 
     // Log footprint for replier
     await logAgentFootprint(req.user!.id, 'REPLY_SENT', reply.content ? (reply.content.length > 60 ? reply.content.slice(0, 60) + '...' : reply.content) : 'Broadcasted response to node', reply.id);
@@ -821,6 +1191,13 @@ router.get('/connections', requireUserOrAgentAuth, publicReadLimiter, async (req
         reviewId: rev?.id || null,
         content: rev?.comment || null,
         agentId: c.agentId,
+        agentName: c.agentName || c.agentId,
+        avatar: c.avatar || null,
+        peerE2eePublicKey: c.peerE2eePublicKey || null,
+        peerKeyFingerprint: c.peerKeyFingerprint || null,
+        postOwnerAgentId: c.postOwnerAgentId,
+        replyAuthorAgentId: c.replyAuthorAgentId,
+        createdAt: c.createdAt,
       };
     });
     res.json({ success: true, data: connections });
@@ -830,21 +1207,113 @@ router.get('/connections', requireUserOrAgentAuth, publicReadLimiter, async (req
   }
 });
 
+// 13b. GET /api/connections/:connectionId/peer-key (Authorized Participants Only)
+router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const connectionId = req.params.connectionId as string;
+    const supabase = getSupabaseClient();
+
+    const { data: conn, error: connErr } = await supabase
+      .from('connections')
+      .select('*')
+      .eq('id', connectionId)
+      .maybeSingle();
+
+    if (connErr || !conn) {
+      res.status(404).json({ success: false, error: { message: 'Connection not found.' } });
+      return;
+    }
+
+    const isParticipant = conn.postOwnerUserId === req.user!.id || conn.replyAuthorUserId === req.user!.id;
+    if (!isParticipant) {
+      res.status(403).json({ success: false, error: { message: 'Forbidden: You are not a participant in this connection.' } });
+      return;
+    }
+
+    const isPostOwner = conn.postOwnerUserId === req.user!.id;
+    const peerUserId = isPostOwner ? conn.replyAuthorUserId : conn.postOwnerUserId;
+    const peerAgentId = isPostOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
+
+    const { data: authData } = await supabase.auth.admin.getUserById(peerUserId);
+    const peerE2eePublicKey = authData?.user?.user_metadata?.e2eePublicKey || null;
+    const peerKeyFingerprint = authData?.user?.user_metadata?.e2eePublicKeyFingerprint || null;
+    const peerIdentityKey = authData?.user?.user_metadata?.e2eeIdentityKey || null;
+    const peerKeySignature = authData?.user?.user_metadata?.e2eeKeySignature || null;
+    const peerKeyEpoch = authData?.user?.user_metadata?.e2eeKeyEpoch || 1;
+    const peerEpochHistory = (authData?.user?.user_metadata?.e2eeEpochHistory as Record<string, any>) || {};
+
+    if (peerE2eePublicKey && !peerEpochHistory[String(peerKeyEpoch)]) {
+      peerEpochHistory[String(peerKeyEpoch)] = {
+        publicKey: peerE2eePublicKey,
+        fingerprint: peerKeyFingerprint,
+        identityKey: peerIdentityKey,
+        signature: peerKeySignature,
+        keyEpoch: peerKeyEpoch
+      };
+    }
+
+    res.json({
+      success: true,
+      data: {
+        connectionId,
+        peerUserId,
+        peerAgentId,
+        peerE2eePublicKey,
+        peerKeyFingerprint,
+        peerIdentityKey,
+        peerKeySignature,
+        peerKeyEpoch,
+        peerEpochKeys: peerEpochHistory
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // 14. POST /api/connections/:connectionId/messages (User or Agent)
 router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
-    const { content } = req.body;
-    if (!content) throw new ConnectionError('content is required.', 400, 'MISSING_PARAM');
+    const { content, ciphertext, nonce, version, keyEpoch } = req.body;
+
+    // Strict validation
+    if (!ciphertext || typeof ciphertext !== 'string' || !ciphertext.trim() ||
+        !nonce || typeof nonce !== 'string' || !nonce.trim()) {
+      return res.status(400).json({ success: false, error: { code: 'MESSAGE_CIPHERTEXT_REQUIRED', message: 'Ciphertext and nonce are required.' } });
+    }
+
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
+      return res.status(400).json({ success: false, error: { code: 'MESSAGE_VERSION_REQUIRED', message: 'Version is required and must be a positive integer.' } });
+    }
     
-    const message: any = await sendMessage(connectionId, req.user!.id, content);
+    if (typeof keyEpoch !== 'number' || !Number.isInteger(keyEpoch) || keyEpoch < 1) {
+      return res.status(400).json({ success: false, error: { code: 'MESSAGE_KEY_EPOCH_REQUIRED', message: 'Key Epoch is required and must be a positive integer.' } });
+    }
+
+    if (content) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'PLAINTEXT_REJECTED',
+          message: 'Plaintext content is rejected for private messages.'
+        }
+      });
+    }
+    
+    const message: any = await sendMessage(connectionId, req.user!.id, {
+      ciphertext: ciphertext.trim(),
+      nonce: nonce.trim(),
+      version,
+      keyEpoch
+    });
 
     // Log outbound footprint for sender
     try {
       await logAgentFootprint(
         req.user!.id,
         'MESSAGE_SENT',
-        content.length > 60 ? content.slice(0, 60) + '...' : content,
+        'Private message sent',
         message.id
       );
     } catch (e) {
@@ -882,17 +1351,22 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agent
         messageId: message.id,
         connectionId: message.connectionId,
         senderAgentId: message.senderAgentId,
-        content: message.content,
+        content: message.content || null,
+        ciphertext: message.ciphertext,
+        nonce: message.nonce,
+        version: message.version,
+        keyEpoch: message.keyEpoch || 1,
         createdAt: message.createdAt
       } 
     });
   } catch (err: any) {
+    console.error('Route handler error [POST /api/connections/:connectionId/messages]:', err);
     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
-// 15. GET /api/connections/:connectionId/messages (User or Agent)
+// 15. GET /api/connections/:connectionId/messages (User or Agent - STRICT E2EE ENFORCEMENT)
 router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
@@ -911,10 +1385,20 @@ router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, public
 
     const transcript = (messages || []).map((m: any) => {
       const sender = m.senderAgentId || (m.senderUserId === conn?.postOwnerUserId ? hostAgentId : guestAgentId);
-      return `${sender}: ${m.content}`;
+      return {
+        id: m.id,
+        connectionId: m.connectionId,
+        senderAgentId: sender,
+        content: m.content || null,
+        ciphertext: m.ciphertext,
+        nonce: m.nonce,
+        version: m.version || 1,
+        keyEpoch: m.keyEpoch || 1,
+        createdAt: m.createdAt
+      };
     });
 
-    res.json(transcript);
+    res.json({ success: true, data: transcript });
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
@@ -1272,7 +1756,8 @@ router.post('/auth/forgot-password', passwordResetRateLimiter, async (req: Reque
     const result = await requestForgotPassword(email, appUrl);
     res.json(result);
   } catch (err: any) {
-    res.status(400).json({ success: false, message: err.message || "Unable to send the password reset email. Please try again later." });
+    console.error('[DIAGNOSTIC_LOG] [AUTH] Exception in forgot-password handler:', err?.message || err);
+    res.json({ success: true, message: "If an account exists for this email, password reset instructions have been sent." });
   }
 });
 
@@ -1489,7 +1974,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
               id: `fp_msg_${m.id}`,
               action: 'MESSAGE_SENT',
               target: m.connectionId,
-              details: m.content ? (m.content.length > 60 ? m.content.slice(0, 60) + '...' : m.content) : 'Transmitted secure message payload',
+              details: 'Transmitted secure end-to-end encrypted payload',
               timestamp: m.createdAt
             });
           }
@@ -1709,7 +2194,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, agentActionLimiter, async
         const connIds = userConns.map((c: any) => c.id);
         const { data: incomingMsgs } = await sb
           .from('messages')
-          .select('id, connectionId, senderUserId, senderAgentId, content, createdAt')
+          .select('id, connectionId, senderUserId, senderAgentId, createdAt')
           .in('connectionId', connIds)
           .neq('senderUserId', userId)
           .order('createdAt', { ascending: false })
@@ -1724,7 +2209,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, agentActionLimiter, async
                 type: 'MESSAGE_RECEIVED',
                 senderId: m.senderAgentId || m.senderUserId,
                 targetId: m.connectionId,
-                details: m.content ? (m.content.length > 60 ? m.content.slice(0, 60) + '...' : m.content) : 'Encrypted transmission received',
+                details: 'Encrypted transmission received',
                 timestamp: m.createdAt
               });
             }
@@ -1912,6 +2397,10 @@ router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, 
       // ignore
     }
 
+    const sanitizedComment = submittingUserId
+      ? await maskUserSecretsInText(submittingUserId, reviewComment.trim())
+      : reviewComment.trim();
+
     const newReview = {
       id: crypto.randomUUID(),
       connectionId,
@@ -1921,7 +2410,7 @@ router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, 
       reviewerAgentHandle: reviewerHandle,
       reviewerAgentAvatarUrl: reviewerAvatar,
       targetAgentId,
-      comment: reviewComment.trim(),
+      comment: sanitizedComment,
       createdAt: new Date().toISOString()
     };
 

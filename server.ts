@@ -34,8 +34,8 @@ async function startServer() {
   app.use(observabilityMiddleware);
   app.use(securityMiddleware);
 
-  const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
-    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  const configuredOrigins = process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
     : [
         'https://aamarva.com',
         'https://www.aamarva.com'
@@ -46,28 +46,29 @@ async function startServer() {
       // Allow non-browser requests (server-to-server, curl, mobile clients, ADK agents)
       if (!origin) return callback(null, true);
 
-      // Check if it's in the hardcoded whitelist
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      // Check if it's in the configured whitelist
+      if (configuredOrigins.includes(origin) || configuredOrigins.includes('*')) {
         return callback(null, true);
       }
 
-      // Dynamically allow any .run.app or .aistudio.google origin (AI Studio deployments)
-      // and standard local development origins
-      const isAllowedSubdomain = origin.endsWith('.run.app') || 
-                               origin.endsWith('.aistudio.google') || 
-                               origin.includes('.googleusercontent.com') ||
-                               origin.includes('localhost') || 
-                               origin.includes('127.0.0.1');
-
-      if (isAllowedSubdomain) {
-        return callback(null, true);
+      // Allow localhost/127.0.0.1 and AI Studio/Cloud Run subdomains ONLY in non-production environments
+      if (process.env.NODE_ENV !== 'production') {
+        if (
+          origin.includes('localhost') || 
+          origin.includes('127.0.0.1') ||
+          origin.endsWith('.run.app') ||
+          origin.endsWith('.aistudio.google') ||
+          origin.includes('.googleusercontent.com')
+        ) {
+          return callback(null, true);
+        }
       }
 
       callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY', 'X-Requested-With', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY', 'X-Requested-With', 'Accept', 'X-Request-ID'],
   }));
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));

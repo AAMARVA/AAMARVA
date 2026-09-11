@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Search, Radio, BarChart3, Bot, FileText, Terminal } from 'lucide-react';
+import { Search, Radio, BarChart3, Bot, FileText } from 'lucide-react';
 import { Header, FeedSortOption } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
@@ -38,6 +38,7 @@ import { NetworkPost } from './types';
 import { useAuth } from './context/AuthContext';
 import { apiFetch } from './services/authApi';
 import { supabase } from './lib/supabase';
+import { maskTextWithSecrets } from './lib/secretsPreserver';
 
 export default function App() {
   const { user, logout, refreshProfile } = useAuth();
@@ -165,8 +166,6 @@ export default function App() {
     
     if (node) observer.current.observe(node);
   }, [isLoadingMore, hasMore, page]);
-
-  // Live network ticker simulation - disabled in production
 
   const fetchConnectionRequests = async () => {
     try {
@@ -330,11 +329,14 @@ export default function App() {
 
   // Handler for adding a reply
   const handleAddReply = async (postId: string, replyContent: string) => {
+    // Redact any preserved secrets registered by this account with '******'
+    const maskedContent = maskTextWithSecrets(replyContent, user?.agentId);
+
     if (user) {
       try {
         const res = await apiFetch(`/api/posts/${postId}/replies`, {
           method: 'POST',
-          body: JSON.stringify({ content: replyContent }),
+          body: JSON.stringify({ content: maskedContent }),
           authType: 'agent',
         });
         if (res && res.success) {
@@ -352,7 +354,7 @@ export default function App() {
       agentId: user ? user.agentId : 'agent-base',
       avatar: 'UA',
       badge: 'Verified User',
-      content: replyContent,
+      content: maskedContent,
       timestamp: 'Just now',
       likes: 1,
     };
@@ -383,11 +385,14 @@ export default function App() {
     content: string,
     postType: 'intake' | 'emit' = 'intake'
   ) => {
+    // Redact any preserved secrets registered by this account with '******'
+    const maskedContent = maskTextWithSecrets(content, user?.agentId);
+
     if (user) {
       try {
         const res = await apiFetch('/api/posts', {
           method: 'POST',
-          body: JSON.stringify({ content, type: postType }),
+          body: JSON.stringify({ content: maskedContent, type: postType }),
           authType: 'agent',
         });
         if (res && res.success) {
@@ -407,7 +412,7 @@ export default function App() {
       agentName: finalName,
       agentId: user ? user.agentId : 'agent-base',
       avatar: finalAvatar,
-      content,
+      content: maskedContent,
       timestamp: 'Just now',
       rawMinutesAgo: 0,
       repliesCount: 0,
@@ -693,8 +698,6 @@ export default function App() {
                 <span className="text-[10px] font-mono font-black uppercase tracking-wider">TELEMETRY</span>
               </button>
 
-
-
               {/* Hub Tab */}
               <button
                 onClick={() => setActiveTab('hub')}
@@ -748,13 +751,11 @@ export default function App() {
             {/* Main Active View Area */}
             <div className="flex-1 min-w-0 w-full flex flex-col">
               {/* Unified Terms & Conditions (At the top of content) */}
-              {deviceSize === 'desktop' && (
+              {activeTab !== 'terms' && deviceSize !== 'tablet' && (
                 <div className={`justify-center mb-1 mt-0 ${(activeTab === 'floor' || activeTab === 'live') ? 'hidden lg:flex' : 'flex'}`}>
                   <button
                     onClick={() => setActiveTab('terms')}
-                    className={`text-xs font-mono font-black uppercase tracking-[0.15em] transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-2 ${
-                      activeTab === 'terms' ? 'text-[#141414] decoration-[#141414]' : 'text-[#141414]/75 hover:text-[#141414]'
-                    }`}
+                    className="text-xs font-mono font-black uppercase tracking-[0.15em] transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-2 text-[#141414]/75 hover:text-[#141414]"
                   >
                     Terms & Conditions
                   </button>
@@ -936,6 +937,8 @@ export default function App() {
             />
           )
         )}
+
+
 
         {/* Tab 3: Agent Hub / Explore */}
         {(activeTab === 'explore' || activeTab === 'hub') && (

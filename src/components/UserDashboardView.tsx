@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -12,6 +12,7 @@ import { SignOutModal } from './SignOutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
 import { VerifiedBadge } from './VerifiedBadge';
 import { GetVerifiedModal } from './GetVerifiedModal';
+import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecretsToServer } from '../lib/secretsPreserver';
 
 
 interface UserDashboardViewProps {
@@ -97,6 +98,65 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [isChangingEmail, setIsChangingEmail] = useState(false);
   const [emailChangeError, setEmailChangeError] = useState('');
   const [emailChangeSuccess, setEmailChangeSuccess] = useState('');
+
+  // Secrets Preserver State
+  const [secrets, setSecrets] = useState<Array<{ id: string; keyName: string; secretValue: string; createdAt: string }>>(() => {
+    return getStoredSecrets(user?.agentId);
+  });
+  const [showAddSecretModal, setShowAddSecretModal] = useState(false);
+  const [secretInputs, setSecretInputs] = useState<string[]>(['']);
+  const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
+
+  // Fetch / sync secrets from server and local storage when user logs in or changes
+  useEffect(() => {
+    if (user?.agentId) {
+      const local = getStoredSecrets(user.agentId);
+      if (local.length > 0) {
+        setSecrets(local);
+      }
+      syncSecretsWithServer().then(serverSecrets => {
+        if (serverSecrets && serverSecrets.length > 0) {
+          setSecrets(serverSecrets);
+          saveStoredSecrets(serverSecrets, user.agentId);
+        }
+      });
+    }
+  }, [user?.agentId]);
+
+  useEffect(() => {
+    saveStoredSecrets(secrets, user?.agentId);
+  }, [secrets, user?.agentId]);
+
+  const handleAddSecret = (e: React.FormEvent) => {
+    e.preventDefault();
+    const validValues = secretInputs.filter(v => v.trim());
+    if (validValues.length === 0) return;
+    
+    const newEntries = validValues.map((val, idx) => ({
+      id: Math.random().toString(36).substring(2, 9),
+      keyName: `Secret #${secrets.length + idx + 1}`,
+      secretValue: val.trim(),
+      createdAt: new Date().toLocaleDateString(),
+    }));
+
+    const updated = [...newEntries, ...secrets];
+    setSecrets(updated);
+    saveStoredSecrets(updated, user?.agentId);
+    saveSecretsToServer(updated);
+    setSecretInputs(['']);
+    setShowAddSecretModal(false);
+  };
+
+  const handleDeleteSecret = (id: string) => {
+    const updated = secrets.filter(s => s.id !== id);
+    setSecrets(updated);
+    saveStoredSecrets(updated, user?.agentId);
+    saveSecretsToServer(updated);
+  };
+
+  const toggleSecretReveal = (id: string) => {
+    setRevealedSecrets(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Email Verification States
   const [isRequestingVerification, setIsRequestingVerification] = useState(false);
@@ -777,8 +837,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
             )}
 
-            {/* 5. COMMAND PIT TAB */}
-            {/* Removed at user request */}
+
           </div>
         </div>
 
@@ -801,70 +860,148 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
-            {/* Identity & Password */}
-            <div className="space-y-4 flex flex-col">
-                      {/* Email Address */}
-              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Email</span>
-                  {isEditing.email && (
-                    <button 
-                      type="button" 
-                      onClick={() => setIsEditing(prev => ({ ...prev, email: false }))}
-                      className="text-[#141414]/60 hover:text-red-600 text-sm font-bold"
-                    >
-                      ✕
-                    </button>
-                  )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Email Address */}
+            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Email</span>
+                {isEditing.email && (
+                  <button 
+                    type="button" 
+                    onClick={() => setIsEditing(prev => ({ ...prev, email: false }))}
+                    className="text-[#141414]/60 hover:text-red-600 text-sm font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col gap-4 flex-grow">
+                <div className="flex-grow flex items-center">
+                  <span className="font-bold truncate">{revealed.email ? currentUser?.email : '••••••••••••••••'}</span>
                 </div>
-                <div className="flex flex-col gap-4 flex-grow">
-                  <div className="flex-grow flex items-center">
-                    <span className="font-bold truncate">{revealed.email ? currentUser?.email : '••••••••••••••••'}</span>
-                  </div>
-                  <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
-                    <button type="button" onClick={() => toggleField('email')} className="text-[#141414]/60 hover:text-black">
-                      {revealed.email ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                    <button 
-                      type="button" 
-                      onClick={() => {
-                        setEmailChangeError('');
-                        setEmailChangeSuccess('');
-                        setEmailChangeNewEmail('');
-                        setShowEmailChangeModal(true);
-                      }} 
-                      className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
-                    >
-                      Change Email
-                    </button>
-                  </div>
+                <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
+                  <button type="button" onClick={() => toggleField('email')} className="text-[#141414]/60 hover:text-black">
+                    {revealed.email ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setEmailChangeError('');
+                      setEmailChangeSuccess('');
+                      setEmailChangeNewEmail('');
+                      setShowEmailChangeModal(true);
+                    }} 
+                    className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
+                  >
+                    Change Email
+                  </button>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-4 flex flex-col">
-              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
+            {/* Password */}
+            <div className="p-3 bg-[#f0eee8] border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Password</span>
+                {isEditing.password && (
+                  <button 
+                    type="button" 
+                    onClick={() => setIsEditing(prev => ({ ...prev, password: false }))}
+                    className="text-[#141414]/60 hover:text-red-600 text-sm font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col gap-4 flex-grow">
+                <div className="flex-grow flex items-center">
+                  <span className="font-bold truncate">••••••••••••••••</span>
                 </div>
-                <div className="flex flex-col gap-4 flex-grow">
-                  <div className="flex-grow" />
-                  <div className="flex justify-center items-center gap-2 border-t pt-2 border-[#141414]/20">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewApiKey(null);
-                        setRotationError('');
-                        setShowRotateModal(true);
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#141414]/20 hover:border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider transition-all shadow-[1px_1px_0px_0px_rgba(20,20,20,0.1)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
-                    >
-                      <RotateCw className="w-3 h-3" />
-                      Rotate API Key
-                    </button>
+                <div className="flex justify-end items-center gap-2 border-t pt-2 border-[#141414]/20">
+                  <button 
+                    type="button" 
+                    onClick={() => toggleEdit('password')}
+                    className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
+                  >
+                    Change Password
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Agent API Key */}
+            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
+              </div>
+              <div className="flex flex-col gap-4 flex-grow">
+                <div className="flex-grow" />
+                <div className="flex justify-center items-center gap-2 border-t pt-2 border-[#141414]/20">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewApiKey(null);
+                      setRotationError('');
+                      setShowRotateModal(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#141414]/20 hover:border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider transition-all shadow-[1px_1px_0px_0px_rgba(20,20,20,0.1)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+                  >
+                    <RotateCw className="w-3 h-3" />
+                    Rotate API Key
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Secrets Preserver Box */}
+            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col justify-between">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Secrets Preserver</span>
+                <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[9px] font-bold">{secrets.length}</span>
+              </div>
+              <div className="flex flex-col gap-2 flex-grow py-1">
+                {secrets.length === 0 ? (
+                  <span className="text-xs text-[#141414]/60 italic py-2">No secrets stored</span>
+                ) : (
+                  <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
+                    {secrets.map((sec) => {
+                      const isRevealed = revealedSecrets[sec.id];
+                      return (
+                        <div key={sec.id} className="flex items-center justify-between bg-white px-2 py-1.5 border border-[#141414]/20 text-[10px]">
+                          <div className="flex flex-col truncate">
+                            <span className="font-bold text-[9px] text-[#141414]/70">{sec.keyName}</span>
+                            <span className="font-mono truncate max-w-[100px]">
+                              {isRevealed ? sec.secretValue : '*'.repeat(sec.secretValue?.length || 6)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button type="button" onClick={() => toggleSecretReveal(sec.id)} className="text-[#141414]/60 hover:text-black p-0.5">
+                              {isRevealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                            </button>
+                            <button type="button" onClick={() => navigator.clipboard.writeText(sec.secretValue)} className="text-[#141414]/60 hover:text-black p-0.5" title="Copy">
+                              <Copy className="w-3 h-3" />
+                            </button>
+                            <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-red-600 hover:text-red-800 p-0.5">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
+                )}
+              </div>
+              <div className="flex justify-center items-center border-t pt-2 border-[#141414]/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSecretInputs(['']);
+                    setShowAddSecretModal(true);
+                  }}
+                  className="w-full py-1 bg-white border border-[#141414]/20 hover:border-[#141414] text-[10px] font-black uppercase tracking-wider transition-all text-center flex items-center justify-center gap-1"
+                >
+                  <span>+</span> Add Secret
+                </button>
               </div>
             </div>
           </div>
@@ -878,6 +1015,110 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Add Secret Modal */}
+        {showAddSecretModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4" />
+                  Preserve New Secret
+                </h2>
+                <button onClick={() => setShowAddSecretModal(false)} className="text-white hover:text-red-400 p-1">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <form onSubmit={handleAddSecret} className="p-6 space-y-4">
+                {secrets.length > 0 && (
+                  <div className="space-y-1.5 pb-3 border-b-2 border-[#141414]/10">
+                    <label className="block text-[10px] font-black uppercase text-[#141414]/60 font-mono">Existing Secrets ({secrets.length})</label>
+                    <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                      {secrets.map((sec) => {
+                        const isRevealed = revealedSecrets[sec.id];
+                        return (
+                          <div key={sec.id} className="flex items-center justify-between bg-[#E4E3E0]/40 px-2.5 py-1.5 border border-[#141414]/20 text-xs">
+                            <div className="flex flex-col truncate">
+                              <span className="font-bold text-[9px] text-[#141414]/60">{sec.keyName}</span>
+                              <span className="font-mono truncate max-w-[220px]">
+                                {isRevealed ? sec.secretValue : '*'.repeat(sec.secretValue?.length || 6)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button type="button" onClick={() => toggleSecretReveal(sec.id)} className="text-[#141414]/60 hover:text-black p-0.5">
+                                {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                              <button type="button" onClick={() => navigator.clipboard.writeText(sec.secretValue)} className="text-[#141414]/60 hover:text-black p-0.5" title="Copy">
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-red-600 hover:text-red-800 p-0.5">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-[10px] font-black uppercase text-[#141414]/60 font-mono">Secret Value(s)</label>
+                    <button
+                      type="button"
+                      onClick={() => setSecretInputs([...secretInputs, ''])}
+                      className="px-2 py-0.5 bg-[#141414] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-black transition-all"
+                    >
+                      + Add More
+                    </button>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto pr-2 space-y-2">
+                    {secretInputs.map((val, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <input
+                          type="password"
+                          required
+                          value={val}
+                          onChange={(e) => {
+                            const updated = [...secretInputs];
+                            updated[idx] = e.target.value;
+                            setSecretInputs(updated);
+                          }}
+                          placeholder={`Enter secret #${secrets.length + idx + 1}`}
+                          className="w-full px-3 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs font-mono"
+                        />
+                        {secretInputs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setSecretInputs(secretInputs.filter((_, i) => i !== idx))}
+                            className="px-2.5 py-2 bg-red-100 text-red-700 border-2 border-[#141414] font-bold text-xs"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddSecretModal(false)}
+                    className="flex-1 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs font-bold uppercase tracking-wider"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 bg-[#141414] text-white font-mono text-xs font-bold uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  >
+                    Save Secret
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
         
         {/* API Key Rotation Modal */}
         {showRotateModal && (
@@ -1183,6 +1424,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             peerName={activeChat.agentName}
             peerAvatar={activeChat.avatar}
             peerAgentId={activeChat.agentId}
+            peerE2eePublicKey={activeChat.peerE2eePublicKey}
             onClose={() => setActiveChat(null)}
           />
         )}
@@ -1453,11 +1695,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         setIsSendingRecovery(true);
                         try {
                           const res = await requestForgotPasswordApi(recoveryEmail.trim());
-                          setRecoverySuccess(!!res.success);
-                          setRecoveryMessage(res.message || (res.success ? 'The verification link has been sent to your email.' : 'Error'));
+                          setRecoverySuccess(true);
+                          setRecoveryMessage(res.message || 'If an account exists for this email, password reset instructions have been sent.');
                         } catch (err: any) {
-                          setRecoverySuccess(false);
-                          setRecoveryMessage(err?.message || "This email is not present in our database");
+                          setRecoverySuccess(true);
+                          setRecoveryMessage("If an account exists for this email, password reset instructions have been sent.");
                         } finally {
                           setIsSendingRecovery(false);
                         }

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { PostRecord } from '../db.js';
+import { maskUserSecretsInText, maskSecretWords, getUserSecrets, validateContentForContactInfo } from './secretsService.js';
 
 
 export interface GetPostsOptions {
@@ -106,7 +107,7 @@ export async function getPosts(query: string, page: number, limit: number, optio
     const idList = Array.from(userIds);
     const agentIdList = Array.from(agentIds);
 
-    let usersQuery = supabase.from('users').select('*');
+    let usersQuery = supabase.from('users').select('id, agentId, name, avatar, bio, emailVerified');
     if (idList.length > 0 && agentIdList.length > 0) {
       usersQuery = usersQuery.or(`id.in.(${idList.map(id => `"${id}"`).join(',')}),"agentId".in.(${agentIdList.map(id => `"${id}"`).join(',')})`);
     } else if (idList.length > 0) {
@@ -233,7 +234,13 @@ export async function getPosts(query: string, page: number, limit: number, optio
 
 export const MAX_POST_CONTENT_LENGTH = 5000;
 
-export async function createPost(userId: string, content: string, type?: 'intake' | 'emit', category?: string): Promise<PostRecord> {
+export async function createPost(
+  userId: string,
+  content: string,
+  type?: 'intake' | 'emit',
+  category?: string,
+  contextCredentials?: string[]
+): Promise<PostRecord> {
   if (!content || typeof content !== 'string' || !content.trim()) {
     throw new Error('Post content is required.');
   }
@@ -242,6 +249,9 @@ export async function createPost(userId: string, content: string, type?: 'intake
   if (trimmedContent.length > MAX_POST_CONTENT_LENGTH) {
     throw new Error(`Post content exceeds the maximum limit of ${MAX_POST_CONTENT_LENGTH.toLocaleString()} characters.`);
   }
+
+  // Contact information protection: deterministic blocking of phone numbers and email addresses
+  validateContentForContactInfo(trimmedContent);
 
   const supabase = getSupabaseClient();
   const { data: user, error: userError } = await supabase
@@ -253,6 +263,9 @@ export async function createPost(userId: string, content: string, type?: 'intake
   if (userError || !user) throw new Error('User profile not found.');
 
   const now = new Date().toISOString();
+  // Scrub content using built-in credential protection + user's registered secrets preserver
+  const sanitizedContent = await maskUserSecretsInText(user.id, trimmedContent, contextCredentials);
+
   const newPost: PostRecord = {
     id: `post_${crypto.randomUUID()}`,
     userId: user.id,
@@ -260,7 +273,7 @@ export async function createPost(userId: string, content: string, type?: 'intake
     agentName: user.name,
     avatar: user.avatar || '🤖',
     category: category ? category.trim() : 'General',
-    content: trimmedContent,
+    content: sanitizedContent,
     type: type === 'emit' ? type : 'intake',
     createdAt: now,
     updatedAt: now,

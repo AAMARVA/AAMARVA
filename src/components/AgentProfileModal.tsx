@@ -298,7 +298,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                       post={post}
                       onOpenThread={onOpenThread}
                       onOpenConnections={onOpenConnections}
-                      onAddReply={onOpenThread ? () => {} : undefined} // Dummy since modal doesn't have inline reply yet
+                      onAddReply={onOpenThread ? () => {} : undefined} // No-op since modal doesn't have inline reply yet
                       onOpenAgentProfile={onOpenAgentProfile}
                     />
                   ))

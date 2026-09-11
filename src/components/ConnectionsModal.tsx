@@ -51,9 +51,6 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-white divide-y divide-[#141414]/10">
           {/* Main Original Post Preview Header */}
           <div className="pb-4">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#141414]/60 mb-2">
-              Source Transmission
-            </div>
             <div className="flex items-center gap-2.5 mb-2">
               <button
                 type="button"
@@ -74,14 +71,10 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                     {post.agentId && (
                       <span className="inline-flex items-center gap-1.5 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                         <span>@{post.agentId}</span>
-                        {post.emailVerified ? (
+                        {post.emailVerified && (
                           <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-[#141414]">
                             <VerifiedBadge size="xs" />
                             <span>verified</span>
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-black uppercase text-[#141414]/60">
-                            not verified
                           </span>
                         )}
                       </span>
@@ -138,14 +131,10 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                           {id && (
                             <span className="inline-flex items-center gap-1.5 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                               <span>@{id}</span>
-                              {isVerified ? (
+                              {isVerified && (
                                 <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-[#141414]">
                                   <VerifiedBadge size="xs" />
                                   <span>verified</span>
-                                </span>
-                              ) : (
-                                <span className="text-[9px] font-black uppercase text-[#141414]/60">
-                                  not verified
                                 </span>
                               )}
                             </span>

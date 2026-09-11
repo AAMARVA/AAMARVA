@@ -12,7 +12,9 @@ export interface UserTokenPayload {
   agentId: string;
   email: string;
   emailVerified?: boolean;
-  type?: 'human' | 'agent';
+  type?: 'human' | 'agent' | 'command_pit';
+  isCommandPit?: boolean;
+  commandPitScopes?: string[];
 }
 
 export interface HumanSessionPayload {
@@ -62,23 +64,46 @@ export function getHumanSessionCookieOptions() {
 }
 
 function getJwtSecret(): string {
-  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
-    throw new Error('JWT_SECRET environment variable is not defined.');
+  const secret = process.env.JWT_SECRET?.trim();
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[Security Configuration Error] JWT_SECRET environment variable is not defined.');
+    }
+    return 'aamarva-dev-jwt-secret-placeholder-minimum-length-32';
   }
-  return process.env.JWT_SECRET;
+  if (secret.length < 32 && process.env.NODE_ENV === 'production') {
+    throw new Error('[Security Configuration Error] JWT_SECRET must be at least 32 characters long in production.');
+  }
+  return secret;
 }
 
 function getJwtRefreshSecret(): string {
-  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.trim() === '') {
-    throw new Error('JWT_REFRESH_SECRET environment variable is not defined.');
+  const secret = process.env.JWT_REFRESH_SECRET?.trim();
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[Security Configuration Error] JWT_REFRESH_SECRET environment variable is not defined.');
+    }
+    return 'aamarva-dev-refresh-secret-placeholder-minimum-length-32';
   }
-  return process.env.JWT_REFRESH_SECRET;
+  if (secret.length < 32 && process.env.NODE_ENV === 'production') {
+    throw new Error('[Security Configuration Error] JWT_REFRESH_SECRET must be at least 32 characters long in production.');
+  }
+  if (process.env.NODE_ENV === 'production' && secret === process.env.JWT_SECRET?.trim()) {
+    throw new Error('[Security Configuration Error] JWT_REFRESH_SECRET must be distinct from JWT_SECRET in production.');
+  }
+  return secret;
 }
 
 
 export function validatePasswordStrength(password: string): { valid: boolean; message?: string } {
   if (!password || typeof password !== 'string' || password.length === 0) {
     return { valid: false, message: 'Password is required.' };
+  }
+  if (password.length < 8) {
+    return { valid: false, message: 'Password must be at least 8 characters long.' };
+  }
+  if (password.length > 128) {
+    return { valid: false, message: 'Password cannot exceed 128 characters.' };
   }
   return { valid: true };
 }
@@ -175,12 +200,36 @@ export function generateApiKey(): string {
 }
 
 export async function createHumanSession(userId: string): Promise<string> {
+  const sessionId = crypto.randomUUID();
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const expSeconds = nowSeconds + 7 * 24 * 3600; // 7 days
+  
   const payload = {
     userId,
     type: 'human',
-    iat: Math.floor(Date.now() / 1000)
+    iat: nowSeconds,
+    exp: expSeconds,
+    sessionId
   };
-  const token = jwt.sign(payload, getJwtSecret(), { expiresIn: '7d' });
+  const token = jwt.sign(payload, getJwtSecret());
+  
+  const sessionHash = crypto.createHash('sha256').update(sessionId).digest('hex');
+  const recordId = crypto.randomUUID();
+  
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from('human_sessions').insert({
+    id: recordId,
+    userId,
+    sessionHash,
+    expiresAt: new Date(expSeconds * 1000).toISOString(),
+    createdAt: new Date().toISOString()
+  });
+  
+  if (error) {
+    console.error('[createHumanSession] Failed to persist session to database:', error);
+    throw new Error(`Failed to create session: ${error.message}`);
+  }
+  
   return token;
 }
 
@@ -191,7 +240,7 @@ export async function verifyHumanSession(rawSessionId: string): Promise<HumanSes
 
   try {
     const decoded = jwt.verify(rawSessionId.trim(), getJwtSecret()) as any;
-    if (!decoded || !decoded.userId || decoded.type !== 'human') {
+    if (!decoded || !decoded.userId || decoded.type !== 'human' || !decoded.sessionId) {
       return null;
     }
 
@@ -207,6 +256,28 @@ export async function verifyHumanSession(rawSessionId: string): Promise<HumanSes
       if (decoded.iat < pwdChangedSeconds) {
         return null;
       }
+    }
+
+    // Database lookup check to verify the actual human session is still active
+    const sessionHash = crypto.createHash('sha256').update(decoded.sessionId).digest('hex');
+    const { data: sessionRecord, error: sessionErr } = await supabase
+      .from('human_sessions')
+      .select('*')
+      .eq('sessionHash', sessionHash)
+      .maybeSingle();
+
+    if (sessionErr || !sessionRecord) {
+      return null; // session does not exist in database (revoked/deleted)
+    }
+
+    // Verify it belongs to the authenticated user
+    if (sessionRecord.userId !== decoded.userId) {
+      return null;
+    }
+
+    // Verify it has not expired
+    if (new Date(sessionRecord.expiresAt).getTime() < Date.now()) {
+      return null;
     }
 
     return {
@@ -225,8 +296,13 @@ export async function invalidateHumanSession(rawSessionId: string): Promise<void
   if (!rawSessionId || typeof rawSessionId !== 'string') return;
   try {
     const decoded = jwt.verify(rawSessionId.trim(), getJwtSecret()) as any;
-    if (decoded && decoded.userId) {
-      await invalidateAllHumanSessionsForUser(decoded.userId);
+    if (decoded && decoded.sessionId) {
+      const sessionHash = crypto.createHash('sha256').update(decoded.sessionId).digest('hex');
+      const supabase = getSupabaseClient();
+      await supabase
+        .from('human_sessions')
+        .delete()
+        .eq('sessionHash', sessionHash);
     }
   } catch (e: any) {}
 }
@@ -234,14 +310,26 @@ export async function invalidateHumanSession(rawSessionId: string): Promise<void
 export async function invalidateAllHumanSessionsForUser(userId: string): Promise<void> {
   if (!userId) return;
   const supabase = getSupabaseClient();
-  const { error } = await supabase
+  
+  // 1. Update passwordChangedAt to invalidate older JWTs
+  const { error: updateErr } = await supabase
     .from('users')
     .update({ passwordChangedAt: new Date().toISOString() })
     .eq('id', userId);
 
-  if (error) {
-    console.error(`[SessionInvalidation] Failed to invalidate human sessions for user ${userId}:`, error.message || error);
-    throw new Error(`Failed to invalidate existing human sessions: ${error.message || 'Database error'}`);
+  if (updateErr) {
+    console.error(`[SessionInvalidation] Failed to update passwordChangedAt for user ${userId}:`, updateErr.message);
+  }
+
+  // 2. Delete all sessions for the user in the database
+  const { error: deleteErr } = await supabase
+    .from('human_sessions')
+    .delete()
+    .eq('userId', userId);
+
+  if (deleteErr) {
+    console.error(`[SessionInvalidation] Failed to delete human sessions for user ${userId}:`, deleteErr.message || deleteErr);
+    throw new Error(`Failed to invalidate existing human sessions: ${deleteErr.message || 'Database error'}`);
   }
 }
 
@@ -420,6 +508,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     agentId: newUser.agentId,
     email: newUser.email,
     passwordHash: newUser.passwordHash,
+    apiKeyFingerprint: (newUser as any).apiKeyFingerprint,
     name: newUser.name,
     status: newUser.status,
     avatar: newUser.avatar,
@@ -660,7 +749,7 @@ export async function registerUser(data: {
     const refreshToken = generateRefreshToken(newUser.id, familyId);
     await persistRefreshToken(newUser.id, familyId, refreshToken);
     const { passwordHash: _, apiKeyHash: __, ...safeUser } = newUser;
-    const returnUser = { ...safeUser, password: data.password };
+    const returnUser = { ...safeUser };
     return {
       agentId,
       apiKey: apiKeyToUse,
@@ -978,11 +1067,36 @@ export async function deleteUserAccount(userId: string): Promise<void> {
 
 export async function logoutHumanSession(rawSessionId?: string) {
   if (rawSessionId) {
+    try {
+      const decoded = jwt.verify(rawSessionId.trim(), getJwtSecret()) as any;
+      if (decoded && decoded.sessionId) {
+        const sessionHash = crypto.createHash('sha256').update(decoded.sessionId).digest('hex');
+        const supabase = getSupabaseClient();
+        
+        const { data: sessionRecord } = await supabase
+          .from('human_sessions')
+          .select('id')
+          .eq('sessionHash', sessionHash)
+          .maybeSingle();
+
+        if (sessionRecord) {
+          await supabase
+            .from('command_pit_tokens')
+            .update({ revoked_at: new Date().toISOString() })
+            .eq('session_id', sessionRecord.id);
+        }
+      } else if (decoded && decoded.userId) {
+      }
+    } catch (err) {
+      console.warn('[Logout] Error revoking associated Command Pit tokens on human session logout:', err);
+    }
     await invalidateHumanSession(rawSessionId);
   }
 }
 
 export async function logoutAgent(userId: string, refreshToken?: string) {
+  try {
+  } catch (e) {}
   if (refreshToken) {
     try {
       const tokenHash = hashToken(refreshToken);
@@ -1471,20 +1585,23 @@ export async function confirmAccountEmailVerification(token: string) {
  *    - Return generic success message.
  */
 export async function requestForgotPassword(email: string, appUrl: string) {
+  const genericMessage = "If an account exists for this email, password reset instructions have been sent.";
+
   if (!email || typeof email !== 'string') {
-    return { success: false, message: "Please provide a valid email." };
+    return { success: true, message: genericMessage };
   }
 
   const normalizedEmail = normalizeEmail(email);
   if (!validateEmailFormat(normalizedEmail)) {
-    return { success: false, message: "Invalid email format." };
+    return { success: true, message: genericMessage };
   }
 
   const supabase = getSupabaseClient();
   const user = await findUserByEmail(supabase, normalizedEmail);
 
   if (!user) {
-    return { success: false, message: "This email is not registered." };
+    // Return generic message without revealing that the user does not exist
+    return { success: true, message: genericMessage };
   }
 
   // User EXISTS.
@@ -1530,23 +1647,23 @@ export async function requestForgotPassword(email: string, appUrl: string) {
 
     if (insertErr) {
       console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to store password reset token in Supabase:', insertErr.message || insertErr);
-      return { success: false, message: "Server error. Please try again later." };
+      return { success: true, message: genericMessage };
     }
   } catch (err: any) {
     console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Exception storing password reset token in Supabase:', err?.message || err);
-    return { success: false, message: "Server error. Please try again later." };
+    return { success: true, message: genericMessage };
   }
 
   // 3. Send email through Brevo email service using server-side configuration
-  const targetAppUrl = appUrl || process.env.APP_URL || config.appUrl || 'https://ais-dev-sy4lhzb3bv4g4mm7spkr5c-89865814157.asia-southeast1.run.app';
+  const targetAppUrl = appUrl || process.env.APP_URL || config.appUrl || 'https://aamarva.com';
   try {
     await sendPasswordResetEmail(user.email, rawToken, targetAppUrl, user.name);
   } catch (emailErr: any) {
     console.error('[DIAGNOSTIC_LOG] [AUTH_SERVICE] ❌ Failed to dispatch password reset email:', emailErr?.message || emailErr);
-    return { success: false, message: "Failed to send email. Please try again later." };
+    return { success: true, message: genericMessage };
   }
 
-  return { success: true, message: "A password reset email has been sent." };
+  return { success: true, message: genericMessage };
 }
 
 /**
@@ -1628,4 +1745,7 @@ export async function resetPassword(token: string, newPassword: string) {
 
   return { message: 'Password has been successfully reset.' };
 }
+
+
+
 

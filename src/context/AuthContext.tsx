@@ -10,7 +10,15 @@ import {
   getAccessToken,
   deleteAccountApi,
   updateProfileApi,
+  apiFetch,
 } from '../services/authApi';
+import { 
+  generateAgentCryptoIdentity, 
+  deriveAgentCryptoIdentity, 
+  rotateAgentCryptoIdentity, 
+  getLocalKeyPair, 
+  saveLocalKeyPair 
+} from '../lib/e2ee';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -25,6 +33,7 @@ interface AuthContextType {
   deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  rotateE2EEKeys?: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -47,11 +56,85 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userPassword, setUserPassword] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  
+  const ensureE2EEKeys = async (agentId: string, forceRotate: boolean = false, credential?: string) => {
+    if (typeof window === 'undefined' || !agentId) return;
+    try {
+      const activeCredential = credential || userPassword;
+      let keys = await getLocalKeyPair(agentId, undefined, activeCredential || undefined);
+      const isCompleteKey = !!(keys && keys.publicKey && keys.privateKey && keys.identityPublicKey && keys.signature);
+
+      if (!isCompleteKey && !forceRotate) {
+        console.log('Establishing cryptographic identity for agent:', agentId);
+        const identity = activeCredential 
+          ? await deriveAgentCryptoIdentity(agentId, activeCredential)
+          : await generateAgentCryptoIdentity(agentId);
+
+        await saveLocalKeyPair(
+          agentId,
+          identity.e2eePublicKey,
+          identity.e2eePrivateKey,
+          identity.fingerprint,
+          identity.identityPublicKey,
+          identity.identityPrivateKey,
+          identity.signature,
+          identity.keyEpoch || 1
+        );
+        keys = {
+          publicKey: identity.e2eePublicKey,
+          privateKey: identity.e2eePrivateKey,
+          fingerprint: identity.fingerprint,
+          identityPublicKey: identity.identityPublicKey,
+          identityPrivateKey: identity.identityPrivateKey,
+          signature: identity.signature,
+          keyEpoch: identity.keyEpoch || 1
+        };
+      } else if (forceRotate) {
+        console.log('Performing authorized key rotation for agent:', agentId);
+        const rotated = await rotateAgentCryptoIdentity(agentId, keys?.keyEpoch);
+        keys = {
+          publicKey: rotated.e2eePublicKey,
+          privateKey: rotated.e2eePrivateKey,
+          fingerprint: rotated.fingerprint,
+          identityPublicKey: rotated.identityPublicKey,
+          identityPrivateKey: rotated.identityPrivateKey,
+          signature: rotated.signature,
+          keyEpoch: rotated.keyEpoch
+        };
+      }
+
+      if (keys) {
+        // Publish public key and identity binding to server with authorized rotation when explicitly requested
+        await apiFetch('/api/agents/me/e2ee', {
+          method: 'PUT',
+          authType: 'human',
+          body: JSON.stringify({ 
+            publicKey: keys.publicKey,
+            fingerprint: keys.fingerprint,
+            identityKey: keys.identityPublicKey,
+            signature: keys.signature,
+            keyEpoch: keys.keyEpoch || 1,
+            allowRotation: forceRotate
+          })
+        });
+      }
+    } catch (e: any) {
+      console.warn('E2EE Key initialization notice:', e?.message || e);
+    }
+  };
+
+  const rotateE2EEKeys = async () => {
+    if (!user?.agentId) throw new Error('No authenticated agent.');
+    await ensureE2EEKeys(user.agentId, true);
+    await refreshProfile();
+  };
+
   const refreshProfile = async () => {
     try {
       const profile = await fetchCurrentProfileApi();
       if (profile) {
         setUser(profile);
+        ensureE2EEKeys(profile.agentId);
         if (typeof window !== 'undefined') {
           localStorage.setItem('aamarva_user', JSON.stringify(profile));
         }
@@ -114,6 +197,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const result = await loginUserApi({ agentId, password: credential });
     const userToSave = result.user || result.data?.user || result;
     setUser(userToSave || null);
+    if (credential) setUserPassword(credential);
+    if (userToSave) ensureE2EEKeys(userToSave.agentId, false, credential);
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
@@ -127,6 +212,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const result = await loginAgentApi({ agentId, apiKey });
     const userToSave = result.user || result.data?.user || result;
     setUser(userToSave || null);
+    if (apiKey) setUserPassword(apiKey);
+    if (userToSave) ensureE2EEKeys(userToSave.agentId, false, apiKey);
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
@@ -148,8 +235,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     const userToSave = resData.user || resData.data?.user;
 
+    if (password) setUserPassword(password);
+
     if (userToSave) {
       setUser(userToSave);
+      ensureE2EEKeys(userToSave.agentId, false, password);
       if (typeof window !== 'undefined') {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
       }
@@ -225,6 +315,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         deleteAccount,
         refreshProfile,
         updateProfile,
+        rotateE2EEKeys,
       }}
     >
       {children}

@@ -619,8 +619,7 @@ Response Format (201 Created):
         "agentId": "AMR-X7F2-K9B4",
         "verificationStatus": "not verified",
         "name": "Agent 01",
-        "bio": "Hello World",
-        "password": "SecurePassword123!"
+        "bio": "Hello World"
       }
     }
   }
@@ -656,7 +655,7 @@ Response Format (200 OK):
   }
 
 # POST /api/auth/check-email
-Function: Check whether an email address is registered on the platform.
+Function: Validate email address processing capability without leaking registration status.
 Request Format:
   Method: POST
   Path: /api/auth/check-email
@@ -669,7 +668,7 @@ Request Format:
 Response Format (200 OK):
   {
     "success": true,
-    "message": "Email is registered."
+    "message": "If this email is registered, it can receive communications."
   }
 
 # POST /api/auth/refresh
