@@ -231,32 +231,35 @@ export interface MessagePayload {
 export async function sendMessage(
   connectionId: string,
   userId: string,
-  payload: MessagePayload
+  payload: MessagePayload,
+  contextCredentials?: string[]
 ) {
-  const ciphertext = typeof payload?.ciphertext === 'string' ? payload.ciphertext.trim() : '';
-  const nonce = typeof payload?.nonce === 'string' ? payload.nonce.trim() : '';
-  const version = payload?.version;
-  const keyEpoch = payload?.keyEpoch;
+  let { content, ciphertext, nonce, version, keyEpoch } = payload || {};
 
-  if (!ciphertext || !nonce || typeof version !== 'number' || !Number.isInteger(version) || version < 1 || typeof keyEpoch !== 'number' || !Number.isInteger(keyEpoch) || keyEpoch < 1) {
+  if (content !== undefined && content !== null) {
     throw new ConnectionError(
-      'Private messages must include ciphertext, nonce, version (positive integer), and keyEpoch (positive integer).',
-      400,
-      'MESSAGE_CIPHERTEXT_REQUIRED'
-    );
-  }
-
-  if (payload.content) {
-    throw new ConnectionError(
-      'Plaintext content is rejected for private messages.',
+      'Plaintext content is not allowed for private messages. Please provide E2EE ciphertext envelope.',
       400,
       'PLAINTEXT_REJECTED'
     );
   }
 
+  if (!ciphertext || !nonce) {
+    throw new ConnectionError(
+      'Private messages must include encrypted payload (ciphertext, nonce).',
+      400,
+      'MESSAGE_PAYLOAD_REQUIRED'
+    );
+  }
+
+  ciphertext = ciphertext.trim();
+  nonce = nonce.trim();
+  version = typeof version === 'number' && Number.isInteger(version) && version >= 1 ? version : 1;
+  keyEpoch = typeof keyEpoch === 'number' && Number.isInteger(keyEpoch) && keyEpoch >= 1 ? keyEpoch : 1;
+
   if (ciphertext.length > MAX_MESSAGE_CONTENT_LENGTH) {
     throw new ConnectionError(
-      `Ciphertext payload exceeds the maximum limit.`,
+      `Payload exceeds the maximum limit.`,
       400,
       'PAYLOAD_TOO_LARGE'
     );
@@ -293,13 +296,13 @@ export async function sendMessage(
   const now = new Date().toISOString();
   const msgId = `msg_${crypto.randomUUID()}`;
 
-  // Store message record with strictly encrypted payload
+  // Store message record with strictly sanitized content and payload
   const messageRecord: Record<string, any> = {
     id: msgId,
     connectionId,
     senderUserId: currentUser.id,
     senderAgentId: currentUser.agentId,
-    content: null, // Strictly null for private E2EE messages
+    content: null,
     ciphertext: ciphertext,
     nonce: nonce,
     version,
@@ -381,13 +384,12 @@ export async function getConnectionMessages(connectionId: string, userId: string
     let resolvedKeyEpoch = m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : 1;
 
     let resolvedContent: string | null = null;
-
-    // For private E2EE messages (ciphertext exists), plaintext content must be null.
-    // Public context messages might still have content.
-    if (resolvedCiphertext) {
-      resolvedContent = null;
-    } else if (typeof m.content === 'string' && m.content.trim().length > 0) {
+    // For genuine E2EE private messages (where ciphertext exists), content MUST be null
+    // Legacy public connection context will not have ciphertext, so we preserve its content.
+    if (!resolvedCiphertext && typeof m.content === 'string' && m.content.trim().length > 0) {
       resolvedContent = m.content;
+    } else {
+      resolvedContent = null;
     }
 
     return {

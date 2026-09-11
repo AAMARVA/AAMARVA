@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { getSupabaseClient } from '../supabase.js';
 
 /**
@@ -126,7 +127,7 @@ function escapeRegExp(string: string): string {
 }
 
 /**
- * Replaces all occurrences of any preserved secret value with asterisks matching the content length or '***'.
+ * Replaces all occurrences of any preserved secret value with asterisks matching the content length or '******'.
  * Sorts secret values by length descending so longer substrings get replaced first.
  */
 export function maskSecretWords(text: string, secretValues: string[]): string {
@@ -141,14 +142,14 @@ export function maskSecretWords(text: string, secretValues: string[]): string {
   for (const sec of validSecrets) {
     const escaped = escapeRegExp(sec);
     const regex = new RegExp(escaped, 'g');
-    sanitized = sanitized.replace(regex, '***');
+    sanitized = sanitized.replace(regex, '******');
   }
 
   return sanitized;
 }
 
 /**
- * Automatically masks AAMARVA API keys, JWT access/refresh tokens, and request credentials with '***'.
+ * Automatically masks AAMARVA API keys, JWT access/refresh tokens, and request credentials with '******'.
  * Does not require manual enrollment in Secrets Preserver.
  */
 export function maskBuiltInCredentials(text: string, contextCredentials: string[] = []): string {
@@ -158,11 +159,11 @@ export function maskBuiltInCredentials(text: string, contextCredentials: string[
 
   // 1. Mask known AAMARVA API Key formats (sk_amr_..., amr_live_...)
   const apiKeyPattern = /\b(?:sk_amr_[0-9a-zA-Z_-]{20,80}|amr_live_[0-9a-zA-Z_-]{20,80})\b/g;
-  sanitized = sanitized.replace(apiKeyPattern, '***');
+  sanitized = sanitized.replace(apiKeyPattern, '******');
 
   // 2. Mask JWT access / refresh / session tokens (header.payload.signature)
   const jwtPattern = /\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g;
-  sanitized = sanitized.replace(jwtPattern, '***');
+  sanitized = sanitized.replace(jwtPattern, '******');
 
   // 3. Mask any specific request-context credentials passed (e.g. current API key, Bearer token, refresh token, request password)
   if (Array.isArray(contextCredentials) && contextCredentials.length > 0) {
@@ -174,7 +175,7 @@ export function maskBuiltInCredentials(text: string, contextCredentials: string[
     for (const cred of validContextCreds) {
       const escaped = escapeRegExp(cred);
       const regex = new RegExp(escaped, 'g');
-      sanitized = sanitized.replace(regex, '***');
+      sanitized = sanitized.replace(regex, '******');
     }
   }
 
@@ -600,8 +601,111 @@ export async function deleteUserSecret(
 }
 
 /**
- * Helper to scrub text using built-in credential protection and the user's registered secrets preserver.
- * Effective pipeline: Built-in credentials -> User preserved secrets.
+ * Automatically masks account-specific credentials for the posting account:
+ * - Account password (checked against user.passwordHash)
+ * - Agent API key (checked against user.apiKeyHash)
+ * - Active Refresh tokens (checked against refresh_tokens table)
+ * Any identified credential is immediately replaced with '******'.
+ */
+export async function maskAccountCredentials(userId: string, text: string): Promise<string> {
+  if (!userId || !text || typeof text !== 'string') return text;
+
+  let sanitized = text;
+
+  try {
+    const supabase = getSupabaseClient();
+    const { data: user } = await supabase
+      .from('users')
+      .select('id, agentId, passwordHash, apiKeyHash')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!user) return sanitized;
+
+    // 1. Check account password against user.passwordHash
+    if (user.passwordHash) {
+      // Direct whole match
+      try {
+        if (bcrypt.compareSync(sanitized.trim(), user.passwordHash)) {
+          return '******';
+        }
+      } catch {}
+
+      // Extract candidate tokens from text (passwords in AAMARVA are 8-128 characters)
+      const words = sanitized.split(/\s+/);
+      const rawCandidates: string[] = [];
+      for (const w of words) {
+        const trimmedWord = w.trim();
+        if (trimmedWord.length >= 8 && trimmedWord.length <= 128) {
+          rawCandidates.push(trimmedWord);
+        }
+        // Also test stripping wrapping quotes, parentheses, trailing punctuation
+        const stripped = trimmedWord.replace(/^["'`([{<]+|[>"'`)\],;:]+$/g, '');
+        if (stripped.length >= 8 && stripped.length <= 128 && stripped !== trimmedWord) {
+          rawCandidates.push(stripped);
+        }
+      }
+      const candidates = [...new Set(rawCandidates)];
+      candidates.sort((a, b) => b.length - a.length);
+
+      for (const cand of candidates.slice(0, 15)) {
+        try {
+          if (bcrypt.compareSync(cand, user.passwordHash)) {
+            const escaped = escapeRegExp(cand);
+            sanitized = sanitized.replace(new RegExp(escaped, 'g'), '******');
+          }
+        } catch {}
+      }
+    }
+
+    // 2. Check API key against user.apiKeyHash
+    if (user.apiKeyHash) {
+      const apiCandidates = [...new Set(sanitized.match(/[A-Za-z0-9_-]{20,80}/g) || [])];
+      for (const cand of apiCandidates.slice(0, 8)) {
+        try {
+          if (bcrypt.compareSync(cand, user.apiKeyHash)) {
+            const escaped = escapeRegExp(cand);
+            sanitized = sanitized.replace(new RegExp(escaped, 'g'), '******');
+          }
+        } catch {}
+      }
+    }
+
+    // 3. Check active refresh tokens for this user
+    try {
+      const { data: refreshTokens } = await supabase
+        .from('refresh_tokens')
+        .select('tokenHash')
+        .eq('userId', userId)
+        .eq('isRevoked', false)
+        .limit(20);
+
+      if (refreshTokens && refreshTokens.length > 0) {
+        const hashSet = new Set(refreshTokens.map(r => r.tokenHash));
+        const candidateTokens = sanitized.match(/[A-Za-z0-9._-]{20,256}/g) || [];
+        for (const tok of candidateTokens) {
+          const directHash = crypto.createHash('sha256').update(tok).digest('hex');
+          const dotSecret = tok.includes('.') ? tok.split('.').slice(1).join('.') : null;
+          const dotHash = dotSecret ? crypto.createHash('sha256').update(dotSecret).digest('hex') : null;
+          if (hashSet.has(directHash) || (dotHash && hashSet.has(dotHash))) {
+            const escaped = escapeRegExp(tok);
+            sanitized = sanitized.replace(new RegExp(escaped, 'g'), '******');
+          }
+        }
+      }
+    } catch {}
+
+  } catch (err) {
+    console.error(`[maskAccountCredentials] Error checking credentials for user ${userId}:`, err);
+  }
+
+  return sanitized;
+}
+
+/**
+ * Helper to scrub text using built-in credential protection, user preserved secrets, and account credentials.
+ * Effective pipeline: Built-in credentials -> User preserved secrets -> Account credentials (password, API key, refresh tokens).
+ * Immediately masks identified credentials with '******'.
  */
 export async function maskUserSecretsInText(
   userId: string,
@@ -610,12 +714,15 @@ export async function maskUserSecretsInText(
 ): Promise<string> {
   if (!text || typeof text !== 'string') return text;
 
-  // 1. Built-in AAMARVA credential protection (API keys, JWTs, request credentials) -> '***'
+  // 1. Built-in AAMARVA credential protection (API keys, JWTs, request credentials) -> '******'
   let sanitized = maskBuiltInCredentials(text, contextCredentials);
 
-  // 2. User-saved secrets from Secrets Preserver -> '***'
+  // 2. User-saved secrets from Secrets Preserver -> '******'
   const secrets = await getUserSecrets(userId);
   sanitized = maskSecretWords(sanitized, secrets);
+
+  // 3. Account-specific credentials protection (Password, API key, Refresh tokens) -> '******'
+  sanitized = await maskAccountCredentials(userId, sanitized);
 
   return sanitized;
 }

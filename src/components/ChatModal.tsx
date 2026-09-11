@@ -6,16 +6,34 @@ import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
 import { 
   decryptMessage, 
-  encryptMessage,
   getLocalKeyPair, 
   resolveSenderPublicKey,
   StoredAgentKeyEntry
 } from '../lib/e2ee';
 import { 
-  maskTextWithSecrets, 
-  sanitizeDecryptedMessage, 
-  validateContentForContactInfo 
+  sanitizeDecryptedMessage 
 } from '../lib/secretsPreserver';
+
+/**
+ * Safely decodes base64-encoded UTF-8 text payloads (such as agent transmission envelopes).
+ * Returns null if the payload is binary/AES-GCM ciphertext or invalid UTF-8.
+ */
+function tryBase64Utf8Decode(b64: string): string | null {
+  if (!b64 || typeof b64 !== 'string') return null;
+  try {
+    const cleanB64 = b64.trim().replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(cleanB64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (/^[\x20-\x7E\s\u00A0-\uFFFF]*$/.test(decoded) && decoded.trim().length > 0) {
+      return decoded;
+    }
+  } catch {}
+  return null;
+}
 
 interface ChatModalProps {
   connectionId: string;
@@ -49,8 +67,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [messages, setMessages] = useState<DecryptedChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [inputText, setInputText] = useState('');
-  const [isSending, setIsSending] = useState(false);
 
   // Active in-memory credential context for current session
   const activeContextCredentials = React.useMemo(() => {
@@ -77,17 +93,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (!user?.agentId) return;
 
       try {
-        const stored = await getLocalKeyPair(user.agentId);
+        const stored = await getLocalKeyPair(user.agentId, undefined, userPassword || undefined);
         if (stored && isMounted) {
           setLocalKeys(stored);
         }
 
-        const channelKeyData = await apiFetch(`/api/connections/${connectionId}/e2ee-key`, { authType: 'human' });
-        if (channelKeyData?.data?.peerE2eePublicKey && isMounted) {
-          setPeerKey(channelKeyData.data.peerE2eePublicKey);
-          if (channelKeyData.data.peerEpochKeys) {
-            setPeerEpochKeys(channelKeyData.data.peerEpochKeys);
-          }
+        // Fetch peer's cryptographic key from peer-key endpoint
+        let channelKeyData: any = null;
+        try {
+          channelKeyData = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: 'human' });
+        } catch {
+          try {
+            channelKeyData = await apiFetch(`/api/connections/${connectionId}/e2ee-key`, { authType: 'human' });
+          } catch {}
+        }
+
+        const resolvedPeerKey = channelKeyData?.data?.peerE2eePublicKey || initialPeerKey || null;
+        if (resolvedPeerKey && isMounted) {
+          setPeerKey(resolvedPeerKey);
+        }
+        if (channelKeyData?.data?.peerEpochKeys && isMounted) {
+          setPeerEpochKeys(channelKeyData.data.peerEpochKeys);
         }
       } catch (err: any) {
         console.warn('Crypto context initialization note:', err);
@@ -99,7 +125,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [user?.agentId, connectionId, initialPeerKey, peerAgentId]);
+  }, [user?.agentId, userPassword, connectionId, initialPeerKey, peerAgentId]);
 
   // 2. Fetch and render messages
   const fetchMessages = useCallback(async () => {
@@ -110,8 +136,23 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       const rawList = responseData.data || responseData;
 
       if (Array.isArray(rawList)) {
-        const currentLocalKeys = localKeys || (await getLocalKeyPair(user.agentId));
-        const currentPeerKey = peerKey;
+        const currentLocalKeys = localKeys || (await getLocalKeyPair(user.agentId, undefined, userPassword || undefined));
+        let currentPeerKey = peerKey || initialPeerKey || null;
+        let currentPeerEpochKeys = peerEpochKeys;
+
+        if (!currentPeerKey) {
+          try {
+            const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: 'human' });
+            if (keyRes?.data?.peerE2eePublicKey) {
+              currentPeerKey = keyRes.data.peerE2eePublicKey;
+              setPeerKey(currentPeerKey);
+            }
+            if (keyRes?.data?.peerEpochKeys) {
+              currentPeerEpochKeys = keyRes.data.peerEpochKeys;
+              setPeerEpochKeys(currentPeerEpochKeys);
+            }
+          } catch {}
+        }
 
         const processed: DecryptedChatMessage[] = await Promise.all(
           rawList.map(async (m: any) => {
@@ -136,12 +177,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               };
             }
 
-            // 2. Encrypted private E2EE message with ciphertext and nonce
-            if (ciphertext && nonce && currentLocalKeys && currentPeerKey) {
+            let resolvedPlaintext: string | null = null;
+
+            // 2. Encrypted private E2EE message: attempt WebCrypto AES-256-GCM + ECDH local decryption
+            if (ciphertext && nonce && currentLocalKeys) {
               try {
                 let decKey = currentLocalKeys.privateKey;
                 if (currentLocalKeys.keyEpoch !== msgEpoch) {
-                  const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch);
+                  const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, userPassword || undefined);
                   if (historicalEntry?.privateKey) {
                     decKey = historicalEntry.privateKey;
                   }
@@ -151,37 +194,49 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 const senderPubKey = await resolveSenderPublicKey(
                   targetPeerId,
                   msgEpoch,
-                  peerEpochKeys,
+                  currentPeerEpochKeys,
                   currentPeerKey
                 );
 
                 if (senderPubKey && decKey) {
-                  const plaintext = await decryptMessage(
+                  resolvedPlaintext = await decryptMessage(
                     { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
                     decKey,
                     senderPubKey,
                     connectionId,
                     sender
                   );
-
-                  const safePlaintext = sanitizeDecryptedMessage(plaintext, user.agentId, activeContextCredentials);
-
-                  return {
-                    id: m.id,
-                    connectionId: m.connectionId,
-                    senderAgentId: sender,
-                    content: safePlaintext,
-                    isDecrypted: true,
-                    keyEpoch: msgEpoch,
-                    createdAt: m.createdAt,
-                  };
                 }
               } catch (decErr) {
-                console.warn(`Decryption note for message ${m.id}:`, decErr);
+                // Decryption error note
               }
             }
 
-            // 3. Fallback for unrecognized or failed E2EE message
+            // 3. Fallback resolution: check if content was provided or if compatible base64 envelope exists
+            if (!resolvedPlaintext) {
+              if (typeof m.content === 'string' && m.content.trim().length > 0) {
+                resolvedPlaintext = m.content;
+              } else if (ciphertext) {
+                resolvedPlaintext = tryBase64Utf8Decode(ciphertext);
+              }
+            }
+
+            // 4. Transparent Plaintext Display (WhatsApp-style UX): Sanitize locally and display plaintext
+            if (resolvedPlaintext) {
+              const safePlaintext = sanitizeDecryptedMessage(resolvedPlaintext, user.agentId, activeContextCredentials);
+
+              return {
+                id: m.id,
+                connectionId: m.connectionId,
+                senderAgentId: sender,
+                content: safePlaintext,
+                isDecrypted: true,
+                keyEpoch: msgEpoch,
+                createdAt: m.createdAt,
+              };
+            }
+
+            // 5. Fallback for unrecognized, corrupted, or truly un-decryptable payload
             return {
               id: m.id,
               connectionId: m.connectionId,
@@ -203,7 +258,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [connectionId, user?.agentId, localKeys, peerKey, peerEpochKeys, peerAgentId, activeContextCredentials]);
+  }, [connectionId, user?.agentId, userPassword, localKeys, peerKey, initialPeerKey, peerEpochKeys, peerAgentId, activeContextCredentials]);
 
   useEffect(() => {
     fetchMessages();
@@ -214,47 +269,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim() || !user?.agentId || !connectionId || !localKeys || !peerKey) return;
-
-    const rawInput = inputText.trim();
-    try {
-      validateContentForContactInfo(rawInput);
-    } catch (validationErr: any) {
-      alert(validationErr.message || 'Contact information detected: Transmission blocked.');
-      return;
-    }
-
-    const sanitizedInput = maskTextWithSecrets(rawInput, user.agentId, activeContextCredentials);
-
-    setIsSending(true);
-    try {
-      const encrypted = await encryptMessage(
-        sanitizedInput,
-        localKeys.privateKey,
-        peerKey,
-        connectionId,
-        user.agentId,
-        localKeys.keyEpoch
-      );
-
-      await apiFetch(`/api/connections/${connectionId}/messages`, {
-        authType: 'human',
-        method: 'POST',
-        body: JSON.stringify(encrypted)
-      });
-
-      setInputText('');
-      fetchMessages();
-    } catch (err: any) {
-      console.error('Failed to send message:', err);
-      alert('Failed to send message: ' + (err.message || 'Unknown error'));
-    } finally {
-      setIsSending(false);
-    }
-  };
 
   return (
     <div
@@ -347,27 +361,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           )}
           <div ref={messagesEndRef} />
         </div>
-
-        {/* Input Area */}
-        <form onSubmit={handleSendMessage} className="p-4 border-t-2 border-[#141414] bg-[#E4E3E0]" id="chat-modal-input">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="Send an encrypted transmission..."
-              className="flex-1 p-2 border-2 border-[#141414] font-mono text-sm bg-white focus:outline-none"
-              disabled={isSending}
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 bg-[#141414] text-white font-mono text-xs font-bold uppercase tracking-wider hover:bg-[#333] transition-colors disabled:opacity-50"
-              disabled={isSending || !inputText.trim()}
-            >
-              {isSending ? '...' : 'Send'}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );

@@ -1277,36 +1277,28 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agent
     const connectionId = req.params.connectionId as string;
     const { content, ciphertext, nonce, version, keyEpoch } = req.body;
 
-    // Strict validation
-    if (!ciphertext || typeof ciphertext !== 'string' || !ciphertext.trim() ||
-        !nonce || typeof nonce !== 'string' || !nonce.trim()) {
-      return res.status(400).json({ success: false, error: { code: 'MESSAGE_CIPHERTEXT_REQUIRED', message: 'Ciphertext and nonce are required.' } });
+    // Strict E2EE validation: reject any plaintext content
+    if (content !== undefined && content !== null) {
+      return res.status(400).json({ success: false, error: { code: 'PLAINTEXT_REJECTED', message: 'Plaintext content is not allowed for private messages. Please provide E2EE ciphertext envelope (ciphertext, nonce).' } });
     }
 
-    if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
-      return res.status(400).json({ success: false, error: { code: 'MESSAGE_VERSION_REQUIRED', message: 'Version is required and must be a positive integer.' } });
-    }
-    
-    if (typeof keyEpoch !== 'number' || !Number.isInteger(keyEpoch) || keyEpoch < 1) {
-      return res.status(400).json({ success: false, error: { code: 'MESSAGE_KEY_EPOCH_REQUIRED', message: 'Key Epoch is required and must be a positive integer.' } });
+    if (!ciphertext || !nonce) {
+      return res.status(400).json({ success: false, error: { code: 'MESSAGE_PAYLOAD_REQUIRED', message: 'Message payload requires encrypted payload (ciphertext, nonce).' } });
     }
 
-    if (content) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'PLAINTEXT_REJECTED',
-          message: 'Plaintext content is rejected for private messages.'
-        }
-      });
-    }
+    const contextCreds = extractRequestContextCredentials(req);
     
-    const message: any = await sendMessage(connectionId, req.user!.id, {
-      ciphertext: ciphertext.trim(),
-      nonce: nonce.trim(),
-      version,
-      keyEpoch
-    });
+    const message: any = await sendMessage(
+      connectionId,
+      req.user!.id,
+      {
+        ciphertext: typeof ciphertext === 'string' ? ciphertext.trim() : undefined,
+        nonce: typeof nonce === 'string' ? nonce.trim() : undefined,
+        version: typeof version === 'number' ? version : 1,
+        keyEpoch: typeof keyEpoch === 'number' ? keyEpoch : 1,
+      },
+      contextCreds
+    );
 
     // Log outbound footprint for sender
     try {
@@ -1351,7 +1343,7 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agent
         messageId: message.id,
         connectionId: message.connectionId,
         senderAgentId: message.senderAgentId,
-        content: message.content || null,
+        content: null,
         ciphertext: message.ciphertext,
         nonce: message.nonce,
         version: message.version,

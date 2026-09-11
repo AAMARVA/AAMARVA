@@ -35,7 +35,7 @@ function escapeRegExp(string: string): string {
 }
 
 /**
- * Replaces all occurrences of any secret value with asterisks matching the content length or '***'.
+ * Replaces all occurrences of any secret value with asterisks matching the content length or '******'.
  */
 export function maskSecretWords(text: string, secretValues: string[]): string {
   if (!text || typeof text !== 'string') return text;
@@ -49,14 +49,14 @@ export function maskSecretWords(text: string, secretValues: string[]): string {
   for (const sec of validSecrets) {
     const escaped = escapeRegExp(sec);
     const regex = new RegExp(escaped, 'g');
-    sanitized = sanitized.replace(regex, '***');
+    sanitized = sanitized.replace(regex, '******');
   }
 
   return sanitized;
 }
 
 /**
- * Automatically masks AAMARVA API keys, JWT tokens, and request credentials with '***'.
+ * Automatically masks AAMARVA API keys, JWT tokens, and request credentials with '******'.
  */
 export function maskBuiltInCredentials(text: string, extraCredentials: string[] = []): string {
   if (!text || typeof text !== 'string') return text;
@@ -65,11 +65,11 @@ export function maskBuiltInCredentials(text: string, extraCredentials: string[] 
 
   // 1. Mask known AAMARVA API Key formats (sk_amr_..., amr_live_...)
   const apiKeyPattern = /\b(?:sk_amr_[0-9a-zA-Z_-]{20,80}|amr_live_[0-9a-zA-Z_-]{20,80})\b/g;
-  sanitized = sanitized.replace(apiKeyPattern, '***');
+  sanitized = sanitized.replace(apiKeyPattern, '******');
 
   // 2. Mask JWT tokens (header.payload.signature)
   const jwtPattern = /\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g;
-  sanitized = sanitized.replace(jwtPattern, '***');
+  sanitized = sanitized.replace(jwtPattern, '******');
 
   // 3. Mask any additional credentials
   if (Array.isArray(extraCredentials) && extraCredentials.length > 0) {
@@ -81,7 +81,7 @@ export function maskBuiltInCredentials(text: string, extraCredentials: string[] 
     for (const cred of validCreds) {
       const escaped = escapeRegExp(cred);
       const regex = new RegExp(escaped, 'g');
-      sanitized = sanitized.replace(regex, '***');
+      sanitized = sanitized.replace(regex, '******');
     }
   }
 
@@ -203,10 +203,13 @@ export function validateContentForContactInfo(text: string): void {
 export function purgeLegacyPlaintextStorage(): void {
   if (typeof window === 'undefined') return;
   try {
-    const keysToCheck: string[] = [STORAGE_KEY_DEFAULT];
+    // Remove stale un-namespaced fallback key so orphaned/demo secrets do not bleed across accounts
+    localStorage.removeItem(STORAGE_KEY_DEFAULT);
+
+    const keysToCheck: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('aamarva_secrets_preserver')) {
+      if (key && key.startsWith('aamarva_secrets_preserver_')) {
         keysToCheck.push(key);
       }
     }
@@ -237,18 +240,19 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Retrieves secrets metadata stored locally for the given agentId or general fallback.
+ * Retrieves secrets metadata stored locally for the given agentId.
  * Guaranteed to return masked representations without exposing raw secrets from disk.
+ * Accounts that have not added any secrets will return an empty array without inheriting global defaults.
  */
 export function getStoredSecrets(agentId?: string): PreservedSecretEntry[] {
   if (typeof window === 'undefined') return [];
   try {
     let items: any[] = [];
-    if (agentId) {
+    if (agentId && agentId.trim()) {
       const savedAgent = localStorage.getItem(getStorageKey(agentId));
       if (savedAgent) items = JSON.parse(savedAgent);
-    }
-    if (items.length === 0) {
+      // Strictly scoped to the authenticated agent: do NOT fallback to global storage
+    } else {
       const saved = localStorage.getItem(STORAGE_KEY_DEFAULT);
       if (saved) items = JSON.parse(saved);
     }
@@ -282,9 +286,10 @@ export function saveStoredSecrets(secrets: PreservedSecretEntry[], agentId?: str
       createdAt: s.createdAt,
     }));
     const dataStr = JSON.stringify(metadataOnly);
-    localStorage.setItem(STORAGE_KEY_DEFAULT, dataStr);
-    if (agentId) {
+    if (agentId && agentId.trim()) {
       localStorage.setItem(getStorageKey(agentId), dataStr);
+    } else {
+      localStorage.setItem(STORAGE_KEY_DEFAULT, dataStr);
     }
   } catch (e) {
     console.warn('Error saving stored secrets metadata:', e);

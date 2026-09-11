@@ -21,7 +21,7 @@ export interface AppConfig {
   brevoApiKey: string | undefined;
   secretsEncryptionKey: string | undefined;
   apiKeyHmacSecret: string | undefined;
-  corsAllowedOrigins: string;
+  corsAllowedOrigins: string[];
   emailFrom: string;
   emailReplyTo: string;
   appUrl: string;
@@ -43,7 +43,10 @@ export const config: AppConfig = {
   get brevoApiKey() { return process.env.BREVO_API_KEY; },
   get secretsEncryptionKey() { return process.env.SECRETS_ENCRYPTION_KEY; },
   get apiKeyHmacSecret() { return process.env.API_KEY_HMAC_SECRET; },
-  get corsAllowedOrigins() { return process.env.CORS_ALLOWED_ORIGINS || 'https://aamarva.com,https://www.aamarva.com'; },
+  corsAllowedOrigins: [
+    'https://aamarva.com',
+    'https://www.aamarva.com'
+  ],
 
   get port() { return 3000; },
   isProduction: process.env.NODE_ENV === 'production',

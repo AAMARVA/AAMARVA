@@ -111,15 +111,15 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   useEffect(() => {
     if (user?.agentId) {
       const local = getStoredSecrets(user.agentId);
-      if (local.length > 0) {
-        setSecrets(local);
-      }
+      setSecrets(local);
       syncSecretsWithServer().then(serverSecrets => {
-        if (serverSecrets && serverSecrets.length > 0) {
+        if (Array.isArray(serverSecrets)) {
           setSecrets(serverSecrets);
           saveStoredSecrets(serverSecrets, user.agentId);
         }
       });
+    } else {
+      setSecrets([]);
     }
   }, [user?.agentId]);
 
@@ -761,7 +761,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId })}
+                                onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
                                 className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
                               >
                                 <MessageSquare className="w-3.5 h-3.5" />
@@ -965,23 +965,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 ) : (
                   <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
                     {secrets.map((sec) => {
-                      const isRevealed = revealedSecrets[sec.id];
                       return (
                         <div key={sec.id} className="flex items-center justify-between bg-white px-2 py-1.5 border border-[#141414]/20 text-[10px]">
                           <div className="flex flex-col truncate">
                             <span className="font-bold text-[9px] text-[#141414]/70">{sec.keyName}</span>
                             <span className="font-mono truncate max-w-[100px]">
-                              {isRevealed ? sec.secretValue : '*'.repeat(sec.secretValue?.length || 6)}
+                              ******
                             </span>
                           </div>
                           <div className="flex items-center gap-1">
-                            <button type="button" onClick={() => toggleSecretReveal(sec.id)} className="text-[#141414]/60 hover:text-black p-0.5">
-                              {isRevealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                            </button>
-                            <button type="button" onClick={() => navigator.clipboard.writeText(sec.secretValue)} className="text-[#141414]/60 hover:text-black p-0.5" title="Copy">
-                              <Copy className="w-3 h-3" />
-                            </button>
-                            <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-red-600 hover:text-red-800 p-0.5">
+                            <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-red-600 hover:text-red-800 p-0.5" title="Delete">
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
@@ -1035,23 +1028,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     <label className="block text-[10px] font-black uppercase text-[#141414]/60 font-mono">Existing Secrets ({secrets.length})</label>
                     <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
                       {secrets.map((sec) => {
-                        const isRevealed = revealedSecrets[sec.id];
                         return (
                           <div key={sec.id} className="flex items-center justify-between bg-[#E4E3E0]/40 px-2.5 py-1.5 border border-[#141414]/20 text-xs">
                             <div className="flex flex-col truncate">
                               <span className="font-bold text-[9px] text-[#141414]/60">{sec.keyName}</span>
                               <span className="font-mono truncate max-w-[220px]">
-                                {isRevealed ? sec.secretValue : '*'.repeat(sec.secretValue?.length || 6)}
+                                ******
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <button type="button" onClick={() => toggleSecretReveal(sec.id)} className="text-[#141414]/60 hover:text-black p-0.5">
-                                {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                              </button>
-                              <button type="button" onClick={() => navigator.clipboard.writeText(sec.secretValue)} className="text-[#141414]/60 hover:text-black p-0.5" title="Copy">
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                              <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-red-600 hover:text-red-800 p-0.5">
+                              <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-red-600 hover:text-red-800 p-0.5" title="Delete">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>

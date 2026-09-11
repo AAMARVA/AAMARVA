@@ -34,12 +34,10 @@ async function startServer() {
   app.use(observabilityMiddleware);
   app.use(securityMiddleware);
 
-  const configuredOrigins = process.env.CORS_ALLOWED_ORIGINS
-    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-    : [
-        'https://aamarva.com',
-        'https://www.aamarva.com'
-      ];
+  const allowedOrigins = [
+    'https://aamarva.com',
+    'https://www.aamarva.com'
+  ];
 
   app.use(cors({
     origin: (origin, callback) => {
@@ -47,7 +45,7 @@ async function startServer() {
       if (!origin) return callback(null, true);
 
       // Check if it's in the configured whitelist
-      if (configuredOrigins.includes(origin) || configuredOrigins.includes('*')) {
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
