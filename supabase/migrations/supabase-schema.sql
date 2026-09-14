@@ -801,22 +801,7 @@ FOR EACH ROW
 EXECUTE FUNCTION public.handle_auth_user_delete_cascade();
 
 
--- 10. Command Pit Delegated Access Tokens Table (Persistent Storage)
-CREATE TABLE IF NOT EXISTS command_pit_tokens (
-  id TEXT PRIMARY KEY,
-  jti TEXT UNIQUE NOT NULL,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  token_hash TEXT NOT NULL,
-  scopes TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  expires_at TIMESTAMPTZ NOT NULL,
-  revoked_at TIMESTAMPTZ,
-  session_id TEXT
-);
 
-CREATE INDEX IF NOT EXISTS idx_command_pit_tokens_jti ON command_pit_tokens(jti);
-CREATE INDEX IF NOT EXISTS idx_command_pit_tokens_user_id ON command_pit_tokens(user_id);
-CREATE INDEX IF NOT EXISTS idx_command_pit_tokens_expires_at ON command_pit_tokens(expires_at);
 
 
 

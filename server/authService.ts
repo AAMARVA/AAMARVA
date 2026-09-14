@@ -1148,29 +1148,6 @@ export async function deleteUserAccount(userId: string): Promise<void> {
 
 export async function logoutHumanSession(rawSessionId?: string) {
   if (rawSessionId) {
-    try {
-      const decoded = jwt.verify(rawSessionId.trim(), getJwtSecret()) as any;
-      if (decoded && decoded.sessionId) {
-        const sessionHash = crypto.createHash('sha256').update(decoded.sessionId).digest('hex');
-        const supabase = getSupabaseClient();
-        
-        const { data: sessionRecord } = await supabase
-          .from('human_sessions')
-          .select('id')
-          .eq('sessionHash', sessionHash)
-          .maybeSingle();
-
-        if (sessionRecord) {
-          await supabase
-            .from('command_pit_tokens')
-            .update({ revoked_at: new Date().toISOString() })
-            .eq('session_id', sessionRecord.id);
-        }
-      } else if (decoded && decoded.userId) {
-      }
-    } catch (err) {
-      console.warn('[Logout] Error revoking associated Command Pit tokens on human session logout:', err);
-    }
     await invalidateHumanSession(rawSessionId);
   }
 }
