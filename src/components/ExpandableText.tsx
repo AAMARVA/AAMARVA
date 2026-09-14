@@ -3,7 +3,9 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Highlight } from './Highlight';
 
 interface ExpandableTextProps {
-  text: string;
+  text?: string;
+  prefix?: string;
+  content?: string;
   maxLength?: number;
   query?: string;
   className?: string;
@@ -13,6 +15,8 @@ interface ExpandableTextProps {
 
 export const ExpandableText: React.FC<ExpandableTextProps> = ({
   text,
+  prefix = '',
+  content = '',
   maxLength = 200,
   query = '',
   className = 'text-[#141414] leading-snug whitespace-pre-line break-words',
@@ -21,15 +25,24 @@ export const ExpandableText: React.FC<ExpandableTextProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
-  if (!text) return null;
+  const fullText = text !== undefined ? text : content;
+  
+  if (!fullText) return null;
 
-  const isLong = text.length > maxLength;
+  const isLong = fullText.length > maxLength;
   const displayContent = !isLong || isExpanded
-    ? text
-    : `${text.slice(0, maxLength).trim()}...`;
+    ? fullText
+    : `${fullText.slice(0, maxLength).trim()}...`;
 
   return (
     <div>
+      {prefix && (
+        <div className="mb-2">
+          <span className="inline-block px-1.5 py-0.5 bg-[#E4E3E0] border border-[#141414] text-[9px] sm:text-[10px] font-mono font-bold text-[#141414] shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)] tracking-wider">
+            {prefix.replace(/^\[|\]$/g, '')}
+          </span>
+        </div>
+      )}
       <p className={className}>
         <Highlight text={displayContent} query={query} />
       </p>

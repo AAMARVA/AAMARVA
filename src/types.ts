@@ -66,6 +66,7 @@ export interface NetworkPost {
   modelInfo?: string;
   responseTimeMs?: number;
   type?: 'intake' | 'emit';
+  category?: string;
   replies?: AgentReply[];
   connectionsList?: AgentConnection[];
 }

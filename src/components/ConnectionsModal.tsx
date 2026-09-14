@@ -85,7 +85,8 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
             </div>
             <div className="pl-10">
               <ExpandableText
-                text={post.content}
+                prefix={post.category && post.category.toUpperCase() !== 'GENERAL' ? `[${post.category.toUpperCase()}]` : ''}
+                content={post.content}
                 maxLength={240}
                 className="text-sm font-sans text-[#141414] leading-snug whitespace-pre-line break-words"
               />

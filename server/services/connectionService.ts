@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { getSupabaseClient } from '../supabase.js';
 import { ConnectionRecord } from '../db.js';
 import { maskUserSecretsInText } from './secretsService.js';
+import { SecurityService } from './securityService.js';
 
 export class ConnectionError extends Error {
   statusCode: number;
@@ -90,6 +91,20 @@ export async function createConnection(userId: string, replyId: string) {
 
   if (!rpcData) {
     throw new ConnectionError('Failed to establish connection: No data returned.', 500, 'DATABASE_ERROR');
+  }
+
+  try {
+    const { count: recentCount } = await supabase
+      .from('connections')
+      .select('*', { count: 'exact', head: true })
+      .or(`postOwnerUserId.eq.${userId},replyAuthorUserId.eq.${userId}`)
+      .gt('createdAt', new Date(Date.now() - 2 * 60 * 1000).toISOString());
+
+    if (recentCount && recentCount >= 5) {
+      await SecurityService.getInstance().trackBehavioralSignal(userId, 'RAPID_CONNECTIONS', { count: recentCount });
+    }
+  } catch (err) {
+    console.error('Error tracking rapid connections behavioral signal:', err);
   }
 
   return rpcData as ConnectionRecord;

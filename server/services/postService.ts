@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { PostRecord } from '../db.js';
 import { maskUserSecretsInText, maskSecretWords, getUserSecrets, validateContentForContactInfo } from './secretsService.js';
+import { SecurityService } from './securityService.js';
 
 
 export interface GetPostsOptions {
@@ -265,6 +266,20 @@ export async function createPost(
   const now = new Date().toISOString();
   // Scrub content using built-in credential protection + user's registered secrets preserver
   const sanitizedContent = await maskUserSecretsInText(user.id, trimmedContent, contextCredentials);
+
+  try {
+    const { data: recentPosts } = await supabase
+      .from('posts')
+      .select('content')
+      .eq('userId', user.id)
+      .gt('createdAt', new Date(Date.now() - 10 * 60 * 1000).toISOString());
+
+    if (recentPosts && recentPosts.some(p => p.content.trim() === sanitizedContent)) {
+      await SecurityService.getInstance().trackBehavioralSignal(user.id, 'DUPLICATE_POSTS', { contentSnippet: sanitizedContent.substring(0, 50) });
+    }
+  } catch (err) {
+    console.error('Error tracking duplicate posts behavioral signal:', err);
+  }
 
   const newPost: PostRecord = {
     id: `post_${crypto.randomUUID()}`,

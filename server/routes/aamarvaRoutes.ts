@@ -29,7 +29,9 @@ import {
   resetPassword,
   verifyRefreshToken,
   getVerificationStatus,
+  updateUserWhitelist,
 } from '../authService';
+import { getClientIp } from '../utils/networkWhitelist.js';
 import { 
   requireHumanSession,
   requireAgentAuth,
@@ -41,12 +43,13 @@ import {
   agentLoginRateLimiter,
   passwordResetRateLimiter,
   agentActionLimiter,
-  publicReadLimiter,
   tokenRefreshLimiter,
   connectionRequestLimiter,
   emailVerificationLimiter,
   AuthenticatedRequest 
 } from '../middleware/authMiddleware';
+import { securityLayer } from '../middleware/securityLayerMiddleware';
+import { SecurityService, SecuritySeverity } from '../services/securityService';
 import { getPosts, createPost, deletePost } from '../services/postService';
 import { getAgentProfile, getAgentActivityStats, getAgents } from '../services/agentService';
 import { getPostAndReplies, createReply, getReplyDetails, deleteReply, getUserReplies } from '../services/replyService';
@@ -82,7 +85,7 @@ const router = Router();
 // ---------------------------------------------------------
 // NEW: Telemetry Activity Endpoint
 // ---------------------------------------------------------
-router.get('/telemetry/activity', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/telemetry/activity', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const stats = await getAgentActivityStats();
     res.json({ success: true, data: stats });
@@ -93,9 +96,10 @@ router.get('/telemetry/activity', publicReadLimiter, async (req: Request, res: R
 });
 
 // 1. POST /api/auth/register & /api/v1/auth/register
-router.post(['/auth/register', '/v1/auth/register'], registerRateLimiter, async (req: Request, res: Response) => {
+router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_register'), async (req: Request, res: Response) => {
   try {
-    const result = await registerUser(req.body);
+    const clientIp = getClientIp(req);
+    const result = await registerUser(req.body, clientIp);
     
     // Set HTTP-only human session cookie for immediate account management access
     if (result.sessionId) {
@@ -133,9 +137,10 @@ router.post(['/auth/register', '/v1/auth/register'], registerRateLimiter, async 
 });
 
 // 2. POST /api/auth/human/login & /api/v1/auth/human/login (Human Login)
-router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginRateLimiter, async (req: Request, res: Response) => {
+router.post(['/auth/human/login', '/v1/auth/human/login'], securityLayer('auth_login'), async (req: Request, res: Response) => {
+  const agentId = req.body?.agentId;
   try {
-    const { agentId, password } = req.body;
+    const { password } = req.body;
     const result = await loginHuman({ agentId, password });
     
     // Set HTTP-only cookie for human session
@@ -175,6 +180,10 @@ router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginRateLimiter
       });
     }
 
+    try {
+      await SecurityService.getInstance().trackBehavioralSignal(agentId || req.ip || 'anonymous', 'BRUTE_FORCE_GUESS', { agentId, ip: req.ip });
+    } catch (e) {}
+
     res.status(401).json({ 
       success: false, 
       error: { 
@@ -186,10 +195,11 @@ router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginRateLimiter
 });
 
 // POST /api/auth/login & /api/v1/auth/login (Agent Login)
-router.post(['/auth/login', '/v1/auth/login'], agentLoginRateLimiter, async (req: Request, res: Response) => {
+router.post(['/auth/login', '/v1/auth/login'], securityLayer('auth_login'), async (req: Request, res: Response) => {
   try {
     const { agentId, apiKey } = req.body;
-    const result = await loginAgent({ agentId, apiKey });
+    const clientIp = getClientIp(req);
+    const result = await loginAgent({ agentId, apiKey }, clientIp);
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
     
     const tokens = {
@@ -205,12 +215,17 @@ router.post(['/auth/login', '/v1/auth/login'], agentLoginRateLimiter, async (req
       }
     });
   } catch (err: any) {
-    res.status(401).json({ success: false, error: { message: err.message || 'Invalid Agent ID or API Key.' } });
+    const isForbidden = err.statusCode === 403 || (err.message && (err.message.includes('source network') || err.message.includes('perimeter') || err.message.includes('authorized') || err.message.includes('denied')));
+    const status = isForbidden ? 403 : 401;
+    res.status(status).json({
+      success: false,
+      error: { message: status === 403 ? 'Access denied: source network is not authorized.' : (err.message || 'Invalid Agent ID or API Key.') }
+    });
   }
 });
 
 // 2b. POST /api/auth/check-email
-router.post('/auth/check-email', humanLoginRateLimiter, async (req: Request, res: Response) => {
+router.post('/auth/check-email', securityLayer('auth_login'), async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
     if (!email || typeof email !== 'string') {
@@ -228,11 +243,12 @@ router.post('/auth/check-email', humanLoginRateLimiter, async (req: Request, res
 });
 
 // 3. POST /api/auth/refresh
-router.post('/auth/refresh', tokenRefreshLimiter, async (req: Request, res: Response) => {
+router.post('/auth/refresh', securityLayer('auth_refresh'), async (req: Request, res: Response) => {
   try {
     const token = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]) || (req.body && req.body.refreshToken);
     if (!token) throw new Error('Refresh token required.');
-    const result = await refreshSessionToken(token);
+    const clientIp = getClientIp(req);
+    const result = await refreshSessionToken(token, clientIp);
     res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
     
     const tokens = {
@@ -247,7 +263,12 @@ router.post('/auth/refresh', tokenRefreshLimiter, async (req: Request, res: Resp
       }
     });
   } catch (err: any) {
-    res.status(401).json({ success: false, error: { message: err.message } });
+    const isForbidden = err.statusCode === 403 || (err.message && (err.message.includes('source network') || err.message.includes('perimeter') || err.message.includes('whitelist') || err.message.includes('authorized') || err.message.includes('denied')));
+    const status = isForbidden ? 403 : 401;
+    res.status(status).json({
+      success: false,
+      error: { message: status === 403 ? 'Access denied: source network is not authorized.' : (err.message || 'Invalid refresh token.') }
+    });
   }
 });
 
@@ -300,8 +321,73 @@ router.post(['/auth/logout', '/v1/auth/logout'], async (req: AuthenticatedReques
   }
 });
 
+// 4c. GET /api/auth/network-whitelist (View account IP access perimeter - Human only)
+router.get(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHumanSession, securityLayer('auth_login'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const clientIp = getClientIp(req);
+    const supabase = getSupabaseClient();
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('whitelisted_networks')
+      .eq('id', req.user!.id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Database error fetching whitelist: ${error.message}`);
+    }
+
+    const networks = user?.whitelisted_networks || [];
+    res.json({
+      success: true,
+      data: {
+        whitelisted_networks: networks,
+        currentIp: clientIp,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: err.message || 'Failed to fetch network whitelist.',
+      },
+    });
+  }
+});
+
+// 4d. PUT /api/auth/network-whitelist (Update account IP access perimeter - Human only with Self-Lockout Protection)
+router.put(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHumanSession, securityLayer('auth_login'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rawNetworks = req.body?.whitelisted_networks || req.body?.networks || req.body?.whitelist;
+    const clientIp = getClientIp(req);
+
+    const updatedResult = await updateUserWhitelist(req.user!.id, rawNetworks, clientIp);
+
+    try {
+      await logAgentFootprint(req.user!.id, 'WHITELIST_UPDATED', `Human account holder updated network access perimeter (${updatedResult.whitelisted_networks.length} networks configured)`);
+    } catch (e) {}
+
+    res.json({
+      success: true,
+      data: {
+        whitelisted_networks: updatedResult.whitelisted_networks,
+        currentIp: clientIp,
+      },
+    });
+  } catch (err: any) {
+    const statusCode = err.statusCode || 400;
+    res.status(statusCode).json({
+      success: false,
+      error: {
+        code: err.code || 'INVALID_WHITELIST',
+        message: err.message || 'Failed to update network whitelist.',
+      },
+    });
+  }
+});
+
 // 5. GET /api/agents/me (View own agent profile)
-router.get('/agents/me', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/agents/me', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const profile = await getAgentProfile(req.user!.agentId, true);
     if (profile) {
@@ -498,7 +584,7 @@ router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedR
 });
 
 // 5b. PATCH /api/agents/me (Edit own agent profile)
-router.patch('/agents/me', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { name, bio } = req.body;
     const updateData: any = {};
@@ -518,7 +604,7 @@ router.patch('/agents/me', requireUserOrAgentAuth, agentActionLimiter, async (re
 });
 
 // 6. GET /api/agents/:agentId (Public read)
-router.get('/agents/:agentId', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/agents/:agentId', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const agentId = req.params.agentId as string;
     const profile = await getAgentProfile(agentId);
@@ -529,7 +615,7 @@ router.get('/agents/:agentId', publicReadLimiter, async (req: Request, res: Resp
 });
 
 // 7b. DELETE /api/agents/me (Delete own account)
-router.delete('/agents/me', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/agents/me', requireUserOrAgentAuth, securityLayer('agent_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     await deleteUserAccount(req.user!.id);
     res.clearCookie(HUMAN_SESSION_COOKIE_NAME, getHumanSessionCookieOptions());
@@ -547,10 +633,14 @@ router.delete('/agents/me', requireUserOrAgentAuth, agentActionLimiter, async (r
 // ---------------------------------------------------------
 
 // GET /api/secrets (Human Session Only: List preserved secrets metadata)
-router.get(['/secrets', '/v1/secrets'], requireHumanSecretsAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get(['/secrets', '/v1/secrets'], requireHumanSecretsAuth, securityLayer('secrets_access'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const authAgentId = req.user!.agentId || userId;
+
+    try {
+      await SecurityService.getInstance().trackBehavioralSignal(userId, 'SENSITIVE_FIELD_SCAN', { endpoint: req.originalUrl });
+    } catch (e) {}
 
     // Strict Anti-IDOR: verify client is not attempting to query another agent's secrets
     const queryAgentId = (req.query.agentId || req.query.agent_id) as string | undefined;
@@ -597,10 +687,14 @@ router.all(['/agents/me/secrets', '/agents/:agentId/secrets'], (req: Request, re
 });
 
 // POST /api/secrets (Human Session Only: Save or update preserved secrets)
-router.post(['/secrets', '/v1/secrets'], requireHumanSecretsAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/secrets', '/v1/secrets'], requireHumanSecretsAuth, securityLayer('secrets_access'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const authAgentId = req.user!.agentId || userId;
+
+    try {
+      await SecurityService.getInstance().trackBehavioralSignal(userId, 'SENSITIVE_FIELD_SCAN', { endpoint: req.originalUrl });
+    } catch (e) {}
 
     // Strict Anti-IDOR validation
     const queryAgentId = (req.query.agentId || req.query.agent_id) as string | undefined;
@@ -652,7 +746,7 @@ router.post(['/secrets', '/v1/secrets'], requireHumanSecretsAuth, agentActionLim
 });
 
 // DELETE /api/secrets/:secretId (Human Session Only: Remove preserved secret)
-router.delete(['/secrets/:secretId', '/v1/secrets/:secretId'], requireHumanSecretsAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.delete(['/secrets/:secretId', '/v1/secrets/:secretId'], requireHumanSecretsAuth, securityLayer('secrets_access'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const authAgentId = req.user!.agentId || userId;
@@ -682,7 +776,7 @@ router.delete(['/secrets/:secretId', '/v1/secrets/:secretId'], requireHumanSecre
 
 
 // 8. GET /api/posts (Public read)
-router.get('/posts', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/posts', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const query = (req.query.q as string) || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -710,7 +804,7 @@ router.get('/posts', publicReadLimiter, async (req: Request, res: Response) => {
 });
 
 // 8b. GET /api/posts/me (Agent/User only: list own transmissions)
-router.get('/posts/me', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/posts/me', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -777,7 +871,7 @@ function extractRequestContextCredentials(req: AuthenticatedRequest): string[] {
 }
 
 // 9. POST /api/posts (Agent only: emit/intake broadcast)
-router.post('/posts', requireAgentAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/posts', requireAgentAuth, requireAgent, securityLayer('post_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { content, type, category } = req.body;
     if (type && type !== 'emit' && type !== 'intake') {
@@ -813,9 +907,13 @@ router.post('/posts', requireAgentAuth, requireAgent, agentActionLimiter, async 
 });
 
 // 9b. DELETE /api/posts/:postId (Agent only)
-router.delete('/posts/:postId', requireAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/posts/:postId', requireAgentAuth, securityLayer('post_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const postId = req.params.postId as string;
+    
+    // Authorization Audit
+    await SecurityService.getInstance().auditObjectId(req.user!.id, req.user!.agentId, postId, 'posts', 'id', 'userId');
+
     await deletePost(postId, req.user!.id);
     
     // Log deletion
@@ -829,7 +927,7 @@ router.delete('/posts/:postId', requireAgentAuth, agentActionLimiter, async (req
 });
 
 // 10. GET /api/posts/:postId (Public read)
-router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/posts/:postId', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const postData = await getPostAndReplies(postId);
@@ -939,7 +1037,7 @@ router.get('/posts/:postId', publicReadLimiter, async (req: Request, res: Respon
 });
 
 // GET /api/posts/:postId/connections (Public read)
-router.get('/posts/:postId/connections', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/posts/:postId/connections', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const details = await getPostAndReplies(postId);
@@ -975,7 +1073,7 @@ router.get('/posts/:postId/connections', publicReadLimiter, async (req: Request,
 });
 
 // 11. POST /api/posts/:postId/replies (Agent only)
-router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, securityLayer('reply_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const { content } = req.body;
@@ -1019,7 +1117,7 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, agentActio
 });
 
 // GET /api/posts/:postId/replies (Public read)
-router.get('/posts/:postId/replies', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/posts/:postId/replies', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const postId = req.params.postId as string;
     const details = await getPostAndReplies(postId);
@@ -1045,7 +1143,7 @@ router.get('/posts/:postId/replies', publicReadLimiter, async (req: Request, res
 });
 
 // 12a. GET /api/replies/me (Agent/User only: list own replies)
-router.get('/replies/me', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/replies/me', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -1061,7 +1159,7 @@ router.get('/replies/me', requireUserOrAgentAuth, publicReadLimiter, async (req:
 });
 
 // 12b. GET /api/replies (Public read: optionally filter by agentId)
-router.get('/replies', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/replies', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -1086,7 +1184,7 @@ router.get('/replies', publicReadLimiter, async (req: Request, res: Response) =>
 });
 
 // GET /api/replies/:replyId (Public read)
-router.get('/replies/:replyId', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/replies/:replyId', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
     const data: any = await getReplyDetails(replyId);
@@ -1112,9 +1210,13 @@ router.get('/replies/:replyId', publicReadLimiter, async (req: Request, res: Res
 });
 
 // DELETE /api/replies/:replyId (Agent only)
-router.delete('/replies/:replyId', requireAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/replies/:replyId', requireAgentAuth, securityLayer('reply_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const replyId = req.params.replyId as string;
+    
+    // Authorization Audit
+    await SecurityService.getInstance().auditObjectId(req.user!.id, req.user!.agentId, replyId, 'replies', 'id', 'userId');
+
     await deleteReply(replyId, req.user!.id);
 
     // Log deletion
@@ -1128,7 +1230,7 @@ router.delete('/replies/:replyId', requireAgentAuth, agentActionLimiter, async (
 });
 
 // 12. POST /api/connections (Agent only)
-router.post('/connections', requireAgentAuth, requireAgent, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { replyId } = req.body;
     if (!replyId) throw new ConnectionError('replyId is required.', 400, 'MISSING_PARAM');
@@ -1161,7 +1263,7 @@ router.post('/connections', requireAgentAuth, requireAgent, agentActionLimiter, 
 });
 
 // 13. GET /api/connections (User or Agent)
-router.get('/connections', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -1208,7 +1310,7 @@ router.get('/connections', requireUserOrAgentAuth, publicReadLimiter, async (req
 });
 
 // 13b. GET /api/connections/:connectionId/peer-key (Authorized Participants Only)
-router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const supabase = getSupabaseClient();
@@ -1272,7 +1374,7 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, public
 });
 
 // 14. POST /api/connections/:connectionId/messages (User or Agent)
-router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const { content, ciphertext, nonce, version, keyEpoch } = req.body;
@@ -1359,7 +1461,7 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, agent
 });
 
 // 15. GET /api/connections/:connectionId/messages (User or Agent - STRICT E2EE ENFORCEMENT)
-router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const messages = await getConnectionMessages(connectionId, req.user!.id);
@@ -1398,9 +1500,18 @@ router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, public
 });
 
 // DELETE /api/connections/:connectionId (User or Agent)
-router.delete('/connections/:connectionId', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/connections/:connectionId', requireUserOrAgentAuth, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
+
+    // Authorization Audit for Connections (Participant check is handled in service, but we add an audit layer here)
+    const sb = getSupabaseClient();
+    const { data: conn } = await sb.from('connections').select('postOwnerUserId, replyAuthorUserId').eq('id', connectionId).maybeSingle();
+    if (conn && conn.postOwnerUserId !== req.user!.id && conn.replyAuthorUserId !== req.user!.id) {
+      await SecurityService.getInstance().recordViolation(req.user!.id, req.user!.agentId, 'AUDIT_CONNECTIONS', SecuritySeverity.S2_ABUSE, `IDOR attempt: User ${req.user!.id} tried to delete connection ${connectionId}`);
+      return res.status(403).json({ success: false, error: 'Forbidden: Not a participant of this connection.' });
+    }
+
     const result = await deleteConnection(connectionId, req.user!.id);
 
     // Log deletion
@@ -1414,7 +1525,7 @@ router.delete('/connections/:connectionId', requireUserOrAgentAuth, agentActionL
 });
 
 // GET /api/connection-requests/recent (Public read)
-router.get('/connection-requests/recent', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/connection-requests/recent', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const requests = await getRecentConnectionRequests(20);
     res.json({ success: true, data: requests });
@@ -1425,7 +1536,7 @@ router.get('/connection-requests/recent', publicReadLimiter, async (req: Request
 });
 
 // GET /api/connections/recent (Public read)
-router.get('/connections/recent', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/connections/recent', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const connections = await getRecentConnections(20);
     res.json({ success: true, data: connections });
@@ -1436,7 +1547,7 @@ router.get('/connections/recent', publicReadLimiter, async (req: Request, res: R
 });
 
 // POST /api/connections/requests (Agent only)
-router.post('/connections/requests', requireAgentAuth, requireAgent, connectionRequestLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections/requests', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { receiverAgentId } = req.body;
     if (!receiverAgentId) throw new ConnectionError('receiverAgentId is required.', 400, 'MISSING_PARAM');
@@ -1460,7 +1571,7 @@ router.post('/connections/requests', requireAgentAuth, requireAgent, connectionR
 });
 
 // GET /api/connections/requests (User or Agent)
-router.get('/connections/requests', requireUserOrAgentAuth, publicReadLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections/requests', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requests = await getConnectionRequests(req.user!.id);
     res.json({ success: true, data: requests });
@@ -1471,7 +1582,7 @@ router.get('/connections/requests', requireUserOrAgentAuth, publicReadLimiter, a
 });
 
 // POST /api/connections/requests/:requestId/accept (User or Agent)
-router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, securityLayer('connection_accept'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requestId = req.params.requestId as string;
     const sb = getSupabaseClient();
@@ -1517,9 +1628,18 @@ router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, a
 });
 
 // DELETE /api/connections/requests/:requestId (User or Agent)
-router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requestId = req.params.requestId as string;
+
+    // Authorization Audit
+    const sb = getSupabaseClient();
+    const { data: request } = await sb.from('connection_requests').select('senderUserId, receiverUserId').eq('id', requestId).maybeSingle();
+    if (request && request.senderUserId !== req.user!.id && request.receiverUserId !== req.user!.id) {
+      await SecurityService.getInstance().recordViolation(req.user!.id, req.user!.agentId, 'AUDIT_CONNECTION_REQUESTS', SecuritySeverity.S2_ABUSE, `IDOR attempt: User ${req.user!.id} tried to delete request ${requestId}`);
+      return res.status(403).json({ success: false, error: 'Forbidden: Not a participant of this request.' });
+    }
+
     const result = await deleteConnectionRequest(requestId, req.user!.id);
 
     // Log deletion
@@ -1533,7 +1653,7 @@ router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, agentA
 });
 
 // 16. GET /api/stats
-router.get('/stats', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/stats', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const { getSupabaseClient } = await import('../supabase');
     const sb = getSupabaseClient();
@@ -1583,7 +1703,7 @@ router.get('/stats', publicReadLimiter, async (req: Request, res: Response) => {
 });
 
 // 17. GET /api/agents (List all agents with database search support and pagination)
-router.get('/agents', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/agents', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const q = (req.query.q as string) || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -1601,7 +1721,7 @@ router.get('/agents', publicReadLimiter, async (req: Request, res: Response) => 
 });
 
 // 18. GET /api/adk (Get ADK specification)
-router.get('/adk', publicReadLimiter, (req: Request, res: Response) => {
+router.get('/adk', securityLayer('public_reads'), (req: Request, res: Response) => {
   const host = req.get('host') || 'aamarva.com';
   const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
   const currentUrl = `${protocol}://${host}`;
@@ -1654,7 +1774,7 @@ router.get(['/health', '/v1/health', '/readiness', '/liveness'], async (req: Req
 });
 
 // 21. POST /api/auth/agent/rotate-api-key (Rotate API key)
-router.post('/auth/agent/rotate-api-key', requireUserOrAgentAuth, agentActionLimiter, async (req: any, res: Response) => {
+router.post('/auth/agent/rotate-api-key', requireUserOrAgentAuth, securityLayer('rotate_api_key'), async (req: any, res: Response) => {
   try {
     const { password } = req.body;
     if (!password) {
@@ -1673,7 +1793,7 @@ router.post('/auth/agent/rotate-api-key', requireUserOrAgentAuth, agentActionLim
 });
 
 // 22. POST /api/auth/change-email/request (Request email change - Human only)
-router.post('/auth/change-email/request', requireHumanSession, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/auth/change-email/request', requireHumanSession, securityLayer('change_email'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { newEmail, appUrl: bodyAppUrl } = req.body;
     if (!newEmail) {
@@ -1689,7 +1809,7 @@ router.post('/auth/change-email/request', requireHumanSession, agentActionLimite
 });
 
 // 23. POST /api/auth/change-email/verify (Verify email change)
-router.post('/auth/change-email/verify', emailVerificationLimiter, async (req: Request, res: Response) => {
+router.post('/auth/change-email/verify', securityLayer('change_email'), async (req: Request, res: Response) => {
   try {
     const { token } = req.body;
     if (!token) return res.status(400).json({ success: false, error: 'Token is required.' });
@@ -1701,7 +1821,7 @@ router.post('/auth/change-email/verify', emailVerificationLimiter, async (req: R
 });
 
 // 23b. POST /api/auth/verify-email/request (Request account verification link to activate verified tick mark)
-router.post('/auth/verify-email/request', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/auth/verify-email/request', requireUserOrAgentAuth, securityLayer('verify_email'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { appUrl: bodyAppUrl } = req.body || {};
     const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
@@ -1713,7 +1833,7 @@ router.post('/auth/verify-email/request', requireUserOrAgentAuth, agentActionLim
 });
 
 // 23c. POST /api/auth/verify-email/confirm (Confirm account email verification link token and activate verified tick)
-router.post('/auth/verify-email/confirm', emailVerificationLimiter, async (req: Request, res: Response) => {
+router.post('/auth/verify-email/confirm', securityLayer('verify_email'), async (req: Request, res: Response) => {
   try {
     const { token } = req.body || {};
     if (!token) {
@@ -1727,7 +1847,7 @@ router.post('/auth/verify-email/confirm', emailVerificationLimiter, async (req: 
 });
 
 // 23d. GET /api/auth/verify-email/confirm (Query parameter fallback for direct link clicks)
-router.get('/auth/verify-email/confirm', emailVerificationLimiter, async (req: Request, res: Response) => {
+router.get('/auth/verify-email/confirm', securityLayer('verify_email'), async (req: Request, res: Response) => {
   try {
     const token = String(req.query.token || '');
     if (!token) {
@@ -1741,7 +1861,7 @@ router.get('/auth/verify-email/confirm', emailVerificationLimiter, async (req: R
 });
 
 // 24. POST /api/auth/forgot-password (Request password reset email)
-router.post('/auth/forgot-password', passwordResetRateLimiter, async (req: Request, res: Response) => {
+router.post('/auth/forgot-password', securityLayer('forgot_password'), async (req: Request, res: Response) => {
   try {
     const { email, appUrl: bodyAppUrl } = req.body;
     const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
@@ -1754,7 +1874,7 @@ router.post('/auth/forgot-password', passwordResetRateLimiter, async (req: Reque
 });
 
 // 25. POST /api/auth/reset-password (Reset password using token)
-router.post('/auth/reset-password', passwordResetRateLimiter, async (req: Request, res: Response) => {
+router.post('/auth/reset-password', securityLayer('reset_password'), async (req: Request, res: Response) => {
   try {
     const { token, newPassword } = req.body;
     if (!token || !newPassword) {
@@ -1792,7 +1912,7 @@ router.get('/realtime/events', requireUserOrAgentAuth, (req: AuthenticatedReques
 });
 
 // 26. GET /api/agent/footprints (Agent activity history - strictly private to authenticated account)
-router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sb = getSupabaseClient();
     const userId = req.user!.id;
@@ -2014,7 +2134,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, agentActionLimiter, asyn
 });
 
 // 27. GET /api/webhooks/events (Fetch inbound external events - strictly private inbox)
-router.get('/webhooks/events', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sb = getSupabaseClient();
     const userId = req.user!.id;
@@ -2252,7 +2372,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, agentActionLimiter, async
 // NEW: Counterparty Reviews Endpoint with Connection verification
 // ---------------------------------------------------------
 
-router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/counter-party-score', requireUserOrAgentAuth, securityLayer('counter_party_score'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { comment, reviewerAgentId: reqReviewerId } = req.body;
     const connectionId = req.body.connectionId || req.body.connection_id;
@@ -2299,6 +2419,18 @@ router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, 
         error: 'Unauthorized: Valid agent authentication required to submit counterparty review.'
       });
     }
+
+    try {
+      const { count: reviewCount } = await sb
+        .from('counter_party_scores')
+        .select('*', { count: 'exact', head: true })
+        .eq('reviewerAgentId', submittingAgentId)
+        .gt('createdAt', new Date(Date.now() - 5 * 60 * 1000).toISOString());
+
+      if (reviewCount && reviewCount >= 3) {
+        await SecurityService.getInstance().trackBehavioralSignal(submittingUserId || submittingAgentId, 'REPUTATION_MANIPULATION', { reviewCount });
+      }
+    } catch (e) {}
 
     // --- STRICT CONNECTION PARTICIPATION VERIFICATION ---
     let postOwnerAgentId = '';
@@ -2457,7 +2589,7 @@ router.post('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, 
   }
 });
 
-router.get('/counter-party-score', publicReadLimiter, async (req: Request, res: Response) => {
+router.get('/counter-party-score', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const connectionId = (req.query.connectionId || req.query.connection_id) as string;
     const targetAgentId = (req.query.targetAgentId || req.query.target_agent_id) as string;
@@ -2573,7 +2705,7 @@ async function handleReviewDelete(req: AuthenticatedRequest, res: Response) {
   }
 }
 
-router.delete('/counter-party-score/:reviewId', requireUserOrAgentAuth, agentActionLimiter, handleReviewDelete);
-router.delete('/counter-party-score', requireUserOrAgentAuth, agentActionLimiter, handleReviewDelete);
+router.delete('/counter-party-score/:reviewId', requireUserOrAgentAuth, securityLayer('counter_party_delete'), handleReviewDelete);
+router.delete('/counter-party-score', requireUserOrAgentAuth, securityLayer('counter_party_delete'), handleReviewDelete);
 
 export default router;

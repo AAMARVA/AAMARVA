@@ -3,12 +3,13 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import {
   verifyAgentAccessToken,
   verifyHumanSession,
-  HUMAN_SESSION_COOKIE_NAME,
   computeApiKeyFingerprint,
   compareApiKey,
   UserTokenPayload,
+  HUMAN_SESSION_COOKIE_NAME,
 } from '../authService.js';
 import { getSupabaseClient } from '../supabase.js';
+import { isIpAllowed, getClientIp } from '../utils/networkWhitelist.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: UserTokenPayload;
@@ -41,17 +42,8 @@ const defaultSkip = (req: Request) => {
     return !!normalized && whitelist.includes(normalized);
   };
 
-  // Check the standard Express req.ip
-  if (checkIp(req.ip)) return true;
-
-  // Double check X-Forwarded-For manually in case proxy trust is misconfigured
-  const xForwardedFor = req.headers['x-forwarded-for'];
-  if (typeof xForwardedFor === 'string') {
-    const ips = xForwardedFor.split(',').map(s => s.trim());
-    if (ips.some(checkIp)) return true;
-  }
-
-  return false;
+  // Check the standard Express req.ip (evaluated via trusted proxy boundary)
+  return checkIp(req.ip);
 };
 
 export const registerRateLimiter = rateLimit({
@@ -146,9 +138,41 @@ export const authRateLimiter = humanLoginRateLimiter;
  * Human sessions CANNOT perform autonomous agent operations.
  */
 export async function requireHumanSession(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
-  const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
+  const apiKeyHeader = req.headers['x-api-key'];
   const authHeader = req.headers.authorization;
-  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : undefined;
+
+  // 1. Explicitly reject agent API keys and agent Bearer tokens
+  if (apiKeyHeader || (authHeader && authHeader.startsWith('Bearer sk_amr_'))) {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'AGENT_ACCESS_FORBIDDEN',
+        message: 'Forbidden: Autonomous agent credentials cannot access human account management endpoints.',
+      },
+    });
+    return;
+  }
+
+  let bearerToken: string | undefined;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    bearerToken = authHeader.split(' ')[1]?.trim();
+  }
+
+  if (bearerToken && !bearerToken.startsWith('sk_amr_')) {
+    const agentPayload = verifyAgentAccessToken(bearerToken);
+    if (agentPayload && agentPayload.type === 'agent') {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'AGENT_ACCESS_FORBIDDEN',
+          message: 'Forbidden: Autonomous agent credentials cannot access human account management endpoints.',
+        },
+      });
+      return;
+    }
+  }
+
+  const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
   const rawSession = (sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim()) ? sessionCookie.trim() : bearerToken;
 
   if (!rawSession) {
@@ -177,6 +201,26 @@ export async function requireHumanSession(req: AuthenticatedRequest, res: Respon
 
     req.user = payload;
     req.authType = 'human';
+
+    // Priority 7: Authoritative Status Check (Banned/Suspended users cannot use existing sessions)
+    const supabase = getSupabaseClient();
+    const { data: user, error: statusError } = await supabase
+      .from('users')
+      .select('status')
+      .eq('id', payload.id)
+      .maybeSingle();
+
+    if (statusError || !user || user.status !== 'active') {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_ENFORCEMENT',
+          message: `This account is currently ${user?.status || 'inactive'}. Access denied.`,
+        },
+      });
+      return;
+    }
+
     next();
   } catch (err: any) {
     res.status(500).json({
@@ -274,6 +318,18 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
         return;
       }
 
+      const clientIp = getClientIp(req);
+      if (!isIpAllowed(clientIp, userRecord.whitelisted_networks)) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Access denied: Source IP is not within the agent whitelisted networks perimeter.',
+          },
+        });
+        return;
+      }
+
       req.user = {
         id: userRecord.id,
         agentId: userRecord.agentId,
@@ -327,16 +383,28 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
     const supabase = getSupabaseClient();
     const { data: user, error } = await supabase
       .from('users')
-      .select('status, emailVerified')
+      .select('status, emailVerified, id, agentId, whitelisted_networks')
       .eq('id', payload.id)
       .maybeSingle();
 
     if (error || !user || user.status !== 'active') {
-      res.status(401).json({
+      res.status(403).json({
         success: false,
         error: {
-          code: 'UNAUTHORIZED',
-          message: 'Agent account is invalid or suspended.',
+          code: 'ACCOUNT_ENFORCEMENT',
+          message: `Agent account is currently ${user?.status || 'inactive'}. Access denied.`,
+        },
+      });
+      return;
+    }
+
+    const clientIp = getClientIp(req);
+    if (!isIpAllowed(clientIp, user.whitelisted_networks)) {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Access denied: Source IP is not within the agent whitelisted networks perimeter.',
         },
       });
       return;
@@ -344,6 +412,8 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
 
     req.user = {
       ...payload,
+      id: user.id,
+      agentId: user.agentId,
       emailVerified: Boolean(user.emailVerified === true),
     };
     req.authType = 'agent';
@@ -476,6 +546,26 @@ export async function requireHumanSecretsAuth(req: AuthenticatedRequest, res: Re
 
     req.user = payload;
     req.authType = 'human';
+
+    // Priority 7: Authoritative Status Check (Banned/Suspended users cannot use existing sessions)
+    const supabase = getSupabaseClient();
+    const { data: user, error: statusError } = await supabase
+      .from('users')
+      .select('status')
+      .eq('id', payload.id)
+      .maybeSingle();
+
+    if (statusError || !user || user.status !== 'active') {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_ENFORCEMENT',
+          message: `This account is currently ${user?.status || 'inactive'}. Access denied.`,
+        },
+      });
+      return;
+    }
+
     next();
   } catch (err: any) {
     res.status(500).json({

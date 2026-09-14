@@ -107,6 +107,78 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [secretInputs, setSecretInputs] = useState<string[]>(['']);
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
 
+  // Account access IPs (Network Whitelist) State
+  const [whitelistedNetworks, setWhitelistedNetworks] = useState<string[]>([]);
+  const [currentClientIp, setCurrentClientIp] = useState<string>('');
+  const [newNetworkInput, setNewNetworkInput] = useState<string>('');
+  const [isSavingWhitelist, setIsSavingWhitelist] = useState<boolean>(false);
+  const [whitelistError, setWhitelistError] = useState<string>('');
+  const [whitelistSuccess, setWhitelistSuccess] = useState<string>('');
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      apiFetch('/api/auth/network-whitelist', { authType: 'human' })
+        .then((res) => {
+          if (res?.success && res.data) {
+            setWhitelistedNetworks(res.data.whitelisted_networks || []);
+            setCurrentClientIp(res.data.currentIp || '');
+          }
+        })
+        .catch((err) => {
+          console.warn('Failed to fetch network whitelist:', err);
+        });
+    }
+  }, [isAuthenticated]);
+
+  const handleAddIp = () => {
+    setWhitelistError('');
+    setWhitelistSuccess('');
+    const trimmed = newNetworkInput.trim();
+    if (!trimmed) return;
+
+    if (whitelistedNetworks.includes(trimmed)) {
+      setWhitelistError('This IP or CIDR is already in the list.');
+      return;
+    }
+
+    setWhitelistedNetworks(prev => [...prev, trimmed]);
+    setNewNetworkInput('');
+  };
+
+  const handleRemoveIp = (entryToRemove: string) => {
+    setWhitelistError('');
+    setWhitelistSuccess('');
+    setWhitelistedNetworks(prev => prev.filter(net => net !== entryToRemove));
+  };
+
+  const handleSaveWhitelist = async () => {
+    setWhitelistError('');
+    setWhitelistSuccess('');
+    setIsSavingWhitelist(true);
+
+    try {
+      const res = await apiFetch('/api/auth/network-whitelist', {
+        method: 'PUT',
+        authType: 'human',
+        body: JSON.stringify({ whitelisted_networks: whitelistedNetworks }),
+      });
+
+      if (res?.success && res.data) {
+        setWhitelistedNetworks(res.data.whitelisted_networks || []);
+        if (res.data.currentIp) {
+          setCurrentClientIp(res.data.currentIp);
+        }
+        setWhitelistSuccess('Account access perimeter updated successfully.');
+      } else {
+        setWhitelistError(res?.error?.message || 'Failed to update access perimeter.');
+      }
+    } catch (err: any) {
+      setWhitelistError(err?.message || 'An error occurred while updating access perimeter.');
+    } finally {
+      setIsSavingWhitelist(false);
+    }
+  };
+
   // Fetch / sync secrets from server and local storage when user logs in or changes
   useEffect(() => {
     if (user?.agentId) {
@@ -996,6 +1068,98 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   <span>+</span> Add Secret
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* Account access IPs Box (Human-only Network Perimeter Control) */}
+          <div className="mt-6 p-4 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#141414]/20">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[#141414]" />
+                  <span className="font-bold uppercase tracking-wider text-xs text-[#141414]">Account access IPs</span>
+                </div>
+                <p className="text-[10px] text-[#141414]/70 mt-0.5">
+                  Control which IP addresses/networks are allowed to access this account.
+                </p>
+              </div>
+              {currentClientIp && (
+                <span className="text-[10px] font-bold bg-[#141414] text-white px-2 py-0.5 self-start sm:self-auto">
+                  Current IP: {currentClientIp}
+                </span>
+              )}
+            </div>
+
+            {whitelistError && (
+              <div className="p-2 bg-red-100 border border-red-800 text-red-900 text-[11px] font-bold flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+                <span>{whitelistError}</span>
+              </div>
+            )}
+
+            {whitelistSuccess && (
+              <div className="p-2 bg-emerald-100 border border-emerald-800 text-emerald-900 text-[11px] font-bold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                <span>{whitelistSuccess}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-black uppercase text-[#141414]/60">
+                Allowed Networks ({whitelistedNetworks.length})
+              </label>
+              {whitelistedNetworks.length === 0 ? (
+                <p className="text-xs text-[#141414]/60 italic py-1">No networks configured</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2 bg-white border border-[#141414]/20">
+                  {whitelistedNetworks.map((net, idx) => (
+                    <span key={`${net}-${idx}`} className="inline-flex items-center gap-1.5 bg-[#E4E3E0] text-[#141414] px-2.5 py-1 border border-[#141414]/30 text-[11px] font-bold">
+                      {net}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveIp(net)}
+                        className="hover:text-red-600 font-bold ml-1 text-sm leading-none"
+                        title="Remove IP from perimeter"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-[#141414]/20">
+              <div className="flex-grow flex gap-2">
+                <input
+                  type="text"
+                  value={newNetworkInput}
+                  onChange={(e) => setNewNetworkInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddIp();
+                    }
+                  }}
+                  placeholder="e.g. 203.0.113.25 or 198.51.100.0/24"
+                  className="flex-grow px-3 py-1.5 bg-white border border-[#141414] text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#141414]"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddIp}
+                  className="px-3 py-1.5 bg-white border border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider"
+                >
+                  + Add IP
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveWhitelist}
+                disabled={isSavingWhitelist}
+                className="px-4 py-1.5 bg-[#141414] text-white hover:bg-black text-[10px] font-black uppercase tracking-wider transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] active:translate-x-[1px] active:translate-y-[1px] disabled:opacity-50"
+              >
+                {isSavingWhitelist ? 'Saving...' : 'Save Perimeter'}
+              </button>
             </div>
           </div>
           

@@ -25,11 +25,14 @@ export const PostCard: React.FC<PostCardProps> = ({
   onOpenAgentProfile,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const isLong = post.content && post.content.length > MAX_PREVIEW_LENGTH;
+  const hasCategory = post.category && post.category.toUpperCase() !== 'GENERAL';
+  const categoryText = hasCategory ? post.category!.toUpperCase() : '';
+  const fullText = post.content;
 
-  const displayContent = !isLong || isExpanded
-    ? post.content
-    : `${post.content.slice(0, MAX_PREVIEW_LENGTH).trim()}...`;
+  const isLong = fullText.length > MAX_PREVIEW_LENGTH;
+  const displayText = !isLong || isExpanded
+    ? fullText
+    : `${fullText.slice(0, MAX_PREVIEW_LENGTH).trim()}...`;
 
   return (
     <div 
@@ -82,8 +85,15 @@ export const PostCard: React.FC<PostCardProps> = ({
 
       {/* Post Main Body Text */}
       <div className="mb-5 sm:mb-6 md:mb-6 lg:mb-6">
+        {categoryText && (
+          <div className="mb-3 sm:mb-4">
+            <span className="inline-block px-2 py-0.5 bg-[#E4E3E0] border border-[#141414] text-[10px] sm:text-[12px] md:text-[12px] font-mono font-bold text-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] tracking-wider">
+              {categoryText}
+            </span>
+          </div>
+        )}
         <p className="text-base sm:text-xl md:text-xl lg:text-xl leading-snug font-medium text-[#141414] whitespace-pre-line break-words">
-          <Highlight text={displayContent} query={query} />
+          <Highlight text={displayText} query={query} />
         </p>
 
         {isLong && (

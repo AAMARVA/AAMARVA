@@ -5,6 +5,7 @@ import { UserRecord, RefreshTokenRecord } from './db.js';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase.js';
 import { sendEmailVerification, sendPasswordResetEmail, sendAccountVerificationEmail } from './emailService.js';
 import { config } from './config.js';
+import { validateAndNormalizeWhitelist, isIpAllowed } from './utils/networkWhitelist.js';
 
 
 export interface UserTokenPayload {
@@ -98,12 +99,6 @@ function getJwtRefreshSecret(): string {
 export function validatePasswordStrength(password: string): { valid: boolean; message?: string } {
   if (!password || typeof password !== 'string' || password.length === 0) {
     return { valid: false, message: 'Password is required.' };
-  }
-  if (password.length < 8) {
-    return { valid: false, message: 'Password must be at least 8 characters long.' };
-  }
-  if (password.length > 128) {
-    return { valid: false, message: 'Password cannot exceed 128 characters.' };
   }
   return { valid: true };
 }
@@ -458,6 +453,20 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     raw.email_verified === true
   );
 
+  const whitelisted_networks = Array.isArray(raw.whitelisted_networks) && raw.whitelisted_networks.length > 0
+    ? raw.whitelisted_networks
+    : Array.isArray(raw.whitelistedNetworks) && raw.whitelistedNetworks.length > 0
+    ? raw.whitelistedNetworks
+    : Array.isArray(authUser?.app_metadata?.whitelisted_networks)
+    ? authUser.app_metadata.whitelisted_networks
+    : Array.isArray(authUser?.app_metadata?.whitelistedNetworks)
+    ? authUser.app_metadata.whitelistedNetworks
+    : Array.isArray(raw.whitelisted_networks)
+    ? raw.whitelisted_networks
+    : Array.isArray(raw.whitelistedNetworks)
+    ? raw.whitelistedNetworks
+    : [];
+
   return {
     id: raw.id,
     agentId: raw.agentId || '',
@@ -473,6 +482,7 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     status: raw.status || 'active',
     avatar: raw.avatar || '🤖',
     bio: (raw.bio || '').trim() || DEFAULT_BIO,
+    whitelisted_networks,
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     passwordChangedAt: raw.passwordChangedAt,
@@ -491,7 +501,7 @@ export async function findUserByEmail(supabase: any, email: string) {
   return data ? normalizeUserRecord(data) : null;
 }
 
-async function findUserById(supabase: any, id: string) {
+export async function findUserById(supabase: any, id: string) {
   const { data, error } = await supabase
     .from('users')
     .select('*')
@@ -499,10 +509,21 @@ async function findUserById(supabase: any, id: string) {
     .maybeSingle();
 
   if (error) throw error;
-  return data ? normalizeUserRecord(data) : null;
+  if (!data) return null;
+
+  let authUser: any = null;
+  if (!data.whitelisted_networks && !data.whitelistedNetworks) {
+    try {
+      authUser = await getAuthUserForRecord(supabase, data);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  return normalizeUserRecord(data, authUser);
 }
 
-async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
+export async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
   const camelRecord: Record<string, any> = {
     id: newUser.id,
     agentId: newUser.agentId,
@@ -514,6 +535,7 @@ async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     avatar: newUser.avatar,
     bio: newUser.bio || DEFAULT_BIO,
     emailVerified: false,
+    whitelisted_networks: (newUser as any).whitelisted_networks || [],
     createdAt: newUser.createdAt,
     updatedAt: newUser.updatedAt,
   };
@@ -536,7 +558,8 @@ export async function registerUser(data: {
   agentId?: string;
   bio?: string;
   appUrl?: string;
-}): Promise<{
+  whitelisted_networks?: any;
+}, clientIp?: string): Promise<{
   agentId: string;
   apiKey: string;
   tokens: { accessToken: string; refreshToken: string };
@@ -547,6 +570,8 @@ export async function registerUser(data: {
   if (!normalizedEmail || !validateEmailFormat(normalizedEmail)) {
     throw new Error('Please enter a valid email address.');
   }
+
+  const whitelisted_networks = validateAndNormalizeWhitelist(data.whitelisted_networks, clientIp);
 
   const agentName = (
     data.agentName ||
@@ -625,7 +650,7 @@ export async function registerUser(data: {
               avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
               bio: (data.bio || '').trim() || DEFAULT_BIO
             },
-            app_metadata: { apiKeyHash, apiKeyFingerprint, emailVerified: false }
+            app_metadata: { apiKeyHash, apiKeyFingerprint, emailVerified: false, whitelisted_networks }
           });
           createdAuthUser = res.data;
           authCreateErr = res.error;
@@ -679,7 +704,7 @@ export async function registerUser(data: {
           authUserCreated = true;
           if (supabase.auth?.admin?.updateUserById) {
             await supabase.auth.admin.updateUserById(authUserId, {
-              app_metadata: { apiKeyHash, apiKeyFingerprint }
+              app_metadata: { apiKeyHash, apiKeyFingerprint, whitelisted_networks }
             });
           }
         }
@@ -702,6 +727,7 @@ export async function registerUser(data: {
     avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
     bio: (data.bio || '').trim() || DEFAULT_BIO,
     emailVerified: false,
+    whitelisted_networks,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -837,7 +863,7 @@ export async function loginHuman(data: { agentId: string; password: string }) {
   return { user: safeUser, sessionId };
 }
 
-export async function loginAgent(data: { agentId: string; apiKey: string }) {
+export async function loginAgent(data: { agentId: string; apiKey: string }, clientIp?: string) {
   const agentId = (data.agentId || '').trim();
   const apiKey = (data.apiKey || '').trim();
 
@@ -866,6 +892,16 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
     throw new Error('Agent Login failed: Invalid API Key.');
   }
 
+  const normalizedUser = normalizeUserRecord(userRecord, authUser);
+
+  if (clientIp) {
+    if (!isIpAllowed(clientIp, normalizedUser.whitelisted_networks)) {
+      const err = new Error('Access denied: source network is not authorized.');
+      (err as any).statusCode = 403;
+      throw err;
+    }
+  }
+
   // Backfill fingerprint into app_metadata and users table if missing
   const fingerprint = computeApiKeyFingerprint(apiKey);
   if (!authUser.app_metadata?.apiKeyFingerprint) {
@@ -888,7 +924,6 @@ export async function loginAgent(data: { agentId: string; apiKey: string }) {
   }
 
   const familyId = crypto.randomUUID();
-  const normalizedUser = normalizeUserRecord(userRecord, authUser);
   const accessToken = generateAccessToken(normalizedUser);
   const refreshToken = generateRefreshToken(normalizedUser.id, familyId);
   await persistRefreshToken(normalizedUser.id, familyId, refreshToken);
@@ -908,6 +943,8 @@ export async function updateUserProfile(userId: string, data: Partial<UserRecord
   // We'll remove it from the direct update payload to prevent schema errors if the column doesn't exist
   delete updatePayload.emailVerified;
   delete updatePayload.emailVerifiedAt;
+  delete updatePayload.whitelisted_networks;
+  delete updatePayload.whitelistedNetworks;
   
   const { data: updatedUser, error } = await supabase
     .from('users')
@@ -920,6 +957,50 @@ export async function updateUserProfile(userId: string, data: Partial<UserRecord
   
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizeUserRecord(updatedUser);
   return safeUser;
+}
+
+export async function updateUserWhitelist(userId: string, networks: any, clientIp: string) {
+  // 1. Authoritative validation and normalization
+  const normalizedWL = validateAndNormalizeWhitelist(networks, clientIp);
+
+  // 2. Self-lockout protection: Current authenticated human IP MUST be permitted by new perimeter
+  if (!isIpAllowed(clientIp, normalizedWL)) {
+    const err = new Error(`Current IP address (${clientIp}) is not included in the new access perimeter. Update rejected to prevent self-lockout.`);
+    (err as any).code = 'SELF_LOCKOUT_PREVENTED';
+    (err as any).statusCode = 400;
+    throw err;
+  }
+
+  // 3. Atomic database update
+  const supabase = getSupabaseClient();
+  const now = new Date().toISOString();
+
+  const { data: updatedUser, error } = await supabase
+    .from('users')
+    .update({
+      whitelisted_networks: normalizedWL,
+      updatedAt: now,
+    })
+    .eq('id', userId)
+    .select()
+    .maybeSingle();
+
+  if (error || !updatedUser) {
+    throw new Error(`Failed to update network whitelist: ${error?.message || 'User not found'}`);
+  }
+
+  // Best-effort sync to Auth app_metadata
+  try {
+    await supabase.auth.admin.updateUserById(userId, {
+      user_metadata: { whitelisted_networks: normalizedWL },
+      app_metadata: { whitelisted_networks: normalizedWL },
+    });
+  } catch (e) {}
+
+  return {
+    whitelisted_networks: normalizedWL,
+    user: normalizeUserRecord(updatedUser),
+  };
 }
 
 export async function deleteUserAccount(userId: string): Promise<void> {
@@ -1112,7 +1193,7 @@ export async function logoutUser(userId: string, refreshToken?: string) {
   return logoutAgent(userId, refreshToken);
 }
 
-export async function refreshSessionToken(token: string): Promise<{ user: Omit<UserRecord, 'passwordHash'>; tokens: AuthTokens }> {
+export async function refreshSessionToken(token: string, clientIp?: string): Promise<{ user: Omit<UserRecord, 'passwordHash'>; tokens: AuthTokens }> {
   const decoded = verifyRefreshToken(token);
   if (!decoded) {
     throw new Error('Invalid or expired refresh token signature.');
@@ -1124,6 +1205,14 @@ export async function refreshSessionToken(token: string): Promise<{ user: Omit<U
 
   if (!user || user.status !== 'active') {
     throw new Error('User is inactive or not found.');
+  }
+
+  if (clientIp) {
+    if (!isIpAllowed(clientIp, user.whitelisted_networks)) {
+      const err = new Error('Access denied: source network is not authorized.');
+      (err as any).statusCode = 403;
+      throw err;
+    }
   }
 
   const tokenHash = hashToken(token);

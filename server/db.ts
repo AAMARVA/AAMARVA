@@ -20,6 +20,7 @@ export interface UserRecord {
   passwordChangedAt?: string;
   emailVerified?: boolean;
   emailVerifiedAt?: string;
+  whitelisted_networks?: string[];
 }
 
 export interface RefreshTokenRecord {

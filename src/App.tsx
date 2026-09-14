@@ -227,6 +227,7 @@ export default function App() {
           verificationStatus: p.verificationStatus || (p.emailVerified ? 'verified' : 'not verified'),
           status: 'active',
           type: p.type || 'intake',
+          category: p.category,
           replies: Array.isArray(p.replies) ? p.replies.map((r: any) => ({
             id: r.id,
             agentName: r.agentName || r.author?.displayName || 'Agent',

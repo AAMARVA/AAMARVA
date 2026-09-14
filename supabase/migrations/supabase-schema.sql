@@ -17,13 +17,15 @@ CREATE TABLE IF NOT EXISTS users (
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "passwordChangedAt" TIMESTAMPTZ,
   "emailVerified" BOOLEAN DEFAULT FALSE,
-  "emailVerifiedAt" TIMESTAMPTZ
+  "emailVerifiedAt" TIMESTAMPTZ,
+  "whitelisted_networks" TEXT[]
 );
 
 -- Ensure apiKeyFingerprint, emailVerified columns exist on existing deployments
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "apiKeyFingerprint" TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerified" BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerifiedAt" TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS "whitelisted_networks" TEXT[];
 
 -- 2. Posts Table
 CREATE TABLE IF NOT EXISTS posts (
@@ -556,8 +558,95 @@ CREATE INDEX IF NOT EXISTS idx_external_events_user_id ON external_events(user_i
 CREATE INDEX IF NOT EXISTS idx_external_events_type ON external_events(type);
 CREATE INDEX IF NOT EXISTS idx_external_events_created_at ON external_events(created_at DESC);
 
+-- 17. AAMARVA Security Layer Tables
+-- Tracks sticky violation history and enforcement states for abusive agents.
+
+CREATE TABLE IF NOT EXISTS security_violations (
+  id TEXT PRIMARY KEY DEFAULT ('sv_' || gen_random_uuid()::TEXT),
+  identifier TEXT NOT NULL, -- userId, agentId, or IP
+  endpoint TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('S0', 'S1', 'S2', 'S3')),
+  ip TEXT,
+  "violationCount" INTEGER NOT NULL DEFAULT 0,
+  "suspensionCount" INTEGER NOT NULL DEFAULT 0,
+  "lastViolationAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "suspendedUntil" TIMESTAMPTZ,
+  "probationUntil" TIMESTAMPTZ,
+  "isPermanentlyBanned" BOOLEAN NOT NULL DEFAULT FALSE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE security_violations ADD COLUMN IF NOT EXISTS ip TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_security_violations_identifier_endpoint ON security_violations(identifier, endpoint);
+CREATE INDEX IF NOT EXISTS idx_security_violations_suspended_until ON security_violations("suspendedUntil");
+CREATE INDEX IF NOT EXISTS idx_security_violations_probation_until ON security_violations("probationUntil");
+
+CREATE TABLE IF NOT EXISTS security_enforcement_events (
+  id TEXT PRIMARY KEY DEFAULT ('see_' || gen_random_uuid()::TEXT),
+  "userId" TEXT REFERENCES users(id) ON DELETE CASCADE,
+  "agentId" TEXT,
+  identifier TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  "eventType" TEXT NOT NULL, -- 'WARNING', 'SUSPENSION', 'BAN', 'RATE_LIMIT_VIOLATION'
+  severity TEXT NOT NULL,
+  reason TEXT,
+  evidence JSONB,
+  "violationCount" INTEGER,
+  "suspensionCount" INTEGER,
+  "previousStatus" TEXT,
+  "newStatus" TEXT,
+  "timestamp" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_enforcement_events_user_id ON security_enforcement_events("userId");
+CREATE INDEX IF NOT EXISTS idx_security_enforcement_events_identifier ON security_enforcement_events(identifier);
+CREATE INDEX IF NOT EXISTS idx_security_enforcement_events_timestamp ON security_enforcement_events("timestamp" DESC);
+
+-- 18. IP Reputation Table
+CREATE TABLE IF NOT EXISTS ip_reputations (
+  ip TEXT PRIMARY KEY,
+  "score" INTEGER NOT NULL DEFAULT 100, -- 0-100, lower is worse
+  "violationCount" INTEGER NOT NULL DEFAULT 0,
+  "lastViolationAt" TIMESTAMPTZ,
+  "isBlacklisted" BOOLEAN NOT NULL DEFAULT FALSE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ip_reputations_score ON ip_reputations("score");
+
+-- 19. Security Activity & Rate Limit Tables
+CREATE TABLE IF NOT EXISTS security_rate_limit_buckets (
+  id TEXT PRIMARY KEY DEFAULT ('rlb_' || gen_random_uuid()::TEXT),
+  identifier TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  "windowStart" TIMESTAMPTZ NOT NULL,
+  "requestCount" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_security_rate_limit_buckets_identifier_endpoint_window ON security_rate_limit_buckets(identifier, endpoint, "windowStart");
+CREATE INDEX IF NOT EXISTS idx_security_rate_limit_buckets_window_start ON security_rate_limit_buckets("windowStart");
+
+CREATE TABLE IF NOT EXISTS security_behavioral_signals (
+  id TEXT PRIMARY KEY DEFAULT ('sbs_' || gen_random_uuid()::TEXT),
+  "userId" TEXT REFERENCES users(id) ON DELETE CASCADE,
+  identifier TEXT NOT NULL,
+  "signalType" TEXT NOT NULL, -- 'RAPID_CONNECTIONS', 'DUPLICATE_POSTS', 'REPUTATION_MANIPULATION'
+  "score" INTEGER NOT NULL DEFAULT 0,
+  details JSONB,
+  "timestamp" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_behavioral_signals_user_id ON security_behavioral_signals("userId");
+CREATE INDEX IF NOT EXISTS idx_security_behavioral_signals_type ON security_behavioral_signals("signalType");
+CREATE INDEX IF NOT EXISTS idx_security_behavioral_signals_timestamp ON security_behavioral_signals("timestamp" DESC);
+
 -- ==============================================================================
--- 16. ACCOUNT DELETION & AUTH RECORDS CASCADE SYNCHRONIZATION
+-- 20. REFRESH_TOKEN FAMILY IDOR PROTECTION
 -- ==============================================================================
 -- Ensures that when an account is deleted, all old auth records, human sessions,
 -- refresh tokens, password reset tokens, and corresponding Supabase Auth users
