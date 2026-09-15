@@ -131,6 +131,7 @@ export async function getUserConnections(userId: string, page: number, limit: nu
     .from('connections')
     .select('*', { count: 'exact' })
     .or(orFilter)
+    .neq('status', 'dissolved') // Filter out dissolved connections
     .order('createdAt', { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
 

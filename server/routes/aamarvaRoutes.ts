@@ -1318,7 +1318,7 @@ router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads')
         postOwnerAgentId: c.postOwnerAgentId,
         replyAuthorAgentId: c.replyAuthorAgentId,
         createdAt: c.createdAt,
-        connectionStatus: 'active',
+        connectionStatus: c.status || 'active',
       };
     });
     res.json({ success: true, data: connections });
