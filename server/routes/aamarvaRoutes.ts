@@ -8,16 +8,7 @@ import { logAccountAudit, logAgentFootprint, logExternalEvent } from '../service
 import { realtimeService } from '../services/realtimeService';
 import {
   registerUser,
-  createHumanSession,
   loginHuman,
-  verifyHumanPassword,
-  getUserWebAuthnCredentials,
-  generateWebAuthnAuthenticationOptions,
-  generateWebAuthnRegistrationOptions,
-  verifyAndSaveWebAuthnRegistration,
-  deleteUserWebAuthnCredential,
-  generateCsrfToken,
-  isValidCsrfToken,
   loginAgent,
   logoutUser,
   logoutHumanSession,
@@ -110,12 +101,16 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
     const clientIp = getClientIp(req);
     const result = await registerUser(req.body, clientIp);
     
-    // Note: Registration creates account and agent credentials only.
-    // Human session creation strictly requires subsequent WebAuthn passkey enrollment.
+    // Set HTTP-only human session cookie for immediate account management access
+    if (result.sessionId) {
+      res.cookie(HUMAN_SESSION_COOKIE_NAME, result.sessionId, getHumanSessionCookieOptions());
+    }
+
     return res.status(201).json({
       success: true,
       data: {
         agentId: result.agentId,
+        verificationStatus: result.user.verificationStatus,
         apiKey: result.apiKey,
         tokens: result.tokens,
         user: result.user,
@@ -142,432 +137,61 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
   }
 });
 
-// CSRF Token Generation
-router.get(['/auth/csrf', '/v1/auth/csrf'], async (req: Request, res: Response) => {
+// 2. POST /api/auth/human/login & /api/v1/auth/human/login (Human Login)
+router.post(['/auth/human/login', '/v1/auth/human/login'], securityLayer('auth_login'), async (req: Request, res: Response) => {
+  const agentId = req.body?.agentId;
   try {
-    const token = await generateCsrfToken();
-    res.json({
-      success: true,
-      data: {
-        csrfToken: token,
-      },
-    });
-  } catch (err: any) {
-    console.error('[CSRF Route] Generation/persistence failed:', err?.message || 'Unknown error');
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'CSRF_BOOTSTRAP_FAILED',
-        message: 'Security initialization failed. Could not generate CSRF token.',
-      },
-    });
-  }
-});
-
-// Helper: validate human authentication request boundaries
-async function validateHumanAuthRequest(req: Request, res: Response): Promise<{ valid: boolean; origin?: string }> {
-  // 1. Explicitly reject any Agent credentials
-  const apiKeyHeader = req.headers['x-api-key'];
-  const authHeader = req.headers.authorization;
-  if (apiKeyHeader || (authHeader && (authHeader.startsWith('Bearer sk_amr_') || authHeader.startsWith('Bearer ')))) {
-    res.status(403).json({
-      success: false,
-      error: {
-        code: 'AGENT_ACCESS_FORBIDDEN',
-        message: 'Forbidden: Autonomous agent credentials cannot access human authentication endpoints.',
-      },
-    });
-    return { valid: false };
-  }
-
-  // 2. Validate Origin and Referer
-  const origin = req.headers.origin as string | undefined;
-  const referer = req.headers.referer as string | undefined;
-  let effectiveOrigin: string | undefined;
-
-  if (origin) {
-    effectiveOrigin = origin;
-  } else if (referer) {
-    try {
-      effectiveOrigin = new URL(referer).origin;
-    } catch (e) {}
-  }
-
-  if (!effectiveOrigin) {
-    res.status(403).json({
-      success: false,
-      error: {
-        code: 'FORBIDDEN_ORIGIN',
-        message: 'Forbidden: Missing Origin and Referer headers on human authentication request.',
-      },
-    });
-    return { valid: false };
-  }
-
-  const allowedOrigins = [
-    'https://aamarva.com',
-    'https://www.aamarva.com',
-  ];
-  if (process.env.APP_URL) {
-    try { allowedOrigins.push(new URL(process.env.APP_URL).origin); } catch (e) {}
-  }
-  if (process.env.NODE_ENV !== 'production') {
-    allowedOrigins.push('http://localhost:3000');
-    allowedOrigins.push('http://127.0.0.1:3000');
-    const host = req.headers.host;
-    if (host) {
-      allowedOrigins.push(`http://${host}`);
-      allowedOrigins.push(`https://${host}`);
-    }
-  }
-
-  const isAllowed = allowedOrigins.includes(effectiveOrigin);
-  if (!isAllowed) {
-    res.status(403).json({
-      success: false,
-      error: {
-        code: 'FORBIDDEN_ORIGIN',
-        message: `Forbidden: Origin ${effectiveOrigin} is not authorized for human authentication.`,
-      },
-    });
-    return { valid: false };
-  }
-
-  // 3. Validate CSRF token
-  const csrfToken = (req.headers['x-csrf-token'] || req.body?.csrfToken) as string | undefined;
-  if (!csrfToken || !(await isValidCsrfToken(csrfToken))) {
-    res.status(403).json({
-      success: false,
-      error: {
-        code: 'CSRF_INVALID',
-        message: 'Forbidden: Missing or invalid CSRF token.',
-      },
-    });
-    return { valid: false };
-  }
-
-  return { valid: true, origin: effectiveOrigin };
-}
-
-// 2a. POST /api/auth/human/login/challenge (WebAuthn Login Challenge Request)
-router.post(['/auth/human/login/challenge', '/v1/auth/human/login/challenge'], humanLoginRateLimiter, async (req: Request, res: Response) => {
-  const requestValidation = await validateHumanAuthRequest(req, res);
-  if (!requestValidation.valid) return;
-
-  const agentId = (req.body?.agentId || '').trim();
-  const password = (req.body?.password || '').trim();
-
-  try {
-    const safeUser = await verifyHumanPassword({ agentId, password });
-    const credentials = await getUserWebAuthnCredentials(safeUser.id);
-    if (!credentials || credentials.length === 0) {
-      // User has a valid password but no passkey enrolled yet.
-      // Generate WebAuthn registration options for first-time passkey enrollment.
-      const { options, challengeId } = await generateWebAuthnRegistrationOptions(
-        safeUser,
-        requestValidation.origin
-      );
-
-      return res.json({
-        success: true,
-        data: {
-          enrollmentRequired: true,
-          options,
-          challengeId,
-        },
-      });
-    }
-
-    const { options, challengeId } = await generateWebAuthnAuthenticationOptions(
-      safeUser,
-      credentials,
-      requestValidation.origin
-    );
-
-    res.json({
-      success: true,
-      data: {
-        enrollmentRequired: false,
-        options,
-        challengeId,
-      },
-    });
-  } catch (err: any) {
-    const msg = err?.message || 'Authentication failed.';
-    if (msg.includes('inactive')) {
-      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: msg } });
-    }
-    return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: msg } });
-  }
-});
-
-// 2b. POST /api/auth/human/login/enroll & aliases (First-Time WebAuthn Passkey Enrollment during Login)
-router.post(
-  ['/auth/human/login/enroll', '/v1/auth/human/login/enroll', '/auth/human/enroll-passkey', '/v1/auth/human/enroll-passkey'],
-  humanLoginRateLimiter,
-  async (req: Request, res: Response) => {
-    const requestValidation = await validateHumanAuthRequest(req, res);
-    if (!requestValidation.valid) return;
-
-    const agentId = (req.body?.agentId || '').trim();
-    const password = (req.body?.password || '').trim();
-    const challengeId = req.body?.challengeId;
-    const response = req.body?.response || req.body?.attestation;
-    const deviceName = req.body?.deviceName || 'Primary Passkey';
-
-    if (!challengeId || !response) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'WEBAUTHN_REQUIRED',
-          message: 'WebAuthn passkey registration response and challenge are required for enrollment.',
-        },
-      });
-    }
-
-    try {
-      // 1. Password verification (proves account ownership before enrollment)
-      const safeUser = await verifyHumanPassword({ agentId, password });
-
-      // 2. Cryptographic attestation verification and persistent passkey enrollment
-      const cred = await verifyAndSaveWebAuthnRegistration(
-        safeUser,
-        challengeId,
-        response,
-        deviceName,
-        requestValidation.origin
-      );
-
-      // 3. Issue human session strictly after verified WebAuthn registration ceremony
-      const sessionId = await createHumanSession(safeUser.id);
-      res.cookie(HUMAN_SESSION_COOKIE_NAME, sessionId, getHumanSessionCookieOptions());
-
-      res.json({
-        success: true,
-        data: {
-          user: safeUser,
-          credentialId: cred.credentialId,
-        },
-      });
-    } catch (err: any) {
-      const msg = err?.message || 'Passkey enrollment failed.';
-      if (msg.includes('challenge validation failed') || msg.includes('challenge')) {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: 'CHALLENGE_INVALID',
-            message: msg,
-          },
-        });
-      }
-      if (msg.includes('Registration verification failed') || msg.includes('attestation') || msg.includes('Authenticator')) {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: 'WEBAUTHN_VERIFICATION_FAILED',
-            message: msg,
-          },
-        });
-      }
-      if (msg.includes('inactive')) {
-        return res.status(403).json({
-          success: false,
-          error: {
-            code: 'FORBIDDEN',
-            message: msg,
-          },
-        });
-      }
-      res.status(401).json({
-        success: false,
-        error: {
-          code: 'UNAUTHORIZED',
-          message: msg || 'Authentication failed.',
-        },
-      });
-    }
-  }
-);
-
-// 2c. POST /api/auth/human/login & /api/v1/auth/human/login (WebAuthn Verified Human Login)
-router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginRateLimiter, async (req: Request, res: Response) => {
-  const requestValidation = await validateHumanAuthRequest(req, res);
-  if (!requestValidation.valid) return;
-
-  const agentId = (req.body?.agentId || '').trim();
-  const password = (req.body?.password || '').trim();
-  const challengeId = req.body?.challengeId;
-  const assertion = req.body?.assertion;
-
-  // Enforce WebAuthn assertion presence
-  if (!assertion || !challengeId) {
-    return res.status(401).json({
-      success: false,
-      error: {
-        code: 'WEBAUTHN_REQUIRED',
-        message: 'WebAuthn passkey assertion required: Password verification alone cannot create a human session.',
-      },
-    });
-  }
-
-  try {
-    const result = await loginHuman({
-      agentId,
-      password,
-      challengeId,
-      assertion,
-      origin: requestValidation.origin,
-    });
-
-    // Set HTTP-only cookie for human session strictly after WebAuthn verification
+    const { password } = req.body;
+    const result = await loginHuman({ agentId, password });
+    
+    // Set HTTP-only cookie for human session
     res.cookie(HUMAN_SESSION_COOKIE_NAME, result.sessionId, getHumanSessionCookieOptions());
-
+    
     res.json({
       success: true,
       data: {
         user: result.user,
-      },
+      }
     });
   } catch (err: any) {
-    const msg = err?.message || '';
-    if (msg.includes('challenge validation failed') || msg.includes('challenge')) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'CHALLENGE_INVALID',
-          message: msg,
-        },
+    const errorMessage = err?.message || '';
+    const isDbOrServerError = errorMessage.toLowerCase().includes('database') || 
+                              errorMessage.toLowerCase().includes('supabase') || 
+                              errorMessage.toLowerCase().includes('failed to insert') ||
+                              err?.status === 500;
+
+    if (isDbOrServerError) {
+      console.error('[Human Login Error] Database/server error:', errorMessage);
+      return res.status(500).json({ 
+        success: false, 
+        error: { 
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'An internal error occurred during authentication. Please try again later.' 
+        } 
       });
     }
-    if (msg.includes('assertion verification failed') || msg.includes('signature') || msg.includes('Unrecognized passkey')) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'WEBAUTHN_VERIFICATION_FAILED',
-          message: msg,
-        },
-      });
-    }
-    if (msg.includes('inactive')) {
-      return res.status(403).json({
-        success: false,
-        error: {
+
+    if (errorMessage.includes('inactive')) {
+      return res.status(403).json({ 
+        success: false, 
+        error: { 
           code: 'FORBIDDEN',
-          message: msg,
-        },
+          message: errorMessage 
+        } 
       });
     }
-    res.status(401).json({
-      success: false,
-      error: {
+
+    try {
+      await SecurityService.getInstance().trackBehavioralSignal(agentId || req.ip || 'anonymous', 'BRUTE_FORCE_GUESS', { agentId, ip: req.ip });
+    } catch (e) {}
+
+    res.status(401).json({ 
+      success: false, 
+      error: { 
         code: 'UNAUTHORIZED',
-        message: msg || 'Invalid Agent ID or Password.',
-      },
+        message: errorMessage || 'Invalid Agent ID or Password.' 
+      } 
     });
-  }
-});
-
-// GET /api/auth/human/session (Verify current human session)
-router.get(['/auth/human/session', '/v1/auth/human/session'], requireHumanSession, (req: AuthenticatedRequest, res: Response) => {
-  res.json({
-    success: true,
-    data: {
-      user: req.user,
-    },
-  });
-});
-
-// Passkey Registration Routes (Guarded strictly by requireHumanSession)
-
-// POST /api/auth/webauthn/register/options
-router.post(['/auth/webauthn/register/options', '/v1/auth/webauthn/register/options'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = req.user;
-    if (!user) {
-      return res.status(401).json({ success: false, error: { message: 'Authentication required' } });
-    }
-    const origin = req.headers.origin as string | undefined;
-    const { options, challengeId } = await generateWebAuthnRegistrationOptions(user, origin);
-    res.json({
-      success: true,
-      data: {
-        options,
-        challengeId,
-      },
-    });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: { message: err?.message || 'Failed to generate registration options' } });
-  }
-});
-
-// POST /api/auth/webauthn/register/verify
-router.post(['/auth/webauthn/register/verify', '/v1/auth/webauthn/register/verify'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = req.user;
-    if (!user) {
-      return res.status(401).json({ success: false, error: { message: 'Authentication required' } });
-    }
-    const { challengeId, response, deviceName } = req.body;
-    if (!challengeId || !response) {
-      return res.status(400).json({ success: false, error: { message: 'Missing challengeId or WebAuthn response' } });
-    }
-    const origin = req.headers.origin as string | undefined;
-    const cred = await verifyAndSaveWebAuthnRegistration(user, challengeId, response, deviceName, origin);
-    res.json({
-      success: true,
-      data: {
-        credentialId: cred.credentialId,
-        deviceName: cred.deviceName,
-        createdAt: cred.createdAt,
-      },
-    });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: { message: err?.message || 'Failed to verify passkey registration' } });
-  }
-});
-
-// GET /api/auth/webauthn/credentials
-router.get(['/auth/webauthn/credentials', '/v1/auth/webauthn/credentials'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = req.user;
-    if (!user) {
-      return res.status(401).json({ success: false, error: { message: 'Authentication required' } });
-    }
-    const credentials = await getUserWebAuthnCredentials(user.id);
-    const safeCreds = credentials.map(c => ({
-      id: c.credentialId,
-      deviceName: c.deviceName || 'Passkey Device',
-      createdAt: c.createdAt,
-      transports: c.transports,
-    }));
-    res.json({
-      success: true,
-      data: {
-        credentials: safeCreds,
-      },
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to list passkeys' } });
-  }
-});
-
-// DELETE /api/auth/webauthn/credentials/:credentialId
-router.delete(['/auth/webauthn/credentials/:credentialId', '/v1/auth/webauthn/credentials/:credentialId'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = req.user;
-    if (!user) {
-      return res.status(401).json({ success: false, error: { message: 'Authentication required' } });
-    }
-    const credentialId = String(req.params.credentialId);
-    const deleted = await deleteUserWebAuthnCredential(user.id, credentialId);
-    res.json({
-      success: true,
-      data: {
-        deleted,
-      },
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to delete passkey' } });
   }
 });
 
@@ -587,8 +211,8 @@ router.post(['/auth/login', '/v1/auth/login'], securityLayer('auth_login'), asyn
     res.json({
       success: true,
       data: {
-        ...result,
-        tokens
+        tokens,
+        user: result.user
       }
     });
   } catch (err: any) {
@@ -1611,26 +1235,43 @@ router.post('/connections', requireAgentAuth, requireAgent, securityLayer('conne
   try {
     const { replyId } = req.body;
     if (!replyId) throw new ConnectionError('replyId is required.', 400, 'MISSING_PARAM');
-    const result = await createConnection(req.user!.id, replyId);
+    const result: any = await createConnection(req.user!.id, replyId);
 
     // Log footprint for post owner
     await logAgentFootprint(req.user!.id, 'CONNECTION_ESTABLISHED', `Established secure link via response ${replyId}`, result.id);
 
     // Log external event for reply author
     try {
-      if ((result as any).replyAuthorUserId && (result as any).replyAuthorUserId !== req.user!.id) {
-        await logExternalEvent((result as any).replyAuthorUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, result.id);
+      if (result.replyAuthorUserId && result.replyAuthorUserId !== req.user!.id) {
+        await logExternalEvent(result.replyAuthorUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, result.id);
       }
     } catch (e) {}
+
+    const sb = getSupabaseClient();
+    const poUserId = result.postOwnerUserId || result.post_owner_user_id;
+    const raUserId = result.replyAuthorUserId || result.reply_author_user_id;
+
+    const [poAuth, raAuth] = await Promise.all([
+      sb.auth.admin.getUserById(poUserId).then(r => r.data?.user),
+      sb.auth.admin.getUserById(raUserId).then(r => r.data?.user)
+    ]);
+
+    const poVStatus = poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
+    const raVStatus = raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
 
     res.status(201).json({ 
       success: true, 
       data: {
-        ...result,
         id: result.id,
         connectionId: result.id,
+        connectionStatus: 'active',
         reviewId: null,
         content: null,
+        postOwnerAgentId: result.postOwnerAgentId || result.post_owner_agent_id,
+        postOwnerVerificationStatus: poVStatus,
+        replyAuthorAgentId: result.replyAuthorAgentId || result.reply_author_agent_id,
+        replyAuthorVerificationStatus: raVStatus,
+        createdAt: result.createdAt || result.created_at
       } 
     });
   } catch (err: any) {
@@ -1677,6 +1318,7 @@ router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads')
         postOwnerAgentId: c.postOwnerAgentId,
         replyAuthorAgentId: c.replyAuthorAgentId,
         createdAt: c.createdAt,
+        connectionStatus: 'active',
       };
     });
     res.json({ success: true, data: connections });
@@ -1735,6 +1377,7 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
       success: true,
       data: {
         connectionId,
+        connectionStatus: 'active',
         peerUserId,
         peerAgentId,
         peerE2eePublicKey,
@@ -1879,19 +1522,25 @@ router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, securi
 // DELETE /api/connections/:connectionId (User or Agent)
 router.delete('/connections/:connectionId', requireUserOrAgentAuth, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const rawId = req.params.connectionId as string;
-    const connectionId = (rawId || '').trim();
+    const connectionId = req.params.connectionId as string;
 
-    if (!connectionId) {
-      return res.status(400).json({ success: false, error: 'Connection ID is required.' });
+    // Authorization Audit for Connections (Participant check is handled in service, but we add an audit layer here)
+    const sb = getSupabaseClient();
+    const { data: conn } = await sb.from('connections').select('postOwnerUserId, replyAuthorUserId').eq('id', connectionId).maybeSingle();
+    if (conn && conn.postOwnerUserId !== req.user!.id && conn.replyAuthorUserId !== req.user!.id) {
+      await SecurityService.getInstance().recordViolation(req.user!.id, req.user!.agentId, 'AUDIT_CONNECTIONS', SecuritySeverity.S2_ABUSE, `IDOR attempt: User ${req.user!.id} tried to delete connection ${connectionId}`);
+      return res.status(403).json({ success: false, error: 'Forbidden: Not a participant of this connection.' });
     }
 
     const result = await deleteConnection(connectionId, req.user!.id);
 
     // Log deletion
-    await logAgentFootprint(req.user!.id, 'CONNECTION_REMOVED', `Connection ${result.connectionId || connectionId} dissolved`, result.connectionId || connectionId);
+    await logAgentFootprint(req.user!.id, 'CONNECTION_REMOVED', `Connection ${connectionId} dissolved`, connectionId);
 
-    res.json(result);
+    res.json({
+      ...result,
+      connectionStatus: 'dissolved'
+    });
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
@@ -1913,7 +1562,40 @@ router.get('/connection-requests/recent', securityLayer('public_reads'), async (
 router.get('/connections/recent', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const connections = await getRecentConnections(20);
-    res.json({ success: true, data: connections });
+    if (!connections || connections.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const sb = getSupabaseClient();
+    const poUserIds = (connections || []).map((c: any) => c.postOwnerUserId).filter(Boolean);
+    const raUserIds = (connections || []).map((c: any) => c.replyAuthorUserId).filter(Boolean);
+    const allUserIds = Array.from(new Set([...poUserIds, ...raUserIds]));
+
+    const [authUsers, dbUsers] = await Promise.all([
+      Promise.all(allUserIds.map(id => sb.auth.admin.getUserById(id).then(r => r.data?.user))),
+      sb.from('users').select('id, emailVerified').in('id', allUserIds).then(r => r.data || [])
+    ]);
+
+    const verificationMap = new Map<string, string>();
+    allUserIds.forEach(id => {
+      const authU = authUsers.find(u => u?.id === id);
+      const dbU = dbUsers.find(u => u?.id === id);
+      const isVerified = authU?.app_metadata?.emailVerified === true || dbU?.emailVerified === true;
+      verificationMap.set(id, isVerified ? 'verified' : 'not verified');
+    });
+
+    const mapped = (connections || []).map((c: any) => ({
+      id: c.id,
+      connectionId: c.id,
+      connectionStatus: c.status || 'active',
+      postOwnerAgentId: c.postOwnerAgentId,
+      postOwnerVerificationStatus: verificationMap.get(c.postOwnerUserId) || 'not verified',
+      replyAuthorAgentId: c.replyAuthorAgentId,
+      replyAuthorVerificationStatus: verificationMap.get(c.replyAuthorUserId) || 'not verified',
+      createdAt: c.createdAt || c.created_at
+    }));
+
+    res.json({ success: true, data: mapped });
   } catch (err: any) {
     const status = err.statusCode || 500;
     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
@@ -1983,15 +1665,29 @@ router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, s
       }
     } catch (e) {}
 
+    const poUserId = connection.postOwnerUserId || connection.post_owner_user_id;
+    const raUserId = connection.replyAuthorUserId || connection.reply_author_user_id;
+
+    const [poAuth, raAuth] = await Promise.all([
+      sb.auth.admin.getUserById(poUserId).then(r => r.data?.user),
+      sb.auth.admin.getUserById(raUserId).then(r => r.data?.user)
+    ]);
+
+    const poVStatus = poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
+    const raVStatus = raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
+
     res.json({ 
       success: true, 
       data: {
         id: connection.id,
         connectionId: connection.id,
+        connectionStatus: 'active',
         reviewId: null,
         content: null,
         postOwnerAgentId: connection.postOwnerAgentId || connection.post_owner_agent_id,
+        postOwnerVerificationStatus: poVStatus,
         replyAuthorAgentId: connection.replyAuthorAgentId || connection.reply_author_agent_id,
+        replyAuthorVerificationStatus: raVStatus,
         createdAt: connection.createdAt || connection.created_at
       } 
     });
@@ -2746,68 +2442,54 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
 // NEW: Counterparty Reviews Endpoint with Connection verification
 // ---------------------------------------------------------
 
-const inFlightReviewLocks = new Map<string, Promise<any>>();
-
 router.post('/counter-party-score', requireUserOrAgentAuth, securityLayer('counter_party_score'), async (req: AuthenticatedRequest, res: Response) => {
-  const connectionId = req.body.connectionId || req.body.connection_id;
-  const reviewComment = req.body.comment || req.body.review;
-
-  if (!connectionId) {
-    return res.status(400).json({ success: false, error: 'connectionId is required.' });
-  }
-  if (!reviewComment) {
-    return res.status(400).json({ success: false, error: 'review/comment text is required.' });
-  }
-
-  // Determine authenticated submitting agent and user strictly from session
-  const sb = getSupabaseClient();
-  const submittingUserId = req.user?.id || '';
-  let submittingAgentId = req.user?.agentId || '';
-
-  if (!submittingUserId && !submittingAgentId) {
-    return res.status(401).json({
-      success: false,
-      error: 'Unauthorized: Valid agent authentication required to submit counterparty review.'
-    });
-  }
-
-  if (!submittingAgentId && submittingUserId) {
-    const { data: userProfile } = await sb
-      .from('users')
-      .select('agentId')
-      .eq('id', submittingUserId)
-      .maybeSingle();
-    if (userProfile?.agentId) {
-      submittingAgentId = userProfile.agentId;
-    }
-  }
-
-  // If client supplied reviewerAgentId in body, verify it matches the authenticated agent (prevent impersonation)
-  const reqReviewerId = req.body.reviewerAgentId;
-  if (reqReviewerId && submittingAgentId && reqReviewerId.toLowerCase() !== submittingAgentId.toLowerCase()) {
-    return res.status(403).json({
-      success: false,
-      error: `Forbidden: Cannot submit reviews on behalf of another agent ('${reqReviewerId}'). Authenticated agent is '${submittingAgentId}'.`
-    });
-  }
-
-  // In-flight concurrency lock to serialize duplicate concurrent submissions from the same participant
-  const lockKey = `${connectionId}:${submittingUserId || submittingAgentId}`;
-  while (inFlightReviewLocks.has(lockKey)) {
-    try {
-      await inFlightReviewLocks.get(lockKey);
-    } catch (_) {
-      // ignore previous lock errors
-    }
-  }
-
-  let releaseLock: () => void = () => {};
-  const currentLock = new Promise<void>((resolve) => {
-    releaseLock = resolve;
-  });
-  inFlightReviewLocks.set(lockKey, currentLock);
-
   try {
+    const { comment, reviewerAgentId: reqReviewerId } = req.body;
+    const connectionId = req.body.connectionId || req.body.connection_id;
+    const reviewComment = comment || req.body.review;
+
+    if (!connectionId) {
+      return res.status(400).json({ success: false, error: 'connectionId is required.' });
+    }
+    if (!reviewComment) {
+      return res.status(400).json({ success: false, error: 'review/comment text is required.' });
+    }
+
+    // Determine authenticated submitting agent
+    const sb = getSupabaseClient();
+    let submittingAgentId = req.user?.agentId || '';
+    const submittingUserId = req.user?.id || '';
+
+    if (!submittingAgentId && submittingUserId) {
+      const { data: userProfile } = await sb
+        .from('users')
+        .select('agentId')
+        .eq('id', submittingUserId)
+        .maybeSingle();
+      if (userProfile?.agentId) {
+        submittingAgentId = userProfile.agentId;
+      }
+    }
+
+    // If client supplied reviewerAgentId in body, verify it matches the authenticated agent
+    if (reqReviewerId && submittingAgentId && reqReviewerId.toLowerCase() !== submittingAgentId.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: `Forbidden: Cannot submit reviews on behalf of another agent ('${reqReviewerId}'). Authenticated agent is '${submittingAgentId}'.`
+      });
+    }
+
+    if (!submittingAgentId && reqReviewerId) {
+      submittingAgentId = reqReviewerId;
+    }
+
+    if (!submittingAgentId && !submittingUserId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: Valid agent authentication required to submit counterparty review.'
+      });
+    }
+
     try {
       const { count: reviewCount } = await sb
         .from('counter_party_scores')
@@ -2883,6 +2565,25 @@ router.post('/counter-party-score', requireUserOrAgentAuth, securityLayer('count
       });
     }
 
+    // Check if this agent has already submitted a review for this connection
+    try {
+      const { data: existingReview, error: existingErr } = await sb
+        .from('reviews')
+        .select('id')
+        .eq('connectionId', connectionId)
+        .or(`reviewerAgentId.ilike.${submittingAgentId},reviewerUserId.eq.${submittingUserId}`)
+        .maybeSingle();
+
+      if (!existingErr && existingReview) {
+        return res.status(400).json({
+          success: false,
+          error: 'The score has been already given. The network only allows one time score to this endpoint POST /api/counter-party-score.'
+        });
+      }
+    } catch (e) {
+      console.error('Error checking existing review:', e);
+    }
+
     // Determine target agent ID (the counterparty of the connection)
     const isPostOwner = (normSubmittingAgent && normSubmittingAgent === normPostOwnerAgent) ||
                         (normSubmittingUser && normSubmittingUser === normPostOwnerUser);
@@ -2913,66 +2614,32 @@ router.post('/counter-party-score', requireUserOrAgentAuth, securityLayer('count
       ? await maskUserSecretsInText(submittingUserId, reviewComment.trim())
       : reviewComment.trim();
 
-    // Check existing review by this participant (by reviewerUserId OR reviewerAgentId)
-    const { data: existingReviews } = await sb
+    const newReview = {
+      id: crypto.randomUUID(),
+      connectionId,
+      reviewerUserId: submittingUserId,
+      reviewerAgentId: submittingAgentId,
+      reviewerAgentName: reviewerName,
+      reviewerAgentHandle: reviewerHandle,
+      reviewerAgentAvatarUrl: reviewerAvatar,
+      targetAgentId,
+      comment: sanitizedComment,
+      createdAt: new Date().toISOString()
+    };
+
+    const { error: insertError } = await sb
       .from('reviews')
-      .select('id, reviewerUserId, reviewerAgentId')
-      .eq('connectionId', connectionId);
+      .insert([newReview]);
 
-    const existingReview = (existingReviews || []).find((r: any) => 
-      (submittingUserId && r.reviewerUserId && r.reviewerUserId.toLowerCase() === submittingUserId.toLowerCase()) ||
-      (submittingAgentId && r.reviewerAgentId && r.reviewerAgentId.toLowerCase() === submittingAgentId.toLowerCase())
-    );
-
-    let savedReview;
-
-    if (existingReview) {
-      return res.status(400).json({
-        success: false,
-        error: 'Score has already been given for this connection.'
-      });
-    } else {
-      const newReview = {
-        id: crypto.randomUUID(),
-        connectionId,
-        reviewerUserId: submittingUserId,
-        reviewerAgentId: submittingAgentId,
-        reviewerAgentName: reviewerName,
-        reviewerAgentHandle: reviewerHandle,
-        reviewerAgentAvatarUrl: reviewerAvatar,
-        targetAgentId,
-        comment: sanitizedComment,
-        createdAt: new Date().toISOString()
-      };
-
-      const { data: insertedData, error: insertError } = await sb
-        .from('reviews')
-        .insert([newReview])
-        .select()
-        .single();
-
-      if (insertError) {
-        if (
-          insertError.code === '23505' ||
-          insertError.message?.includes('duplicate') ||
-          insertError.message?.includes('unique') ||
-          insertError.message?.includes('idx_reviews')
-        ) {
-          return res.status(400).json({
-            success: false,
-            error: 'Score has already been given for this connection.'
-          });
-        }
-        console.error('[counter-party-review] DB insert error:', insertError);
-        throw new Error(`Database error recording review: ${insertError.message}`);
-      }
-      savedReview = insertedData;
+    if (insertError) {
+      console.error('[counter-party-review] DB insert error:', insertError);
+      throw new Error(`Database error recording review: ${insertError.message}`);
     }
 
     try {
-      await logAgentFootprint(submittingUserId, 'COUNTER_PARTY_REVIEW', `Submitted review for agent ${targetAgentId}`, savedReview.id);
+      await logAgentFootprint(submittingUserId, 'COUNTER_PARTY_REVIEW', `Submitted review for agent ${targetAgentId}`, newReview.id);
       if (targetUserId) {
-        await logExternalEvent(targetUserId, 'COUNTERPARTY_REVIEW_RECEIVED', submittingAgentId, savedReview.id);
+        await logExternalEvent(targetUserId, 'COUNTERPARTY_REVIEW_RECEIVED', submittingAgentId, newReview.id);
       }
     } catch (e) {
       console.error('Failed to log review events:', e);
@@ -2983,36 +2650,31 @@ router.post('/counter-party-score', requireUserOrAgentAuth, securityLayer('count
       .select('*', { count: 'exact', head: true })
       .eq('connectionId', connectionId);
 
-    const { comment: _c, ...reviewWithoutComment } = savedReview;
+    const { comment: _c, ...reviewWithoutComment } = newReview;
 
     res.json({
       success: true,
       message: 'Counterparty review successfully recorded for connection.',
       review: {
         ...reviewWithoutComment,
-        id: savedReview.id,
-        reviewId: savedReview.id,
+        id: newReview.id,
+        reviewId: newReview.id,
         connectionId,
-        content: savedReview.comment,
+        content: newReview.comment,
         reviewerAgent: {
-          id: savedReview.reviewerAgentId,
-          name: savedReview.reviewerAgentName,
-          handle: savedReview.reviewerAgentHandle,
-          avatarUrl: savedReview.reviewerAgentAvatarUrl
+          id: newReview.reviewerAgentId,
+          name: newReview.reviewerAgentName,
+          handle: newReview.reviewerAgentHandle,
+          avatarUrl: newReview.reviewerAgentAvatarUrl
         }
       },
-      reviewId: savedReview.id,
-      content: savedReview.comment,
+      reviewId: newReview.id,
+      content: newReview.comment,
       connectionId,
       totalConnectionReviews: count || 1
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
-  } finally {
-    releaseLock();
-    if (inFlightReviewLocks.get(lockKey) === currentLock) {
-      inFlightReviewLocks.delete(lockKey);
-    }
   }
 });
 

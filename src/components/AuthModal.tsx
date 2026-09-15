@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, User as UserIcon, ArrowRight, KeyRound, CheckCircle2 } from 'lucide-react';
+import { X, Lock, Mail, User as UserIcon, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { registerPasskeyApi } from '../services/authApi';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -27,24 +26,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [regResult, setRegResult] = useState<{ agentId: string; apiKey: string } | null>(null);
-  const [passkeyEnrolled, setPasskeyEnrolled] = useState(false);
-  const [enrollingPasskey, setEnrollingPasskey] = useState(false);
 
   if (!isOpen) return null;
-
-  const handleEnrollPasskey = async () => {
-    setEnrollingPasskey(true);
-    setError('');
-    try {
-      await registerPasskeyApi('Primary Device');
-      setPasskeyEnrolled(true);
-      setSuccessMsg('WebAuthn passkey registered successfully! You can now use your passkey to sign in.');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to register passkey.');
-    } finally {
-      setEnrollingPasskey(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,32 +111,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <p className="text-[9px] font-mono mt-1 text-red-600 font-bold uppercase">IMPORTANT: This will never be shown again. Store it carefully.</p>
                 </div>
               </div>
-            </div>
-
-            <div className="p-4 bg-[#f8fafc] border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-              <div className="flex items-center gap-2 mb-2">
-                <KeyRound className="w-4 h-4 text-[#141414]" />
-                <span className="font-mono text-xs font-bold uppercase tracking-wider">WebAuthn Passkey Protection</span>
-              </div>
-              <p className="font-mono text-[11px] text-[#141414]/80 mb-3">
-                Human session creation strictly requires a WebAuthn passkey (Touch ID, Face ID, Windows Hello, or hardware key).
-              </p>
-              {passkeyEnrolled ? (
-                <div className="flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-500 text-emerald-800 font-mono text-xs">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Passkey enrolled successfully!</span>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleEnrollPasskey}
-                  disabled={enrollingPasskey}
-                  className="w-full py-2.5 bg-white text-[#141414] font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:bg-[#141414] hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <KeyRound className="w-4 h-4" />
-                  <span>{enrollingPasskey ? 'Registering Authenticator...' : 'Enroll Passkey Now'}</span>
-                </button>
-              )}
             </div>
 
             <button
@@ -283,13 +240,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   />
                 </div>
               </div>
-
-              {mode === 'login' && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-[#f4f4f5] border border-black/10 text-[#141414]/80 font-mono text-[11px]">
-                  <KeyRound className="w-3.5 h-3.5 shrink-0 text-[#141414]" />
-                  <span>WebAuthn passkey verification prompts automatically after password check.</span>
-                </div>
-              )}
 
               <div className="pt-2">
                 <button

@@ -161,14 +161,14 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
       agentName: c.name || c.agentName || (isOwner ? (c.replyAuthorAgentName || 'Agent') : (c.postOwnerAgentName || 'Agent')),
       avatar: (isOwner ? c.replyAuthorAvatar : c.postOwnerAvatar) || c.avatar || '🤖',
       emailVerified: c.verificationStatus === 'verified' || (isOwner ? (c.replyAuthorEmailVerified ?? c.emailVerified) : (c.postOwnerEmailVerified ?? c.emailVerified)),
-      status: c.status || 'active',
+      connectionStatus: c.status || 'active',
     };
   });
 
-  const activeConnections = agentConnections.filter((c: any) => c.status !== 'dissolved' && c.status !== 'closed');
-  const dissolvedConnections = agentConnections.filter((c: any) => c.status === 'dissolved' || c.status === 'closed');
+  const activeConnections = agentConnections.filter(c => c.connectionStatus !== 'dissolved');
+  const dissolvedConnections = agentConnections.filter(c => c.connectionStatus === 'dissolved');
 
-  const connectionsCount = agentProfileData?.connectionsCount ?? (agentProfileData?.connections?.length || 0);
+  const connectionsCount = agentConnections.length;
 
   const accountCreatedAt = agentProfileData?.createdAt;
   const joinedDateFormatted = accountCreatedAt
@@ -234,9 +234,10 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                 {displayName}
               </h2>
               {inferredAgentId && (
-                <span className="inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                <span className="relative inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-hidden">
                   <span>@{inferredAgentId}</span>
                   {agentProfileData?.emailVerified && <VerifiedBadge size="xs" />}
+                  <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                 </span>
               )}
 
@@ -403,152 +404,176 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
             {/* 3. CONNECTIONS TAB */}
             {activeTab === 'connections' && (
-              <div className="space-y-4">
-                {/* Active Connections Sub-section */}
+              <div className="space-y-6">
+                
+                {/* Active Connections Section */}
                 <div className="space-y-3">
-                  <div className="text-[10px] font-mono font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-1.5">
-                    <Network className="w-3 h-3" />
-                    <span>Active Connections ({activeConnections.length})</span>
+                  <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
+                    <Network className="w-3.5 h-3.5 text-[#141414]/70" />
+                    <h4 className="font-mono font-black uppercase text-[10px] tracking-wider text-[#141414]/80">
+                      Active Connections ({activeConnections.length})
+                    </h4>
                   </div>
-
+                  
                   {activeConnections.length > 0 ? (
-                    activeConnections.map((conn) => {
-                      const connReviews = reviews.filter((r: any) => 
-                        String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
-                      );
+                    <div className="space-y-4">
+                      {activeConnections.map((conn) => {
+                        const connReviews = reviews.filter((r: any) => 
+                          String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
+                        );
 
-                      return (
-                        <div key={conn.id} className="flex flex-col">
-                          {/* Connection Card */}
-                          <div
-                            onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                            className="flex flex-col p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/30 hover:border-black cursor-pointer group transition-all text-left"
-                            title={`Visit @${conn.agentId} (${conn.agentName})`}
-                          >
-                            <div className="flex items-center justify-between gap-3 w-full">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <AgentAvatar 
-                                  name={conn.agentName} 
-                                  avatar={conn.avatar} 
-                                  id={conn.agentId}
-                                  className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
-                                />
-                                <div className="min-w-0 flex flex-col">
-                                  <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
-                                    {conn.agentName}
-                                  </span>
-                                  <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
-                                    <span>@{conn.agentId}</span>
-                                    {conn.emailVerified && <VerifiedBadge size="xs" />}
+                        return (
+                          <div key={conn.id} className="flex flex-col">
+                            <div
+                              onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                              className="flex flex-col p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/30 hover:border-black cursor-pointer group transition-all text-left"
+                              title={`Visit @${conn.agentId} (${conn.agentName})`}
+                            >
+                              <div className="flex items-center justify-between gap-3 w-full">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <AgentAvatar 
+                                    name={conn.agentName} 
+                                    avatar={conn.avatar} 
+                                    id={conn.agentId}
+                                    className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
+                                  />
+                                  <div className="min-w-0 flex flex-col">
+                                    <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
+                                      {conn.agentName}
+                                    </span>
+                                    <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full overflow-hidden">
+                                      <span>@{conn.agentId}</span>
+                                      {conn.emailVerified && <VerifiedBadge size="xs" />}
+                                      <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="shrink-0 flex items-center gap-2">
+                                  <span className="inline-block font-mono text-[9px] font-black uppercase text-[#141414] bg-white border border-[#141414] px-2 py-1 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] group-hover:bg-[#141414] group-hover:text-white transition-colors">
+                                    VIEW PROFILE →
                                   </span>
                                 </div>
                               </div>
-                              <div className="shrink-0 flex items-center gap-2">
-                                <span className="inline-block font-mono text-[9px] font-black uppercase text-[#141414] bg-white border border-[#141414] px-2 py-1 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] group-hover:bg-[#141414] group-hover:text-white transition-colors">
-                                  VIEW PROFILE →
-                                </span>
-                              </div>
-                            </div>
 
-                            {/* Reviews Section inside the card */}
-                            {connReviews.length > 0 && (
-                              <div className="mt-3 pt-3 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
-                                {connReviews.map((r: any) => {
-                                  const reviewerName = r.reviewerAgent?.name || r.reviewerAgentName || 'Peer';
-                                  const reviewerHandle = r.reviewerAgent?.handle || (r.reviewerAgentId ? `@${r.reviewerAgentId}` : null);
-                                  return (
-                                    <div key={r.id} className="text-xs text-[#141414]/90 pl-3 border-l-2 border-[#141414] py-1 bg-[#E4E3E0]/20 space-y-1">
-                                      <p className="italic font-medium">"{r.content || r.comment}"</p>
-                                      <div className="flex items-center gap-1.5 font-mono text-[9px] text-[#141414]/70 font-bold">
-                                        <span>— Score by</span>
-                                        <span className="bg-white px-1 py-0.5 border border-[#141414]/40 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[#141414]">
-                                          {reviewerName} {reviewerHandle && <span className="opacity-75">({reviewerHandle})</span>}
+                              {connReviews.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-[#141414]/20 space-y-3">
+                                  {connReviews.map((r: any) => (
+                                    <div key={r.id} className="flex bg-[#F3F2EF] border border-[#141414]/20 rounded-sm shadow-[2px_2px_0px_0px_rgba(20,20,20,0.05)] overflow-hidden">
+                                      <div className="p-3 flex-grow">
+                                        <div className="text-[13px] font-bold text-[#141414] leading-relaxed">
+                                          "{r.content || r.comment}"
+                                        </div>
+                                        <div className="mt-2 flex items-center gap-1 font-mono text-[10px] text-[#141414]/80 uppercase tracking-normal">
+                                          <span className="font-medium flex items-center gap-1">
+                                            <div className="w-0.5 h-3 bg-[#141414]"></div>
+                                            Score by
+                                          </span>
+                                        <span className="relative font-bold text-[#141414] bg-white px-1.5 py-0.5 border border-[#141414]/30 normal-case overflow-hidden">
+                                          { (() => { const rName = r.reviewerAgent?.name || 'Agent'; const rId = r.reviewerAgent?.id || 'ID'; return `${rName} (@${rId})`; })() }
+                                          <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                                         </span>
                                       </div>
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            )}
+                                  </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+                    </div>
                   ) : (
-                    <div className="p-6 text-center border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10 font-mono text-xs uppercase tracking-wider text-[#141414]/60">
-                      <Network className="w-5 h-5 mx-auto mb-1.5 opacity-40" />
-                      <div>No active connections</div>
+                    <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
+                      <Network className="w-5 h-5 opacity-30" />
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Active Connections</div>
                     </div>
                   )}
                 </div>
 
-                {/* Dissolved Connections Sub-section */}
-                {dissolvedConnections.length > 0 && (
-                  <div className="space-y-3 pt-3 border-t-2 border-[#141414]/10">
-                    <div className="text-[10px] font-mono font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-1.5">
-                      <ShieldAlert className="w-3 h-3" />
-                      <span>Dissolved Connections ({dissolvedConnections.length})</span>
-                    </div>
+                {/* Dissolved Connections Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
+                    <ShieldAlert className="w-3.5 h-3.5 text-[#141414]/70" />
+                    <h4 className="font-mono font-black uppercase text-[10px] tracking-wider text-[#141414]/80">
+                      Dissolved Connections ({dissolvedConnections.length})
+                    </h4>
+                  </div>
+                  
+                  {dissolvedConnections.length > 0 ? (
+                    <div className="space-y-4">
+                      {dissolvedConnections.map((conn) => {
+                        const connReviews = reviews.filter((r: any) => 
+                          String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
+                        );
 
-                    {dissolvedConnections.map((conn) => {
-                      const connReviews = reviews.filter((r: any) => 
-                        String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
-                      );
-
-                      return (
-                        <div key={conn.id} className="flex flex-col">
-                          {/* Connection Card (Dissolved) */}
-                          <div
-                            onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                            className="flex flex-col p-3 bg-[#E4E3E0]/20 border-2 border-[#141414]/40 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)] hover:bg-[#E4E3E0]/40 cursor-pointer group transition-all text-left"
-                            title={`Visit @${conn.agentId} (${conn.agentName})`}
-                          >
-                            <div className="flex items-center justify-between gap-3 w-full">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <AgentAvatar 
-                                  name={conn.agentName} 
-                                  avatar={conn.avatar} 
-                                  id={conn.agentId}
-                                  className="w-10 h-10 border-2 border-[#141414]/50 grayscale group-hover:scale-105 transition-transform"
-                                />
-                                <div className="min-w-0 flex flex-col">
-                                  <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]/80 truncate group-hover:underline">
-                                    {conn.agentName}
-                                  </span>
-                                  <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414]/70 bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/40 self-start truncate max-w-full">
-                                    <span>@{conn.agentId}</span>
+                        return (
+                          <div key={conn.id} className="flex flex-col">
+                            <div
+                              onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                              className="flex flex-col p-3 bg-[#F8F8F7] border-2 border-[#141414]/40 shadow-[4px_4px_0px_0px_rgba(20,20,20,0.4)] hover:border-black cursor-pointer group transition-all text-left"
+                            >
+                              <div className="flex items-center justify-between gap-3 w-full">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <AgentAvatar 
+                                    name={conn.agentName} 
+                                    avatar={conn.avatar} 
+                                    id={conn.agentId}
+                                    className="w-10 h-10 border-2 border-[#141414]/40 grayscale group-hover:grayscale-0 transition-all"
+                                  />
+                                  <div className="min-w-0 flex flex-col">
+                                    <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] group-hover:underline">
+                                      {conn.agentName}
+                                    </span>
+                                    <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/20 self-start truncate max-w-full overflow-hidden">
+                                      <span>@{conn.agentId}</span>
+                                      <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/30 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="shrink-0 flex items-center gap-2">
+                                  <span className="inline-block font-mono text-[8px] font-bold uppercase text-[#141414] border border-[#141414]/20 px-1.5 py-0.5">
+                                    TERMINATED
                                   </span>
                                 </div>
                               </div>
 
-                            </div>
-
-                            {/* Reviews Section inside the card */}
-                            {connReviews.length > 0 && (
-                              <div className="mt-3 pt-3 border-t border-[#141414]/20 space-y-2">
-                                {connReviews.map((r: any) => {
-                                  const reviewerName = r.reviewerAgent?.name || r.reviewerAgentName || 'Peer';
-                                  const reviewerHandle = r.reviewerAgent?.handle || (r.reviewerAgentId ? `@${r.reviewerAgentId}` : null);
-                                  return (
-                                    <div key={r.id} className="text-xs text-[#141414]/90 pl-3 border-l-2 border-[#141414] py-1 bg-[#E4E3E0]/30 space-y-1">
-                                      <p className="italic font-medium">"{r.content || r.comment}"</p>
-                                      <div className="flex items-center gap-1.5 font-mono text-[9px] text-[#141414]/70 font-bold">
-                                        <span>— Score by</span>
-                                        <span className="bg-white px-1 py-0.5 border border-[#141414]/40 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[#141414]">
-                                          {reviewerName} {reviewerHandle && <span className="opacity-75">({reviewerHandle})</span>}
+                              {connReviews.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-[#141414]/10 space-y-3">
+                                  {connReviews.map((r: any) => (
+                                    <div key={r.id} className="flex bg-[#F3F2EF]/50 border border-[#141414]/10 overflow-hidden">
+                                      <div className="p-3 flex-grow">
+                                        <div className="text-[13px] font-bold text-[#141414] leading-relaxed">
+                                          "{r.content || r.comment}"
+                                        </div>
+                                        <div className="mt-2 flex items-center gap-1 font-mono text-[10px] text-[#141414] uppercase tracking-normal">
+                                          <span className="font-medium opacity-60 flex items-center gap-1">
+                                            <div className="w-0.5 h-3 bg-[#141414]"></div>
+                                            Score by
+                                          </span>
+                                        <span className="relative font-bold text-[#141414] bg-white/50 px-1.5 py-0.5 border border-[#141414]/10 normal-case overflow-hidden">
+                                          { (() => { const rName = r.reviewerAgent?.name || 'Agent'; const rId = r.reviewerAgent?.id || 'ID'; return `${rName} (@${rId})`; })() }
+                                          <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/30 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                                         </span>
                                       </div>
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            )}
+                                  </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
+                      <ShieldAlert className="w-5 h-5 opacity-30" />
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Dissolved Connections</div>
+                    </div>
+                  )}
+                </div>
+
               </div>
             )}
 

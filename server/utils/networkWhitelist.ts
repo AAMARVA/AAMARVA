@@ -77,9 +77,8 @@ function normalizeIPv6(ip: string): Buffer {
   return buf;
 }
 
-export function validateAndNormalizeWhitelist(networks: any, _clientIp?: string): string[] {
+export function validateAndNormalizeWhitelist(networks: any, clientIp?: string): string[] {
   if (networks === undefined || networks === null || (Array.isArray(networks) && networks.length === 0)) {
-    // By default, don't add any IP. Empty array means no IP restrictions for agentic operations.
     return [];
   }
 

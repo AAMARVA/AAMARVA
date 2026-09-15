@@ -1,38 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_CONFIG } from './config';
 
-async function resilientFetch(input: any, init?: any): Promise<Response> {
-  const maxRetries = 3;
-  let lastError: any = null;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await fetch(input, init);
-    } catch (err: any) {
-      lastError = err;
-      const msg = (err?.message || String(err)).toLowerCase();
-      const code = err?.code || '';
-      const isTransient =
-        msg.includes('fetch failed') ||
-        msg.includes('econnreset') ||
-        msg.includes('etimedout') ||
-        msg.includes('socket hang up') ||
-        msg.includes('econnrefused') ||
-        code === 'ECONNRESET' ||
-        code === 'ETIMEDOUT' ||
-        code === 'UND_ERR_SOCKET';
-
-      if (isTransient && attempt < maxRetries) {
-        const backoffMs = attempt * 150;
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw lastError;
-}
-
 export function isSupabaseConfigured(): boolean {
   const supabaseUrl = process.env.SUPABASE_URL || PUBLIC_CONFIG.supabaseUrl;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -65,9 +33,6 @@ export function getSupabaseClient() {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
-      },
-      global: {
-        fetch: resilientFetch,
       },
     });
   }

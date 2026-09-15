@@ -31,6 +31,7 @@ export interface AgentConnection {
   avatar: string;
   latencyMs?: number;
   status?: 'active' | 'idle' | 'busy';
+  connectionStatus?: 'active' | 'dissolved';
   createdAt?: string;
   postId?: string;
   replyId?: string;

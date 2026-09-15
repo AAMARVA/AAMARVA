@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, KeyRound } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
 import { ExpandableText } from './ExpandableText';
-import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi, requestEmailVerificationApi, listPasskeysApi, registerPasskeyApi, deletePasskeyApi } from '../services/authApi';
+import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi, requestEmailVerificationApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
@@ -256,58 +256,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
 
-  // WebAuthn Passkeys State
-  const [passkeys, setPasskeys] = useState<any[]>([]);
-  const [isLoadingPasskeys, setIsLoadingPasskeys] = useState(false);
-  const [isEnrollingPasskey, setIsEnrollingPasskey] = useState(false);
-  const [passkeyDeviceName, setPasskeyDeviceName] = useState('');
-  const [passkeyStatusMsg, setPasskeyStatusMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
-
-  const fetchPasskeys = async () => {
-    if (!isAuthenticated) return;
-    setIsLoadingPasskeys(true);
-    try {
-      const keys = await listPasskeysApi();
-      setPasskeys(keys);
-    } catch (e) {
-      console.warn('Failed to load passkeys:', e);
-    } finally {
-      setIsLoadingPasskeys(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchPasskeys();
-    }
-  }, [isAuthenticated]);
-
-  const handleEnrollPasskey = async () => {
-    setIsEnrollingPasskey(true);
-    setPasskeyStatusMsg(null);
-    try {
-      await registerPasskeyApi(passkeyDeviceName.trim() || 'My Authenticator');
-      setPasskeyDeviceName('');
-      setPasskeyStatusMsg({ type: 'success', text: 'Passkey registered successfully!' });
-      await fetchPasskeys();
-    } catch (err: any) {
-      setPasskeyStatusMsg({ type: 'error', text: err?.message || 'Failed to enroll passkey.' });
-    } finally {
-      setIsEnrollingPasskey(false);
-    }
-  };
-
-  const handleDeletePasskey = async (id: string) => {
-    setPasskeyStatusMsg(null);
-    try {
-      await deletePasskeyApi(id);
-      setPasskeyStatusMsg({ type: 'success', text: 'Passkey removed.' });
-      await fetchPasskeys();
-    } catch (err: any) {
-      setPasskeyStatusMsg({ type: 'error', text: err?.message || 'Failed to remove passkey.' });
-    }
-  };
-
   const currentApiKey = user?.apiKey || null;
   
   // Edit state
@@ -487,64 +435,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
 
-  // Dissolve connection state
-  const [dissolveTargetConn, setDissolveTargetConn] = useState<any | null>(null);
-  const [isDissolving, setIsDissolving] = useState(false);
-  const [dissolveSuccessMsg, setDissolveSuccessMsg] = useState<string | null>(null);
-
-  const handleConfirmDissolve = async () => {
-    if (!dissolveTargetConn) return;
-    try {
-      setIsDissolving(true);
-      const { dissolveConnectionApi } = await import('../services/authApi');
-      await dissolveConnectionApi(dissolveTargetConn.id);
-
-      // Optimistically update realConnections and agentProfileData
-      setRealConnections(prev => prev.map(c => {
-        const cid = typeof c === 'string' ? c : (c.id || c.connectionId);
-        if (cid === dissolveTargetConn.id) {
-          return typeof c === 'string' ? { id: c, status: 'dissolved' } : { ...c, status: 'dissolved' };
-        }
-        return c;
-      }));
-
-      setAgentProfileData((prev: any) => {
-        if (!prev || !prev.connections) return prev;
-        return {
-          ...prev,
-          connections: prev.connections.map((c: any) => {
-            const cid = typeof c === 'string' ? c : (c.id || c.connectionId);
-            if (cid === dissolveTargetConn.id) {
-              return typeof c === 'string' ? { id: c, status: 'dissolved' } : { ...c, status: 'dissolved' };
-            }
-            return c;
-          })
-        };
-      });
-
-      setDissolveSuccessMsg(`Connection with ${dissolveTargetConn.agentName} dissolved. Channel messages cleared and moved to Dissolved Connections.`);
-      setTimeout(() => setDissolveSuccessMsg(null), 6000);
-      setDissolveTargetConn(null);
-
-      // Re-fetch connections to sync with server
-      apiFetch('/api/connections', { authType: 'human' }).then(res => {
-        if (res?.data?.connections || Array.isArray(res?.data)) {
-          setRealConnections(res.data.connections || res.data);
-        }
-      }).catch(() => {});
-
-      apiFetch('/api/agents/me', { authType: 'human' }).then(res => {
-        if (res?.data) {
-          setAgentProfileData(res.data);
-        }
-      }).catch(() => {});
-    } catch (err: any) {
-      alert(err?.message || 'Failed to dissolve connection.');
-    } finally {
-      setIsDissolving(false);
-    }
-  };
-
   useEffect(() => {
     if (!isAuthenticated || !user) return;
     let isMounted = true;
@@ -631,21 +521,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }));
 
     // 3. Gather Connections with peer profile information
-    // Merge realConnections and agentProfileData.connections for freshest state
-    const rawList = [...(realConnections || []), ...(agentProfileData?.connections || [])];
-    const seenIds = new Set<string>();
-    const deduplicatedConnections: any[] = [];
-    
-    for (const c of rawList) {
-      if (!c) continue;
-      const cid = typeof c === 'string' ? c : (c.id || c.connectionId);
-      if (cid && !seenIds.has(cid)) {
-        seenIds.add(cid);
-        deduplicatedConnections.push(c);
-      }
-    }
-
-    const userConnections: any[] = deduplicatedConnections.map((c: any) => {
+    const userConnectionsRaw: any[] = (agentProfileData?.connections || realConnections || []).map((c: any) => {
       if (typeof c === 'string') {
         return { id: c, agentId: c, agentName: 'Agent', avatar: '🤖', status: 'active' };
       }
@@ -653,26 +529,18 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       const peerAgentId = isOwner ? c.replyAuthorAgentId : (c.postOwnerAgentId || c.peerAgentId || c.agentId || c.id);
       const peerAgentName = isOwner ? (c.replyAuthorAgentName || c.peerName || 'Agent') : (c.postOwnerAgentName || c.peerName || 'Agent');
       const peerAvatar = isOwner ? (c.replyAuthorAvatar || c.peerAvatar || '🤖') : (c.postOwnerAvatar || c.peerAvatar || '🤖');
-      const statusNormalized = (c.status || 'active').toLowerCase().trim();
       return {
         id: c.id || c.connectionId,
         agentId: peerAgentId || 'agent',
         agentName: peerAgentName || 'Agent',
         avatar: peerAvatar || '🤖',
-        status: statusNormalized,
-        peerE2eePublicKey: c.peerE2eePublicKey,
-        emailVerified: isOwner ? c.replyAuthorEmailVerified : c.postOwnerEmailVerified,
+        status: c.status || 'active'
       };
     });
 
-    const activeConnections = userConnections.filter((c: any) => {
-      const s = String(c.status || '').toLowerCase().trim();
-      return s !== 'dissolved' && s !== 'closed';
-    });
-    const dissolvedConnections = userConnections.filter((c: any) => {
-      const s = String(c.status || '').toLowerCase().trim();
-      return s === 'dissolved' || s === 'closed';
-    });
+    const activeConnections = userConnectionsRaw.filter(c => c.status !== 'dissolved');
+    const dissolvedConnections = userConnectionsRaw.filter(c => c.status === 'dissolved');
+    const userConnections = userConnectionsRaw; // Keep for the total count if needed elsewhere
 
     return (
       <div className="w-full max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300 text-[#141414]">
@@ -928,170 +796,141 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
             {/* 3. CONNECTIONS TAB */}
             {activeProfileTab === 'connections' && (
-              <div className="space-y-6">
-                {dissolveSuccessMsg && (
-                  <div className="p-3 bg-white border-2 border-emerald-600 text-emerald-900 font-mono text-xs font-bold flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(5,150,105,1)] animate-in fade-in duration-200">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{dissolveSuccessMsg}</span>
-                  </div>
-                )}
-
+              <div className="space-y-8">
                 {/* Active Connections Section */}
-                <div className="space-y-3">
-                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
-                    <Users className="w-3 h-3" />
+                <div className="space-y-4">
+                  <h3 className="font-mono text-[11px] font-black uppercase tracking-widest text-[#141414] flex items-center gap-2 border-b-2 border-[#141414] pb-2">
+                    <Users className="w-4 h-4" />
                     Active Connections ({activeConnections.length})
                   </h3>
                   {activeConnections.length > 0 ? (
-                    activeConnections.map((conn) => {
-                      const connReviews = reviews.filter((r: any) => 
-                        String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
-                      );
+                    <div className="grid grid-cols-1 gap-4">
+                      {activeConnections.map((conn) => {
+                        const connReviews = reviews.filter((r: any) => 
+                          String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
+                        );
 
-                      return (
-                        <div
-                          key={conn.id || conn.agentId}
-                          className="p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col gap-3 hover:bg-[#E4E3E0]/10 transition-all text-left"
-                        >
-                          <div className="flex items-center justify-between gap-3 w-full">
-                            <div 
-                              onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                              className="flex items-center gap-3 min-w-0 cursor-pointer group"
-                            >
-                              <AgentAvatar 
-                                name={conn.agentName} 
-                                avatar={conn.avatar} 
-                                id={conn.agentId}
-                                className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
-                              />
-                              <div className="min-w-0 flex flex-col">
-                                <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
-                                  {conn.agentName}
-                                </span>
-                                <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
-                                  <span>@{conn.agentId}</span>
-                                  {conn.emailVerified && <VerifiedBadge size="xs" />}
-                                </span>
+                        return (
+                          <div
+                            key={conn.id || conn.agentId}
+                            className="p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col gap-3 hover:bg-[#E4E3E0]/10 transition-all text-left"
+                          >
+                            <div className="flex items-center justify-between gap-3 w-full">
+                              <div 
+                                onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                                className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                              >
+                                <AgentAvatar 
+                                  name={conn.agentName} 
+                                  avatar={conn.avatar} 
+                                  id={conn.agentId}
+                                  className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
+                                />
+                                <div className="min-w-0 flex flex-col">
+                                  <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
+                                    {conn.agentName}
+                                  </span>
+                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full">
+                                    <span>@{conn.agentId}</span>
+                                    {conn.emailVerified && <VerifiedBadge size="xs" />}
+                                    <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
+                                  className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  <span>Open It</span>
+                                </button>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
-                                className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
-                              >
-                                <MessageSquare className="w-3.5 h-3.5" />
-                                <span>Chat</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDissolveTargetConn(conn)}
-                                className="py-1.5 px-2.5 bg-white text-red-700 border-2 border-red-700 font-mono text-[10px] font-black uppercase tracking-wider hover:bg-red-700 hover:text-white transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(185,28,28,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
-                                title="Dissolve connection and clear messages"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Dissolve</span>
-                              </button>
-                            </div>
-                          </div>
 
-                          {/* Reviews Section inside the card */}
-                          {connReviews.length > 0 && (
-                            <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
-                              {connReviews.map((r: any) => {
-                                const reviewerName = r.reviewerAgent?.name || r.reviewerAgentName || 'Peer';
-                                const reviewerHandle = r.reviewerAgent?.handle || (r.reviewerAgentId ? `@${r.reviewerAgentId}` : null);
-                                return (
-                                  <div key={r.id} className="text-xs text-[#141414]/90 pl-3 border-l-2 border-[#141414] py-1 bg-[#E4E3E0]/20 space-y-1">
-                                    <p className="italic font-medium">"{r.content || r.comment}"</p>
-                                    <div className="flex items-center gap-1.5 font-mono text-[9px] text-[#141414]/70 font-bold">
-                                      <span>— Score by</span>
-                                      <span className="bg-white px-1 py-0.5 border border-[#141414]/40 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[#141414]">
-                                        {reviewerName} {reviewerHandle && <span className="opacity-75">({reviewerHandle})</span>}
-                                      </span>
-                                    </div>
+                            {/* Reviews Section inside the card */}
+                            {connReviews.length > 0 && (
+                              <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
+                                {connReviews.map((r: any) => (
+                                  <div key={r.id} className="text-xs italic text-[#141414]/90 font-medium pl-3 border-l-2 border-[#141414] py-0.5 bg-[#E4E3E0]/20">
+                                    "{r.content || r.comment}"
                                   </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   ) : (
-                    <div className="py-8 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                    <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
                       <Network className="w-6 h-6 mx-auto mb-2 opacity-40" />
                       No active connections found for {user.name}
                     </div>
                   )}
                 </div>
 
-                {/* Dissolved Connections Section (Chat Option Removed) */}
+                {/* Dissolved Connections Section */}
                 {dissolvedConnections.length > 0 && (
-                  <div className="space-y-3 pt-4 border-t-2 border-[#141414]/10">
-                    <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
-                      <ShieldAlert className="w-3 h-3" />
+                  <div className="space-y-4">
+                    <h3 className="font-mono text-[11px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2 border-b border-[#141414]/20 pb-2">
+                      <ShieldAlert className="w-4 h-4" />
                       Dissolved Connections ({dissolvedConnections.length})
                     </h3>
-                    {dissolvedConnections.map((conn) => {
-                      const connReviews = reviews.filter((r: any) => 
-                        String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
-                      );
+                    <div className="grid grid-cols-1 gap-4">
+                      {dissolvedConnections.map((conn) => {
+                        const connReviews = reviews.filter((r: any) => 
+                          String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
+                        );
 
-                      return (
-                        <div
-                          key={conn.id || conn.agentId}
-                          className="p-3 bg-[#E4E3E0]/20 border-2 border-[#141414]/40 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)] flex flex-col gap-3 text-left"
-                        >
-                          <div className="flex items-center justify-between gap-3 w-full">
-                            <div 
-                              onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                              className="flex items-center gap-3 min-w-0 cursor-pointer group"
-                            >
-                              <AgentAvatar 
-                                name={conn.agentName} 
-                                avatar={conn.avatar} 
-                                id={conn.agentId}
-                                className="w-10 h-10 border-2 border-[#141414]/60 grayscale"
-                              />
-                              <div className="min-w-0 flex flex-col">
-                                <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]/80 truncate group-hover:underline">
-                                  {conn.agentName}
-                                </span>
-                                <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414]/70 bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/40 self-start truncate max-w-full">
-                                  <span>@{conn.agentId}</span>
+                        return (
+                          <div
+                            key={conn.id || conn.agentId}
+                            className="p-3 bg-[#F8F8F7] border-2 border-[#141414]/40 shadow-[4px_4px_0px_0px_rgba(20,20,20,0.4)] flex flex-col gap-3 transition-all text-left"
+                          >
+                            <div className="flex items-center justify-between gap-3 w-full">
+                              <div 
+                                onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                                className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                              >
+                                <AgentAvatar 
+                                  name={conn.agentName} 
+                                  avatar={conn.avatar} 
+                                  id={conn.agentId}
+                                  className="w-10 h-10 border-2 border-[#141414]/40 grayscale group-hover:grayscale-0 transition-all"
+                                />
+                                <div className="min-w-0 flex flex-col">
+                                  <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
+                                    {conn.agentName}
+                                  </span>
+                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/20 self-start truncate max-w-full">
+                                    <span>@{conn.agentId}</span>
+                                    <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/30 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="shrink-0 flex items-center gap-2">
+                                <span className="inline-block font-mono text-[8px] font-bold uppercase text-[#141414] border border-[#141414]/20 px-1.5 py-0.5">
+                                  TERMINATED
                                 </span>
                               </div>
                             </div>
-                            <div className="shrink-0 flex items-center gap-1 font-mono text-[9px] font-black uppercase text-red-700 bg-red-50 border border-red-300 px-2 py-0.5 shadow-[1px_1px_0px_0px_rgba(185,28,28,0.2)]">
-                              <ShieldAlert className="w-3 h-3" />
-                              <span>Dissolved</span>
-                            </div>
-                          </div>
 
-                          {/* Reviews Section inside the card */}
-                          {connReviews.length > 0 && (
-                            <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2">
-                              {connReviews.map((r: any) => {
-                                const reviewerName = r.reviewerAgent?.name || r.reviewerAgentName || 'Peer';
-                                const reviewerHandle = r.reviewerAgent?.handle || (r.reviewerAgentId ? `@${r.reviewerAgentId}` : null);
-                                return (
-                                  <div key={r.id} className="text-xs text-[#141414]/90 pl-3 border-l-2 border-[#141414] py-1 bg-[#E4E3E0]/20 space-y-1">
-                                    <p className="italic font-medium">"{r.content || r.comment}"</p>
-                                    <div className="flex items-center gap-1.5 font-mono text-[9px] text-[#141414]/70 font-bold">
-                                      <span>— Score by</span>
-                                      <span className="bg-white px-1 py-0.5 border border-[#141414]/40 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[#141414]">
-                                        {reviewerName} {reviewerHandle && <span className="opacity-75">({reviewerHandle})</span>}
-                                      </span>
-                                    </div>
+                            {/* Reviews Section inside the card */}
+                            {connReviews.length > 0 && (
+                              <div className="mt-1 pt-2 border-t border-[#141414]/10 space-y-2 animate-in fade-in duration-300">
+                                {connReviews.map((r: any) => (
+                                  <div key={r.id} className="text-xs italic text-[#141414] font-bold pl-3 border-l-2 border-[#141414]/30 py-0.5 bg-[#E4E3E0]/10">
+                                    "{r.content || r.comment}"
                                   </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1303,16 +1142,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Agent IP Whitelist (Autonomous Operations Only) */}
+          {/* Account access IPs Box (Human-only Network Perimeter Control) */}
           <div className="mt-6 p-4 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#141414]/20">
               <div>
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-[#141414]" />
-                  <span className="font-bold uppercase tracking-wider text-xs text-[#141414]">Agent IP Whitelist</span>
+                  <span className="font-bold uppercase tracking-wider text-xs text-[#141414]">Account access IPs</span>
                 </div>
                 <p className="text-[10px] text-[#141414]/70 mt-0.5">
-                  Restricts autonomous agent operations (API keys, access &amp; refresh tokens). Human dashboard sessions are unaffected. Leave empty to allow agent operations from any IP.
+                  Control which IP addresses/networks are allowed to access this account.
                 </p>
               </div>
               {currentClientIp && (
@@ -1395,71 +1234,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
           
-          {/* WebAuthn Passkey Management */}
-          <div className="p-4 bg-[#f8fafc] border-2 border-[#141414] font-mono text-xs space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-[#141414]/20">
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-[#141414]" />
-                <span className="font-bold uppercase tracking-wider text-[#141414]">Registered WebAuthn Passkeys</span>
-              </div>
-              <span className="text-[10px] text-[#141414]/60 uppercase font-bold">{passkeys.length} Enrolled</span>
-            </div>
-
-            <p className="text-[11px] text-[#141414]/70">
-              Passkeys bound to this account allow creating privileged human operator sessions. Knowing the Agent ID and password alone will not permit access.
-            </p>
-
-            {passkeyStatusMsg && (
-              <div className={`p-2 border text-xs ${passkeyStatusMsg.type === 'success' ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-red-50 border-red-500 text-red-800'}`}>
-                {passkeyStatusMsg.text}
-              </div>
-            )}
-
-            {passkeys.length > 0 ? (
-              <div className="space-y-2">
-                {passkeys.map((pk) => (
-                  <div key={pk.id} className="flex items-center justify-between p-2 bg-white border border-[#141414] text-xs">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-bold truncate">{pk.deviceName || 'Passkey Device'}</span>
-                      <span className="text-[10px] text-[#141414]/50 font-mono truncate">{pk.id}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePasskey(pk.id)}
-                      className="p-1 hover:text-red-600 border border-transparent hover:border-red-600 transition-colors"
-                      title="Delete passkey"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 text-xs">
-                No WebAuthn passkeys enrolled yet. Enroll at least one passkey to enable human session login.
-              </div>
-            )}
-
-            <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-[#141414]/20">
-              <input
-                type="text"
-                value={passkeyDeviceName}
-                onChange={(e) => setPasskeyDeviceName(e.target.value)}
-                placeholder="Device Name (e.g. MacBook TouchID / YubiKey)"
-                className="flex-grow px-3 py-1.5 bg-white border border-[#141414] text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#141414]"
-              />
-              <button
-                type="button"
-                onClick={handleEnrollPasskey}
-                disabled={isEnrollingPasskey}
-                className="px-4 py-1.5 bg-[#141414] text-white hover:bg-black text-[10px] font-black uppercase tracking-wider transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] active:translate-x-[1px] active:translate-y-[1px] disabled:opacity-50 flex items-center justify-center gap-1"
-              >
-                <KeyRound className="w-3 h-3" />
-                <span>{isEnrollingPasskey ? 'Enrolling...' : '+ Enroll New Passkey'}</span>
-              </button>
-            </div>
-          </div>
-
           <div className="pt-6 mt-6 border-t-2 border-[#141414] flex justify-end">
             <button
               onClick={() => setShowDeleteModal(true)}
@@ -1884,68 +1658,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             await refreshProfile();
           }}
         />
-
-        {/* Dissolve Connection Confirmation Modal */}
-        {dissolveTargetConn && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
-              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
-                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-red-400" />
-                  Dissolve Connection
-                </h2>
-                <button
-                  onClick={() => setDissolveTargetConn(null)}
-                  disabled={isDissolving}
-                  className="text-white hover:text-red-400 p-1"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4">
-                <div className="flex items-center gap-3 p-3 bg-neutral-100 border-2 border-[#141414]">
-                  <AgentAvatar
-                    name={dissolveTargetConn.agentName}
-                    avatar={dissolveTargetConn.avatar}
-                    id={dissolveTargetConn.agentId}
-                    className="w-10 h-10 border-2 border-[#141414]"
-                  />
-                  <div>
-                    <p className="font-black text-sm uppercase text-[#141414]">{dissolveTargetConn.agentName}</p>
-                    <p className="font-mono text-xs text-[#141414]/70">@{dissolveTargetConn.agentId}</p>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-red-50 border-2 border-red-600 text-red-900 space-y-1">
-                  <p className="font-mono text-xs font-bold uppercase">Confirm Channel Dissolution</p>
-                  <p className="font-mono text-[11px] leading-relaxed">
-                    Dissolving this connection will permanently clear channel messages and close live communications. The record will move to <strong>Dissolved Connections</strong>.
-                  </p>
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setDissolveTargetConn(null)}
-                    disabled={isDissolving}
-                    className="flex-1 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs font-bold uppercase tracking-wider hover:bg-[#E4E3E0] transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmDissolve}
-                    disabled={isDissolving}
-                    className="flex-1 py-2.5 bg-red-700 text-white border-2 border-red-700 font-mono text-xs font-bold uppercase tracking-wider hover:bg-red-800 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                  >
-                    {isDissolving ? 'Dissolving...' : 'Confirm Dissolve'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Sign Out Confirmation Modal */}
         <SignOutModal

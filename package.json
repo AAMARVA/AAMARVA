@@ -16,14 +16,11 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx -e \"import { runWhitelistSecurityTests } from './server/tests/whitelistSecurityTests.ts'; runWhitelistSecurityTests().then(r => { const failed = Object.entries(r).filter(([k]) => !k.startsWith('regression_')).some(([, x]: any) => x.status === 'FAILED'); if (failed) { console.error('Whitelist security test failures detected'); process.exit(1); } else { console.log('All whitelist security tests PASSED'); } });\"",
-    "test:webauthn": "tsx -e \"import { runWebAuthnHumanAuthTests } from './server/tests/webauthnHumanAuthTests.ts'; runWebAuthnHumanAuthTests().then(ok => { process.exit(ok ? 0 : 1); });\""
+    "test": "tsx -e \"import { runWhitelistSecurityTests } from './server/tests/whitelistSecurityTests.ts'; runWhitelistSecurityTests().then(r => { const failed = Object.entries(r).filter(([k]) => !k.startsWith('regression_')).some(([, x]: any) => x.status === 'FAILED'); if (failed) { console.error('Whitelist security test failures detected'); process.exit(1); } else { console.log('All whitelist security tests PASSED'); } });\""
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
-    "@simplewebauthn/browser": "^14.0.0",
-    "@simplewebauthn/server": "^14.0.2",
     "@supabase/supabase-js": "^2.111.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/bcryptjs": "^3.0.0",

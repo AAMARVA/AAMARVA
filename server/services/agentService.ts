@@ -36,15 +36,10 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     .order('createdAt', { ascending: false });
 
   // 4. Fetch agent's connections (Any participation)
-  const userAgentIdUpper = (user.agentId || targetAgentId || '').toUpperCase();
-  const orCondition = userAgentIdUpper
-    ? `postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id},postOwnerAgentId.ilike.${userAgentIdUpper},replyAuthorAgentId.ilike.${userAgentIdUpper}`
-    : `postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id}`;
-
   const { data: connections, error: connectionsError } = await supabase
     .from('connections')
     .select('*')
-    .or(orCondition)
+    .or(`postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id}`)
     .order('createdAt', { ascending: false });
 
   // Fetch avatars and names for connection participants
@@ -65,16 +60,22 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     users?.forEach((u: any) => userMap.set(u.agentId.toUpperCase(), u));
 
     connectionsWithAvatars = connections.map((c: any) => {
-      const ownerUser = userMap.get(c.postOwnerAgentId?.toUpperCase());
-      const replyUser = userMap.get(c.replyAuthorAgentId?.toUpperCase());
+      const ownerUser = userMap.get((c.postOwnerAgentId || '').toUpperCase());
+      const replyUser = userMap.get((c.replyAuthorAgentId || '').toUpperCase());
+      const poVStatus = ownerUser?.emailVerified ? 'verified' : 'not verified';
+      const raVStatus = replyUser?.emailVerified ? 'verified' : 'not verified';
+
       return {
         ...c,
+        connectionStatus: c.status || 'active',
         postOwnerAgentName: ownerUser?.name || c.postOwnerAgentName || 'Agent',
         replyAuthorAgentName: replyUser?.name || c.replyAuthorAgentName || 'Agent',
         postOwnerAvatar: ownerUser?.avatar || '🤖',
         replyAuthorAvatar: replyUser?.avatar || '🤖',
         postOwnerEmailVerified: ownerUser?.emailVerified,
         replyAuthorEmailVerified: replyUser?.emailVerified,
+        postOwnerVerificationStatus: poVStatus,
+        replyAuthorVerificationStatus: raVStatus,
         postOwnerUserId: ownerUser?.id || c.postOwnerUserId,
         replyAuthorUserId: replyUser?.id || c.replyAuthorUserId,
       };
@@ -204,6 +205,9 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     const counterVerified = Boolean(counterEmailVerified === true);
     const counterStatus = counterVerified ? 'verified' : 'not verified';
 
+    const poVStatus = c.postOwnerVerificationStatus || (c.postOwnerEmailVerified ? 'verified' : 'not verified');
+    const raVStatus = c.replyAuthorVerificationStatus || (c.replyAuthorEmailVerified ? 'verified' : 'not verified');
+
     return {
       id: c.id,
       connectionId: c.id,
@@ -218,11 +222,14 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       ["verification status"]: counterStatus,
       emailVerified: counterVerified,
       status: c.status || 'active',
+      connectionStatus: c.status || 'active',
       createdAt: c.createdAt || c.created_at || new Date().toISOString(),
       postOwnerAgentId: c.postOwnerAgentId,
       postOwnerAgentName: c.postOwnerAgentName,
+      postOwnerVerificationStatus: poVStatus,
       replyAuthorAgentId: c.replyAuthorAgentId,
       replyAuthorAgentName: c.replyAuthorAgentName,
+      replyAuthorVerificationStatus: raVStatus,
       postOwnerAvatar: c.postOwnerAvatar,
       replyAuthorAvatar: c.replyAuthorAvatar,
     };

@@ -50,18 +50,6 @@ export interface HumanSessionRecord {
   createdAt: string;
 }
 
-export interface WebAuthnCredentialRecord {
-  id: string; // Internal record ID or credential ID
-  userId: string;
-  credentialId: string; // Base64URL credential ID
-  publicKey: string; // Base64URL public key
-  counter: number;
-  transports?: string[];
-  deviceName?: string;
-  backedUp?: boolean;
-  createdAt: string;
-}
-
 export interface PostRecord {
   id: string;
   userId: string;
@@ -97,7 +85,7 @@ export interface ConnectionRecord {
   replyAuthorUserId: string;
   replyAuthorAgentId: string;
   replyAuthorAgentName: string;
-  status?: 'active' | 'dissolved' | 'closed';
+  status?: 'active' | 'dissolved';
   createdAt: string;
 }
 

@@ -1,5 +1,4 @@
 import { frontendConfig } from '../config';
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
 export interface UserProfile {
   id: string;
@@ -212,174 +211,21 @@ export async function registerUserApi(payload: {
   return responseJson.data;
 }
 
-export async function fetchCsrfTokenApi(): Promise<string> {
-  const res = await fetch(buildApiUrl('/api/auth/csrf'), {
-    method: 'GET',
+export async function loginUserApi(payload: { agentId: string; password: string; }) {
+  const res = await fetch(buildApiUrl('/api/auth/human/login'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agentId: payload.agentId, password: payload.password }),
     credentials: 'include',
   });
 
+  const responseJson = await res.json();
   if (!res.ok) {
-    let errorMsg = 'Failed to fetch security CSRF token.';
-    try {
-      const errJson = await res.json();
-      errorMsg = errJson.error?.message || errJson.message || errorMsg;
-    } catch (_) {}
-    throw new Error(`Security initialization failed: ${errorMsg}`);
-  }
-
-  const data = await res.json().catch(() => ({}));
-  const token = data.data?.csrfToken;
-  if (!token || typeof token !== 'string' || token.trim() === '') {
-    throw new Error('Security initialization failed: Invalid or empty CSRF token received from server.');
-  }
-
-  return token.trim();
-}
-
-export async function loginUserApi(payload: { agentId: string; password: string; deviceName?: string }) {
-  // 1. Fetch CSRF token
-  const csrfToken = await fetchCsrfTokenApi();
-
-  // 2. Request WebAuthn challenge for the account after verifying password
-  const challengeRes = await fetch(buildApiUrl('/api/auth/human/login/challenge'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-csrf-token': csrfToken,
-    },
-    body: JSON.stringify({
-      agentId: payload.agentId,
-      password: payload.password,
-    }),
-    credentials: 'include',
-  });
-
-  const challengeJson = await challengeRes.json();
-  if (!challengeRes.ok) {
-    throw new Error(challengeJson.error?.message || 'Authentication failed');
-  }
-
-  const { options, challengeId, enrollmentRequired } = challengeJson.data;
-
-  // 3. If account has no passkeys enrolled, perform first-time passkey enrollment ceremony
-  if (enrollmentRequired) {
-    let attestation;
-    try {
-      attestation = await startRegistration({ optionsJSON: options });
-    } catch (err: any) {
-      throw new Error(`WebAuthn passkey enrollment cancelled or failed: ${err?.message || 'Authenticator error'}`);
-    }
-
-    const enrollRes = await fetch(buildApiUrl('/api/auth/human/login/enroll'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-csrf-token': csrfToken,
-      },
-      body: JSON.stringify({
-        agentId: payload.agentId,
-        password: payload.password,
-        challengeId,
-        response: attestation,
-        deviceName: payload.deviceName || 'Primary Passkey',
-      }),
-      credentials: 'include',
-    });
-
-    const enrollJson = await enrollRes.json();
-    if (!enrollRes.ok) {
-      throw new Error(enrollJson.error?.message || 'Passkey enrollment failed');
-    }
-
-    return enrollJson.data;
-  }
-
-  // 4. Standard WebAuthn authentication ceremony
-  let assertion;
-  try {
-    assertion = await startAuthentication({ optionsJSON: options });
-  } catch (err: any) {
-    throw new Error(`WebAuthn passkey verification cancelled or failed: ${err?.message || 'Authenticator error'}`);
-  }
-
-  // 5. Complete login with assertion
-  const loginRes = await fetch(buildApiUrl('/api/auth/human/login'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-csrf-token': csrfToken,
-    },
-    body: JSON.stringify({
-      agentId: payload.agentId,
-      password: payload.password,
-      challengeId,
-      assertion,
-    }),
-    credentials: 'include',
-  });
-
-  const loginJson = await loginRes.json();
-  if (!loginRes.ok) {
-    throw new Error(loginJson.error?.message || 'Human authentication failed');
+    throw new Error(responseJson.error?.message || 'Login failed');
   }
 
   // Human authentication is backed exclusively by HTTP-only cookie
-  return loginJson.data;
-}
-
-export async function registerPasskeyApi(deviceName?: string) {
-  // 1. Get options
-  const optionsRes = await fetch(buildApiUrl('/api/auth/webauthn/register/options'), {
-    method: 'POST',
-    credentials: 'include',
-  });
-  const optionsJson = await optionsRes.json();
-  if (!optionsRes.ok) {
-    throw new Error(optionsJson.error?.message || 'Failed to get passkey registration options');
-  }
-
-  const { options, challengeId } = optionsJson.data;
-
-  // 2. Start browser WebAuthn registration ceremony
-  const attestation = await startRegistration({ optionsJSON: options });
-
-  // 3. Verify on server
-  const verifyRes = await fetch(buildApiUrl('/api/auth/webauthn/register/verify'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      challengeId,
-      response: attestation,
-      deviceName: deviceName || 'Passkey Device',
-    }),
-    credentials: 'include',
-  });
-
-  const verifyJson = await verifyRes.json();
-  if (!verifyRes.ok) {
-    throw new Error(verifyJson.error?.message || 'Failed to verify and enroll passkey');
-  }
-  return verifyJson.data;
-}
-
-export async function listPasskeysApi() {
-  const res = await fetch(buildApiUrl('/api/auth/webauthn/credentials'), {
-    method: 'GET',
-    credentials: 'include',
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error?.message || 'Failed to retrieve passkeys');
-  return json.data?.credentials || [];
-}
-
-export async function deletePasskeyApi(credentialId: string) {
-  const res = await fetch(buildApiUrl(`/api/auth/webauthn/credentials/${credentialId}`), {
-    method: 'DELETE',
-    credentials: 'include',
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error?.message || 'Failed to remove passkey');
-  return json.data;
+  return responseJson.data;
 }
 
 export async function loginAgentApi(payload: { agentId: string; apiKey: string; }) {
@@ -554,12 +400,4 @@ export async function deleteConnectionRequestApi(requestId: string, authType: 'h
     authType,
   });
   return res.data;
-}
-
-export async function dissolveConnectionApi(connectionId: string, authType: 'human' | 'agent' = 'human'): Promise<any> {
-  const res = await apiFetch(`/api/connections/${encodeURIComponent(connectionId)}`, {
-    method: 'DELETE',
-    authType,
-  });
-  return res.data || res;
 }

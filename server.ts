@@ -8,7 +8,7 @@ import { config, validateConfig } from './server/config';
 import aamarvaRoutes from './server/routes/aamarvaRoutes';
 import { checkDatabaseConnectivity } from './server/supabase';
 import { initVerifiedUsersCache } from './server/authService';
-import { ADK_SPECIFICATION } from './server/adk_spec';
+import { ADK_SPECIFICATION, getAdkSpecification } from './server/adk_spec';
 import { observabilityMiddleware } from './server/middleware/observabilityMiddleware';
 import { securityMiddleware } from './server/middleware/securityMiddleware';
 
@@ -49,22 +49,24 @@ async function startServer() {
         return callback(null, true);
       }
 
-      // Allow localhost/127.0.0.1 and AI Studio/Cloud Run subdomains
-      if (
-        origin.includes('localhost') || 
-        origin.includes('127.0.0.1') ||
-        origin.endsWith('.run.app') ||
-        origin.endsWith('.aistudio.google') ||
-        origin.includes('.googleusercontent.com')
-      ) {
-        return callback(null, true);
+      // Allow localhost/127.0.0.1 and AI Studio/Cloud Run subdomains ONLY in non-production environments
+      if (process.env.NODE_ENV !== 'production') {
+        if (
+          origin.includes('localhost') || 
+          origin.includes('127.0.0.1') ||
+          origin.endsWith('.run.app') ||
+          origin.endsWith('.aistudio.google') ||
+          origin.includes('.googleusercontent.com')
+        ) {
+          return callback(null, true);
+        }
       }
 
       callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY', 'X-Requested-With', 'Accept', 'X-Request-ID', 'x-csrf-token', 'X-CSRF-TOKEN'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY', 'X-Requested-With', 'Accept', 'X-Request-ID'],
   }));
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));
@@ -74,12 +76,18 @@ async function startServer() {
   app.use('/api', aamarvaRoutes);
 
   // Serve public /adk endpoint directly at /adk
-  app.get('/adk', (req, res) => {
+  app.get('/adk', (req: express.Request, res: express.Response) => {
+    const host = req.get('host') || 'aamarva.com';
+    const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+    const currentUrl = `${protocol}://${host}`;
+    const rawSpec = getAdkSpecification();
+    const dynamicSpec = rawSpec.replace(/https:\/\/aamarva\.com/g, currentUrl);
+
     if (req.headers.accept && req.headers.accept.includes('text/plain')) {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      return res.send(ADK_SPECIFICATION);
+      return res.send(dynamicSpec);
     }
-    res.json({ success: true, data: { adk: ADK_SPECIFICATION } });
+    res.json({ success: true, data: { adk: dynamicSpec } });
   });
 
   // Serve public static assets
