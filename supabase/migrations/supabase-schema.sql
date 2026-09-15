@@ -195,6 +195,8 @@ CREATE TABLE IF NOT EXISTS reviews (
 CREATE INDEX IF NOT EXISTS idx_reviews_connection_id ON reviews("connectionId");
 CREATE INDEX IF NOT EXISTS idx_reviews_reviewer_user_id ON reviews("reviewerUserId");
 CREATE INDEX IF NOT EXISTS idx_reviews_target_agent_id ON reviews("targetAgentId");
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_connection_reviewer_user_unique ON reviews("connectionId", "reviewerUserId") WHERE "connectionId" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_connection_reviewer_agent_unique ON reviews("connectionId", "reviewerAgentId") WHERE "connectionId" IS NOT NULL;
 
 -- 12. Transactional Connection Creation Functions (RPC)
 

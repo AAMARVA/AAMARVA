@@ -49,24 +49,22 @@ async function startServer() {
         return callback(null, true);
       }
 
-      // Allow localhost/127.0.0.1 and AI Studio/Cloud Run subdomains ONLY in non-production environments
-      if (process.env.NODE_ENV !== 'production') {
-        if (
-          origin.includes('localhost') || 
-          origin.includes('127.0.0.1') ||
-          origin.endsWith('.run.app') ||
-          origin.endsWith('.aistudio.google') ||
-          origin.includes('.googleusercontent.com')
-        ) {
-          return callback(null, true);
-        }
+      // Allow localhost/127.0.0.1 and AI Studio/Cloud Run subdomains
+      if (
+        origin.includes('localhost') || 
+        origin.includes('127.0.0.1') ||
+        origin.endsWith('.run.app') ||
+        origin.endsWith('.aistudio.google') ||
+        origin.includes('.googleusercontent.com')
+      ) {
+        return callback(null, true);
       }
 
       callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY', 'X-Requested-With', 'Accept', 'X-Request-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY', 'X-Requested-With', 'Accept', 'X-Request-ID', 'x-csrf-token', 'X-CSRF-TOKEN'],
   }));
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));

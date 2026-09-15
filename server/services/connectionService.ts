@@ -438,25 +438,69 @@ export async function getConnectionMessages(connectionId: string, userId: string
 
 export async function deleteConnection(connectionId: string, userId: string) {
   const supabase = getSupabaseClient();
+  const cleanId = (connectionId || '').trim();
 
-  const { data: connection, error: connError } = await supabase
-    .from('connections')
-    .select('*')
-    .eq('id', connectionId)
-    .maybeSingle();
-
-  if (connError || !connection) {
-    throw new ConnectionNotFoundError('Connection not found.', 'CONNECTION_NOT_FOUND');
+  if (!cleanId) {
+    throw new ConnectionNotFoundError('Connection identifier is required.', 'INVALID_CONNECTION_ID');
   }
 
-  // Verify participant access
+  // Fetch current user details for agentId verification
   const { data: currentUser } = await supabase
     .from('users')
-    .select('agentId')
+    .select('id, agentId')
     .eq('id', userId)
     .maybeSingle();
 
   const currentAgentId = currentUser?.agentId;
+
+  // 1. Try direct lookup by connection ID
+  let { data: connection, error: connError } = await supabase
+    .from('connections')
+    .select('*')
+    .eq('id', cleanId)
+    .maybeSingle();
+
+  // 2. Fallback: try by requestId
+  if (!connection) {
+    const { data: byReq } = await supabase
+      .from('connections')
+      .select('*')
+      .eq('requestId', cleanId)
+      .maybeSingle();
+    if (byReq) {
+      connection = byReq;
+    }
+  }
+
+  // 3. Fallback: if caller passed peer agent ID (e.g. AMR-XXXX-YYYY or @AMR-XXXX-YYYY)
+  if (!connection) {
+    const targetPeerAgent = cleanId.replace(/^@/, '').toUpperCase();
+    const { data: byPeer } = await supabase
+      .from('connections')
+      .select('*')
+      .or(`postOwnerAgentId.ilike.${targetPeerAgent},replyAuthorAgentId.ilike.${targetPeerAgent}`)
+      .order('createdAt', { ascending: false });
+
+    if (byPeer && byPeer.length > 0) {
+      const match = byPeer.find((c: any) => 
+        c.postOwnerUserId === userId ||
+        c.replyAuthorUserId === userId ||
+        (currentAgentId && (
+          (c.postOwnerAgentId && c.postOwnerAgentId.toLowerCase() === currentAgentId.toLowerCase()) ||
+          (c.replyAuthorAgentId && c.replyAuthorAgentId.toLowerCase() === currentAgentId.toLowerCase())
+        ))
+      );
+      if (match) {
+        connection = match;
+      }
+    }
+  }
+
+  if (!connection) {
+    throw new ConnectionNotFoundError('Connection not found.', 'CONNECTION_NOT_FOUND');
+  }
+
+  // Verify participant access
   const isParticipant =
     connection.postOwnerUserId === userId ||
     connection.replyAuthorUserId === userId ||
@@ -469,27 +513,39 @@ export async function deleteConnection(connectionId: string, userId: string) {
     throw new ConnectionForbiddenError('Forbidden: You are not a participant in this connection.', 'FORBIDDEN');
   }
 
-  // Mark connection status as dissolved so future messages are blocked while preserving connection link & reviews
-  try {
-    await supabase
-      .from('connections')
-      .update({ status: 'dissolved' })
-      .eq('id', connectionId);
-  } catch (statusErr) {
-    console.warn('Note updating connection status to dissolved:', statusErr);
-  }
-
-  // Delete messages associated with connection
+  // 1. FIRST: Delete messages belonging to this connection.
+  // Invariant: IF message deletion fails, dissolution must NOT be reported as successful.
   const { error: messagesError } = await supabase
     .from('messages')
     .delete()
-    .eq('connectionId', connectionId);
+    .eq('connectionId', connection.id);
 
   if (messagesError) {
-    throw new ConnectionError(`Failed to clear connection channel messages: ${messagesError.message}`, 500, 'DATABASE_ERROR');
+    console.error(`[deleteConnection] Error deleting messages for connection ${connection.id}:`, messagesError);
+    throw new ConnectionError(
+      `Failed to clear connection messages: ${messagesError.message}`,
+      500,
+      'MESSAGE_DELETION_FAILED'
+    );
   }
 
-  return { success: true, message: 'Connection channel dissolved and messages cleared. No further messages can be sent.' };
+  // 2. SECOND: Only after message deletion succeeds, transition connection status to dissolved.
+  const { error: updateError } = await supabase
+    .from('connections')
+    .update({ status: 'dissolved' })
+    .eq('id', connection.id);
+
+  if (updateError) {
+    console.error(`[deleteConnection] Error updating status to dissolved for connection ${connection.id}:`, updateError);
+    throw new ConnectionError(`Database error dissolving connection: ${updateError.message}`, 500, 'DATABASE_ERROR');
+  }
+
+  return {
+    success: true,
+    message: 'Connection channel dissolved and messages cleared. No further messages can be sent.',
+    connectionId: connection.id,
+    status: 'dissolved',
+  };
 }
 
 const inFlightRequestLocks = new Map<string, Promise<any>>();

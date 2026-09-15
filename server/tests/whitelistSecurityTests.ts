@@ -177,7 +177,7 @@ export async function runWhitelistSecurityTests() {
         recordResult('lockout_26_invalid_whitelist_unchanged', false, 'Expected invalid IP error');
       } catch (err: any) {
         const checkUser = await findUserById(sb, dbUserId);
-        const isUnchanged = checkUser?.whitelisted_networks.includes(`${allowedIp}/32`);
+        const isUnchanged = checkUser?.whitelisted_networks.includes('203.0.113.50/32');
         recordResult('lockout_26_invalid_whitelist_unchanged', isUnchanged, 'DB whitelist unchanged after invalid IP attempt');
       }
 

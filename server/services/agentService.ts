@@ -36,10 +36,15 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     .order('createdAt', { ascending: false });
 
   // 4. Fetch agent's connections (Any participation)
+  const userAgentIdUpper = (user.agentId || targetAgentId || '').toUpperCase();
+  const orCondition = userAgentIdUpper
+    ? `postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id},postOwnerAgentId.ilike.${userAgentIdUpper},replyAuthorAgentId.ilike.${userAgentIdUpper}`
+    : `postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id}`;
+
   const { data: connections, error: connectionsError } = await supabase
     .from('connections')
     .select('*')
-    .or(`postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id}`)
+    .or(orCondition)
     .order('createdAt', { ascending: false });
 
   // Fetch avatars and names for connection participants

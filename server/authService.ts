@@ -1,7 +1,13 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { UserRecord, RefreshTokenRecord } from './db.js';
+import {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+} from '@simplewebauthn/server';
+import { UserRecord, RefreshTokenRecord, WebAuthnCredentialRecord } from './db.js';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase.js';
 import { sendEmailVerification, sendPasswordResetEmail, sendAccountVerificationEmail } from './emailService.js';
 import { config } from './config.js';
@@ -852,7 +858,412 @@ async function findUserByAgentId(agentId: string) {
 
 // Legacy findUserByApiKey lookup completely removed
 
-export async function loginHuman(data: { agentId: string; password: string }) {
+// --- WebAuthn & CSRF Human Authentication Boundary ---
+
+const csrfTokenFallback = new Map<string, Date>();
+const webAuthnChallengeFallback = new Map<string, WebAuthnChallengeRecord>();
+
+export async function generateCsrfToken(): Promise<string> {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+  
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from('csrf_tokens').insert({
+    token,
+    expiresAt: expiresAt.toISOString(),
+  });
+  
+  if (error && (error.code === 'PGRST205' || error.message?.includes('not find the table'))) {
+    csrfTokenFallback.set(token, expiresAt);
+  }
+  
+  // Clean up occasionally
+  if (Math.random() < 0.05) {
+    supabase.from('csrf_tokens').delete().lt('expiresAt', new Date().toISOString()).then();
+    const now = new Date();
+    for (const [t, exp] of csrfTokenFallback.entries()) {
+      if (now > exp) csrfTokenFallback.delete(t);
+    }
+  }
+
+  return token;
+}
+
+export async function isValidCsrfToken(token?: string | null): Promise<boolean> {
+  if (!token || typeof token !== 'string') return false;
+  const trimmed = token.trim();
+  
+  if (csrfTokenFallback.has(trimmed)) {
+    const exp = csrfTokenFallback.get(trimmed)!;
+    if (new Date() > exp) {
+      csrfTokenFallback.delete(trimmed);
+      return false;
+    }
+    return true;
+  }
+  
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('csrf_tokens')
+    .select('expiresAt')
+    .eq('token', trimmed)
+    .maybeSingle();
+    
+  if (error && (error.code === 'PGRST205' || error.message?.includes('not find the table'))) {
+    return false; // If using fallback and not found, it would have returned above
+  }
+    
+  if (!data) return false;
+  
+  if (new Date() > new Date(data.expiresAt)) {
+    await supabase.from('csrf_tokens').delete().eq('token', trimmed);
+    return false;
+  }
+  
+  return true;
+}
+
+export interface WebAuthnChallengeRecord {
+  challengeId: string;
+  challenge: string;
+  userId: string;
+  agentId: string;
+  type: 'login' | 'register';
+  expiresAt: number;
+  used: boolean;
+}
+
+export async function createWebAuthnChallenge(
+  userId: string,
+  agentId: string,
+  challenge: string,
+  type: 'login' | 'register'
+): Promise<string> {
+  const challengeId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes TTL
+  
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from('webauthn_challenges').insert({
+    challengeId,
+    challenge,
+    userId,
+    agentId,
+    type,
+    expiresAt: expiresAt.toISOString(),
+    used: false
+  });
+
+  if (error && (error.code === 'PGRST205' || error.message?.includes('not find the table'))) {
+    webAuthnChallengeFallback.set(challengeId, {
+      challengeId,
+      challenge,
+      userId,
+      agentId,
+      type,
+      expiresAt: expiresAt.getTime(),
+      used: false
+    });
+  }
+
+  if (Math.random() < 0.05) {
+    supabase.from('webauthn_challenges').delete().lt('expiresAt', new Date().toISOString()).then();
+    const now = Date.now();
+    for (const [id, rec] of webAuthnChallengeFallback.entries()) {
+      if (now > rec.expiresAt) webAuthnChallengeFallback.delete(id);
+    }
+  }
+
+  return challengeId;
+}
+
+export async function consumeWebAuthnChallenge(
+  challengeId: string,
+  expectedUserId: string,
+  type: 'login' | 'register'
+): Promise<{ valid: boolean; challenge?: string; reason?: string }> {
+  if (!challengeId) {
+    return { valid: false, reason: 'Missing challenge ID.' };
+  }
+  
+  if (webAuthnChallengeFallback.has(challengeId)) {
+    const record = webAuthnChallengeFallback.get(challengeId)!;
+    if (record.used) return { valid: false, reason: 'Challenge has already been used (replay detected).' };
+    if (Date.now() > record.expiresAt) {
+      webAuthnChallengeFallback.delete(challengeId);
+      return { valid: false, reason: 'Challenge has expired.' };
+    }
+    if (record.type !== type) return { valid: false, reason: 'Challenge type mismatch.' };
+    if (record.userId !== expectedUserId) return { valid: false, reason: 'Challenge bound to a different user session.' };
+    record.used = true;
+    return { valid: true, challenge: record.challenge };
+  }
+  
+  const supabase = getSupabaseClient();
+  const { data: record, error } = await supabase
+    .from('webauthn_challenges')
+    .select('*')
+    .eq('challengeId', challengeId)
+    .maybeSingle();
+    
+  if (error && (error.code === 'PGRST205' || error.message?.includes('not find the table'))) {
+    return { valid: false, reason: 'Challenge not found or already purged.' };
+  }
+  if (error || !record) {
+    return { valid: false, reason: 'Challenge not found or already purged.' };
+  }
+  if (record.used) {
+    return { valid: false, reason: 'Challenge has already been used (replay detected).' };
+  }
+  if (new Date() > new Date(record.expiresAt)) {
+    await supabase.from('webauthn_challenges').delete().eq('challengeId', challengeId);
+    return { valid: false, reason: 'Challenge has expired.' };
+  }
+  if (record.type !== type) {
+    return { valid: false, reason: 'Challenge type mismatch.' };
+  }
+  if (record.userId !== expectedUserId) {
+    return { valid: false, reason: 'Challenge does not belong to the target account.' };
+  }
+
+  // Mark used immediately to prevent replay
+  await supabase
+    .from('webauthn_challenges')
+    .update({ used: true })
+    .eq('challengeId', challengeId);
+    
+  return { valid: true, challenge: record.challenge };
+}
+
+const memoryWebAuthnStore = new Map<string, WebAuthnCredentialRecord[]>();
+
+export async function getUserWebAuthnCredentials(userId: string): Promise<WebAuthnCredentialRecord[]> {
+  if (!userId) return [];
+  const cached = memoryWebAuthnStore.get(userId);
+  if (cached && cached.length > 0) {
+    return [...cached];
+  }
+
+  const supabase = getSupabaseClient();
+  try {
+    if (supabase.auth?.admin?.getUserById) {
+      const { data, error } = await supabase.auth.admin.getUserById(userId);
+      if (!error && data?.user?.app_metadata?.webauthnCredentials) {
+        const creds = data.user.app_metadata.webauthnCredentials as WebAuthnCredentialRecord[];
+        memoryWebAuthnStore.set(userId, creds);
+        return [...creds];
+      }
+    }
+  } catch (e) {}
+
+  return memoryWebAuthnStore.get(userId) || [];
+}
+
+export async function saveUserWebAuthnCredential(userId: string, cred: WebAuthnCredentialRecord): Promise<void> {
+  const existing = await getUserWebAuthnCredentials(userId);
+  const targetId = cred.credentialId || cred.id;
+  const normalizedCred: WebAuthnCredentialRecord = {
+    ...cred,
+    id: targetId,
+    credentialId: targetId,
+  };
+  const updated = existing.filter(c => (c.credentialId || c.id) !== targetId);
+  updated.push(normalizedCred);
+  memoryWebAuthnStore.set(userId, updated);
+
+  const supabase = getSupabaseClient();
+  try {
+    if (supabase.auth?.admin?.getUserById && supabase.auth?.admin?.updateUserById) {
+      const { data } = await supabase.auth.admin.getUserById(userId);
+      const existingAppMetadata = data?.user?.app_metadata || {};
+      await supabase.auth.admin.updateUserById(userId, {
+        app_metadata: {
+          ...existingAppMetadata,
+          webauthnCredentials: updated,
+        },
+      });
+    }
+  } catch (e) {
+    console.warn('[WebAuthn] Note persisting credential to Supabase Auth metadata:', (e as any)?.message || e);
+  }
+}
+
+export async function updateUserWebAuthnCredentialCounter(userId: string, credentialId: string, newCounter: number): Promise<void> {
+  const existing = await getUserWebAuthnCredentials(userId);
+  const target = existing.find(c => (c.credentialId || c.id) === credentialId);
+  if (target) {
+    target.counter = newCounter;
+    memoryWebAuthnStore.set(userId, existing);
+    const supabase = getSupabaseClient();
+    try {
+      if (supabase.auth?.admin?.getUserById && supabase.auth?.admin?.updateUserById) {
+        const { data } = await supabase.auth.admin.getUserById(userId);
+        const existingAppMetadata = data?.user?.app_metadata || {};
+        await supabase.auth.admin.updateUserById(userId, {
+          app_metadata: {
+            ...existingAppMetadata,
+            webauthnCredentials: existing,
+          },
+        });
+      }
+    } catch (e) {}
+  }
+}
+
+export async function deleteUserWebAuthnCredential(userId: string, credentialId: string): Promise<boolean> {
+  const existing = await getUserWebAuthnCredentials(userId);
+  const filtered = existing.filter(c => (c.credentialId || c.id) !== credentialId);
+  if (filtered.length === existing.length) return false;
+  memoryWebAuthnStore.set(userId, filtered);
+
+  const supabase = getSupabaseClient();
+  try {
+    if (supabase.auth?.admin?.getUserById && supabase.auth?.admin?.updateUserById) {
+      const { data } = await supabase.auth.admin.getUserById(userId);
+      const existingAppMetadata = data?.user?.app_metadata || {};
+      await supabase.auth.admin.updateUserById(userId, {
+        app_metadata: {
+          ...existingAppMetadata,
+          webauthnCredentials: filtered,
+        },
+      });
+    }
+  } catch (e) {}
+  return true;
+}
+
+export function resolveRpId(origin?: string): string {
+  if (origin) {
+    try {
+      const url = new URL(origin);
+      return url.hostname;
+    } catch (e) {}
+  }
+  if (process.env.APP_URL) {
+    try {
+      const url = new URL(process.env.APP_URL);
+      return url.hostname;
+    } catch (e) {}
+  }
+  return 'localhost';
+}
+
+export function getAllowedOrigins(requestOrigin?: string): string[] {
+  const origins = new Set<string>([
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://aamarva.com',
+    'https://www.aamarva.com',
+  ]);
+  if (process.env.APP_URL) {
+    try {
+      origins.add(new URL(process.env.APP_URL).origin);
+    } catch (e) {}
+  }
+  return Array.from(origins);
+}
+
+export async function generateWebAuthnRegistrationOptions(user: any, requestOrigin?: string) {
+  const rpID = resolveRpId(requestOrigin);
+  const existingCredentials = await getUserWebAuthnCredentials(user.id);
+  
+  const options = await generateRegistrationOptions({
+    rpName: 'AAMARVA Protocol',
+    rpID,
+    userID: new Uint8Array(Buffer.from(user.id)),
+    userName: user.agentId || user.email,
+    userDisplayName: user.name || user.agentId,
+    attestationType: 'none',
+    excludeCredentials: existingCredentials.map(c => ({
+      id: c.credentialId,
+      transports: c.transports as any,
+    })),
+    authenticatorSelection: {
+      residentKey: 'preferred',
+      userVerification: 'required',
+    },
+    timeout: 60000,
+  });
+
+  const challengeId = await createWebAuthnChallenge(user.id, user.agentId, options.challenge, 'register');
+  return { options, challengeId };
+}
+
+export async function verifyAndSaveWebAuthnRegistration(
+  user: any,
+  challengeId: string,
+  response: any,
+  deviceName?: string,
+  requestOrigin?: string
+) {
+  const challengeCheck = await consumeWebAuthnChallenge(challengeId, user.id, 'register');
+  if (!challengeCheck.valid || !challengeCheck.challenge) {
+    throw new Error(`Registration challenge validation failed: ${challengeCheck.reason || 'Invalid challenge'}`);
+  }
+
+  const rpID = resolveRpId(requestOrigin);
+  const expectedOrigin = getAllowedOrigins(requestOrigin);
+  const expectedRPID = Array.from(new Set([
+    rpID,
+    'localhost',
+    '127.0.0.1',
+    'aamarva.com',
+    'www.aamarva.com',
+  ]));
+
+  const verification = await verifyRegistrationResponse({
+    response,
+    expectedChallenge: challengeCheck.challenge,
+    expectedOrigin,
+    expectedRPID,
+    requireUserVerification: true,
+  });
+
+  if (!verification.verified || !verification.registrationInfo) {
+    throw new Error('Registration verification failed: Authenticator attestation could not be verified.');
+  }
+
+  const { credential } = verification.registrationInfo;
+  const credentialRecord: WebAuthnCredentialRecord = {
+    id: credential.id,
+    userId: user.id,
+    credentialId: credential.id,
+    publicKey: Buffer.from(credential.publicKey).toString('base64url'),
+    counter: credential.counter,
+    transports: credential.transports,
+    deviceName: deviceName?.trim() || 'Passkey Device',
+    backedUp: verification.registrationInfo.credentialBackedUp,
+    createdAt: new Date().toISOString(),
+  };
+
+  await saveUserWebAuthnCredential(user.id, credentialRecord);
+  return credentialRecord;
+}
+
+export async function generateWebAuthnAuthenticationOptions(
+  user: any,
+  credentials: WebAuthnCredentialRecord[],
+  requestOrigin?: string
+) {
+  if (!credentials || credentials.length === 0) {
+    throw new Error('No registered WebAuthn passkeys found for this account.');
+  }
+
+  const rpID = resolveRpId(requestOrigin);
+  const options = await generateAuthenticationOptions({
+    rpID,
+    allowCredentials: credentials.map(c => ({
+      id: c.credentialId,
+      transports: c.transports as any,
+    })),
+    userVerification: 'required',
+    timeout: 60000,
+  });
+
+  const challengeId = await createWebAuthnChallenge(user.id, user.agentId, options.challenge, 'login');
+  return { options, challengeId };
+}
+
+export async function verifyHumanPassword(data: { agentId: string; password: string }) {
   const agentId = (data.agentId || '').trim();
   const password = (data.password || '').trim();
 
@@ -880,9 +1291,96 @@ export async function loginHuman(data: { agentId: string; password: string }) {
     throw new Error('Authentication failed: Invalid password.');
   }
 
-  const sessionId = await createHumanSession(normalizedUser.id);
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
+  return safeUser;
+}
 
+export async function loginHuman(data: {
+  agentId: string;
+  password: string;
+  challengeId?: string;
+  assertion?: any;
+  origin?: string;
+  rpId?: string;
+}) {
+  const agentId = (data.agentId || '').trim();
+  const password = (data.password || '').trim();
+
+  if (!agentId || !password) {
+    throw new Error('Please provide both Agent ID and password.');
+  }
+
+  // 1. Password verification
+  const safeUser = await verifyHumanPassword({ agentId, password });
+
+  // 2. HARD CONSTRAINT: Password alone cannot create a human session
+  if (!data.challengeId || !data.assertion) {
+    throw new Error('WebAuthn passkey assertion required: Password verification alone cannot create a human session.');
+  }
+
+  // 3. Challenge consumption & account binding
+  const challengeCheck = await consumeWebAuthnChallenge(data.challengeId, safeUser.id, 'login');
+  if (!challengeCheck.valid || !challengeCheck.challenge) {
+    throw new Error(`WebAuthn challenge validation failed: ${challengeCheck.reason || 'Invalid challenge'}`);
+  }
+
+  // 4. Retrieve user's registered credentials
+  const credentials = await getUserWebAuthnCredentials(safeUser.id);
+  if (credentials.length === 0) {
+    throw new Error('No registered WebAuthn passkeys found for this account.');
+  }
+
+  const matchingCred = credentials.find(
+    c => c.credentialId === data.assertion.id || c.credentialId === data.assertion.rawId
+  );
+  if (!matchingCred) {
+    throw new Error('Unrecognized passkey credential. The provided credential is not enrolled for this account.');
+  }
+
+  // 5. Verify cryptographic assertion with @simplewebauthn/server
+  const expectedOrigin = getAllowedOrigins(data.origin);
+  const rpID = resolveRpId(data.origin);
+  const expectedRPID = Array.from(new Set([
+    rpID,
+    'localhost',
+    '127.0.0.1',
+    'aamarva.com',
+    'www.aamarva.com',
+    ...(data.rpId ? [data.rpId] : []),
+  ]));
+
+  let verificationResult;
+  try {
+    verificationResult = await verifyAuthenticationResponse({
+      response: data.assertion,
+      expectedChallenge: challengeCheck.challenge,
+      expectedOrigin,
+      expectedRPID,
+      credential: {
+        id: matchingCred.credentialId,
+        publicKey: new Uint8Array(Buffer.from(matchingCred.publicKey, 'base64url')),
+        counter: matchingCred.counter,
+        transports: matchingCred.transports as any,
+      },
+      requireUserVerification: true,
+    });
+  } catch (err: any) {
+    throw new Error(`WebAuthn assertion verification failed: ${err?.message || 'Cryptographic verification error'}`);
+  }
+
+  if (!verificationResult.verified) {
+    throw new Error('WebAuthn assertion verification failed: Authenticator signature is invalid.');
+  }
+
+  // 6. Update counter
+  await updateUserWebAuthnCredentialCounter(
+    safeUser.id,
+    matchingCred.credentialId,
+    verificationResult.authenticationInfo.newCounter
+  );
+
+  // 7. Human session creation strictly after WebAuthn verification
+  const sessionId = await createHumanSession(safeUser.id);
   return { user: safeUser, sessionId };
 }
 
