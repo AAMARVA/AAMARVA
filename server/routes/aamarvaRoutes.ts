@@ -110,11 +110,8 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
     const clientIp = getClientIp(req);
     const result = await registerUser(req.body, clientIp);
     
-    // Set HTTP-only human session cookie for immediate account management access
-    if (result.sessionId) {
-      res.cookie(HUMAN_SESSION_COOKIE_NAME, result.sessionId, getHumanSessionCookieOptions());
-    }
-
+    // Note: Registration creates account and agent credentials only.
+    // Human session creation strictly requires subsequent WebAuthn passkey enrollment.
     return res.status(201).json({
       success: true,
       data: {
@@ -147,13 +144,24 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
 
 // CSRF Token Generation
 router.get(['/auth/csrf', '/v1/auth/csrf'], async (req: Request, res: Response) => {
-  const token = await generateCsrfToken();
-  res.json({
-    success: true,
-    data: {
-      csrfToken: token,
-    },
-  });
+  try {
+    const token = await generateCsrfToken();
+    res.json({
+      success: true,
+      data: {
+        csrfToken: token,
+      },
+    });
+  } catch (err: any) {
+    console.error('[CSRF Route] Generation/persistence failed:', err?.message || 'Unknown error');
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'CSRF_BOOTSTRAP_FAILED',
+        message: 'Security initialization failed. Could not generate CSRF token.',
+      },
+    });
+  }
 });
 
 // Helper: validate human authentication request boundaries
@@ -197,37 +205,23 @@ async function validateHumanAuthRequest(req: Request, res: Response): Promise<{ 
   }
 
   const allowedOrigins = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
     'https://aamarva.com',
     'https://www.aamarva.com',
   ];
   if (process.env.APP_URL) {
     try { allowedOrigins.push(new URL(process.env.APP_URL).origin); } catch (e) {}
   }
-  const host = req.headers.host;
-  if (host) {
-    allowedOrigins.push(`http://${host}`);
-    allowedOrigins.push(`https://${host}`);
+  if (process.env.NODE_ENV !== 'production') {
+    allowedOrigins.push('http://localhost:3000');
+    allowedOrigins.push('http://127.0.0.1:3000');
+    const host = req.headers.host;
+    if (host) {
+      allowedOrigins.push(`http://${host}`);
+      allowedOrigins.push(`https://${host}`);
+    }
   }
 
-  let isAllowed = allowedOrigins.includes(effectiveOrigin);
-  if (!isAllowed) {
-    try {
-      const parsed = new URL(effectiveOrigin);
-      const hostname = parsed.hostname;
-      if (
-        hostname === 'localhost' ||
-        hostname === '127.0.0.1' ||
-        hostname.endsWith('.run.app') ||
-        hostname.endsWith('.aistudio.google') ||
-        hostname.includes('.googleusercontent.com')
-      ) {
-        isAllowed = true;
-      }
-    } catch (e) {}
-  }
-
+  const isAllowed = allowedOrigins.includes(effectiveOrigin);
   if (!isAllowed) {
     res.status(403).json({
       success: false,

@@ -217,8 +217,23 @@ export async function fetchCsrfTokenApi(): Promise<string> {
     method: 'GET',
     credentials: 'include',
   });
-  const data = await res.json();
-  return data.data?.csrfToken || '';
+
+  if (!res.ok) {
+    let errorMsg = 'Failed to fetch security CSRF token.';
+    try {
+      const errJson = await res.json();
+      errorMsg = errJson.error?.message || errJson.message || errorMsg;
+    } catch (_) {}
+    throw new Error(`Security initialization failed: ${errorMsg}`);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  const token = data.data?.csrfToken;
+  if (!token || typeof token !== 'string' || token.trim() === '') {
+    throw new Error('Security initialization failed: Invalid or empty CSRF token received from server.');
+  }
+
+  return token.trim();
 }
 
 export async function loginUserApi(payload: { agentId: string; password: string; deviceName?: string }) {

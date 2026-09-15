@@ -881,6 +881,113 @@ export async function runWebAuthnHumanAuthTests(): Promise<boolean> {
       record('TEST-25', 'Agent API key submitted to passkey enrollment endpoint is strictly rejected (403 AGENT_ACCESS_FORBIDDEN)', passed, !passed ? `Status ${res.status}: ${JSON.stringify(body)}` : undefined);
     }
 
+    // -------------------------------------------------------------
+    // TEST 26: CSRF endpoint creates and persists a valid token
+    // -------------------------------------------------------------
+    {
+      const res = await fetch(`${baseUrl}/api/auth/csrf`, {
+        headers: { 'Origin': trustedOrigin }
+      });
+      const body = await res.json();
+      const passed = res.status === 200 && body.success === true && typeof body.data?.csrfToken === 'string' && body.data.csrfToken.length === 64;
+      record('TEST-CSRF-01', 'CSRF endpoint successfully generates and returns 64-char hex token', passed, !passed ? `Status ${res.status}: ${JSON.stringify(body)}` : undefined);
+    }
+
+    // -------------------------------------------------------------
+    // TEST 27: Persistent CSRF storage failure fails bootstrap and rejects auth
+    // -------------------------------------------------------------
+    {
+      process.env.FORCE_CSRF_DB_FAIL = 'true';
+      try {
+        const csrfRes = await fetch(`${baseUrl}/api/auth/csrf`, {
+          headers: { 'Origin': trustedOrigin }
+        });
+        const csrfBody = await csrfRes.json();
+        
+        // Attempt login challenge during DB failure
+        const chalRes = await fetch(`${baseUrl}/api/auth/human/login/challenge`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Origin': trustedOrigin,
+            'x-csrf-token': 'any-token',
+          },
+          body: JSON.stringify({
+            agentId: userA.agentId,
+            password: userAPassword,
+          })
+        });
+
+        const passed = csrfRes.status === 500 && 
+          csrfBody.error?.code === 'CSRF_BOOTSTRAP_FAILED' &&
+          chalRes.status === 403;
+
+        record('TEST-CSRF-06', 'Persistent CSRF storage failure fails bootstrap (500) and halts human auth (403)', passed, !passed ? `Csrf: ${csrfRes.status}, Chal: ${chalRes.status}` : undefined);
+      } finally {
+        delete process.env.FORCE_CSRF_DB_FAIL;
+      }
+    }
+
+    // -------------------------------------------------------------
+    // TEST 28: New human registration does NOT create a human session before WebAuthn
+    // -------------------------------------------------------------
+    {
+      const regRes = await fetch(`${baseUrl}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: `unverified-user-${Date.now()}@example.com`,
+          password: 'Password123!Secure',
+          name: 'Unverified Human User',
+        })
+      });
+      const regCookie = regRes.headers.get('set-cookie');
+      const regBody = await regRes.json();
+      const passed = regRes.status === 201 &&
+        regBody.success === true &&
+        (!regCookie || !regCookie.includes('aamarva_human_session'));
+
+      record('TEST-AUTH-11', 'New registration does NOT issue human session cookie before WebAuthn enrollment', passed, !passed ? `Cookie: ${regCookie}` : undefined);
+    }
+
+    // -------------------------------------------------------------
+    // TEST 29: Cancelled or failed WebAuthn enrollment does NOT create a human session
+    // -------------------------------------------------------------
+    {
+      const uniqueC = Date.now();
+      const userC = await registerUser({
+        email: `userC-${uniqueC}@example.com`,
+        password: 'Password123!Secure',
+        name: 'User C',
+        agentId: `AMR-TEST-C${uniqueC}`,
+      });
+
+      const csrf = await getCsrf();
+      // Attempt passkey enrollment with invalid attestation
+      const enrollRes = await fetch(`${baseUrl}/api/auth/human/login/enroll`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Origin': trustedOrigin,
+          'x-csrf-token': csrf,
+        },
+        body: JSON.stringify({
+          agentId: userC.agentId,
+          password: 'Password123!Secure',
+          challengeId: 'invalid-challenge',
+          response: { invalid: true },
+        })
+      });
+
+      const setCookie = enrollRes.headers.get('set-cookie');
+      const passed = (enrollRes.status === 400 || enrollRes.status === 401) &&
+        (!setCookie || !setCookie.includes('aamarva_human_session'));
+
+      record('TEST-AUTH-13', 'Failed or cancelled WebAuthn enrollment does not establish human session', passed, !passed ? `Status ${enrollRes.status}, Cookie: ${setCookie}` : undefined);
+    }
+
   } finally {
     server.close();
   }

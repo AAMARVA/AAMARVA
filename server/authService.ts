@@ -593,7 +593,6 @@ export async function registerUser(data: {
   apiKey: string;
   tokens: { accessToken: string; refreshToken: string };
   user: Omit<UserRecord, 'passwordHash'> & { password?: string };
-  sessionId: string;
 }> {
   const normalizedEmail = normalizeEmail(data.email || '');
   if (!normalizedEmail || !validateEmailFormat(normalizedEmail)) {
@@ -798,7 +797,8 @@ export async function registerUser(data: {
   }
   
   try {
-    const sessionId = await createHumanSession(newUser.id);
+    // Note: Invariant enforcement: NO human session exists until successful WebAuthn passkey enrollment.
+    // Human sessions are NOT created here; only agent tokens and user credentials are generated.
     const familyId = crypto.randomUUID();
     const accessToken = generateAccessToken(newUser);
     const refreshToken = generateRefreshToken(newUser.id, familyId);
@@ -810,10 +810,9 @@ export async function registerUser(data: {
       apiKey: apiKeyToUse,
       tokens: { accessToken, refreshToken },
       user: returnUser as any,
-      sessionId
     };
   } catch (postInsertErr: any) {
-    console.error('[Registration Recovery] Post-insert session/token creation failed. Initiating cleanup...', postInsertErr);
+    console.error('[Registration Recovery] Post-insert token creation failed. Initiating cleanup...', postInsertErr);
     
     // 1. Delete user from DB users table
     try {
@@ -866,24 +865,43 @@ const webAuthnChallengeFallback = new Map<string, WebAuthnChallengeRecord>();
 export async function generateCsrfToken(): Promise<string> {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-  
+
+  if (process.env.FORCE_CSRF_DB_FAIL === 'true') {
+    console.error('[CSRF Bootstrap] Simulated database persistence failure.');
+    throw new Error('Failed to persist CSRF token to database: Simulated DB Failure');
+  }
+
+  if (!isSupabaseConfigured()) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[CSRF Security Error] Database persistence required for CSRF tokens in production.');
+    }
+    csrfTokenFallback.set(token, expiresAt);
+    return token;
+  }
+
   const supabase = getSupabaseClient();
   const { error } = await supabase.from('csrf_tokens').insert({
     token,
     expiresAt: expiresAt.toISOString(),
   });
-  
-  if (error && (error.code === 'PGRST205' || error.message?.includes('not find the table'))) {
-    csrfTokenFallback.set(token, expiresAt);
+
+  if (error) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[CSRF Bootstrap] Failed to persist CSRF token to production database:', error.message || error.code || 'DB Error');
+      throw new Error(`Failed to persist CSRF token to database: ${error.message || error.code || 'Database error'}`);
+    }
+    // In local development / non-production environments where migrations haven't run:
+    if (error.code === 'PGRST205' || error.message?.includes('not find the table') || error.message?.includes('relation "public.csrf_tokens" does not exist')) {
+      csrfTokenFallback.set(token, expiresAt);
+      return token;
+    }
+    console.error('[CSRF Bootstrap] Failed to persist CSRF token to database:', error.message || error.code || 'DB Error');
+    throw new Error(`Failed to persist CSRF token to database: ${error.message || error.code || 'Database error'}`);
   }
-  
-  // Clean up occasionally
+
+  // Periodic cleanup of expired tokens (low frequency)
   if (Math.random() < 0.05) {
     supabase.from('csrf_tokens').delete().lt('expiresAt', new Date().toISOString()).then();
-    const now = new Date();
-    for (const [t, exp] of csrfTokenFallback.entries()) {
-      if (now > exp) csrfTokenFallback.delete(t);
-    }
   }
 
   return token;
@@ -892,7 +910,60 @@ export async function generateCsrfToken(): Promise<string> {
 export async function isValidCsrfToken(token?: string | null): Promise<boolean> {
   if (!token || typeof token !== 'string') return false;
   const trimmed = token.trim();
-  
+  if (!trimmed) return false;
+
+  if (process.env.FORCE_CSRF_DB_FAIL === 'true') {
+    return false;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    // Production path: STRICT database verification only, zero in-memory fallback
+    if (!isSupabaseConfigured()) return false;
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('csrf_tokens')
+      .select('expiresAt')
+      .eq('token', trimmed)
+      .maybeSingle();
+
+    if (error || !data) return false;
+    if (new Date() > new Date(data.expiresAt)) {
+      supabase.from('csrf_tokens').delete().eq('token', trimmed).then();
+      return false;
+    }
+    return true;
+  }
+
+  // Non-production / test path:
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('csrf_tokens')
+      .select('expiresAt')
+      .eq('token', trimmed)
+      .maybeSingle();
+
+    if (!error && data) {
+      if (new Date() > new Date(data.expiresAt)) {
+        supabase.from('csrf_tokens').delete().eq('token', trimmed).then();
+        return false;
+      }
+      return true;
+    }
+
+    if (error && (error.code === 'PGRST205' || error.message?.includes('not find the table'))) {
+      if (csrfTokenFallback.has(trimmed)) {
+        const exp = csrfTokenFallback.get(trimmed)!;
+        if (new Date() > exp) {
+          csrfTokenFallback.delete(trimmed);
+          return false;
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
   if (csrfTokenFallback.has(trimmed)) {
     const exp = csrfTokenFallback.get(trimmed)!;
     if (new Date() > exp) {
@@ -901,26 +972,8 @@ export async function isValidCsrfToken(token?: string | null): Promise<boolean> 
     }
     return true;
   }
-  
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('csrf_tokens')
-    .select('expiresAt')
-    .eq('token', trimmed)
-    .maybeSingle();
-    
-  if (error && (error.code === 'PGRST205' || error.message?.includes('not find the table'))) {
-    return false; // If using fallback and not found, it would have returned above
-  }
-    
-  if (!data) return false;
-  
-  if (new Date() > new Date(data.expiresAt)) {
-    await supabase.from('csrf_tokens').delete().eq('token', trimmed);
-    return false;
-  }
-  
-  return true;
+
+  return false;
 }
 
 export interface WebAuthnChallengeRecord {
