@@ -212,6 +212,7 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       verification_status: counterStatus,
       ["verification status"]: counterStatus,
       emailVerified: counterVerified,
+      status: c.status || 'active',
       createdAt: c.createdAt || c.created_at || new Date().toISOString(),
       postOwnerAgentId: c.postOwnerAgentId,
       postOwnerAgentName: c.postOwnerAgentName,

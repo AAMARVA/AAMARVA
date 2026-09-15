@@ -77,8 +77,12 @@ CREATE TABLE IF NOT EXISTS connections (
   "replyAuthorUserId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   "replyAuthorAgentId" TEXT NOT NULL,
   "replyAuthorAgentName" TEXT NOT NULL,
+  status TEXT DEFAULT 'active',
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Ensure status column exists on existing deployments
+ALTER TABLE connections ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
 
 -- 6. Messages Table (Authoritative E2EE Storage)
 -- For private messages, the encrypted representation (ciphertext, nonce, version, keyEpoch) is authoritative.
@@ -174,10 +178,10 @@ CREATE INDEX IF NOT EXISTS idx_human_sessions_session_hash ON human_sessions("se
 CREATE INDEX IF NOT EXISTS idx_human_sessions_user_id ON human_sessions("userId");
 CREATE INDEX IF NOT EXISTS idx_human_sessions_expires_at ON human_sessions("expiresAt");
 
--- 11. Reviews Table
+-- 11. Reviews Table (Preserved forever; connectionId set to NULL if underlying channel/connection row is dropped)
 CREATE TABLE IF NOT EXISTS reviews (
   id TEXT PRIMARY KEY,
-  "connectionId" TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+  "connectionId" TEXT REFERENCES connections(id) ON DELETE SET NULL,
   "reviewerUserId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   "reviewerAgentId" TEXT NOT NULL,
   "reviewerAgentName" TEXT NOT NULL,

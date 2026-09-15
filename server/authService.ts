@@ -212,17 +212,28 @@ export async function createHumanSession(userId: string): Promise<string> {
   const recordId = crypto.randomUUID();
   
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from('human_sessions').insert({
-    id: recordId,
-    userId,
-    sessionHash,
-    expiresAt: new Date(expSeconds * 1000).toISOString(),
-    createdAt: new Date().toISOString()
-  });
+  let insertError: any = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { error } = await supabase.from('human_sessions').insert({
+      id: recordId,
+      userId,
+      sessionHash,
+      expiresAt: new Date(expSeconds * 1000).toISOString(),
+      createdAt: new Date().toISOString()
+    });
+    if (!error) {
+      insertError = null;
+      break;
+    }
+    insertError = error;
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+    }
+  }
   
-  if (error) {
-    console.error('[createHumanSession] Failed to persist session to database:', error);
-    throw new Error(`Failed to create session: ${error.message}`);
+  if (insertError) {
+    console.error('[createHumanSession] Failed to persist session to database:', insertError);
+    throw new Error(`Failed to create session: ${insertError.message || insertError}`);
   }
   
   return token;
@@ -371,19 +382,31 @@ export async function persistRefreshToken(userId: string, familyId: string, refr
   const supabase = getSupabaseClient();
   const tokenHash = hashToken(refreshToken);
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { error } = await supabase.from('refresh_tokens').insert({
-    id: crypto.randomUUID(),
-    userId,
-    tokenHash,
-    familyId,
-    isRevoked: false,
-    expiresAt,
-    createdAt: new Date().toISOString()
-  });
+  
+  let insertError: any = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { error } = await supabase.from('refresh_tokens').insert({
+      id: crypto.randomUUID(),
+      userId,
+      tokenHash,
+      familyId,
+      isRevoked: false,
+      expiresAt,
+      createdAt: new Date().toISOString()
+    });
+    if (!error) {
+      insertError = null;
+      break;
+    }
+    insertError = error;
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+    }
+  }
 
-  if (error) {
-    console.error("persistRefreshToken DB Error:", error);
-    throw new Error('Failed to persist refresh token.');
+  if (insertError) {
+    console.error("persistRefreshToken DB Error:", insertError);
+    throw new Error(`Failed to persist refresh token: ${insertError.message || insertError}`);
   }
 }
 
@@ -959,19 +982,11 @@ export async function updateUserProfile(userId: string, data: Partial<UserRecord
   return safeUser;
 }
 
-export async function updateUserWhitelist(userId: string, networks: any, clientIp: string) {
-  // 1. Authoritative validation and normalization
-  const normalizedWL = validateAndNormalizeWhitelist(networks, clientIp);
+export async function updateUserWhitelist(userId: string, networks: any, _clientIp?: string) {
+  // 1. Authoritative validation and normalization (defaults to [] if empty)
+  const normalizedWL = validateAndNormalizeWhitelist(networks);
 
-  // 2. Self-lockout protection: Current authenticated human IP MUST be permitted by new perimeter
-  if (!isIpAllowed(clientIp, normalizedWL)) {
-    const err = new Error(`Current IP address (${clientIp}) is not included in the new access perimeter. Update rejected to prevent self-lockout.`);
-    (err as any).code = 'SELF_LOCKOUT_PREVENTED';
-    (err as any).statusCode = 400;
-    throw err;
-  }
-
-  // 3. Atomic database update
+  // 2. Atomic database update
   const supabase = getSupabaseClient();
   const now = new Date().toISOString();
 

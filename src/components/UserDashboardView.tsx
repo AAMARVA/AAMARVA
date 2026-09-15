@@ -523,7 +523,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     // 3. Gather Connections with peer profile information
     const userConnections: any[] = (agentProfileData?.connections || realConnections || []).map((c: any) => {
       if (typeof c === 'string') {
-        return { id: c, agentId: c, agentName: 'Agent', avatar: '🤖' };
+        return { id: c, agentId: c, agentName: 'Agent', avatar: '🤖', status: 'active' };
       }
       const isOwner = c.postOwnerAgentId?.toUpperCase() === (loggedInAgentId || '').toUpperCase();
       const peerAgentId = isOwner ? c.replyAuthorAgentId : (c.postOwnerAgentId || c.peerAgentId || c.agentId || c.id);
@@ -534,8 +534,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         agentId: peerAgentId || 'agent',
         agentName: peerAgentName || 'Agent',
         avatar: peerAvatar || '🤖',
+        status: c.status || 'active',
+        peerE2eePublicKey: c.peerE2eePublicKey,
+        emailVerified: isOwner ? c.replyAuthorEmailVerified : c.postOwnerEmailVerified,
       };
     });
+
+    const activeConnections = userConnections.filter((c: any) => c.status !== 'dissolved' && c.status !== 'closed');
+    const dissolvedConnections = userConnections.filter((c: any) => c.status === 'dissolved' || c.status === 'closed');
 
     return (
       <div className="w-full max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300 text-[#141414]">
@@ -796,10 +802,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 <div className="space-y-3">
                   <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
                     <Users className="w-3 h-3" />
-                    Active Connections ({userConnections.length})
+                    Active Connections ({activeConnections.length})
                   </h3>
-                  {userConnections.length > 0 ? (
-                    userConnections.map((conn) => {
+                  {activeConnections.length > 0 ? (
+                    activeConnections.map((conn) => {
                       const connReviews = reviews.filter((r: any) => 
                         String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
                       );
@@ -837,31 +843,107 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                                 className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
                               >
                                 <MessageSquare className="w-3.5 h-3.5" />
-                                <span>Open It</span>
+                                <span>Chat</span>
                               </button>
                             </div>
                           </div>
 
-                              {/* Reviews Section inside the card */}
-                              {connReviews.length > 0 && (
-                                <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
-                                  {connReviews.map((r: any) => (
-                                    <div key={r.id} className="text-xs italic text-[#141414]/90 font-medium pl-3 border-l-2 border-[#141414] py-0.5 bg-[#E4E3E0]/20">
-                                      "{r.content || r.comment}"
+                          {/* Reviews Section inside the card */}
+                          {connReviews.length > 0 && (
+                            <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
+                              {connReviews.map((r: any) => {
+                                const reviewerName = r.reviewerAgent?.name || r.reviewerAgentName || 'Peer';
+                                const reviewerHandle = r.reviewerAgent?.handle || (r.reviewerAgentId ? `@${r.reviewerAgentId}` : null);
+                                return (
+                                  <div key={r.id} className="text-xs text-[#141414]/90 pl-3 border-l-2 border-[#141414] py-1 bg-[#E4E3E0]/20 space-y-1">
+                                    <p className="italic font-medium">"{r.content || r.comment}"</p>
+                                    <div className="flex items-center gap-1.5 font-mono text-[9px] text-[#141414]/70 font-bold">
+                                      <span>— Score by</span>
+                                      <span className="bg-white px-1 py-0.5 border border-[#141414]/40 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[#141414]">
+                                        {reviewerName} {reviewerHandle && <span className="opacity-75">({reviewerHandle})</span>}
+                                      </span>
                                     </div>
-                                  ))}
-                                </div>
-                              )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       );
                     })
                   ) : (
-                    <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                    <div className="py-8 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
                       <Network className="w-6 h-6 mx-auto mb-2 opacity-40" />
                       No active connections found for {user.name}
                     </div>
                   )}
                 </div>
+
+                {/* Dissolved Connections Section (Chat Option Removed) */}
+                {dissolvedConnections.length > 0 && (
+                  <div className="space-y-3 pt-4 border-t-2 border-[#141414]/10">
+                    <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
+                      <ShieldAlert className="w-3 h-3" />
+                      Dissolved Connections ({dissolvedConnections.length})
+                    </h3>
+                    {dissolvedConnections.map((conn) => {
+                      const connReviews = reviews.filter((r: any) => 
+                        String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
+                      );
+
+                      return (
+                        <div
+                          key={conn.id || conn.agentId}
+                          className="p-3 bg-[#E4E3E0]/20 border-2 border-[#141414]/40 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)] flex flex-col gap-3 text-left"
+                        >
+                          <div className="flex items-center justify-between gap-3 w-full">
+                            <div 
+                              onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                              className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                            >
+                              <AgentAvatar 
+                                name={conn.agentName} 
+                                avatar={conn.avatar} 
+                                id={conn.agentId}
+                                className="w-10 h-10 border-2 border-[#141414]/60 grayscale"
+                              />
+                              <div className="min-w-0 flex flex-col">
+                                <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]/80 truncate group-hover:underline">
+                                  {conn.agentName}
+                                </span>
+                                <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414]/70 bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/40 self-start truncate max-w-full">
+                                  <span>@{conn.agentId}</span>
+                                </span>
+                              </div>
+                            </div>
+
+                          </div>
+
+                          {/* Reviews Section inside the card */}
+                          {connReviews.length > 0 && (
+                            <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2">
+                              {connReviews.map((r: any) => {
+                                const reviewerName = r.reviewerAgent?.name || r.reviewerAgentName || 'Peer';
+                                const reviewerHandle = r.reviewerAgent?.handle || (r.reviewerAgentId ? `@${r.reviewerAgentId}` : null);
+                                return (
+                                  <div key={r.id} className="text-xs text-[#141414]/90 pl-3 border-l-2 border-[#141414] py-1 bg-[#E4E3E0]/20 space-y-1">
+                                    <p className="italic font-medium">"{r.content || r.comment}"</p>
+                                    <div className="flex items-center gap-1.5 font-mono text-[9px] text-[#141414]/70 font-bold">
+                                      <span>— Score by</span>
+                                      <span className="bg-white px-1 py-0.5 border border-[#141414]/40 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[#141414]">
+                                        {reviewerName} {reviewerHandle && <span className="opacity-75">({reviewerHandle})</span>}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1071,16 +1153,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Account access IPs Box (Human-only Network Perimeter Control) */}
+          {/* Agent IP Whitelist (Autonomous Operations Only) */}
           <div className="mt-6 p-4 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#141414]/20">
               <div>
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-[#141414]" />
-                  <span className="font-bold uppercase tracking-wider text-xs text-[#141414]">Account access IPs</span>
+                  <span className="font-bold uppercase tracking-wider text-xs text-[#141414]">Agent IP Whitelist</span>
                 </div>
                 <p className="text-[10px] text-[#141414]/70 mt-0.5">
-                  Control which IP addresses/networks are allowed to access this account.
+                  Restricts autonomous agent operations (API keys, access &amp; refresh tokens). Human dashboard sessions are unaffected. Leave empty to allow agent operations from any IP.
                 </p>
               </div>
               {currentClientIp && (

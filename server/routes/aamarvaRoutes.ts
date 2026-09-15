@@ -2525,32 +2525,51 @@ router.post('/counter-party-score', requireUserOrAgentAuth, securityLayer('count
       ? await maskUserSecretsInText(submittingUserId, reviewComment.trim())
       : reviewComment.trim();
 
-    const newReview = {
-      id: crypto.randomUUID(),
-      connectionId,
-      reviewerUserId: submittingUserId,
-      reviewerAgentId: submittingAgentId,
-      reviewerAgentName: reviewerName,
-      reviewerAgentHandle: reviewerHandle,
-      reviewerAgentAvatarUrl: reviewerAvatar,
-      targetAgentId,
-      comment: sanitizedComment,
-      createdAt: new Date().toISOString()
-    };
-
-    const { error: insertError } = await sb
+    const { data: existingReview } = await sb
       .from('reviews')
-      .insert([newReview]);
+      .select('id')
+      .eq('connectionId', connectionId)
+      .eq('reviewerAgentId', submittingAgentId)
+      .maybeSingle();
 
-    if (insertError) {
-      console.error('[counter-party-review] DB insert error:', insertError);
-      throw new Error(`Database error recording review: ${insertError.message}`);
+    let savedReview;
+
+    if (existingReview) {
+      return res.status(400).json({
+        success: false,
+        error: 'Score has already been given for this connection.'
+      });
+    } else {
+      const newReview = {
+        id: crypto.randomUUID(),
+        connectionId,
+        reviewerUserId: submittingUserId,
+        reviewerAgentId: submittingAgentId,
+        reviewerAgentName: reviewerName,
+        reviewerAgentHandle: reviewerHandle,
+        reviewerAgentAvatarUrl: reviewerAvatar,
+        targetAgentId,
+        comment: sanitizedComment,
+        createdAt: new Date().toISOString()
+      };
+
+      const { data: insertedData, error: insertError } = await sb
+        .from('reviews')
+        .insert([newReview])
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('[counter-party-review] DB insert error:', insertError);
+        throw new Error(`Database error recording review: ${insertError.message}`);
+      }
+      savedReview = insertedData;
     }
 
     try {
-      await logAgentFootprint(submittingUserId, 'COUNTER_PARTY_REVIEW', `Submitted review for agent ${targetAgentId}`, newReview.id);
+      await logAgentFootprint(submittingUserId, 'COUNTER_PARTY_REVIEW', `Submitted review for agent ${targetAgentId}`, savedReview.id);
       if (targetUserId) {
-        await logExternalEvent(targetUserId, 'COUNTERPARTY_REVIEW_RECEIVED', submittingAgentId, newReview.id);
+        await logExternalEvent(targetUserId, 'COUNTERPARTY_REVIEW_RECEIVED', submittingAgentId, savedReview.id);
       }
     } catch (e) {
       console.error('Failed to log review events:', e);
@@ -2561,26 +2580,26 @@ router.post('/counter-party-score', requireUserOrAgentAuth, securityLayer('count
       .select('*', { count: 'exact', head: true })
       .eq('connectionId', connectionId);
 
-    const { comment: _c, ...reviewWithoutComment } = newReview;
+    const { comment: _c, ...reviewWithoutComment } = savedReview;
 
     res.json({
       success: true,
       message: 'Counterparty review successfully recorded for connection.',
       review: {
         ...reviewWithoutComment,
-        id: newReview.id,
-        reviewId: newReview.id,
+        id: savedReview.id,
+        reviewId: savedReview.id,
         connectionId,
-        content: newReview.comment,
+        content: savedReview.comment,
         reviewerAgent: {
-          id: newReview.reviewerAgentId,
-          name: newReview.reviewerAgentName,
-          handle: newReview.reviewerAgentHandle,
-          avatarUrl: newReview.reviewerAgentAvatarUrl
+          id: savedReview.reviewerAgentId,
+          name: savedReview.reviewerAgentName,
+          handle: savedReview.reviewerAgentHandle,
+          avatarUrl: savedReview.reviewerAgentAvatarUrl
         }
       },
-      reviewId: newReview.id,
-      content: newReview.comment,
+      reviewId: savedReview.id,
+      content: savedReview.comment,
       connectionId,
       totalConnectionReviews: count || 1
     });

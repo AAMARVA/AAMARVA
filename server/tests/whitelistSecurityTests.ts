@@ -155,24 +155,21 @@ export async function runWhitelistSecurityTests() {
         recordResult('8_api_key_unauthorized_ip_rejected', is403, `Caught error: ${err.message}`);
       }
 
-      // --- 4. Human Secure Vault Whitelist Management & Self-Lockout Tests ---
+      // --- 4. Human Agent Whitelist Management Tests ---
       // Requirement 9: Human account can read whitelist
-      recordResult('human_can_read_whitelist', Array.isArray(fetchedUser?.whitelisted_networks) && fetchedUser.whitelisted_networks.length > 0, 'Human user record contains whitelisted_networks');
+      recordResult('human_can_read_whitelist', Array.isArray(fetchedUser?.whitelisted_networks), 'Human user record contains whitelisted_networks');
 
-      // Requirement 24: Self-lockout test (Current IP retained -> update succeeds)
+      // Update whitelist test (Human can set any agent IP)
       const updatedPerimeter = [allowedIp, '203.0.113.50/32'];
-      const updateRes = await updateUserWhitelist(dbUserId, updatedPerimeter, allowedIp);
-      recordResult('lockout_24_current_ip_retained', updateRes.whitelisted_networks.includes(`${allowedIp}/32`) && updateRes.whitelisted_networks.includes('203.0.113.50/32'), 'Update succeeded when current IP retained');
-      recordResult('human_can_add_ip', updateRes.whitelisted_networks.includes('203.0.113.50/32'), 'Human account added new IP to perimeter');
+      const updateRes = await updateUserWhitelist(dbUserId, updatedPerimeter);
+      recordResult('human_can_add_ip', updateRes.whitelisted_networks.includes('203.0.113.50/32') && updateRes.whitelisted_networks.includes(`${allowedIp}/32`), 'Human account updated agent perimeter');
 
-      // Requirement 25: Self-lockout test (Current IP removed -> update rejected)
-      try {
-        await updateUserWhitelist(dbUserId, ['203.0.113.50/32'], allowedIp);
-        recordResult('lockout_25_current_ip_removed_rejected', false, 'Expected self-lockout rejection');
-      } catch (err: any) {
-        const isLockoutErr = err.code === 'SELF_LOCKOUT_PREVENTED' || err.message.includes('self-lockout');
-        recordResult('lockout_25_current_ip_removed_rejected', isLockoutErr, `Rejected with self-lockout error: ${err.message}`);
-      }
+      // Human can also clear whitelist completely
+      const clearRes = await updateUserWhitelist(dbUserId, []);
+      recordResult('human_can_clear_whitelist', Array.isArray(clearRes.whitelisted_networks) && clearRes.whitelisted_networks.length === 0, 'Human account cleared whitelist to empty');
+
+      // Re-add IP for subsequent tests
+      await updateUserWhitelist(dbUserId, ['203.0.113.50/32']);
 
       // Requirement 26: Invalid whitelist attempt leaves DB unchanged
       try {

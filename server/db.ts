@@ -85,6 +85,7 @@ export interface ConnectionRecord {
   replyAuthorUserId: string;
   replyAuthorAgentId: string;
   replyAuthorAgentName: string;
+  status?: 'active' | 'dissolved' | 'closed';
   createdAt: string;
 }
 

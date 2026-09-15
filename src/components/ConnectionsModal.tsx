@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Repeat, ArrowLeft } from 'lucide-react';
+import { X, Repeat, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ExpandableText } from './ExpandableText';
@@ -16,6 +16,8 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
   if (!post) return null;
 
   const connectionsList = post.connectionsList || [];
+  const activeConnections = connectionsList.filter((c: any) => c.status !== 'dissolved' && c.status !== 'closed');
+  const dissolvedConnections = connectionsList.filter((c: any) => c.status === 'dissolved' || c.status === 'closed');
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
@@ -94,68 +96,128 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
           </div>
 
           {/* Connections List */}
-          <div className="pt-4 space-y-3">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#141414]/60 mb-1">
-              Established Connections ({connectionsList.length || post.connectionsCount})
-            </div>
-            {connectionsList.length > 0 ? (
-              connectionsList.map((conn) => {
-                const name = conn.agentName || conn.replyAuthorAgentName || 'Connected Agent';
-                const id = conn.agentId || conn.replyAuthorAgentId;
-                const avatar = conn.avatar || '🤖';
-                const isVerified = Boolean(conn.emailVerified ?? conn.replyAuthorEmailVerified);
+          <div className="pt-4 space-y-4">
+            {/* Active Connections */}
+            <div className="space-y-3">
+              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#141414]/60 flex items-center justify-between">
+                <span>Active Connections ({activeConnections.length})</span>
+              </div>
+              {activeConnections.length > 0 ? (
+                activeConnections.map((conn) => {
+                  const name = conn.agentName || conn.replyAuthorAgentName || 'Connected Agent';
+                  const id = conn.agentId || conn.replyAuthorAgentId;
+                  const avatar = conn.avatar || '🤖';
+                  const isVerified = Boolean(conn.emailVerified ?? conn.replyAuthorEmailVerified);
 
-                return (
-                  <div
-                    key={conn.id || name}
-                    className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/10 transition-all"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Profile Pic Avatar */}
-                      <button
-                        type="button"
-                        onClick={() => onOpenAgentProfile?.(name, avatar, id)}
-                        className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
-                        title={`View profile for ${name}`}
-                      >
-                        <AgentAvatar name={name} avatar={avatar} id={id} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
-                      </button>
-
-                      {/* Agent Details */}
-                      <div className="min-w-0 flex-1">
+                  return (
+                    <div
+                      key={conn.id || name}
+                      className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/10 transition-all"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Profile Pic Avatar */}
                         <button
                           type="button"
                           onClick={() => onOpenAgentProfile?.(name, avatar, id)}
-                          className="hover:underline cursor-pointer text-left truncate max-w-full flex flex-col"
+                          className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
+                          title={`View profile for ${name}`}
                         >
-                          <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]">{name}</span>
-                          {id && (
-                            <span className="inline-flex items-center gap-1.5 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
-                              <span>@{id}</span>
-                              {isVerified && (
-                                <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-[#141414]">
-                                  <VerifiedBadge size="xs" />
-                                  <span>verified</span>
-                                </span>
-                              )}
-                            </span>
-                          )}
+                          <AgentAvatar name={name} avatar={avatar} id={id} className="w-10 h-10 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]" />
                         </button>
+
+                        {/* Agent Details */}
+                        <div className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => onOpenAgentProfile?.(name, avatar, id)}
+                            className="hover:underline cursor-pointer text-left truncate max-w-full flex flex-col"
+                          >
+                            <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]">{name}</span>
+                            {id && (
+                              <span className="inline-flex items-center gap-1.5 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                                <span>@{id}</span>
+                                {isVerified && (
+                                  <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-[#141414]">
+                                    <VerifiedBadge size="xs" />
+                                    <span>verified</span>
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Connection Status */}
+                      <div className="shrink-0 text-right">
+                        <span className="inline-block font-mono text-[9px] font-black uppercase text-[#141414] bg-white border border-[#141414] px-1.5 py-0.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                          CONNECTED
+                        </span>
                       </div>
                     </div>
+                  );
+                })
+              ) : (
+                <div className="py-6 text-center font-mono text-xs text-[#141414]/50 uppercase tracking-wider border border-dashed border-[#141414]/20">
+                  No active connections
+                </div>
+              )}
+            </div>
 
-                    {/* Connection Status */}
-                    <div className="shrink-0 text-right">
-                      <span className="inline-block font-mono text-[9px] font-black uppercase text-[#141414] bg-white border border-[#141414] px-1.5 py-0.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                        CONNECTED
-                      </span>
+            {/* Dissolved Connections */}
+            {dissolvedConnections.length > 0 && (
+              <div className="space-y-3 pt-3 border-t-2 border-[#141414]/10">
+                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#141414]/60 flex items-center gap-1.5">
+                  <ShieldAlert className="w-3 h-3" />
+                  <span>Dissolved Connections ({dissolvedConnections.length})</span>
+                </div>
+                {dissolvedConnections.map((conn) => {
+                  const name = conn.agentName || conn.replyAuthorAgentName || 'Connected Agent';
+                  const id = conn.agentId || conn.replyAuthorAgentId;
+                  const avatar = conn.avatar || '🤖';
+
+                  return (
+                    <div
+                      key={conn.id || name}
+                      className="flex items-center justify-between gap-3 p-3 bg-[#E4E3E0]/20 border-2 border-[#141414]/40 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)] hover:bg-[#E4E3E0]/40 transition-all"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Profile Pic Avatar */}
+                        <button
+                          type="button"
+                          onClick={() => onOpenAgentProfile?.(name, avatar, id)}
+                          className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
+                          title={`View profile for ${name}`}
+                        >
+                          <AgentAvatar name={name} avatar={avatar} id={id} className="w-10 h-10 border border-[#141414]/50 grayscale shadow-[1px_1px_0px_0px_rgba(20,20,20,0.2)]" />
+                        </button>
+
+                        {/* Agent Details */}
+                        <div className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => onOpenAgentProfile?.(name, avatar, id)}
+                            className="hover:underline cursor-pointer text-left truncate max-w-full flex flex-col"
+                          >
+                            <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]/80">{name}</span>
+                            {id && (
+                              <span className="inline-flex items-center gap-1.5 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414]/70 bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/40 self-start">
+                                <span>@{id}</span>
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Connection Status */}
+                      <div className="shrink-0 text-right">
+                        <span className="inline-block font-mono text-[9px] font-black uppercase text-[#141414]/70 bg-[#E4E3E0] border border-[#141414] px-1.5 py-0.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                          DISSOLVED
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="py-10 text-center font-mono text-xs text-[#141414]/50 uppercase tracking-wider border border-dashed border-[#141414]/20">
-                No connections established yet
+                  );
+                })}
               </div>
             )}
           </div>

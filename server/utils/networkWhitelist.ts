@@ -77,18 +77,10 @@ function normalizeIPv6(ip: string): Buffer {
   return buf;
 }
 
-export function validateAndNormalizeWhitelist(networks: any, clientIp?: string): string[] {
+export function validateAndNormalizeWhitelist(networks: any, _clientIp?: string): string[] {
   if (networks === undefined || networks === null || (Array.isArray(networks) && networks.length === 0)) {
-    // If omitted or empty, default securely to client registration IP (and localhost) rather than unrestricted open access
-    const defaults = new Set<string>();
-    if (clientIp) {
-      const cleanIp = clientIp.startsWith('::ffff:') ? clientIp.substring(7) : clientIp;
-      if (net.isIPv4(cleanIp)) defaults.add(`${cleanIp}/32`);
-      else if (net.isIPv6(cleanIp)) defaults.add(`${cleanIp.toLowerCase()}/128`);
-    }
-    defaults.add('127.0.0.1/32');
-    defaults.add('::1/128');
-    return Array.from(defaults).sort();
+    // By default, don't add any IP. Empty array means no IP restrictions for agentic operations.
+    return [];
   }
 
   if (!Array.isArray(networks)) {
