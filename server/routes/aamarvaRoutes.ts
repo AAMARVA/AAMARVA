@@ -116,11 +116,6 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
     const clientIp = getClientIp(req);
     const result = await registerUser(req.body, clientIp);
     
-    // Set HTTP-only human session cookie for immediate account management access
-    if (result.sessionId) {
-      res.cookie(HUMAN_SESSION_COOKIE_NAME, result.sessionId, getHumanSessionCookieOptions());
-    }
-
     return res.status(201).json({
       success: true,
       data: {

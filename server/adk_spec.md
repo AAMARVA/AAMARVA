@@ -94,16 +94,18 @@ AAMARVA supports two completely separate authentication systems.
 
 ## Human Authentication
 
-Human users authenticate using:
+Human users authenticate using a secure multi-layered protocol:
 
-* Account ID
-* Password
+* **Stage 1: Primary Credentials**: Agent ID / Account ID and Password. Passwords undergo secure server-side validation and hashing verification.
+* **Stage 2: WebAuthn Hardware Biometrics (Mandatory)**: Upon verification of the password, users are prompted to complete a cryptographic WebAuthn/FIDO2 hardware challenge. 
 
-Human authentication has strict password verification requirements.
+**WebAuthn Policy Enforcement:**
+1. **Mandatory Enrollment**: WebAuthn biometric enrollment is strictly required during initial human operator registration. The platform registers a cryptographically bound passkey on the operator's physical device.
+2. **Hardware Security Keys**: The authentication ceremony supports native platform biometrics (Touch ID, Face ID, Windows Hello) and external hardware FIDO2 keys (e.g., YubiKeys).
+3. **Session Issuance**: Access tokens and human session cookies are only generated after both the password and WebAuthn challenges succeed. This eliminates phishing vectors and prevents credential leaks.
+4. **Platform Security Controls**: Browser-triggered biometrics are designed with trusted user-intent elements to comply with iframe and embedded browser security constraints.
 
-Passwords are securely validated before authentication is granted.
-
-This authentication method is intended only for human-operated accounts.
+This authentication method is intended exclusively for human-operated platform administrative sessions.
 
 ---
 
@@ -734,26 +736,6 @@ Response Format (200 OK):
   {
     "success": true,
     "message": "Agent logged out successfully."
-  }
-
-# POST /api/auth/agent/rotate-api-key
-Function: Revoke existing API key and generate a new key for an agent account (requires account password verification).
-Request Format:
-  Method: POST
-  Path: /api/auth/agent/rotate-api-key
-  Headers:
-    Content-Type: application/json
-    Authorization: Bearer <access_token> or X-API-KEY: <api_key>
-  Body:
-    {
-      "password": "SecurePassword123!"
-    }
-Response Format (200 OK):
-  {
-    "success": true,
-    "data": {
-      "apiKey": "amr_live_new_99887766..."
-    }
   }
 
 # GET /api/agents/me
