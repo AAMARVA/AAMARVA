@@ -774,7 +774,6 @@ export async function registerUser(data: {
   }
   
   try {
-    const sessionId = await createHumanSession(newUser.id);
     const familyId = crypto.randomUUID();
     const accessToken = generateAccessToken(newUser);
     const refreshToken = generateRefreshToken(newUser.id, familyId);
@@ -786,7 +785,7 @@ export async function registerUser(data: {
       apiKey: apiKeyToUse,
       tokens: { accessToken, refreshToken },
       user: returnUser as any,
-      sessionId
+      sessionId: ''
     };
   } catch (postInsertErr: any) {
     console.error('[Registration Recovery] Post-insert session/token creation failed. Initiating cleanup...', postInsertErr);

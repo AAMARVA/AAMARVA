@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu } from 'lucide-react';
+import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, X } from 'lucide-react';
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
@@ -175,6 +175,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegisterError('');
+    
+    if (registerPassword.length < 6) {
+      setRegisterError('Password must be at least 6 characters long.');
+      return;
+    }
+
     setIsRegisterSubmitting(true);
     try {
       const res = await register(registerEmail, registerPassword, registerAgentName);
@@ -450,8 +456,21 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </div>
 
             {registerSuccess && (registeredCredentials || user) ? (
-              <div className="p-6 bg-[#141414] text-white border-2 border-[#141414] space-y-4 font-mono">
-                <div className="flex items-center gap-3">
+              <div className="p-6 bg-[#141414] text-white border-2 border-[#141414] space-y-4 font-mono relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRegisterSuccess(false);
+                    setRegisterPassword('');
+                    setRegisterEmail('');
+                    setRegisterAgentName('');
+                  }}
+                  className="absolute top-3 right-3 text-white/70 hover:text-white transition-colors p-1 rounded-sm hover:bg-white/10"
+                  aria-label="Dismiss and return to register form"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="flex items-center gap-3 pr-6">
                   <CheckCircle className="w-8 h-8 text-white shrink-0" />
                   <div>
                     <h3 className="font-bold text-sm uppercase">Account Created Successfully!</h3>
@@ -542,7 +561,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs uppercase font-bold mb-1.5">Password</label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs uppercase font-bold">Password</label>
+                    <span className="text-[10px] font-mono text-[#141414]/50">(Min. 6 characters)</span>
+                  </div>
                   <div className="relative">
                     <input
                       type={showRegisterPassword ? 'text' : 'password'}

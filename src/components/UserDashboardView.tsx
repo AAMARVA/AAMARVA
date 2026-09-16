@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2 } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -84,10 +84,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   // Rotation state
   const [showRotateModal, setShowRotateModal] = useState(false);
-  const [rotationPassword, setRotationPassword] = useState('');
   const [newApiKey, setNewApiKey] = useState<string | null>(null);
   const [isRotating, setIsRotating] = useState(false);
   const [rotationError, setRotationError] = useState('');
+  const [rotationEmailSent, setRotationEmailSent] = useState(false);
 
   // Connection Requests
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
@@ -99,6 +99,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [isChangingEmail, setIsChangingEmail] = useState(false);
   const [emailChangeError, setEmailChangeError] = useState('');
   const [emailChangeSuccess, setEmailChangeSuccess] = useState('');
+
+  // Password Change States
+  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
+  const [isSendingPasswordReset, setIsSendingPasswordReset] = useState(false);
+  const [passwordResetError, setPasswordResetError] = useState('');
+  const [passwordResetSuccess, setPasswordResetSuccess] = useState('');
 
   // Secrets Preserver State
   const [secrets, setSecrets] = useState<Array<{ id: string; keyName: string; secretValue: string; createdAt: string }>>(() => {
@@ -299,6 +305,25 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     setIsEditing(prev => ({ ...prev, [field]: false }));
   };
 
+  const handleRequestPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordResetError('');
+    setPasswordResetSuccess('');
+    setIsSendingPasswordReset(true);
+
+    try {
+      if (!user?.email) {
+        throw new Error('User email not found.');
+      }
+      const res = await requestForgotPasswordApi(user.email);
+      setPasswordResetSuccess(res.message || 'If an account exists for this email, password reset instructions have been sent.');
+    } catch (err: any) {
+      setPasswordResetError(err.message || 'Failed to request password reset.');
+    } finally {
+      setIsSendingPasswordReset(false);
+    }
+  };
+
   const handleRequestEmailChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setEmailChangeError('');
@@ -408,11 +433,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     setIsRotating(true);
     setRotationError('');
     try {
-      const res = await rotateApiKey(rotationPassword);
-      setNewApiKey(res.apiKey);
-      setRotationPassword('');
+      const res = await rotateApiKey();
+      if (res?.apiKey) {
+        setNewApiKey(res.apiKey);
+      } else {
+        setRotationEmailSent(true);
+      }
     } catch (err: any) {
-      setRotationError(err.message || 'Failed to rotate API key.');
+      setRotationError(err.message || 'Failed to request API key rotation.');
     } finally {
       setIsRotating(false);
     }
@@ -1047,15 +1075,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <div className="p-3 bg-[#f0eee8] border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
               <div className="flex justify-between items-center">
                 <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Password</span>
-                {isEditing.password && (
-                  <button 
-                    type="button" 
-                    onClick={() => setIsEditing(prev => ({ ...prev, password: false }))}
-                    className="text-[#141414]/60 hover:text-red-600 text-sm font-bold"
-                  >
-                    ✕
-                  </button>
-                )}
               </div>
               <div className="flex flex-col gap-4 flex-grow">
                 <div className="flex-grow flex items-center">
@@ -1064,7 +1083,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 <div className="flex justify-end items-center gap-2 border-t pt-2 border-[#141414]/20">
                   <button 
                     type="button" 
-                    onClick={() => toggleEdit('password')}
+                    onClick={() => {
+                      setPasswordResetError('');
+                      setPasswordResetSuccess('');
+                      setShowPasswordChangeModal(true);
+                    }}
                     className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
                   >
                     Change Password
@@ -1360,6 +1383,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   onClick={() => {
                     setShowRotateModal(false);
                     setNewApiKey(null);
+                    setRotationEmailSent(false);
                   }}
                   className="text-white hover:text-red-400 p-1"
                 >
@@ -1369,61 +1393,80 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               
               <div className="p-6 space-y-6">
                 {!newApiKey ? (
-                  <>
-                    <div className="flex items-start gap-4 p-4 bg-neutral-100 border-2 border-[#141414] text-[#141414]">
-                      <div className="shrink-0 p-2 bg-[#141414] text-white rounded-full">
-                        <ShieldCheck className="w-5 h-5" />
+                  rotationEmailSent ? (
+                    <div className="space-y-6 text-center py-4 animate-in fade-in zoom-in-95 duration-200 font-mono text-xs">
+                      <div className="mx-auto w-16 h-16 bg-neutral-100 border-2 border-[#141414] rounded-full flex items-center justify-center text-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] mb-4">
+                        <Mail className="w-8 h-8 text-[#141414]" />
                       </div>
-                      <div className="space-y-1">
-                        <h3 className="font-bold text-sm uppercase tracking-wider font-mono underline">Warning</h3>
-                        <p className="text-xs font-mono leading-relaxed">
-                          Rotating your API key will <span className="font-black underline">immediately invalidate</span> the current key. Any existing agents or services using the old key will lose access.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      {rotationError && (
-                        <p className="mt-2 text-xs font-mono font-bold text-red-600 bg-red-50 p-2 border border-red-600">
-                          {rotationError}
-                        </p>
-                      )}
-                      
                       <div className="space-y-2">
-                        <label className="block text-[10px] font-black uppercase text-[#141414]/50 font-mono">Confirm Password</label>
-                        <input
-                          type="password"
-                          value={rotationPassword}
-                          onChange={(e) => setRotationPassword(e.target.value)}
-                          placeholder="Enter your account password"
-                          className="w-full px-4 py-3 bg-[#E4E3E0]/30 border-2 border-[#141414] focus:bg-white outline-none font-mono text-sm transition-colors"
-                        />
+                        <h3 className="font-bold text-sm uppercase tracking-wider text-[#141414]">Verification Link Sent</h3>
+                        <p className="leading-relaxed text-[#141414]/80 px-4">
+                          We have sent a verification link to <span className="font-bold underline">{user?.email || 'your registered address'}</span>. Please check your inbox and click the link to confirm the rotation.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowRotateModal(false);
+                          setRotationEmailSent(false);
+                        }}
+                        className="w-full py-3 bg-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all"
+                      >
+                        Got it
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-4 p-4 bg-neutral-100 border-2 border-[#141414] text-[#141414]">
+                        <div className="shrink-0 p-2 bg-[#141414] text-white rounded-full">
+                          <ShieldCheck className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="font-bold text-sm uppercase tracking-wider font-mono underline">Warning</h3>
+                          <p className="text-xs font-mono leading-relaxed">
+                            Rotating your API key will <span className="font-black underline">immediately invalidate</span> the current key. Any existing agents or services using the old key will lose access.
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => setShowRotateModal(false)}
-                          className="flex-1 py-3 bg-white border-2 border-[#141414] text-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#E4E3E0] transition-all"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleRotateApiKey}
-                          disabled={isRotating || !rotationPassword}
-                          className="flex-1 py-3 bg-[#141414] border-2 border-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                        >
-                          {isRotating ? (
-                            <>
-                              <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                              Rotating...
-                            </>
-                          ) : (
-                            'Confirm Rotation'
-                          )}
-                        </button>
+                      <div className="space-y-4">
+                        {rotationError && (
+                          <p className="mt-2 text-xs font-mono font-bold text-red-600 bg-red-50 p-2 border border-red-600">
+                            {rotationError}
+                          </p>
+                        )}
+                        
+                        <div className="space-y-2 bg-neutral-50 p-4 border border-neutral-200 font-mono text-xs text-[#141414]/70 leading-relaxed">
+                          <p>To safely complete rotation, we will send an authorization email to your registered address:</p>
+                          <code className="block mt-1.5 p-2 bg-white border border-[#141414]/20 text-[11px] font-bold break-all font-mono text-center text-[#141414]">
+                            {user?.email}
+                          </code>
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => setShowRotateModal(false)}
+                            className="flex-1 py-3 bg-white border-2 border-[#141414] text-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#E4E3E0] transition-all"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleRotateApiKey}
+                            disabled={isRotating}
+                            className="flex-1 py-3 bg-[#141414] border-2 border-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                            {isRotating ? (
+                              <>
+                                <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                                Sending Link...
+                              </>
+                            ) : (
+                              'Send Verification Email'
+                            )}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </>
+                    </>
+                  )
                 ) : (
                   <div className="space-y-6">
                     <div className="flex items-center gap-3 p-4 bg-green-50 border-2 border-green-800 text-green-900">
@@ -1555,13 +1598,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     </div>
 
                     <div className="space-y-4 text-center">
-                      <p className="text-sm font-mono leading-relaxed text-[#141414]">
+                      <p className="text-sm font-mono leading-relaxed text-[#141414] break-all">
                         We've sent a verification link to your current email address.
                       </p>
-                      <div className="p-3 bg-[#E4E3E0]/30 border border-dashed border-[#141414]/30 font-mono text-xs font-bold">
+                      <div className="p-3 bg-[#E4E3E0]/30 border border-dashed border-[#141414]/30 font-mono text-xs font-bold break-all">
                         {currentUser?.email}
                       </div>
-                      <p className="text-[10px] text-[#141414]/60 font-mono uppercase">
+                      <p className="text-[10px] text-[#141414]/60 font-mono uppercase break-all">
                         Please check your inbox and click the link to confirm the change to <strong>{emailChangeNewEmail}</strong>.
                       </p>
                     </div>
@@ -1574,6 +1617,110 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       className="w-full py-4 bg-[#141414] text-white font-black uppercase tracking-[0.2em] text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3"
                     >
                       Close
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Password Change Modal */}
+        {showPasswordChangeModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
+                  <Lock className="w-4 h-4" />
+                  Reset Password
+                </h2>
+                <button
+                  onClick={() => setShowPasswordChangeModal(false)}
+                  className="text-white hover:text-red-400 p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {!passwordResetSuccess ? (
+                  <>
+                    <div className="flex items-start gap-4 p-4 bg-[#E4E3E0]/20 border-2 border-[#141414] text-[#141414]">
+                      <div className="shrink-0 p-2 bg-[#141414] text-white rounded-full">
+                        <Lock className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="font-bold text-sm uppercase tracking-wider font-mono">Password Reset Link</h3>
+                        <p className="text-xs font-mono leading-relaxed text-[#141414]/80">
+                          We will send a secure password reset link to your registered email address:
+                        </p>
+                        <code className="block mt-2 p-2 bg-white border border-[#141414]/20 text-[11px] font-bold break-all font-mono text-center">
+                          {user?.email}
+                        </code>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleRequestPasswordReset} className="space-y-4">
+                      {passwordResetError && (
+                        <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs font-mono flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                          <span>{passwordResetError}</span>
+                        </div>
+                      )}
+
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowPasswordChangeModal(false)}
+                          className="flex-1 py-3 bg-white border-2 border-[#141414] text-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#E4E3E0] transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSendingPasswordReset}
+                          className="flex-1 py-3 bg-[#141414] border-2 border-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {isSendingPasswordReset ? (
+                            <>
+                              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                              Sending...
+                            </>
+                          ) : (
+                            'Send Reset Link'
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="flex flex-col items-center gap-3 text-center p-4">
+                      <div className="p-3 bg-green-50 border-2 border-green-800 text-green-800 rounded-full">
+                        <CheckCircle2 className="w-8 h-8" />
+                      </div>
+                      <h3 className="font-bold text-sm uppercase tracking-wider text-green-900 font-mono">
+                        Reset Instructions Sent
+                      </h3>
+                      <p className="text-xs leading-relaxed text-[#141414]/80 font-mono">
+                        A secure password reset verification has been dispatched successfully! Please check your inbox at:
+                      </p>
+                      <div className="p-3 bg-[#E4E3E0]/30 border border-dashed border-[#141414]/30 font-mono text-xs font-bold break-all">
+                        {user?.email}
+                      </div>
+                      <p className="text-[10px] text-[#141414]/60 font-mono uppercase">
+                        Follow the link inside your email to complete setting up a new password safely.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setShowPasswordChangeModal(false);
+                        setPasswordResetSuccess('');
+                      }}
+                      className="w-full py-4 bg-[#141414] text-white font-black uppercase tracking-[0.2em] text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3"
+                    >
+                      Got It
                     </button>
                   </div>
                 )}

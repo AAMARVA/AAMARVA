@@ -48,6 +48,72 @@ export class ConnectionCapabilityError extends ConnectionError {
 export async function createConnection(userId: string, replyId: string) {
   const supabase = getSupabaseClient();
 
+  // Try to resolve reply and post owner to find participant IDs to check for dissolved connections
+  try {
+    const { data: reply } = await supabase
+      .from('replies')
+      .select('userId, postId')
+      .eq('id', replyId)
+      .maybeSingle();
+
+    if (reply) {
+      const { data: post } = await supabase
+        .from('posts')
+        .select('userId')
+        .eq('id', reply.postId)
+        .maybeSingle();
+
+      if (post) {
+        // Check if a dissolved connection already exists between these two users
+        const [dissolvedFwd, dissolvedRev] = await Promise.all([
+          supabase.from('connections').select('*').eq('status', 'dissolved').eq('postOwnerUserId', post.userId).eq('replyAuthorUserId', reply.userId).maybeSingle(),
+          supabase.from('connections').select('*').eq('status', 'dissolved').eq('postOwnerUserId', reply.userId).eq('replyAuthorUserId', post.userId).maybeSingle()
+        ]);
+        const existingDissolved = dissolvedFwd.data || dissolvedRev.data;
+
+        if (existingDissolved) {
+          // Recycle the dissolved connection in-place back to 'active'!
+          const { data: recycled, error: updateError } = await supabase
+            .from('connections')
+            .update({
+              status: 'active',
+              postId: reply.postId,
+              replyId: replyId,
+              createdAt: new Date().toISOString()
+            })
+            .eq('id', existingDissolved.id)
+            .select()
+            .maybeSingle();
+
+          if (updateError) {
+            console.error('[createConnection] Error recycling dissolved connection:', updateError);
+            throw new ConnectionError(`Failed to establish connection: ${updateError.message}`, 500, 'DATABASE_ERROR');
+          }
+
+          // Clean slate: Delete any old counterparty reviews/scores associated with this recycled connection
+          try {
+            await Promise.all([
+              supabase
+                .from('counter_party_scores')
+                .delete()
+                .eq('connectionId', existingDissolved.id),
+              supabase
+                .from('reviews')
+                .delete()
+                .eq('connectionId', existingDissolved.id)
+            ]);
+          } catch (reviewErr) {
+            console.error('[createConnection] Warning clearing old counterparty scores during recycling:', reviewErr);
+          }
+
+          return recycled as ConnectionRecord;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[createConnection] Warning checking dissolved connection recycling:', err);
+  }
+
   // Transactional RPC is the only connection creation path
   const { data: rpcData, error: rpcError } = await supabase.rpc('create_connection_from_reply', {
     p_user_id: userId,
@@ -524,12 +590,12 @@ export async function sendConnectionRequest(senderUserId: string, receiverAgentI
 
     // Check if already connected (undirected check: both directions)
     const [connFwd, connRev] = await Promise.all([
-      supabase.from('connections').select('id').eq('postOwnerUserId', sender.id).eq('replyAuthorUserId', receiver.id).maybeSingle(),
-      supabase.from('connections').select('id').eq('postOwnerUserId', receiver.id).eq('replyAuthorUserId', sender.id).maybeSingle()
+      supabase.from('connections').select('id, status').eq('postOwnerUserId', sender.id).eq('replyAuthorUserId', receiver.id).maybeSingle(),
+      supabase.from('connections').select('id, status').eq('postOwnerUserId', receiver.id).eq('replyAuthorUserId', sender.id).maybeSingle()
     ]);
     const existingConn = connFwd.data || connRev.data;
     
-    if (existingConn) {
+    if (existingConn && existingConn.status !== 'dissolved') {
       throw new ConnectionConflictError('Already connected to this agent.', 'ALREADY_CONNECTED');
     }
 
@@ -602,6 +668,75 @@ export async function getConnectionRequests(userId: string) {
 
 export async function acceptConnectionRequest(requestId: string, userId: string) {
   const supabase = getSupabaseClient();
+
+  // Resolve the connection request to find sender and receiver IDs
+  const { data: request, error: reqError } = await supabase
+    .from('connection_requests')
+    .select('*')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (reqError || !request) {
+    throw new ConnectionNotFoundError('Connection request not found.', 'REQUEST_NOT_FOUND');
+  }
+
+  if (request.status !== 'pending') {
+    throw new ConnectionConflictError('Connection request is no longer pending.', 'REQUEST_NOT_PENDING');
+  }
+
+  // Check if a dissolved connection already exists between these two users
+  try {
+    const [dissolvedFwd, dissolvedRev] = await Promise.all([
+      supabase.from('connections').select('*').eq('status', 'dissolved').eq('postOwnerUserId', request.senderUserId).eq('replyAuthorUserId', request.receiverUserId).maybeSingle(),
+      supabase.from('connections').select('*').eq('status', 'dissolved').eq('postOwnerUserId', request.receiverUserId).eq('replyAuthorUserId', request.senderUserId).maybeSingle()
+    ]);
+    const existingDissolved = dissolvedFwd.data || dissolvedRev.data;
+
+    if (existingDissolved) {
+      // 1. Recycle connection
+      const { data: recycled, error: updateError } = await supabase
+        .from('connections')
+        .update({
+          status: 'active',
+          requestId: requestId,
+          createdAt: new Date().toISOString()
+        })
+        .eq('id', existingDissolved.id)
+        .select()
+        .maybeSingle();
+
+      if (updateError) {
+        console.error('[acceptConnectionRequest] Error recycling dissolved connection:', updateError);
+        throw new ConnectionError(`Failed to establish connection: ${updateError.message}`, 500, 'DATABASE_ERROR');
+      }
+
+      // 2. Clean slate: Delete any old counterparty reviews/scores associated with this recycled connection
+      try {
+        await Promise.all([
+          supabase
+            .from('counter_party_scores')
+            .delete()
+            .eq('connectionId', existingDissolved.id),
+          supabase
+            .from('reviews')
+            .delete()
+            .eq('connectionId', existingDissolved.id)
+        ]);
+      } catch (reviewErr) {
+        console.error('[acceptConnectionRequest] Warning clearing old counterparty scores during recycling:', reviewErr);
+      }
+
+      // 3. Mark request as accepted
+      await supabase
+        .from('connection_requests')
+        .update({ status: 'accepted' })
+        .eq('id', requestId);
+
+      return recycled as ConnectionRecord;
+    }
+  } catch (err) {
+    console.error('[acceptConnectionRequest] Warning checking dissolved connection recycling:', err);
+  }
 
   // Transactional RPC is the ONLY connection acceptance path. Non-atomic fallback is strictly prohibited.
   const { data: rpcData, error: rpcError } = await supabase.rpc('accept_connection_request', {

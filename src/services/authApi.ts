@@ -327,13 +327,12 @@ export async function updateProfileApi(updates: any, authType: 'human' | 'agent'
   return res.data;
 }
 
-export async function rotateApiKey(password: string, authType: 'human' | 'agent' = 'human'): Promise<{ apiKey: string }> {
+export async function rotateApiKey(authType: 'human' | 'agent' = 'human'): Promise<{ apiKey?: string; message?: string }> {
   const res = await apiFetch('/api/auth/agent/rotate-api-key', {
     method: 'POST',
-    body: JSON.stringify({ password }),
     authType,
   });
-  return res.data;
+  return res.data || res;
 }
 
 export async function requestEmailChangeApi(newEmail: string): Promise<{ message: string }> {
