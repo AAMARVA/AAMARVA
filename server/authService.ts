@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { UserRecord, RefreshTokenRecord } from './db.js';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase.js';
-import { sendEmailVerification, sendPasswordResetEmail, sendAccountVerificationEmail } from './emailService.js';
+import { sendEmailVerification, sendPasswordResetEmail, sendAccountVerificationEmail, sendApiKeyRotationEmail } from './emailService.js';
 import { config } from './config.js';
 import { validateAndNormalizeWhitelist, isIpAllowed } from './utils/networkWhitelist.js';
 
@@ -523,6 +523,11 @@ export async function findUserById(supabase: any, id: string) {
   return normalizeUserRecord(data, authUser);
 }
 
+export async function getUserById(id: string) {
+  const supabase = getSupabaseClient();
+  return findUserById(supabase, id);
+}
+
 export async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
   const camelRecord: Record<string, any> = {
     id: newUser.id,
@@ -829,7 +834,7 @@ async function findUserByAgentId(agentId: string) {
 
 // Legacy findUserByApiKey lookup completely removed
 
-export async function loginHuman(data: { agentId: string; password: string }) {
+export async function verifyHumanPasswordCredentials(data: { agentId: string; password: string }) {
   const agentId = (data.agentId || '').trim();
   const password = (data.password || '').trim();
 
@@ -857,11 +862,16 @@ export async function loginHuman(data: { agentId: string; password: string }) {
     throw new Error('Authentication failed: Invalid password.');
   }
 
-  const sessionId = await createHumanSession(normalizedUser.id);
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
+  return safeUser;
+}
 
+export async function loginHuman(data: { agentId: string; password: string }) {
+  const safeUser = await verifyHumanPasswordCredentials(data);
+  const sessionId = await createHumanSession(safeUser.id);
   return { user: safeUser, sessionId };
 }
+
 
 export async function loginAgent(data: { agentId: string; apiKey: string }, clientIp?: string) {
   const agentId = (data.agentId || '').trim();
@@ -1246,42 +1256,111 @@ export async function refreshSessionToken(token: string, clientIp?: string): Pro
 }
 
 /**
- * Rotates the agent's API key.
- * Requires password verification.
+ * Initiates an API key rotation request by generating a token and sending a confirmation email link.
+ * Password is no longer required.
  */
-export async function rotateAgentApiKey(userId: string, password: string) {
+export async function requestAgentApiKeyRotation(userId: string, customAppUrl?: string) {
   const supabase = getSupabaseClient();
 
-  // 1. Find user
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('id, agentId, email, name')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (userError || !user) throw new Error('User not found.');
+
+  const authUser = await getAuthUserForRecord(supabase, user);
+  if (!authUser) throw new Error('Auth account not found for this user.');
+
+  // Generate secure token
+  const secret = crypto.randomBytes(32).toString('hex');
+  const token = `${user.id}.${secret}`;
+  const tokenHash = crypto.createHash('sha256').update(secret).digest('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes
+
+  // Store in auth user's app_metadata
+  const { error: updateErr } = await supabase.auth.admin.updateUserById(authUser.id, {
+    app_metadata: {
+      ...authUser.app_metadata,
+      pendingApiKeyRotation: {
+        tokenHash,
+        expiresAt,
+      },
+    },
+  });
+
+  if (updateErr) {
+    throw new Error(`Failed to generate API key rotation request: ${updateErr.message}`);
+  }
+
+  const appUrl = customAppUrl || process.env.APP_URL || config.appUrl || 'https://aamarva.com';
+  await sendApiKeyRotationEmail(user.email, token, appUrl, user.name);
+
+  return {
+    success: true,
+    message: `API key rotation confirmation link sent to ${user.email}. Please check your inbox and click the link to confirm rotation.`,
+  };
+}
+
+/**
+ * Confirms API key rotation via token received from email link.
+ * Rotates the agent's API key, revokes prior credentials, and returns the new API key.
+ */
+export async function confirmAgentApiKeyRotation(token: string) {
+  if (!token || !token.includes('.')) {
+    throw new Error('Invalid or malformed rotation token.');
+  }
+
+  const parts = token.split('.');
+  const userId = parts[0];
+  const secret = parts.slice(1).join('.');
+  const secretHash = crypto.createHash('sha256').update(secret).digest('hex');
+
+  const supabase = getSupabaseClient();
   const { data: user, error: userError } = await supabase
     .from('users')
     .select('*')
     .eq('id', userId)
     .maybeSingle();
 
-  if (userError || !user) throw new Error('User not found.');
+  if (userError || !user) throw new Error('User account not found.');
 
-  // Verify password
-  if (!user.passwordHash) {
-    throw new Error('Password login is not enabled for this account.');
-  }
-  const isPasswordValid = await comparePassword(password, user.passwordHash);
-  if (!isPasswordValid) {
-    throw new Error('Authentication failed: Invalid password.');
+  const authUser = await getAuthUserForRecord(supabase, user);
+  if (!authUser) throw new Error('Auth account not found for this user.');
+
+  const pending = authUser.app_metadata?.pendingApiKeyRotation;
+
+  if (!pending) {
+    throw new Error('No pending API key rotation request found. The link may have already been used or expired.');
   }
 
-  // 3. Generate new API Key
+  const matchesHash = pending.tokenHash === secretHash || pending.tokenHash === crypto.createHash('sha256').update(token).digest('hex');
+  if (!matchesHash) {
+    throw new Error('Invalid or already used API key rotation token.');
+  }
+
+  if (new Date(pending.expiresAt).getTime() < Date.now()) {
+    // Clear expired token
+    await supabase.auth.admin.updateUserById(authUser.id, {
+      app_metadata: { ...authUser.app_metadata, pendingApiKeyRotation: null },
+    });
+    throw new Error('API key rotation token has expired. Please request a new rotation link.');
+  }
+
+  // Generate new API Key
   const newApiKey = generateApiKey();
   const apiKeyHash = await bcrypt.hash(newApiKey, 12);
   const apiKeyFingerprint = computeApiKeyFingerprint(newApiKey);
 
-  // 4. Find the Supabase Auth User directly (O(1)) using getAuthUserForRecord
-  const authUser = await getAuthUserForRecord(supabase, user);
-  if (!authUser) throw new Error('Auth account not found for this user.');
-
-  // 5. Update Supabase Auth app_metadata (authoritative storage) using the UUID
+  // Update Supabase Auth app_metadata (authoritative storage) and clear pendingApiKeyRotation
   const { error: authUpdateError } = await supabase.auth.admin.updateUserById(authUser.id, {
-    app_metadata: { ...authUser.app_metadata, apiKeyHash, apiKeyFingerprint }
+    app_metadata: {
+      ...authUser.app_metadata,
+      apiKeyHash,
+      apiKeyFingerprint,
+      pendingApiKeyRotation: null,
+    },
   });
 
   if (authUpdateError) {
@@ -1291,13 +1370,13 @@ export async function rotateAgentApiKey(userId: string, password: string) {
 
   invalidateAuthCache();
 
-  // 6. Update the public users table apiKeyFingerprint and updatedAt for timestamp sync
+  // Update the public users table apiKeyFingerprint and updatedAt for timestamp sync
   try {
     await supabase
       .from('users')
       .update({
         apiKeyFingerprint,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       })
       .eq('id', user.id);
   } catch (err: any) {
@@ -1307,6 +1386,17 @@ export async function rotateAgentApiKey(userId: string, password: string) {
   invalidateAuthCache();
 
   return { apiKey: newApiKey };
+}
+
+/**
+ * Rotates the agent's API key.
+ * Now routes either to confirmation if a token is provided, or initiates email verification link.
+ */
+export async function rotateAgentApiKey(userId: string, tokenOrPassword?: string, customAppUrl?: string) {
+  if (tokenOrPassword && tokenOrPassword.includes('.')) {
+    return await confirmAgentApiKeyRotation(tokenOrPassword);
+  }
+  return await requestAgentApiKeyRotation(userId, customAppUrl);
 }
 
 /**

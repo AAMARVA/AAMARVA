@@ -5,7 +5,7 @@ function ipV4ToInt(ip: string): number {
   return ip.split('.').reduce((acc, octet) => ((acc << 8) + parseInt(octet, 10)) >>> 0, 0);
 }
 
-function matchIPv4Cidr(clientIp: string, cidr: string): boolean {
+export function matchIPv4Cidr(clientIp: string, cidr: string): boolean {
   const parts = cidr.split('/');
   const rangeIp = parts[0];
   const prefixStr = parts[1];
@@ -19,7 +19,7 @@ function matchIPv4Cidr(clientIp: string, cidr: string): boolean {
   return (clientInt & mask) === (rangeInt & mask);
 }
 
-function matchIPv6(clientIp: string, rule: string): boolean {
+export function matchIPv6(clientIp: string, rule: string): boolean {
   if (rule.includes('/')) {
     const [baseIp, prefixStr] = rule.split('/');
     const prefix = parseInt(prefixStr, 10);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu } from 'lucide-react';
+import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, AlertCircle } from 'lucide-react';
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
@@ -277,8 +277,9 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
             ) : (
               <form onSubmit={handleLoginSubmit} className="space-y-3 font-mono">
                 {loginError && (
-                  <div className="p-2 bg-red-100 border border-red-600 text-red-900 text-[10px]">
-                    {loginError}
+                  <div className="p-2.5 bg-zinc-50 border border-black text-black font-mono text-xs flex items-center space-x-2">
+                    <AlertCircle className="w-4 h-4 text-black flex-shrink-0" />
+                    <span>{loginError}</span>
                   </div>
                 )}
 
@@ -458,8 +459,9 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
             ) : (
               <form onSubmit={handleRegisterSubmit} className="space-y-2.5 font-mono">
                 {registerError && (
-                  <div className="p-2 bg-red-100 border border-red-600 text-red-900 text-[10px]">
-                    {registerError}
+                  <div className="p-2.5 bg-zinc-50 border border-black text-black font-mono text-xs flex items-center space-x-2">
+                    <AlertCircle className="w-4 h-4 text-black flex-shrink-0" />
+                    <span>{registerError}</span>
                   </div>
                 )}
 

@@ -7,8 +7,19 @@ import { ADK_SPECIFICATION, getAdkSpecification } from '../adk_spec';
 import { logAccountAudit, logAgentFootprint, logExternalEvent } from '../services/auditService';
 import { realtimeService } from '../services/realtimeService';
 import {
+  generateLoginChallenge,
+  verifySetupResponse,
+  verifyLoginResponse,
+  getUserWebAuthnCredentials,
+  deleteWebAuthnCredential,
+  generateRegisterOptionsForUser,
+} from '../services/webauthnService';
+import {
   registerUser,
   loginHuman,
+  verifyHumanPasswordCredentials,
+  createHumanSession,
+  getUserById,
   loginAgent,
   logoutUser,
   logoutHumanSession,
@@ -21,6 +32,8 @@ import {
   getHumanSessionCookieOptions,
   refreshSessionToken,
   rotateAgentApiKey,
+  requestAgentApiKeyRotation,
+  confirmAgentApiKeyRotation,
   requestEmailChange,
   verifyEmailChange,
   requestAccountVerificationEmail,
@@ -34,6 +47,7 @@ import {
 import { getClientIp } from '../utils/networkWhitelist.js';
 import { 
   requireHumanSession,
+  rejectAgentCredentials,
   requireAgentAuth,
   requireAgent,
   requireUserOrAgentAuth,
@@ -49,6 +63,7 @@ import {
   AuthenticatedRequest 
 } from '../middleware/authMiddleware';
 import { securityLayer } from '../middleware/securityLayerMiddleware';
+import { humanLoginFirewall } from '../middleware/humanLoginFirewallMiddleware';
 import { SecurityService, SecuritySeverity } from '../services/securityService';
 import { getPosts, createPost, deletePost } from '../services/postService';
 import { getAgentProfile, getAgentActivityStats, getAgents } from '../services/agentService';
@@ -137,20 +152,25 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
   }
 });
 
-// 2. POST /api/auth/human/login & /api/v1/auth/human/login (Human Login)
-router.post(['/auth/human/login', '/v1/auth/human/login'], securityLayer('auth_login'), async (req: Request, res: Response) => {
+// 2. POST /api/auth/human/login & /api/v1/auth/human/login (Human Login with Mandatory WebAuthn)
+router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginFirewall, securityLayer('auth_login'), async (req: Request, res: Response) => {
   const agentId = req.body?.agentId;
   try {
     const { password } = req.body;
-    const result = await loginHuman({ agentId, password });
+    // Step 1: Verify human password credentials
+    const safeUser = await verifyHumanPasswordCredentials({ agentId, password });
     
-    // Set HTTP-only cookie for human session
-    res.cookie(HUMAN_SESSION_COOKIE_NAME, result.sessionId, getHumanSessionCookieOptions());
-    
+    // Step 2: Generate WebAuthn Challenge (WEBAUTHN_REQUIRED if passkey exists, WEBAUTHN_SETUP_REQUIRED if not)
+    const challengeResult = await generateLoginChallenge(safeUser as any, req);
+
     res.json({
       success: true,
-      data: {
-        user: result.user,
+      status: challengeResult.status,
+      pendingToken: challengeResult.pendingToken,
+      options: challengeResult.options,
+      user: {
+        agentId: safeUser.agentId,
+        name: safeUser.name,
       }
     });
   } catch (err: any) {
@@ -192,6 +212,124 @@ router.post(['/auth/human/login', '/v1/auth/human/login'], securityLayer('auth_l
         message: errorMessage || 'Invalid Agent ID or Password.' 
       } 
     });
+  }
+});
+
+// 2a. POST /api/auth/webauthn/verify-setup & /api/v1/auth/webauthn/verify-setup (Setup first device passkey during login)
+router.post(['/auth/webauthn/verify-setup', '/v1/auth/webauthn/verify-setup'], humanLoginFirewall, securityLayer('auth_login'), async (req: Request, res: Response) => {
+  try {
+    const { pendingToken, credentialResponse, friendlyName } = req.body;
+    if (!pendingToken || !credentialResponse) {
+      return res.status(400).json({ success: false, error: { message: 'Missing pendingToken or credentialResponse' } });
+    }
+
+    const { userId } = await verifySetupResponse(pendingToken, credentialResponse, friendlyName, req);
+    const userRecord = await getUserById(userId);
+    if (!userRecord) {
+      return res.status(400).json({ success: false, error: { message: 'User record not found.' } });
+    }
+
+    const sessionId = await createHumanSession(userId);
+    res.cookie(HUMAN_SESSION_COOKIE_NAME, sessionId, getHumanSessionCookieOptions());
+
+    const { passwordHash: _, apiKeyHash: __, ...safeUser } = userRecord;
+    res.json({
+      success: true,
+      data: {
+        user: safeUser,
+      }
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      error: { message: err?.message || 'WebAuthn device passkey registration failed.' }
+    });
+  }
+});
+
+// 2b. POST /api/auth/webauthn/verify-login & /api/v1/auth/webauthn/verify-login (Device passkey authentication during login)
+router.post(['/auth/webauthn/verify-login', '/v1/auth/webauthn/verify-login'], humanLoginFirewall, securityLayer('auth_login'), async (req: Request, res: Response) => {
+  try {
+    const { pendingToken, credentialResponse } = req.body;
+    if (!pendingToken || !credentialResponse) {
+      return res.status(400).json({ success: false, error: { message: 'Missing pendingToken or credentialResponse' } });
+    }
+
+    const { userId } = await verifyLoginResponse(pendingToken, credentialResponse, req);
+    const userRecord = await getUserById(userId);
+    if (!userRecord) {
+      return res.status(400).json({ success: false, error: { message: 'User record not found.' } });
+    }
+
+    const sessionId = await createHumanSession(userId);
+    res.cookie(HUMAN_SESSION_COOKIE_NAME, sessionId, getHumanSessionCookieOptions());
+
+    const { passwordHash: _, apiKeyHash: __, ...safeUser } = userRecord;
+    res.json({
+      success: true,
+      data: {
+        user: safeUser,
+      }
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      error: { message: err?.message || 'WebAuthn device passkey verification failed.' }
+    });
+  }
+});
+
+// 2c. GET /api/auth/webauthn/passkeys & /api/v1/auth/webauthn/passkeys (List registered passkeys)
+router.get(['/auth/webauthn/passkeys', '/v1/auth/webauthn/passkeys'], requireHumanSession, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const passkeys = await getUserWebAuthnCredentials(req.user!.id);
+    const safePasskeys = passkeys.map(p => ({
+      id: p.id,
+      friendlyName: p.friendlyName || 'Device Passkey',
+      deviceType: p.deviceType,
+      backedUp: p.backedUp,
+      createdAt: p.createdAt,
+      lastUsedAt: p.lastUsedAt
+    }));
+    res.json({ success: true, data: safePasskeys });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to fetch registered passkeys' } });
+  }
+});
+
+// 2e. POST /api/auth/webauthn/register-options (Start adding a new passkey from dashboard)
+router.post(['/auth/webauthn/register-options', '/v1/auth/webauthn/register-options'], requireHumanSession, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { pendingToken, options } = await generateRegisterOptionsForUser(req.user! as any, req);
+    res.json({ success: true, pendingToken, options });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to generate passkey registration options' } });
+  }
+});
+
+// 2f. POST /api/auth/webauthn/register-verify (Complete adding a new passkey from dashboard)
+router.post(['/auth/webauthn/register-verify', '/v1/auth/webauthn/register-verify'], requireHumanSession, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { pendingToken, credentialResponse, friendlyName } = req.body;
+    if (!pendingToken || !credentialResponse) {
+      return res.status(400).json({ success: false, error: { message: 'Missing pendingToken or credentialResponse' } });
+    }
+
+    await verifySetupResponse(pendingToken, credentialResponse, friendlyName, req);
+    res.json({ success: true, message: 'Passkey registered successfully!' });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err?.message || 'Passkey registration verification failed' } });
+  }
+});
+
+// 2d. DELETE /api/auth/webauthn/passkeys/:passkeyId (Delete passkey)
+router.delete(['/auth/webauthn/passkeys/:passkeyId', '/v1/auth/webauthn/passkeys/:passkeyId'], requireHumanSession, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const passkeyId = String(req.params.passkeyId);
+    await deleteWebAuthnCredential(passkeyId, req.user!.id);
+    res.json({ success: true, message: 'Passkey removed successfully' });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err?.message || 'Failed to delete passkey' } });
   }
 });
 
@@ -1843,52 +1981,120 @@ router.get(['/health', '/v1/health', '/readiness', '/liveness'], async (req: Req
   }
 });
 
-// 21. POST /api/auth/agent/rotate-api-key (Rotate API key)
-router.post('/auth/agent/rotate-api-key', requireUserOrAgentAuth, securityLayer('rotate_api_key'), async (req: any, res: Response) => {
-  try {
-    const { password } = req.body;
-    if (!password) {
-      return res.status(400).json({ success: false, error: 'Password is required to rotate API key.' });
-    }
-    const result = await rotateAgentApiKey(req.user.id, password);
-    await logAgentFootprint(req.user.id, 'API_KEY_ROTATED', 'Rotated agent API key and revoked prior credentials');
-    res.json({ success: true, data: result });
-  } catch (err: any) {
-    console.error('Error rotating API key:', err.message);
-    res.status(500).json({ 
-      success: false, 
-      error: err.message || 'Failed to rotate API key.' 
-    });
-  }
-});
+// 21. POST /api/auth/agent/rotate-api-key & /api/auth/agent/revoke-api-key (Request API key rotation/revocation - Human Session Only)
+router.post(
+  [
+    '/auth/agent/rotate-api-key',
+    '/v1/auth/agent/rotate-api-key',
+    '/auth/agent/revoke-api-key',
+    '/v1/auth/agent/revoke-api-key',
+  ],
+  securityLayer('rotate_api_key'),
+  async (req: any, res: Response) => {
+    try {
+      const token = req.body?.token || req.query?.token;
+      const bodyAppUrl = req.body?.appUrl || req.query?.appUrl;
+      const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
 
-// 22. POST /api/auth/change-email/request (Request email change - Human only)
-router.post('/auth/change-email/request', requireHumanSession, securityLayer('change_email'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { newEmail, appUrl: bodyAppUrl } = req.body;
-    if (!newEmail) {
-      return res.status(400).json({ success: false, error: 'New email address is required.' });
-    }
-    const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
-    const result = await requestEmailChange(req.user!.id, { newEmail }, appUrl);
-    res.json({ success: true, data: result });
-  } catch (err: any) {
-    const status = err.message.includes('Incorrect') || err.message.includes('password') ? 401 : 400;
-    res.status(status).json({ success: false, error: err.message });
-  }
-});
+      if (token) {
+        // Confirmation with token (reject agent credentials if present)
+        return rejectAgentCredentials(req, res, async () => {
+          try {
+            const result = await confirmAgentApiKeyRotation(token);
+            await logAgentFootprint(token.split('.')[0] || 'system', 'API_KEY_ROTATED', 'Rotated agent API key via email confirmation link');
+            return res.json({ success: true, data: result, message: 'API key successfully rotated via email confirmation link.' });
+          } catch (err: any) {
+            return res.status(400).json({ success: false, error: err.message || 'Failed to confirm API key rotation.' });
+          }
+        });
+      }
 
-// 23. POST /api/auth/change-email/verify (Verify email change)
-router.post('/auth/change-email/verify', securityLayer('change_email'), async (req: Request, res: Response) => {
-  try {
-    const { token } = req.body;
-    if (!token) return res.status(400).json({ success: false, error: 'Token is required.' });
-    const result = await verifyEmailChange(token);
-    res.json({ success: true, data: result });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message });
+      // NO token present: Strictly require human session authentication
+      return requireHumanSession(req, res, async () => {
+        try {
+          const result = await requestAgentApiKeyRotation(req.user!.id, appUrl);
+          await logAgentFootprint(req.user!.id, 'API_KEY_ROTATION_REQUESTED', 'Requested API key rotation confirmation link via email');
+          res.json(result);
+        } catch (err: any) {
+          res.status(400).json({ success: false, error: err.message || 'Failed to request API key rotation link.' });
+        }
+      });
+    } catch (err: any) {
+      console.error('Error processing API key rotation:', err.message);
+      res.status(400).json({ 
+        success: false, 
+        error: err.message || 'Failed to process API key rotation request.' 
+      });
+    }
   }
-});
+);
+
+// 21b. GET & POST /api/auth/agent/rotate-api-key/confirm (Confirm rotation token directly - Reject Agent Credentials)
+router.all(
+  [
+    '/auth/agent/rotate-api-key/confirm',
+    '/v1/auth/agent/rotate-api-key/confirm',
+    '/auth/agent/revoke-api-key/confirm',
+    '/v1/auth/agent/revoke-api-key/confirm',
+  ],
+  rejectAgentCredentials,
+  securityLayer('rotate_api_key'),
+  async (req: Request, res: Response) => {
+    try {
+      const token = String(req.body?.token || req.query?.token || '');
+      if (!token) {
+        return res.status(400).json({ success: false, error: 'Rotation confirmation token is required.' });
+      }
+      const result = await confirmAgentApiKeyRotation(token);
+      await logAgentFootprint(token.split('.')[0] || 'system', 'API_KEY_ROTATED', 'Rotated agent API key via email confirmation link');
+      res.json({
+        success: true,
+        data: result,
+        message: 'API key successfully rotated via email confirmation link.',
+      });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message || 'Failed to confirm API key rotation.' });
+    }
+  }
+);
+
+// 22. POST /api/auth/change-email/request (Request email change - Human Session Only)
+router.post(
+  ['/auth/change-email/request', '/v1/auth/change-email/request'],
+  requireHumanSession,
+  securityLayer('change_email'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { newEmail, appUrl: bodyAppUrl } = req.body;
+      if (!newEmail) {
+        return res.status(400).json({ success: false, error: 'New email address is required.' });
+      }
+      const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
+      const result = await requestEmailChange(req.user!.id, { newEmail }, appUrl);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      const status = err.message.includes('Incorrect') || err.message.includes('password') ? 401 : 400;
+      res.status(status).json({ success: false, error: err.message });
+    }
+  }
+);
+
+// 23. POST /api/auth/change-email/verify (Verify email change - Reject Agent Credentials)
+router.post(
+  ['/auth/change-email/verify', '/v1/auth/change-email/verify'],
+  rejectAgentCredentials,
+  securityLayer('change_email'),
+  async (req: Request, res: Response) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ success: false, error: 'Token is required.' });
+      const result = await verifyEmailChange(token);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  }
+);
 
 // 23b. POST /api/auth/verify-email/request (Request account verification link to activate verified tick mark)
 router.post('/auth/verify-email/request', requireUserOrAgentAuth, securityLayer('verify_email'), async (req: AuthenticatedRequest, res: Response) => {
@@ -1930,32 +2136,42 @@ router.get('/auth/verify-email/confirm', securityLayer('verify_email'), async (r
   }
 });
 
-// 24. POST /api/auth/forgot-password (Request password reset email)
-router.post('/auth/forgot-password', securityLayer('forgot_password'), async (req: Request, res: Response) => {
-  try {
-    const { email, appUrl: bodyAppUrl } = req.body;
-    const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
-    const result = await requestForgotPassword(email, appUrl);
-    res.json(result);
-  } catch (err: any) {
-    console.error('[DIAGNOSTIC_LOG] [AUTH] Exception in forgot-password handler:', err?.message || err);
-    res.json({ success: true, message: "If an account exists for this email, password reset instructions have been sent." });
-  }
-});
-
-// 25. POST /api/auth/reset-password (Reset password using token)
-router.post('/auth/reset-password', securityLayer('reset_password'), async (req: Request, res: Response) => {
-  try {
-    const { token, newPassword } = req.body;
-    if (!token || !newPassword) {
-      return res.status(400).json({ success: false, error: 'Token and new password are required.' });
+// 24. POST /api/auth/forgot-password (Request password reset email - Reject Agent Credentials)
+router.post(
+  ['/auth/forgot-password', '/v1/auth/forgot-password'],
+  rejectAgentCredentials,
+  securityLayer('forgot_password'),
+  async (req: Request, res: Response) => {
+    try {
+      const { email, appUrl: bodyAppUrl } = req.body;
+      const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
+      const result = await requestForgotPassword(email, appUrl);
+      res.json(result);
+    } catch (err: any) {
+      console.error('[DIAGNOSTIC_LOG] [AUTH] Exception in forgot-password handler:', err?.message || err);
+      res.json({ success: true, message: "If an account exists for this email, password reset instructions have been sent." });
     }
-    const result = await resetPassword(token, newPassword);
-    res.json({ success: true, data: result });
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message || 'Failed to reset password.' });
   }
-});
+);
+
+// 25. POST /api/auth/reset-password (Reset password using token - Reject Agent Credentials)
+router.post(
+  ['/auth/reset-password', '/v1/auth/reset-password'],
+  rejectAgentCredentials,
+  securityLayer('reset_password'),
+  async (req: Request, res: Response) => {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword) {
+        return res.status(400).json({ success: false, error: 'Token and new password are required.' });
+      }
+      const result = await resetPassword(token, newPassword);
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message || 'Failed to reset password.' });
+    }
+  }
+);
 
 // 25b. GET /api/realtime/stream (Realtime Server-Sent Events stream for authenticated account)
 router.get('/realtime/stream', requireUserOrAgentAuth, (req: AuthenticatedRequest, res: Response) => {

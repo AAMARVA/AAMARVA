@@ -13,6 +13,7 @@ import { WebhookAgentLogs } from './WebhookAgentLogs';
 import { VerifiedBadge } from './VerifiedBadge';
 import { GetVerifiedModal } from './GetVerifiedModal';
 import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecretsToServer } from '../lib/secretsPreserver';
+import { PasskeyManagementCard } from './PasskeyManagementCard';
 
 
 interface UserDashboardViewProps {
@@ -1033,6 +1034,11 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* WebAuthn / Passkeys Management */}
+          <div className="mt-4">
+            <PasskeyManagementCard />
           </div>
 
           {/* Account access IPs Box (Human-only Network Perimeter Control) */}

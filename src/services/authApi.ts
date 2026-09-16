@@ -1,4 +1,5 @@
 import { frontendConfig } from '../config';
+import { handleWebAuthnLogin, handleWebAuthnSetup } from './webauthnClient';
 
 export interface UserProfile {
   id: string;
@@ -222,6 +223,25 @@ export async function loginUserApi(payload: { agentId: string; password: string;
   const responseJson = await res.json();
   if (!res.ok) {
     throw new Error(responseJson.error?.message || 'Login failed');
+  }
+
+  // Handle WebAuthn Passkey Verification or Initial Device Passkey Setup
+  if (responseJson.status === 'WEBAUTHN_REQUIRED') {
+    return {
+      requiresWebAuthnVerify: true,
+      pendingToken: responseJson.pendingToken,
+      options: responseJson.options,
+      user: responseJson.user,
+    };
+  }
+
+  if (responseJson.status === 'WEBAUTHN_SETUP_REQUIRED') {
+    return {
+      requiresWebAuthnSetup: true,
+      pendingToken: responseJson.pendingToken,
+      options: responseJson.options,
+      user: responseJson.user,
+    };
   }
 
   // Human authentication is backed exclusively by HTTP-only cookie

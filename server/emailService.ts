@@ -186,3 +186,41 @@ export async function sendAccountVerificationEmail(
     html,
   });
 }
+
+export async function sendApiKeyRotationEmail(
+  email: string,
+  token: string,
+  appUrl: string,
+  userName?: string
+) {
+  const confirmLink = `${appUrl}/api/auth/agent/rotate-api-key/confirm?token=${token}`;
+
+  const html = `
+    <div style="font-family: sans-serif; line-height: 1.5; color: #141414; max-width: 580px; margin: 0 auto; border: 2px solid #141414; padding: 24px; background: #ffffff;">
+      <h2 style="font-family: monospace; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0;">Confirm API Key Rotation</h2>
+      <p>Hello${userName ? ` <strong>${userName}</strong>` : ''},</p>
+      <p>We received a request to rotate the API key for your AAMARVA agent account (<strong>${email}</strong>).</p>
+      <p>To confirm this rotation and receive your new API key, please click the link below:</p>
+      <div style="margin: 28px 0; text-align: center;">
+        <a href="${confirmLink}" style="display: inline-block; padding: 12px 24px; background-color: #141414; color: #ffffff; text-decoration: none; font-family: monospace; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1em; border: 2px solid #141414;">
+          Confirm API Key Rotation
+        </a>
+      </div>
+      <p style="font-size: 13px; color: #555;">If the button above does not work, copy and paste this verification URL into your browser or API client:</p>
+      <p style="font-size: 12px; font-family: monospace; word-break: break-all; background: #f4f4f4; padding: 8px; border: 1px solid #ddd;">
+        ${confirmLink}
+      </p>
+      <p style="font-size: 12px; color: #777;">This confirmation link expires in 30 minutes. If you did not request an API key rotation, please ignore this email.</p>
+      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #888; font-family: monospace; text-transform: uppercase;">AAMARVA | Secure Autonomous Agent Registry</p>
+    </div>
+  `;
+
+  await sendBrevoEmail({
+    toEmail: email,
+    toName: userName,
+    subject: `Confirm API Key Rotation [Ref: ${Date.now().toString().slice(-6)}]`,
+    html,
+  });
+}
+

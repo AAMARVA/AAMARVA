@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { WebAuthnEnableModal } from '../components/WebAuthnEnableModal';
+import { WebAuthnVerifyModal } from '../components/WebAuthnVerifyModal';
 import {
   UserProfile,
   registerUserApi,
@@ -55,6 +57,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [userPassword, setUserPassword] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [webAuthnPrompt, setWebAuthnPrompt] = useState<{
+    pendingToken: string;
+    options: any;
+    userName?: string;
+    resolve: (value: any) => void;
+    reject: (reason?: any) => void;
+  } | null>(null);
+  const [webAuthnVerifyPrompt, setWebAuthnVerifyPrompt] = useState<{
+    pendingToken: string;
+    options: any;
+    userName?: string;
+    resolve: (value: any) => void;
+    reject: (reason?: any) => void;
+  } | null>(null);
 
   
   const ensureE2EEKeys = async (agentId: string, forceRotate: boolean = false, credential?: string) => {
@@ -195,7 +211,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (agentId: string, credential: string) => {
     const result = await loginUserApi({ agentId, password: credential });
-    const userToSave = result.user || result.data?.user || result;
+    let userToSave = null;
+
+    if (result?.requiresWebAuthnSetup) {
+      // Password credentials verified! Prompt popup modal to enable WebAuthn passkey before issuing session.
+      userToSave = await new Promise((resolve, reject) => {
+        setWebAuthnPrompt({
+          pendingToken: result.pendingToken,
+          options: result.options,
+          userName: result.user?.name || result.user?.agentId || 'User',
+          resolve,
+          reject,
+        });
+      });
+    } else if (result?.requiresWebAuthnVerify) {
+      // Password credentials verified! Prompt popup modal to verify existing WebAuthn passkey.
+      userToSave = await new Promise((resolve, reject) => {
+        setWebAuthnVerifyPrompt({
+          pendingToken: result.pendingToken,
+          options: result.options,
+          userName: result.user?.name || result.user?.agentId || 'User',
+          resolve,
+          reject,
+        });
+      });
+    } else {
+      userToSave = result.user || result.data?.user || result;
+    }
+
     setUser(userToSave || null);
     if (credential) setUserPassword(credential);
     if (userToSave) ensureE2EEKeys(userToSave.agentId, false, credential);
@@ -319,6 +362,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }}
     >
       {children}
+      <WebAuthnEnableModal
+        isOpen={!!webAuthnPrompt}
+        pendingToken={webAuthnPrompt?.pendingToken || ''}
+        options={webAuthnPrompt?.options}
+        userName={webAuthnPrompt?.userName}
+        onSuccess={(userData) => {
+          const finalUser = userData?.user || userData?.data?.user || userData;
+          webAuthnPrompt?.resolve(finalUser);
+          setWebAuthnPrompt(null);
+        }}
+        onCancel={() => {
+          webAuthnPrompt?.reject(new Error('WebAuthn passkey setup is required to complete login.'));
+          setWebAuthnPrompt(null);
+        }}
+      />
+      <WebAuthnVerifyModal
+        isOpen={!!webAuthnVerifyPrompt}
+        pendingToken={webAuthnVerifyPrompt?.pendingToken || ''}
+        options={webAuthnVerifyPrompt?.options}
+        userName={webAuthnVerifyPrompt?.userName}
+        onSuccess={(userData) => {
+          const finalUser = userData?.user || userData?.data?.user || userData;
+          webAuthnVerifyPrompt?.resolve(finalUser);
+          setWebAuthnVerifyPrompt(null);
+        }}
+        onCancel={() => {
+          webAuthnVerifyPrompt?.reject(new Error('Device credential prompt was cancelled or timed out.'));
+          setWebAuthnVerifyPrompt(null);
+        }}
+      />
     </AuthContext.Provider>
   );
 };

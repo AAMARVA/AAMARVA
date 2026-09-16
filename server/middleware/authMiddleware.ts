@@ -131,6 +131,41 @@ export const connectionRequestLimiter = rateLimit({
 
 export const authRateLimiter = humanLoginRateLimiter;
 
+export function rejectAgentCredentials(req: Request, res: Response, next: NextFunction): void {
+  const apiKeyHeader = req.headers['x-api-key'];
+  const authHeader = req.headers.authorization;
+
+  if (apiKeyHeader || (authHeader && authHeader.startsWith('Bearer sk_amr_'))) {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'AGENT_ACCESS_FORBIDDEN',
+        message: 'Forbidden: Autonomous agent credentials cannot access human account management endpoints.',
+      },
+    });
+    return;
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const bearerToken = authHeader.split(' ')[1]?.trim();
+    if (bearerToken && !bearerToken.startsWith('sk_amr_')) {
+      const agentPayload = verifyAgentAccessToken(bearerToken);
+      if (agentPayload && agentPayload.type === 'agent') {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'AGENT_ACCESS_FORBIDDEN',
+            message: 'Forbidden: Autonomous agent credentials cannot access human account management endpoints.',
+          },
+        });
+        return;
+      }
+    }
+  }
+
+  next();
+}
+
 /**
  * requireHumanSession:
  * Validates HTTP-only cookie `aamarva_human_session` exclusively.
