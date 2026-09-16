@@ -10,7 +10,7 @@ import {
 /**
  * HUMAN LOGIN FIREWALL RULE VERIFICATION TEST SUITE
  */
-export function runHumanLoginFirewallTests() {
+export async function runHumanLoginFirewallTests() {
   console.log('--- HUMAN LOGIN FIREWALL RULE AUDIT ---');
 
   let passed = 0;
@@ -90,7 +90,7 @@ export function runHumanLoginFirewallTests() {
 
   // 3. Complete Firewall Rule Evaluation Tests
   // Scenario A: Valid Residential IP + Valid Desktop Browser -> ALLOWED
-  const evalValidHuman = evaluateHumanLoginFirewall({
+  const evalValidHuman = await evaluateHumanLoginFirewall({
     headers: {
       'x-simulated-ip': residentialIp,
       'user-agent': desktopChromeUa,
@@ -99,7 +99,7 @@ export function runHumanLoginFirewallTests() {
   assert(evalValidHuman.blocked === false, 'Valid residential IP + Desktop browser is ALLOWED');
 
   // Scenario B: Datacenter IP + Valid Desktop Browser -> BLOCKED (Condition 1 triggered)
-  const evalDatacenterIp = evaluateHumanLoginFirewall({
+  const evalDatacenterIp = await evaluateHumanLoginFirewall({
     headers: {
       'x-simulated-ip': awsIp,
       'user-agent': desktopChromeUa,
@@ -109,7 +109,7 @@ export function runHumanLoginFirewallTests() {
   assert(evalDatacenterIp.code === 'FIREWALL_BLOCKED_DATACENTER_IP', 'Correct error code for datacenter IP');
 
   // Scenario C: Valid Residential IP + Python Bot / curl -> BLOCKED (Condition 2 triggered)
-  const evalBotReq = evaluateHumanLoginFirewall({
+  const evalBotReq = await evaluateHumanLoginFirewall({
     headers: {
       'x-simulated-ip': residentialIp,
       'user-agent': pythonBotUa,
@@ -119,7 +119,7 @@ export function runHumanLoginFirewallTests() {
   assert(evalBotReq.code === 'FIREWALL_BLOCKED_UNRECOGNIZED_DEVICE', 'Correct error code for unrecognized device');
 
   // Scenario D: Valid Residential IP + Smart TV -> BLOCKED (Condition 2 triggered)
-  const evalTvReq = evaluateHumanLoginFirewall({
+  const evalTvReq = await evaluateHumanLoginFirewall({
     headers: {
       'x-simulated-ip': residentialIp,
       'user-agent': smartTvUa,
@@ -131,5 +131,7 @@ export function runHumanLoginFirewallTests() {
   return { passed, failed };
 }
 
-runHumanLoginFirewallTests();
+runHumanLoginFirewallTests().catch(err => {
+  console.error('Firewall tests failed to execute:', err);
+});
 

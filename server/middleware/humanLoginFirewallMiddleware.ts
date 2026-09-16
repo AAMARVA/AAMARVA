@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import net from 'net';
+import dns from 'dns';
 import { getClientIp, matchIPv4Cidr, matchIPv6 } from '../utils/networkWhitelist';
 
 /**
@@ -184,6 +185,47 @@ export const DATACENTER_CIDR_RANGES: string[] = [
   '149.129.0.0/16',
   '161.117.0.0/16',
   '198.11.160.0/19',
+
+  // Google Cloud Platform (GCP) IPv6 Blocks
+  '2600:1900::/22',
+  '2605:efc0::/22',
+  '2607:f8b0:4000::/36',
+  '2001:4860:4000::/36',
+
+  // Amazon Web Services (AWS) IPv6 Blocks
+  '2406:da00::/24',
+  '2600:1f00::/24',
+  '2600:9000::/28',
+  '2a05:d010::/28',
+
+  // Microsoft Azure IPv6 Blocks
+  '2603:1000::/22',
+  '2a01:111::/28',
+
+  // Cloudflare IPv6 Blocks
+  '2400:cb00::/32',
+  '2606:4700::/32',
+  '2803:f800::/32',
+  '2405:b500::/32',
+  '2405:8100::/32',
+  '2a06:98c0::/29',
+  '2c0f:f248::/32',
+
+  // DigitalOcean IPv6 Blocks
+  '2604:a880::/32',
+  '2a03:b0c0::/32',
+
+  // Hetzner IPv6 Blocks
+  '2a01:4f8::/29',
+  '2a01:4f9::/29',
+  '2a01:4fc::/29',
+
+  // OVH Cloud IPv6 Blocks
+  '2001:41d0::/32',
+  '2607:5300::/32',
+
+  // Vultr IPv6 Blocks
+  '2001:19f0::/32'
 ];
 
 /**
@@ -248,6 +290,79 @@ export function isDatacenterOrHostingIP(clientIp: string, req?: Request): boolea
       if (matchIPv6(cleanIp, cidr)) {
         return true;
       }
+    }
+  }
+
+  return false;
+}
+
+const datacenterDomains = [
+  'amazonaws.com',
+  'aws.com',
+  'googleusercontent.com',
+  'gcp.gtools.key',
+  'azure.com',
+  'azure.net',
+  'cloudapp.net',
+  'digitalocean.com',
+  'linode.com',
+  'hetzner.com',
+  'your-server.de',
+  'ovh.net',
+  'ovh.com',
+  'ovh.us',
+  'vultr.com',
+  'vultrusercontent.com',
+  'scaleway.com',
+  'oraclecloud.com',
+  'oraclevcn.com',
+  'alibaba.com',
+  'alibabacloud.com',
+  'clouvider.net',
+  'contabo.net',
+  'contaboserver.net',
+  'leaseweb.com',
+  'm247.com',
+  'softlayer.com',
+  'servers.com',
+  'psychz.net',
+  'colocrossing.com',
+  'choopa.com',
+  'constant.com',
+  'fastly-edge.com',
+  'fastly.net',
+  'cloudflare.net',
+  'liquidweb.com',
+  'phoenixnap.com'
+];
+
+function reverseDnsLookup(ip: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      resolve([]);
+    }, 800);
+
+    dns.reverse(ip, (err, hostnames) => {
+      clearTimeout(timer);
+      if (err || !hostnames) {
+        resolve([]);
+      } else {
+        resolve(hostnames);
+      }
+    });
+  });
+}
+
+export async function isDatacenterOrHostingIPAsync(clientIp: string, req?: Request): Promise<boolean> {
+  if (isDatacenterOrHostingIP(clientIp, req)) {
+    return true;
+  }
+
+  const hostnames = await reverseDnsLookup(clientIp);
+  for (const hostname of hostnames) {
+    const lowerHost = hostname.toLowerCase();
+    if (datacenterDomains.some(domain => lowerHost.endsWith(domain) || lowerHost === domain)) {
+      return true;
     }
   }
 
@@ -380,10 +495,10 @@ export function detectDeviceType(req: Request): DeviceCategory {
 }
 
 /**
- * Valid user devices allowed for human login: desktop, mobile, tablet.
+ * Valid user devices allowed for human login: desktop, mobile, tablet, tv, console.
  */
 export function isAllowedUserDevice(deviceType: DeviceCategory): boolean {
-  return ['desktop', 'mobile', 'tablet'].includes(deviceType);
+  return ['desktop', 'mobile', 'tablet', 'tv', 'console'].includes(deviceType);
 }
 
 export interface FirewallEvaluationResult {
@@ -405,9 +520,9 @@ export interface FirewallEvaluationResult {
  * 1) Incoming IP address originates from a hosting provider, cloud network, or datacenter.
  * 2) Device type is NOT recognized as a desktop, mobile, or tablet.
  */
-export function evaluateHumanLoginFirewall(req: Request): FirewallEvaluationResult {
+export async function evaluateHumanLoginFirewall(req: Request): Promise<FirewallEvaluationResult> {
   const clientIp = extractClientIpForFirewall(req);
-  const isDatacenter = isDatacenterOrHostingIP(clientIp, req);
+  const isDatacenter = await isDatacenterOrHostingIPAsync(clientIp, req);
   const deviceType = detectDeviceType(req);
   const isValidDevice = isAllowedUserDevice(deviceType);
 
@@ -453,20 +568,24 @@ export function evaluateHumanLoginFirewall(req: Request): FirewallEvaluationResu
 /**
  * Express Middleware enforcing the human login firewall rule.
  */
-export function humanLoginFirewall(req: Request, res: Response, next: NextFunction) {
-  const evaluation = evaluateHumanLoginFirewall(req);
+export async function humanLoginFirewall(req: Request, res: Response, next: NextFunction) {
+  try {
+    const evaluation = await evaluateHumanLoginFirewall(req);
 
-  if (evaluation.blocked) {
-    console.warn(`[HUMAN LOGIN FIREWALL BLOCKED] Code: ${evaluation.code} | Reason: ${evaluation.reason} | IP: ${evaluation.details?.ip} | Device: ${evaluation.details?.deviceType}`);
-    return res.status(403).json({
-      success: false,
-      error: {
-        code: evaluation.code || 'FIREWALL_BLOCKED',
-        message: evaluation.reason || 'Access denied by human login firewall policy.',
-        details: evaluation.details,
-      }
-    });
+    if (evaluation.blocked) {
+      console.warn(`[HUMAN LOGIN FIREWALL BLOCKED] Code: ${evaluation.code} | Reason: ${evaluation.reason} | IP: ${evaluation.details?.ip} | Device: ${evaluation.details?.deviceType}`);
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: evaluation.code || 'FIREWALL_BLOCKED',
+          message: evaluation.reason || 'Access denied by human login firewall policy.',
+          details: evaluation.details,
+        }
+      });
+    }
+
+    next();
+  } catch (err) {
+    next(err);
   }
-
-  next();
 }
