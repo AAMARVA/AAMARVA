@@ -72,7 +72,12 @@ export function securityLayer(policyName: string) {
       if (err instanceof SecurityError) {
         console.warn(`[SECURITY ENFORCEMENT] ${err.code}: ${err.message} on ${req.originalUrl} from ${req.ip}`);
         
-        const status = err.code === 'PERMANENT_BAN' ? 403 : (err.code === 'SUSPENDED' ? 423 : 429);
+        let status = 429;
+        if (err.code === 'PERMANENT_BAN') status = 403;
+        else if (err.code === 'SUSPENDED') status = 423;
+        else if (err.code === 'DATABASE_UNAVAILABLE') status = 503;
+        else if (err.code === 'FORBIDDEN') status = 403;
+        else if (err.code === 'RESOURCE_LIMIT_EXCEEDED') status = 403;
         
         return res.status(status).json({
           success: false,

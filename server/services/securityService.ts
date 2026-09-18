@@ -44,6 +44,21 @@ export interface SecurityPolicy {
   
   // Probation
   probationDurationMs: number;   // Duration of probation after suspension
+
+  // Quota limits
+  quota?: {
+    monthly: number;
+    daily: number;
+  };
+
+  // Resource limits (e.g. max active clusters)
+  resourceConstraints?: {
+    table: string;
+    ownerCol: string;
+    max: number;
+    statusCol: string;
+    activeStatus: string;
+  };
 }
 
 export const GLOBAL_SECURITY_POLICIES: Record<string, SecurityPolicy> = {
@@ -311,6 +326,235 @@ export const GLOBAL_SECURITY_POLICIES: Record<string, SecurityPolicy> = {
     suspensionDurationMs: 15 * 60 * 1000,
     permanentBanThreshold: 20,
     probationDurationMs: 1 * 60 * 60 * 1000,
+  },
+  // CLUSTER SECURITY POLICIES (FREE PLAN)
+  'cluster_create': {
+    endpoint: '/api/clusters (POST)',
+    severity: SecuritySeverity.S2_ABUSE,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 60 * 1000, max: 3 },
+    quota: { monthly: 3, daily: 1 },
+    resourceConstraints: {
+      table: 'clusters',
+      ownerCol: 'ownerUserId',
+      max: 1,
+      statusCol: 'status',
+      activeStatus: 'active'
+    },
+    identity: 'account',
+    warningThreshold: 2,
+    suspensionThreshold: 5,
+    suspensionDurationMs: 24 * 60 * 60 * 1000,
+    permanentBanThreshold: 3,
+    probationDurationMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  'cluster_list': {
+    endpoint: '/api/clusters (GET)',
+    severity: SecuritySeverity.S1_SUSPICIOUS,
+    isCritical: false,
+    rateLimit: { windowMs: 60 * 1000, max: 60 },
+    quota: { monthly: 10000, daily: 333 },
+    identity: 'account',
+    warningThreshold: 10,
+    suspensionThreshold: 30,
+    suspensionDurationMs: 1 * 60 * 60 * 1000,
+    permanentBanThreshold: 5,
+    probationDurationMs: 24 * 60 * 60 * 1000,
+  },
+  'cluster_invite_me_list': {
+    endpoint: '/api/clusters/invites/me',
+    severity: SecuritySeverity.S1_SUSPICIOUS,
+    isCritical: false,
+    rateLimit: { windowMs: 60 * 1000, max: 30 },
+    quota: { monthly: 3000, daily: 100 },
+    identity: 'account',
+    warningThreshold: 10,
+    suspensionThreshold: 30,
+    suspensionDurationMs: 1 * 60 * 60 * 1000,
+    permanentBanThreshold: 5,
+    probationDurationMs: 24 * 60 * 60 * 1000,
+  },
+  'cluster_get': {
+    endpoint: '/api/clusters/:clusterId',
+    severity: SecuritySeverity.S1_SUSPICIOUS,
+    isCritical: false,
+    rateLimit: { windowMs: 60 * 1000, max: 60 },
+    quota: { monthly: 10000, daily: 333 },
+    identity: 'account',
+    warningThreshold: 10,
+    suspensionThreshold: 30,
+    suspensionDurationMs: 1 * 60 * 60 * 1000,
+    permanentBanThreshold: 5,
+    probationDurationMs: 24 * 60 * 60 * 1000,
+  },
+  'cluster_update': {
+    endpoint: '/api/clusters/:clusterId (PATCH)',
+    severity: SecuritySeverity.S2_ABUSE,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 1000, max: 10 },
+    quota: { monthly: 300, daily: 10 },
+    identity: 'account',
+    warningThreshold: 5,
+    suspensionThreshold: 15,
+    suspensionDurationMs: 6 * 60 * 60 * 1000,
+    permanentBanThreshold: 3,
+    probationDurationMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  'cluster_delete': {
+    endpoint: '/api/clusters/:clusterId (DELETE)',
+    severity: SecuritySeverity.S2_ABUSE,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 60 * 1000, max: 3 },
+    quota: { monthly: 30, daily: 1 },
+    identity: 'account',
+    warningThreshold: 2,
+    suspensionThreshold: 5,
+    suspensionDurationMs: 24 * 60 * 60 * 1000,
+    permanentBanThreshold: 3,
+    probationDurationMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  'cluster_invite_create': {
+    endpoint: '/api/clusters/:clusterId/invites (POST)',
+    severity: SecuritySeverity.S2_ABUSE,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 1000, max: 10 },
+    quota: { monthly: 300, daily: 10 },
+    identity: 'account',
+    warningThreshold: 5,
+    suspensionThreshold: 15,
+    suspensionDurationMs: 6 * 60 * 60 * 1000,
+    permanentBanThreshold: 3,
+    probationDurationMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  'cluster_invite_list': {
+    endpoint: '/api/clusters/:clusterId/invites (GET)',
+    severity: SecuritySeverity.S1_SUSPICIOUS,
+    isCritical: false,
+    rateLimit: { windowMs: 60 * 1000, max: 30 },
+    quota: { monthly: 3000, daily: 100 },
+    identity: 'account',
+    warningThreshold: 10,
+    suspensionThreshold: 30,
+    suspensionDurationMs: 1 * 60 * 60 * 1000,
+    permanentBanThreshold: 5,
+    probationDurationMs: 24 * 60 * 60 * 1000,
+  },
+  'cluster_invite_revoke': {
+    endpoint: '/api/clusters/:clusterId/invites/:inviteId (DELETE)',
+    severity: SecuritySeverity.S2_ABUSE,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 1000, max: 10 },
+    quota: { monthly: 300, daily: 10 },
+    identity: 'account',
+    warningThreshold: 5,
+    suspensionThreshold: 15,
+    suspensionDurationMs: 6 * 60 * 60 * 1000,
+    permanentBanThreshold: 3,
+    probationDurationMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  'cluster_join': {
+    endpoint: '/api/clusters/:clusterId/join',
+    severity: SecuritySeverity.S2_ABUSE,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 60 * 1000, max: 5 },
+    quota: { monthly: 100, daily: 3 },
+    identity: 'account',
+    warningThreshold: 3,
+    suspensionThreshold: 8,
+    suspensionDurationMs: 12 * 60 * 60 * 1000,
+    permanentBanThreshold: 3,
+    probationDurationMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  'cluster_member_role_update': {
+    endpoint: '/api/clusters/:clusterId/members/:memberAgentId/role',
+    severity: SecuritySeverity.S2_ABUSE,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 1000, max: 10 },
+    quota: { monthly: 300, daily: 10 },
+    identity: 'account',
+    warningThreshold: 5,
+    suspensionThreshold: 15,
+    suspensionDurationMs: 6 * 60 * 60 * 1000,
+    permanentBanThreshold: 3,
+    probationDurationMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  'cluster_message_create': {
+    endpoint: '/api/clusters/:clusterId/messages (POST)',
+    severity: SecuritySeverity.S1_SUSPICIOUS,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 1000, max: 30 },
+    quota: { monthly: 3000, daily: 100 },
+    identity: 'account',
+    warningThreshold: 10,
+    suspensionThreshold: 50,
+    suspensionDurationMs: 1 * 60 * 60 * 1000,
+    permanentBanThreshold: 10,
+    probationDurationMs: 24 * 60 * 60 * 1000,
+  },
+  'cluster_message_list': {
+    endpoint: '/api/clusters/:clusterId/messages (GET)',
+    severity: SecuritySeverity.S1_SUSPICIOUS,
+    isCritical: false,
+    rateLimit: { windowMs: 60 * 1000, max: 120 },
+    quota: { monthly: 30000, daily: 1000 },
+    identity: 'account',
+    warningThreshold: 20,
+    suspensionThreshold: 100,
+    suspensionDurationMs: 1 * 60 * 60 * 1000,
+    permanentBanThreshold: 10,
+    probationDurationMs: 24 * 60 * 60 * 1000,
+  },
+  'cluster_member_kick': {
+    endpoint: '/api/clusters/:clusterId/members/:memberAgentId (DELETE)',
+    severity: SecuritySeverity.S2_ABUSE,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 1000, max: 10 },
+    quota: { monthly: 300, daily: 10 },
+    identity: 'account',
+    warningThreshold: 5,
+    suspensionThreshold: 15,
+    suspensionDurationMs: 6 * 60 * 60 * 1000,
+    permanentBanThreshold: 3,
+    probationDurationMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  'cluster_leave': {
+    endpoint: '/api/clusters/:clusterId/leave',
+    severity: SecuritySeverity.S2_ABUSE,
+    isCritical: true,
+    rateLimit: { windowMs: 60 * 60 * 1000, max: 5 },
+    quota: { monthly: 100, daily: 3 },
+    identity: 'account',
+    warningThreshold: 3,
+    suspensionThreshold: 8,
+    suspensionDurationMs: 12 * 60 * 60 * 1000,
+    permanentBanThreshold: 3,
+    probationDurationMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  'public_cluster_recent': {
+    endpoint: '/api/clusters/public/recent',
+    severity: SecuritySeverity.S0_NORMAL,
+    isCritical: false,
+    rateLimit: { windowMs: 60 * 1000, max: 60 },
+    quota: { monthly: 30000, daily: 1000 },
+    identity: 'ip',
+    warningThreshold: 10,
+    suspensionThreshold: 50,
+    suspensionDurationMs: 1 * 60 * 60 * 1000,
+    permanentBanThreshold: 10,
+    probationDurationMs: 24 * 60 * 60 * 1000,
+  },
+  'public_cluster_members': {
+    endpoint: '/api/clusters/public/:clusterId/members',
+    severity: SecuritySeverity.S0_NORMAL,
+    isCritical: false,
+    rateLimit: { windowMs: 60 * 1000, max: 60 },
+    quota: { monthly: 30000, daily: 1000 },
+    identity: 'ip',
+    warningThreshold: 10,
+    suspensionThreshold: 50,
+    suspensionDurationMs: 1 * 60 * 60 * 1000,
+    permanentBanThreshold: 10,
+    probationDurationMs: 24 * 60 * 60 * 1000,
   }
 };
 
@@ -328,6 +572,7 @@ export class SecurityService {
     security_behavioral_signals: true,
     users: true,
     check_rate_limit_atomic: true,
+    check_cluster_quota_atomic: true,
     record_violation_atomic: true,
     record_critical_violation_atomic: true,
     record_ip_penalty_atomic: true,
@@ -370,8 +615,14 @@ export class SecurityService {
     // 0. IP Reputation Check
     await this.checkIpReputation(ipStr, policy.isCritical, trafficClass);
 
-    // Hardened identifier extraction for login routes
+    // Hardened identifier extraction
     let effectiveUserId = userId;
+    
+    // Attempt to extract from authenticated request if not provided
+    if (!effectiveUserId && (req as any).user?.id) {
+      effectiveUserId = (req as any).user.id;
+    }
+    
     if (!effectiveUserId && (policyName === 'auth_login' || policyName === 'auth_register')) {
       effectiveUserId = req.body.agentId || req.body.email || req.body.userId;
     }
@@ -393,8 +644,17 @@ export class SecurityService {
     // 3. Correlation Scrutiny (Priority 14: Cross-account abuse evasion)
     await this.performCorrelationCheck(ipStr, effectiveUserId, policy.isCritical, trafficClass);
 
-    // 4. Rate Limiting (Deterministic Window-based, Atomic)
-    await this.checkRateLimit(identifier as string, policyName, ipStr, policy.isCritical, trafficClass);
+    // 4. Rate Limiting & Quota (Deterministic Window-based, Atomic)
+    // Defense-in-Depth: Always perform an IP-based check as an abuse-defense layer for non-public traffic
+    if (policy.identity === 'account' && trafficClass !== TrafficClass.PUBLIC) {
+      await this.checkRateLimit(ipStr, `ip_defense:${policyName}`, ipStr, false, trafficClass, { windowMs: 60000, max: 100 }); // Generic high-burst IP defense
+    }
+
+    if (policy.quota || policy.resourceConstraints) {
+      await this.checkQuota(identifier as string, policyName, ipStr, policy.isCritical, trafficClass);
+    } else {
+      await this.checkRateLimit(identifier as string, policyName, ipStr, policy.isCritical, trafficClass);
+    }
 
     // 5. Track Activity
     await this.trackActivity(identifier as string, policyName);
@@ -477,10 +737,80 @@ export class SecurityService {
     }
   }
 
-  private async checkRateLimit(identifier: string, policyName: string, ip: string, isCritical: boolean = false, trafficClass: TrafficClass = TrafficClass.PUBLIC): Promise<void> {
+  private async checkQuota(identifier: string, policyName: string, ip: string, isCritical: boolean = false, trafficClass: TrafficClass = TrafficClass.PUBLIC): Promise<void> {
     const policy = GLOBAL_SECURITY_POLICIES[policyName];
+    if (!policy) return;
+
+    const now = new Date();
+    const windowStartMs = Math.floor(now.getTime() / policy.rateLimit.windowMs) * policy.rateLimit.windowMs;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    if (this.tableExistence.check_cluster_quota_atomic) {
+      try {
+        const sb = getSupabaseClient();
+        const { data: result, error } = await sb.rpc('check_cluster_quota_atomic', {
+          p_identifier: identifier,
+          p_endpoint: policyName,
+          p_window_start: new Date(windowStartMs).toISOString(),
+          p_max_burst: policy.rateLimit.max,
+          p_month_start: monthStart.toISOString(),
+          p_max_monthly: policy.quota?.monthly || 1000000,
+          p_day_start: dayStart.toISOString(),
+          p_max_daily: policy.quota?.daily || 1000000,
+          p_resource_table: policy.resourceConstraints?.table,
+          p_resource_owner_col: policy.resourceConstraints?.ownerCol,
+          p_resource_max: policy.resourceConstraints?.max,
+          p_resource_status_col: policy.resourceConstraints?.statusCol,
+          p_resource_active_status: policy.resourceConstraints?.activeStatus
+        });
+
+        if (!error && result) {
+          if (!result.success) {
+            if (result.error === 'RESOURCE_LIMIT_EXCEEDED') {
+              throw new SecurityError('FORBIDDEN', result.message);
+            }
+            if (result.error === 'RATE_LIMIT_EXCEEDED') {
+              throw new SecurityError('RATE_LIMIT_EXCEEDED', result.message, (windowStartMs + policy.rateLimit.windowMs - now.getTime()).toString());
+            }
+            if (result.error === 'MONTHLY_QUOTA_EXCEEDED') {
+              throw new SecurityError('MONTHLY_QUOTA_EXCEEDED', 'Monthly quota exceeded. Access denied until next month.');
+            }
+            if (result.error === 'DAILY_PACING_EXCEEDED') {
+              throw new SecurityError('RATE_LIMIT_EXCEEDED', 'Daily pacing target exceeded. Please try again tomorrow.');
+            }
+          }
+          return;
+        }
+
+        if (error) {
+          const isHandled = this.handleTableError('check_cluster_quota_atomic', error, isCritical, trafficClass);
+          if (!isHandled && (isCritical || policy.quota || policy.resourceConstraints)) {
+            throw new SecurityError('DATABASE_UNAVAILABLE', 'Security verification service temporarily unavailable.');
+          }
+        }
+      } catch (e: any) {
+        if (e instanceof SecurityError) throw e;
+        this.tableExistence.check_cluster_quota_atomic = false;
+        if (isCritical || policy.quota || policy.resourceConstraints) {
+          throw new SecurityError('DATABASE_UNAVAILABLE', 'Security verification service temporarily unavailable.');
+        }
+      }
+    }
+
+    // STRICT FAIL-CLOSED: No local fallback allowed for authoritative cluster quotas
+    if (policy.quota || policy.resourceConstraints) {
+      throw new SecurityError('DATABASE_UNAVAILABLE', 'Security verification service temporarily unavailable.');
+    }
+
+    await this.checkRateLimit(identifier, policyName, ip, isCritical, trafficClass);
+  }
+
+  private async checkRateLimit(identifier: string, policyName: string, ip: string, isCritical: boolean = false, trafficClass: TrafficClass = TrafficClass.PUBLIC, customLimit?: { windowMs: number, max: number }): Promise<void> {
+    const policy = GLOBAL_SECURITY_POLICIES[policyName];
+    const limit = customLimit || (policy ? policy.rateLimit : { windowMs: 60000, max: 100 });
     const now = Date.now();
-    const windowStartMs = Math.floor(now / policy.rateLimit.windowMs) * policy.rateLimit.windowMs;
+    const windowStartMs = Math.floor(now / limit.windowMs) * limit.windowMs;
 
     if (this.tableExistence.check_rate_limit_atomic) {
       try {
@@ -490,7 +820,7 @@ export class SecurityService {
           p_identifier: identifier,
           p_endpoint: policyName,
           p_window_start: windowStart.toISOString(),
-          p_max_requests: policy.rateLimit.max
+          p_max_requests: limit.max
         });
 
         if (!error && result) {
@@ -498,8 +828,8 @@ export class SecurityService {
             await this.recordRateLimitEvent(identifier, policyName, result.requestCount, ip);
             throw new SecurityError(
               'RATE_LIMIT_EXCEEDED', 
-              `Rate limit exceeded for ${policy.endpoint}. Max: ${policy.rateLimit.max} per ${policy.rateLimit.windowMs / 1000}s`, 
-              (windowStart.getTime() + policy.rateLimit.windowMs - now).toString()
+              `Rate limit exceeded for ${policy?.endpoint || policyName}. Max: ${limit.max} per ${limit.windowMs / 1000}s`, 
+              (windowStart.getTime() + limit.windowMs - now).toString()
             );
           }
           return;
@@ -523,11 +853,11 @@ export class SecurityService {
     }
     this.localRateLimitMap.set(key, { count: currentCount, windowStart: windowStartMs });
 
-    if (currentCount > policy.rateLimit.max) {
+    if (currentCount > limit.max) {
       throw new SecurityError(
         'RATE_LIMIT_EXCEEDED', 
-        `Rate limit exceeded for ${policy.endpoint}. Max: ${policy.rateLimit.max} per ${policy.rateLimit.windowMs / 1000}s`, 
-        (windowStartMs + policy.rateLimit.windowMs - now).toString()
+        `Rate limit exceeded for ${policy?.endpoint || policyName}. Max: ${limit.max} per ${limit.windowMs / 1000}s`, 
+        (windowStartMs + limit.windowMs - now).toString()
       );
     }
   }
@@ -546,6 +876,8 @@ export class SecurityService {
       reason: `Rate limit hit: ${count}/${policy.rateLimit.max}`,
       ip
     });
+
+    if (!this.tableExistence.security_enforcement_events) return;
 
     // Check if this identifier has repeated rate limit violations
     const { count: violationCount, error } = await sb

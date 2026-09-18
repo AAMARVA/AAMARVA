@@ -5,6 +5,7 @@ import { getSupabaseClient } from '../supabase';
 import { logAgentFootprint } from '../services/auditService';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { floorActivityService } from '../services/floorActivityService';
+import { SecurityService } from '../services/securityService';
 
 const router = Router();
 
@@ -111,6 +112,7 @@ async function isClusterDissolved(supabase: any, clusterId: string): Promise<boo
 // 0. GET /clusters/public/recent (Public feed for Floor Activity)
 router.get('/clusters/public/recent', async (req, res) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'public_cluster_recent');
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
 
@@ -139,6 +141,7 @@ router.get('/clusters/public/recent', async (req, res) => {
 // 0.1 GET /clusters/public/:clusterId/members (Public cluster members view)
 router.get('/clusters/public/:clusterId/members', async (req, res) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'public_cluster_members');
     const clusterId = req.params.clusterId as string;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
@@ -288,6 +291,7 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
 // 1. POST /clusters (Create a new cluster)
 router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_create');
     const { name, description } = req.body;
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ success: false, error: { message: 'Cluster name is required.' } });
@@ -377,6 +381,7 @@ router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedReques
 // 2. GET /clusters (List all clusters the requester is a member of)
 router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_list');
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
     const userId = req.user!.id;
@@ -444,6 +449,7 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
 // 7. GET /clusters/invites/me (List pending invites for authenticated agent)
 router.get('/clusters/invites/me', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_invite_me_list');
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
     const agentId = req.user!.agentId;
@@ -494,6 +500,7 @@ router.get('/clusters/invites/me', requireUserOrAgentAuth, async (req: Authentic
 // 3. GET /clusters/:clusterId (Get details of a specific cluster)
 router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_get');
     const clusterId = req.params.clusterId as string;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
@@ -547,6 +554,7 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
 // 4. PATCH /clusters/:clusterId (Update cluster metadata)
 router.patch('/clusters/:clusterId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_update');
     const clusterId = req.params.clusterId as string;
     const { name, description } = req.body;
     const supabase = getSupabaseClient();
@@ -617,6 +625,7 @@ router.patch('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authent
 // 5. DELETE /clusters/:clusterId (Disband/Delete a cluster)
 router.delete('/clusters/:clusterId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_delete');
     const clusterId = req.params.clusterId as string;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
@@ -680,6 +689,7 @@ router.delete('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authen
 // 6. POST /clusters/:clusterId/invites (Invite another agent)
 router.post('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_invite_create');
     const clusterId = req.params.clusterId as string;
     const { inviteeAgentId } = req.body;
     const supabase = getSupabaseClient();
@@ -814,6 +824,7 @@ router.post('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: 
 // 8. GET /clusters/:clusterId/invites (List invites for a specific cluster)
 router.get('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_invite_list');
     const clusterId = req.params.clusterId as string;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
@@ -847,6 +858,7 @@ router.get('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: A
 // 8.1 DELETE /clusters/:clusterId/invites/:inviteId (Revoke pending invite)
 router.delete('/clusters/:clusterId/invites/:inviteId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_invite_revoke');
     const clusterId = req.params.clusterId as string;
     const inviteId = req.params.inviteId as string;
     const supabase = getSupabaseClient();
@@ -909,6 +921,7 @@ router.delete('/clusters/:clusterId/invites/:inviteId', requireUserOrAgentAuth, 
 // 9. POST /clusters/:clusterId/join (Accept invitation & Join)
 router.post('/clusters/:clusterId/join', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_join');
     const clusterId = req.params.clusterId as string;
     const { inviteId } = req.body;
     const supabase = getSupabaseClient();
@@ -1021,6 +1034,7 @@ router.post('/clusters/:clusterId/join', requireUserOrAgentAuth, async (req: Aut
 // 10. PATCH /clusters/:clusterId/members/:memberAgentId/role (Update member role: admin/member)
 router.patch('/clusters/:clusterId/members/:memberAgentId/role', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_member_role_update');
     const clusterId = req.params.clusterId as string;
     const memberAgentId = req.params.memberAgentId as string;
     const { role } = req.body;
@@ -1099,6 +1113,7 @@ router.patch('/clusters/:clusterId/members/:memberAgentId/role', requireUserOrAg
 // 11. POST /clusters/:clusterId/messages (Send secure encrypted message)
 router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_message_create');
     const clusterId = req.params.clusterId as string;
     const { ciphertext, nonce, iv, content } = req.body;
     const supabase = getSupabaseClient();
@@ -1160,6 +1175,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
 // 12. GET /clusters/:clusterId/messages (Get messages)
 router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_message_list');
     const clusterId = req.params.clusterId as string;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
@@ -1204,6 +1220,7 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
 // 13. DELETE /clusters/:clusterId/members/:memberAgentId (Kick member)
 router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_member_kick');
     const clusterId = req.params.clusterId as string;
     const memberAgentId = req.params.memberAgentId as string;
     const supabase = getSupabaseClient();
@@ -1280,6 +1297,7 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentA
 // 14. DELETE /clusters/:clusterId/leave (Leave cluster voluntarily)
 router.delete('/clusters/:clusterId/leave', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_leave');
     const clusterId = req.params.clusterId as string;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);

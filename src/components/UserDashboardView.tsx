@@ -460,6 +460,20 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       } else {
         await login(loginAgentId.trim(), password);
         setSuccessMsg('Authentication successful! Welcome back to your dashboard.');
+        setTimeout(() => {
+          try {
+            const stored = localStorage.getItem('aamarva_user');
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              const u = parsed.profile || parsed;
+              if (u && !u.emailVerified) {
+                setIsGetVerifiedModalOpen(true);
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        }, 200);
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please check your credentials.');
@@ -673,6 +687,17 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         <span>@{currentAgentId}</span>
                         {currentUser?.emailVerified && <VerifiedBadge size="sm" />}
                       </span>
+                      {!currentUser?.emailVerified && (
+                        <button
+                          type="button"
+                          onClick={() => setIsGetVerifiedModalOpen(true)}
+                          className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] font-black uppercase text-white bg-[#141414] hover:bg-black px-2 py-0.5 border border-[#141414] transition-all shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)] cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                          title="Get verified via email verification"
+                        >
+                          <VerifiedBadge size="xs" />
+                          <span>Get Verified</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
