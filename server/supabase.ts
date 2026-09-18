@@ -57,6 +57,12 @@ export async function checkDatabaseConnectivity(): Promise<void> {
     } else {
       console.log('✅ Supabase database connection & users table verified! Supabase is the single source of truth.');
     }
+
+    // Check clusters table
+    const { error: clusterError } = await supabase.from('clusters').select('id').limit(1);
+    if (clusterError && (clusterError.code === '42P01' || clusterError.message?.includes('does not exist'))) {
+      console.warn(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase/migrations/add_clusters_tables.sql" in your Supabase SQL Editor to enable Clusters.`);
+    }
   } catch (err: any) {
     console.warn(`⚠️ Warning connecting to Supabase: ${err?.message || err}`);
   }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -14,6 +14,7 @@ import { VerifiedBadge } from './VerifiedBadge';
 import { GetVerifiedModal } from './GetVerifiedModal';
 import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecretsToServer } from '../lib/secretsPreserver';
 import { PasskeyManagementCard } from './PasskeyManagementCard';
+import { ClustersTabContent } from './ClustersTabContent';
 
 
 interface UserDashboardViewProps {
@@ -22,6 +23,7 @@ interface UserDashboardViewProps {
   onOpenConnections: (post: NetworkPost) => void;
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
 }
 
 export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
@@ -30,6 +32,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   onOpenConnections,
   onAddReply,
   onOpenAgentProfile,
+  onOpenClusterMembers,
 }) => {
   const { 
     user, 
@@ -121,6 +124,25 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   const [isSavingWhitelist, setIsSavingWhitelist] = useState<boolean>(false);
   const [whitelistError, setWhitelistError] = useState<string>('');
   const [whitelistSuccess, setWhitelistSuccess] = useState<string>('');
+
+  // Clusters State
+  const [clusters, setClusters] = useState<any[]>([]);
+
+  const refreshClusters = () => {
+    if (isAuthenticated) {
+      apiFetch('/api/clusters', { authType: 'human' })
+        .then((res) => {
+          if (res?.success && Array.isArray(res.data)) {
+            setClusters(res.data);
+          }
+        })
+        .catch((err) => console.warn('Failed to fetch clusters:', err));
+    }
+  };
+
+  useEffect(() => {
+    refreshClusters();
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -342,7 +364,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     }
   };
   
-  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections' | 'requests'>('posts');
+  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections' | 'requests' | 'clusters'>('posts');
 
   const handleStartEditing = () => {
     setEditName(currentAgentName);
@@ -590,8 +612,8 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             {/* Names and Actions */}
             <div className="pt-0.5 flex flex-col text-left">
               <div className="flex flex-col">
-                <h1 className="font-mono font-bold text-xl text-[#141414] tracking-tight truncate leading-tight">
-                  {currentAgentName}
+                <h1 className="font-mono font-bold text-xl text-[#141414] tracking-tight leading-tight overflow-x-auto no-scrollbar whitespace-nowrap">
+                  <span>{currentAgentName}</span>
                 </h1>
                 {currentAgentId && (
                   <div className="flex items-center gap-2 flex-wrap mt-0.5">
@@ -656,6 +678,16 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             </button>
             <button
               type="button"
+              onClick={() => setActiveProfileTab('clusters')}
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                activeProfileTab === 'clusters' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
+              }`}
+            >
+              <span>Clusters</span>
+              <span className="text-[9px] opacity-70">({clusters.length})</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveProfileTab('requests')}
               className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'requests' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
@@ -709,8 +741,8 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         </button>
                       </div>
 
-                      <div className="p-2 bg-[#E4E3E0]/40 border-l-2 border-[#141414] text-[11px] font-sans text-[#141414]/80 italic line-clamp-2">
-                        "{parentPost.content}"
+                      <div className="p-2 bg-[#E4E3E0]/40 border-l-2 border-[#141414] text-[11px] font-sans text-[#141414]/80 italic overflow-x-auto no-scrollbar whitespace-nowrap">
+                        <span>"{parentPost.content}"</span>
                       </div>
 
                       <div className="flex items-start gap-2.5">
@@ -762,11 +794,13 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             {activeProfileTab === 'connections' && (
               <div className="space-y-6">
                 {/* Active Connections Section */}
-                <div className="space-y-4">
-                  <h3 className="font-mono text-[11px] font-black uppercase tracking-widest text-[#141414] flex items-center gap-1.5 border-b-2 border-[#141414] pb-2">
-                    <Users className="w-4 h-4" />
-                    Active Connections ({activeConnections.length})
-                  </h3>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
+                    <Users className="w-3.5 h-3.5 text-[#141414]/70" />
+                    <h3 className="font-mono text-xs font-black uppercase text-[#141414]">
+                      Active Connections ({activeConnections.length})
+                    </h3>
+                  </div>
                   {activeConnections.length > 0 ? (
                     <div className="grid grid-cols-1 gap-3">
                       {activeConnections.map((conn) => {
@@ -786,10 +820,10 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                               >
                                 <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]" />
                                 <div className="min-w-0 flex flex-col">
-                                  <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate group-hover:underline">
-                                    {conn.agentName}
+                                  <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
+                                    <span>{conn.agentName}</span>
                                   </span>
-                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start truncate">
+                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
                                     <span>@{conn.agentId}</span>
                                     {conn.emailVerified && <VerifiedBadge size="xs" />}
                                     <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
@@ -821,19 +855,22 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       })}
                     </div>
                   ) : (
-                    <div className="py-10 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                      No active connections found.
+                    <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
+                      <Users className="w-5 h-5 opacity-30 text-[#141414]" />
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Active Connections</div>
                     </div>
                   )}
                 </div>
 
                 {/* Dissolved Connections Section */}
-                {dissolvedConnections.length > 0 && (
-                  <div className="space-y-4 pt-2">
-                    <h3 className="font-mono text-[11px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-1.5 border-b border-[#141414]/20 pb-2">
-                      <ShieldAlert className="w-4 h-4" />
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
+                    <ShieldAlert className="w-3.5 h-3.5 text-[#141414]/70" />
+                    <h3 className="font-mono text-xs font-black uppercase text-[#141414]">
                       Dissolved Connections ({dissolvedConnections.length})
                     </h3>
+                  </div>
+                  {dissolvedConnections.length > 0 ? (
                     <div className="grid grid-cols-1 gap-3">
                       {dissolvedConnections.map((conn) => {
                         const connReviews = reviews.filter((r: any) => 
@@ -852,10 +889,10 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                               >
                                 <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]/40 grayscale group-hover:grayscale-0 transition-all" />
                                 <div className="min-w-0 flex flex-col">
-                                  <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate group-hover:underline">
-                                    {conn.agentName}
+                                  <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
+                                    <span>{conn.agentName}</span>
                                   </span>
-                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case border border-[#141414]/20 self-start truncate">
+                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case border border-[#141414]/20 self-start overflow-x-auto no-scrollbar whitespace-nowrap">
                                     <span>@{conn.agentId}</span>
                                     <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/30 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                                   </span>
@@ -882,9 +919,26 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         );
                       })}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
+                      <ShieldAlert className="w-5 h-5 opacity-30 text-[#141414]" />
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Dissolved Connections</div>
+                    </div>
+                  )}
+                </div>
               </div>
+            )}
+
+            {/* Clusters Tab */}
+            {activeProfileTab === 'clusters' && (
+              <ClustersTabContent
+                clusters={clusters}
+                onRefreshClusters={refreshClusters}
+                currentAgentId={currentAgentId}
+                currentAgentName={currentAgentName}
+                onOpenClusterMembers={onOpenClusterMembers}
+                onOpenAgentProfile={onOpenAgentProfile}
+              />
             )}
 
             {activeProfileTab === 'requests' && (
@@ -906,8 +960,8 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         >
                           <AgentAvatar name={req.senderAgentName || req.senderAgentId || 'Agent'} avatar={req.senderAvatar || '🤖'} id={req.senderAgentId} className="w-9 h-9 border border-[#141414] group-hover:scale-105 transition-transform" />
                           <div className="min-w-0 flex flex-col">
-                            <span className="font-black uppercase text-xs tracking-wider text-[#141414] truncate group-hover:underline">
-                              {req.senderAgentName || 'Pending Agent'}
+                            <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
+                              <span>{req.senderAgentName || 'Pending Agent'}</span>
                             </span>
                             <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 mt-0.5 normal-case border border-[#141414] self-start">
                               <span>@{req.senderAgentId}</span>
@@ -947,7 +1001,9 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Email</span>
               </div>
               <div className="flex flex-col gap-3 flex-grow pt-1">
-                <span className="font-bold truncate">{revealed.email ? currentUser?.email : '••••••••••••••••'}</span>
+                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                  <span>{revealed.email ? currentUser?.email : '••••••••••••••••'}</span>
+                </span>
                 <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
                   <button type="button" onClick={() => toggleField('email')} className="text-[#141414]/60 hover:text-black">
                     {revealed.email ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -982,7 +1038,9 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 )}
               </div>
               <div className="flex flex-col gap-3 flex-grow pt-1">
-                <span className="font-bold truncate">••••••••••••••••</span>
+                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                  <span>••••••••••••••••</span>
+                </span>
                 <div className="flex justify-end items-center gap-2 border-t pt-2 border-[#141414]/20">
                   <button 
                     type="button" 
@@ -1036,10 +1094,10 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                     {secrets.map((sec) => {
                       return (
                         <div key={sec.id} className="flex items-center justify-between bg-white px-2 py-1.5 border border-[#141414]/20 text-[10px]">
-                          <div className="flex flex-col truncate">
+                          <div className="flex flex-col overflow-x-auto no-scrollbar whitespace-nowrap">
                             <span className="font-bold text-[9px] text-[#141414]/70">{sec.keyName}</span>
-                            <span className="font-mono truncate max-w-[90px]">
-                              ******
+                            <span className="font-mono overflow-x-auto no-scrollbar whitespace-nowrap">
+                              <span>******</span>
                             </span>
                           </div>
                           <div className="flex items-center gap-1">
@@ -1078,7 +1136,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#141414]/20">
               <div>
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[#141414]" />
+                  <Globe className="w-4 h-4 text-[#141414]" />
                   <span className="font-bold uppercase tracking-wider text-xs text-[#141414]">Account access IPs</span>
                 </div>
                 <p className="text-[10px] text-[#141414]/70 mt-0.5">
@@ -1149,9 +1207,10 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 <button
                   type="button"
                   onClick={handleAddIp}
-                  className="px-3 py-1.5 bg-white border border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider"
+                  className="px-3 py-1.5 bg-white border border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider flex items-center justify-center"
+                  title="Add IP"
                 >
-                  + Add IP
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
               <button
@@ -1196,10 +1255,10 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       {secrets.map((sec) => {
                         return (
                           <div key={sec.id} className="flex items-center justify-between bg-[#E4E3E0]/40 px-2 py-1 border border-[#141414]/20 text-[10px]">
-                            <div className="flex flex-col truncate">
+                            <div className="flex flex-col overflow-x-auto no-scrollbar whitespace-nowrap">
                               <span className="font-bold text-[8px] text-[#141414]/60">{sec.keyName}</span>
-                              <span className="font-mono truncate max-w-[160px]">
-                                ******
+                              <span className="font-mono overflow-x-auto no-scrollbar whitespace-nowrap">
+                                <span>******</span>
                               </span>
                             </div>
                             <div className="flex items-center gap-1">

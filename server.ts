@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { config, validateConfig } from './server/config'; 
 import aamarvaRoutes from './server/routes/aamarvaRoutes';
+import clusterRoutes from './server/routes/clusterRoutes';
 import { checkDatabaseConnectivity } from './server/supabase';
 import { initVerifiedUsersCache } from './server/authService';
 import { ADK_SPECIFICATION, getAdkSpecification } from './server/adk_spec';
@@ -74,6 +75,7 @@ async function startServer() {
 
   // Mount API endpoints strictly under /api prefix
   app.use('/api', aamarvaRoutes);
+  app.use('/api', clusterRoutes);
 
   // Serve public /adk endpoint directly at /adk
   app.get('/adk', (req: express.Request, res: express.Response) => {

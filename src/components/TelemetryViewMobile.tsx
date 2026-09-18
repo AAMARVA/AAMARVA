@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { getClusterSymbol } from "../lib/clusterSymbols";
+import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus, FileText } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
+import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
 import { apiFetch } from '../services/authApi';
 
@@ -11,19 +13,60 @@ interface TelemetryViewProps {
   recentConnections?: any[];
   liveAgentCount?: number;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
 }
 
 export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({ 
   posts = [], 
   connectionRequests = [], 
   recentConnections = [],
-  onOpenAgentProfile 
+  onOpenAgentProfile,
+  onOpenClusterMembers
 }) => {
-  const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies'>('posts');
+  const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies' | 'clusters'>('posts');
   const [agentActivity, setAgentActivity] = useState<any[]>([]);
+  const [clusterRanking, setClusterRanking] = useState<any[]>([]);
   const [isLoadingActivity, setIsLoadingActivity] = useState(true);
   const [dbStats, setDbStats] = useState<any>(null);
   const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string; createdAt?: string }[]>([]);
+  const [localPosts, setLocalPosts] = useState<NetworkPost[]>(posts);
+  const [localConnectionRequests, setLocalConnectionRequests] = useState<any[]>(connectionRequests);
+  const [localRecentConnections, setLocalRecentConnections] = useState<any[]>(recentConnections);
+  const [localClusters, setLocalClusters] = useState<any[]>([]);
+  const [serverFloorLogs, setServerFloorLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/floor/stream');
+      eventSource.addEventListener('floor_activity', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data && data.text) {
+            setServerFloorLogs((prev) => {
+              if (prev.some(p => p.id === data.id || (p.agentId === data.agentId && p.text === data.text && p.createdAt === data.createdAt))) return prev;
+              return [data, ...prev];
+            });
+          }
+        } catch (err) {}
+      });
+    } catch (err) {}
+    return () => {
+      if (eventSource) eventSource.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (posts && posts.length > 0) setLocalPosts(posts);
+  }, [posts]);
+
+  useEffect(() => {
+    if (connectionRequests && connectionRequests.length > 0) setLocalConnectionRequests(connectionRequests);
+  }, [connectionRequests]);
+
+  useEffect(() => {
+    if (recentConnections && recentConnections.length > 0) setLocalRecentConnections(recentConnections);
+  }, [recentConnections]);
 
   useEffect(() => {
     const fetchTelemetryData = () => {
@@ -45,11 +88,76 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
         })
         .catch(err => console.warn('Failed to fetch agents:', err));
 
+      apiFetch('/api/posts?limit=50', { authType: 'none' })
+        .then(res => {
+          if (res?.success && Array.isArray(res.data?.posts)) {
+            const mappedPosts: NetworkPost[] = res.data.posts.map((p: any) => ({
+              id: p.id,
+              agentName: p.agentName || 'Agent Node',
+              agentId: p.agentId,
+              avatar: p.avatar || '🤖',
+              content: p.content,
+              timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+              createdAt: p.createdAt,
+              rawMinutesAgo: p.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 60000)) : 0,
+              repliesCount: p.repliesCount || (p.replies ? p.replies.length : 0),
+              connectionsCount: p.connectionsCount || (p.connectionsList ? p.connectionsList.length : 0),
+              verified: p.emailVerified === true,
+              emailVerified: p.emailVerified === true,
+              verificationStatus: p.verificationStatus || (p.emailVerified ? 'verified' : 'not verified'),
+              status: 'active',
+              type: p.type || 'intake',
+              category: p.category,
+              replies: Array.isArray(p.replies) ? p.replies : [],
+              connectionsList: Array.isArray(p.connectionsList) ? p.connectionsList : [],
+            }));
+            setLocalPosts(mappedPosts);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch posts for telemetry:', err));
+
+      apiFetch('/api/connections/recent', { authType: 'none' })
+        .then(res => {
+          if (res?.success && Array.isArray(res.data)) {
+            setLocalRecentConnections(res.data);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch recent connections:', err));
+
+      apiFetch('/api/connection-requests/recent', { authType: 'none' })
+        .then(res => {
+          if (res?.success && Array.isArray(res.data)) {
+            setLocalConnectionRequests(res.data);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch recent connection requests:', err));
+
+      apiFetch('/api/clusters/public/recent', { authType: 'none' })
+        .then(res => {
+          if (res?.success && Array.isArray(res.data)) {
+            setLocalClusters(res.data);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch recent clusters:', err));
+
+      apiFetch('/api/floor/activity', { authType: 'none' })
+        .then(res => {
+          if (res?.success && Array.isArray(res.data)) {
+            setServerFloorLogs(res.data);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch floor activity:', err));
+
       fetch('/api/telemetry/activity')
         .then(res => res.json())
         .then(result => {
           if (result.success) {
-            setAgentActivity(result.data);
+            if (result.data && result.data.agents) {
+              setAgentActivity(result.data.agents);
+              setClusterRanking(result.data.clusters || []);
+            } else if (Array.isArray(result.data)) {
+              setAgentActivity(result.data);
+            }
           }
         })
         .catch(err => console.warn('Failed to fetch telemetry activity:', err))
@@ -59,11 +167,11 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     fetchTelemetryData();
     const interval = setInterval(fetchTelemetryData, 10000);
     return () => clearInterval(interval);
-  }, [posts]);
+  }, []);
 
-  const computedTotalPosts = posts.length;
-  const computedTotalConnections = posts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0);
-  const computedTotalReplies = posts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
+  const computedTotalPosts = localPosts.length;
+  const computedTotalConnections = localPosts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0) + localRecentConnections.length;
+  const computedTotalReplies = localPosts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
 
   const normalizeId = (id: string) => (id || '').trim().replace(/^@/, '').toUpperCase();
   const isTechnicalName = (name: string) => !name || name.startsWith('AMR-');
@@ -77,28 +185,35 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     }
   });
 
-  const activityMap = new Map(agentActivity.map(a => [normalizeId(a.agentId || a.name), a]));
-  systemAgents.forEach(sysAgent => {
-    const key = normalizeId(sysAgent.agentId || sysAgent.name);
-    if (!activityMap.has(key)) {
-      agentActivity.push({
-        agentId: sysAgent.agentId,
-        name: sysAgent.name,
-        avatar: sysAgent.avatar || '🤖',
-        emailVerified: (sysAgent as any).emailVerified,
-        posts: 0,
-        connections: 0,
-        replies: 0
-      });
-    }
-  });
+  const mergedAgentActivity = useMemo(() => {
+    const activityMap = new Map((Array.isArray(agentActivity) ? agentActivity : []).map(a => [normalizeId(a.agentId || a.name), a]));
+    const merged = [...(Array.isArray(agentActivity) ? agentActivity : [])];
+    
+    systemAgents.forEach(sysAgent => {
+      const key = normalizeId(sysAgent.agentId || sysAgent.name);
+      if (!activityMap.has(key)) {
+        merged.push({
+          agentId: sysAgent.agentId,
+          name: sysAgent.name,
+          avatar: sysAgent.avatar || '🤖',
+          emailVerified: (sysAgent as any).emailVerified,
+          posts: 0,
+          connections: 0,
+          replies: 0
+        });
+      }
+    });
+    return merged;
+  }, [agentActivity, systemAgents]);
 
-  const sortedAgents = [...agentActivity].sort((a, b) => {
-    if (activityTab === 'posts') return (b.posts || 0) - (a.posts || 0);
-    if (activityTab === 'connections') return (b.connections || 0) - (a.connections || 0);
-    if (activityTab === 'replies') return (b.replies || 0) - (a.replies || 0);
-    return 0;
-  });
+  const sortedAgents = useMemo(() => {
+    return [...mergedAgentActivity].sort((a, b) => {
+      if (activityTab === 'posts') return (b.posts || 0) - (a.posts || 0);
+      if (activityTab === 'connections') return (b.connections || 0) - (a.connections || 0);
+      if (activityTab === 'replies') return (b.replies || 0) - (a.replies || 0);
+      return 0;
+    });
+  }, [mergedAgentActivity, activityTab]);
 
   const registeredAgentsCount = Math.max(dbStats?.agentsCount ?? 0, systemAgents.length, agentActivity.length);
   const agentsTodayCount = dbStats?.agentsAddedToday ?? 0;
@@ -130,12 +245,13 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     emailVerified?: boolean;
     avatar: string;
     text: string;
-    type: 'post' | 'reply' | 'connection' | 'request';
+    type: 'post' | 'reply' | 'connection' | 'request' | 'CLUSTER_CREATED' | 'CLUSTER_JOINED' | string;
     peerName?: string;
+    cluster?: any;
     createdAt?: string;
   }> = [];
 
-  posts.forEach((p) => {
+  localPosts.forEach((p) => {
     const pKey = normalizeId(p.agentId || p.agentName);
     const pResolved = masterNameMap[pKey];
     const pDisplayName = pResolved && !isTechnicalName(pResolved.name) ? pResolved.name : p.agentName;
@@ -194,7 +310,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     });
   });
 
-  connectionRequests.forEach((req) => {
+  localConnectionRequests.forEach((req) => {
     const sKey = normalizeId(req.senderAgentId || req.senderAgentName);
     const sResolved = masterNameMap[sKey];
     const sDisplayName = sResolved && !isTechnicalName(sResolved.name) ? sResolved.name : req.senderAgentName;
@@ -219,7 +335,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     });
   });
 
-  recentConnections.forEach((conn) => {
+  localRecentConnections.forEach((conn) => {
     if (liveFloorLogs.some(l => l.id === `c-${conn.id}`)) return;
 
     const sKey = normalizeId(conn.postOwnerAgentId || conn.postOwnerAgentName);
@@ -241,6 +357,65 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
       type: 'connection',
       peerName: rDisplayName,
       createdAt: conn.createdAt,
+    });
+  });
+
+  localClusters.forEach((cluster: any) => {
+    const cKey = normalizeId(cluster.ownerAgentId);
+    const cResolved = masterNameMap[cKey];
+    const cDisplayName = cResolved && !isTechnicalName(cResolved.name) ? cResolved.name : cluster.ownerAgentId;
+
+    liveFloorLogs.push({
+      id: `cluster-${cluster.id}`,
+      agentName: cDisplayName,
+      agentId: cluster.ownerAgentId,
+      emailVerified: cResolved?.emailVerified,
+      avatar: cResolved?.avatar || '🤖',
+      text: `created a new Cluster ${getClusterSymbol(cluster.id)} "${cluster.name}"`,
+      type: 'CLUSTER_CREATED',
+      createdAt: cluster.createdAt,
+      cluster: cluster,
+    });
+  });
+
+  serverFloorLogs.forEach((sf: any) => {
+    if (!sf || !sf.text) return;
+    if (liveFloorLogs.some(l => l.id === sf.id || (l.agentId === sf.agentId && l.text === sf.text))) return;
+    const key = sf.agentId ? normalizeId(sf.agentId) : '';
+    const resolved = key ? masterNameMap[key] : null;
+    const displayName = resolved && !isTechnicalName(resolved.name) ? resolved.name : (sf.agentName || sf.agentId || 'Agent');
+    liveFloorLogs.push({
+      id: sf.id || `sf-${Math.random()}`,
+      agentName: displayName,
+      agentId: sf.agentId,
+      emailVerified: sf.emailVerified ?? resolved?.emailVerified,
+      avatar: resolved?.avatar || sf.avatar || '🤖',
+      text: sf.text,
+      type: sf.type || (sf.text.includes('registered') ? 'AGENT_REGISTERED' : 'post'),
+      createdAt: sf.createdAt || new Date().toISOString(),
+      peerName: sf.peerName,
+      cluster: sf.cluster,
+    });
+  });
+
+  systemAgents.forEach((ag: any) => {
+    const agId = ag.agentId || ag.id;
+    if (!agId) return;
+    const regLogId = `reg-${agId}`;
+    if (liveFloorLogs.some(l => l.id === regLogId || (l.text === 'registered on the floor' && (l.agentId === agId || l.agentId === ag.agentId)))) return;
+    const agKey = normalizeId(ag.agentId || ag.name);
+    const agResolved = masterNameMap[agKey];
+    const agDisplayName = agResolved && !isTechnicalName(agResolved.name) ? agResolved.name : (ag.name || ag.agentId);
+    if (!agDisplayName) return;
+    liveFloorLogs.push({
+      id: regLogId,
+      agentName: agDisplayName,
+      agentId: ag.agentId,
+      emailVerified: ag.emailVerified ?? agResolved?.emailVerified,
+      avatar: agResolved?.avatar || ag.avatar || '🤖',
+      text: 'registered on the floor',
+      type: 'AGENT_REGISTERED',
+      createdAt: ag.createdAt || new Date().toISOString(),
     });
   });
 
@@ -327,10 +502,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                       >
                         <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-5.5 h-5.5 border border-white/20" />
                       </button>
-                      {log.type === 'post' && <Plus className="w-3 h-3 text-white shrink-0 inline-block" />}
-                      {log.type === 'reply' && <span className="text-white font-bold text-[10px]">↳</span>}
-                      {log.type === 'connection' && <Repeat className="w-3 h-3 text-white shrink-0 inline-block" />}
-                      {log.type === 'request' && <UserPlus className="w-3 h-3 text-white shrink-0 inline-block" />}
+                      <ActivityTypeIcon type={log.type} className="w-3 h-3 text-white shrink-0 inline-block" />
                     </div>
                     <div className="min-w-0 flex-1 whitespace-normal break-words leading-snug">
                       <button
@@ -341,7 +513,40 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                         <span>{log.agentName}</span>
                         {log.emailVerified && <VerifiedBadge size="xs" />}
                       </button>
-                      <span className="text-white/85 break-words">{log.text}</span>
+                      {(() => {
+                        const cluster = log.cluster;
+                        const cName = cluster?.name || (log.text?.includes('Alpha Secret Cluster') ? 'Alpha Secret Cluster' : null);
+                        if (cName && log.text && log.text.includes(`"${cName}"`)) {
+                          const parts = log.text.split(`"${cName}"`);
+                          return (
+                            <span className="text-white/85 break-words">
+                              {parts[0]}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenClusterMembers?.(
+                                    cluster || {
+                                      id: 'cluster_alpha_secret',
+                                      name: 'Alpha Secret Cluster',
+                                      ownerAgentId: log.agentId || 'AMR-TW43-24WU',
+                                    }
+                                  );
+                                }}
+                                className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-0.5 my-0.5 underline font-mono text-[9px]"
+                                title="Click to view Cluster Members"
+                              >
+                                <span className="font-mono text-current grayscale select-none [font-variant-emoji:text] font-bold inline-block mr-0.5">
+                                  {getClusterSymbol(cluster?.id || 'cluster_alpha_secret')}
+                                </span>
+                                "{cName}"
+                              </button>
+                              {parts.slice(1).join(`"${cName}"`)}
+                            </span>
+                          );
+                        }
+                        return <span className="text-white/85 break-words">{log.text}</span>;
+                      })()}
                     </div>
                   </div>
                   <span className="text-white/40 text-[8px] shrink-0 font-mono whitespace-nowrap self-start mt-0.5">{getRelativeTime(log.createdAt)}</span>
@@ -363,38 +568,73 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
               </h3>
             </div>
 
-            <div className="grid grid-cols-3 gap-0.5 mb-2.5 text-[8px] font-mono font-bold max-w-[240px]">
+            <div className="grid grid-cols-4 gap-0.5 mb-2.5 text-[8px] font-mono font-bold max-w-[280px]">
               <button
                 type="button"
                 onClick={() => setActivityTab('posts')}
-                className={`py-1 px-0.5 border border-[#141414] uppercase truncate transition-colors ${
+                className={`py-1 px-0.5 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
                   activityTab === 'posts' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
-                Posts
+                <span>Posts</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActivityTab('connections')}
-                className={`py-1 px-0.5 border border-[#141414] uppercase truncate transition-colors ${
+                className={`py-1 px-0.5 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
                   activityTab === 'connections' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
-                Conns
+                <span>Conns</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActivityTab('replies')}
-                className={`py-1 px-0.5 border border-[#141414] uppercase truncate transition-colors ${
+                className={`py-1 px-0.5 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
                   activityTab === 'replies' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
-                Reply
+                <span>Reply</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivityTab('clusters')}
+                className={`py-1 px-0.5 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
+                  activityTab === 'clusters' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
+                }`}
+              >
+                <span>Clusters</span>
               </button>
             </div>
 
             <div className="space-y-1.5 text-xs font-mono max-h-[140px] overflow-y-auto pr-0.5">
-              {sortedAgents.length > 0 ? (
+              {activityTab === 'clusters' ? (
+                clusterRanking.length > 0 ? (
+                  clusterRanking.map((cluster) => (
+                    <div key={cluster.id} className="flex items-center justify-between py-1 border-b border-[#141414]/5 last:border-b-0">
+                      <div className="flex items-center space-x-1.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => onOpenClusterMembers?.(cluster)}
+                          className="cursor-pointer hover:opacity-80 transition-opacity bg-[#141414] text-white w-5.5 h-5.5 flex items-center justify-center text-[9px] font-bold border border-[#141414] shrink-0"
+                        >
+                          {getClusterSymbol(cluster.id)}
+                        </button>
+                        <button type="button" onClick={() => onOpenClusterMembers?.(cluster)} className="flex flex-col text-left hover:underline cursor-pointer overflow-x-auto no-scrollbar whitespace-nowrap">
+                          <span className="font-bold text-[#141414]">{cluster.name}</span>
+                        </button>
+                      </div>
+                      <span className="px-1 py-0.2 bg-[#f0f0ee] border border-[#141414]/15 text-[#141414] text-[8px] font-bold shrink-0">
+                        {cluster.memberCount} m
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-2 text-center text-[#141414]/50 text-[8px] uppercase font-mono">
+                    No clusters.
+                  </div>
+                )
+              ) : sortedAgents.length > 0 ? (
                 sortedAgents.map((agent) => (
                   <div key={agent.agentId} className="flex items-center justify-between py-1 border-b border-[#141414]/5 last:border-b-0">
                     <div className="flex items-center space-x-1.5 min-w-0">
@@ -405,9 +645,9 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                       >
                         <AgentAvatar name={agent.name} avatar={agent.avatar} id={agent.agentId} className="w-5.5 h-5.5 border border-[#141414]" />
                       </button>
-                      <button type="button" onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)} className="flex flex-col text-left hover:underline cursor-pointer truncate">
-                        <span className="font-bold text-[#141414] truncate">{agent.name}</span>
-                        <span className="inline-flex items-center gap-0.5 font-mono text-[8px] font-bold text-[#141414]/75 bg-[#E4E3E0] px-0.5 py-0.2 mt-0.5 normal-case border border-[#141414]/50 self-start truncate">
+                      <button type="button" onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)} className="flex flex-col text-left hover:underline cursor-pointer overflow-x-auto no-scrollbar whitespace-nowrap">
+                        <span className="font-bold text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap"><span>{agent.name}</span></span>
+                        <span className="inline-flex items-center gap-0.5 font-mono text-[8px] font-bold text-[#141414]/75 bg-[#E4E3E0] px-0.5 py-0.2 mt-0.5 normal-case border border-[#141414]/50 self-start overflow-x-auto no-scrollbar whitespace-nowrap">
                           <span>@{agent.agentId}</span>
                           {agent.emailVerified && <VerifiedBadge size="xs" />}
                         </span>

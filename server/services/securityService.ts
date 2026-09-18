@@ -336,6 +336,7 @@ export class SecurityService {
   private localRateLimitMap = new Map<string, { count: number; windowStart: number }>();
   private localViolationsMap = new Map<string, { identifier: string; endpoint: string; violationCount: number; suspensionCount: number; isPermanentlyBanned: boolean; suspendedUntil?: string; lastViolationAt: string }>();
   private localIpReputationsMap = new Map<string, { score: number; isBlacklisted: boolean }>();
+  private localBehavioralSignals: Array<{ identifier: string; score: number; timestamp: number }> = [];
 
   private constructor() {}
 
@@ -350,6 +351,7 @@ export class SecurityService {
     this.localRateLimitMap.clear();
     this.localViolationsMap.clear();
     this.localIpReputationsMap.clear();
+    this.localBehavioralSignals = [];
   }
 
   /**
@@ -1203,9 +1205,7 @@ export class SecurityService {
     });
   }
 
-  public async trackBehavioralSignal(userId: string, signalType: string, details: any): Promise<void> {
-    if (!this.tableExistence.security_behavioral_signals) return;
-
+  public async trackBehavioralSignal(userOrIdentifier: string, signalType: string, details: any): Promise<void> {
     const signalsWeight: Record<string, number> = {
       'RAPID_CONNECTIONS': 15,
       'DUPLICATE_POSTS': 10,
@@ -1216,51 +1216,109 @@ export class SecurityService {
     };
 
     const score = signalsWeight[signalType] || 10;
+    const identifier = userOrIdentifier || 'anonymous';
+    const now = Date.now();
+    const cutoff = now - 24 * 60 * 60 * 1000;
 
-    const sb = getSupabaseClient();
-    try {
-      const { error: insertError } = await sb.from('security_behavioral_signals').insert({
-        userId,
-        identifier: userId,
-        signalType,
-        score,
-        details: redactSensitiveData(details)
-      });
-      
-      if (insertError) {
-        if (this.handleTableError('security_behavioral_signals', insertError)) return;
-        console.error('[SECURITY] trackBehavioralSignal failed:', insertError);
-        return;
-      }
-      
-      const { data: signals, error: queryError } = await sb
-        .from('security_behavioral_signals')
-        .select('score')
-        .eq('userId', userId)
-        .gt('timestamp', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-      
-      if (queryError) {
-        console.error('[SECURITY] Error querying behavioral signals:', queryError);
-        return;
-      }
+    // 1. Always record in local memory fallback
+    this.localBehavioralSignals.push({
+      identifier,
+      score,
+      timestamp: now
+    });
+    if (this.localBehavioralSignals.length > 1000) {
+      this.localBehavioralSignals = this.localBehavioralSignals.filter(s => s.timestamp > cutoff);
+    }
 
-      const totalScore = signals?.reduce((sum, s) => sum + (s.score || 0), 0) || 0;
-      if (totalScore >= 100) {
-        try {
-          await this.recordViolation(userId, userId, 'behavioral_abuse', SecuritySeverity.S2_ABUSE, `Cumulative behavioral score: ${totalScore}`, '0.0.0.0');
-        } catch (secErr: any) {
-          if (secErr instanceof SecurityError || secErr?.name === 'SecurityError') {
-            console.warn(`[SECURITY] Behavioral score threshold enforcement for user ${userId}: ${secErr.message}`);
-          } else {
-            throw secErr;
+    if (this.tableExistence.security_behavioral_signals) {
+      try {
+        const sb = getSupabaseClient();
+        let resolvedUserId: string | null = null;
+
+        // Resolve valid user UUID if identifier matches a registered agent/user
+        if (identifier && identifier !== 'anonymous') {
+          try {
+            const { data: user } = await sb
+              .from('users')
+              .select('id')
+              .or(`id.eq."${identifier}",agentId.eq."${identifier}"`)
+              .maybeSingle();
+            if (user?.id) {
+              resolvedUserId = user.id;
+            }
+          } catch {
+            // non-fatal lookup error
           }
         }
+
+        const insertPayload: any = {
+          identifier,
+          signalType,
+          score,
+          details: redactSensitiveData(details)
+        };
+        if (resolvedUserId) {
+          insertPayload.userId = resolvedUserId;
+        }
+
+        const { error: insertError } = await sb.from('security_behavioral_signals').insert(insertPayload);
+        
+        if (insertError) {
+          if (this.handleTableError('security_behavioral_signals', insertError)) {
+            // missing table handled
+          } else {
+            // Foreign key, syntax, or permission fallback
+            this.tableExistence.security_behavioral_signals = false;
+          }
+        } else {
+          // Query recent signals from DB if insertion was successful
+          const queryFilter = resolvedUserId
+            ? `userId.eq."${resolvedUserId}",identifier.eq."${identifier}"`
+            : `identifier.eq."${identifier}"`;
+
+          const { data: signals, error: queryError } = await sb
+            .from('security_behavioral_signals')
+            .select('score')
+            .or(queryFilter)
+            .gt('timestamp', new Date(cutoff).toISOString());
+
+          if (!queryError && signals && signals.length > 0) {
+            const totalScore = signals.reduce((sum: number, s: any) => sum + (s.score || 0), 0);
+            if (totalScore >= 100) {
+              try {
+                await this.recordViolation(identifier, identifier, 'behavioral_abuse', SecuritySeverity.S2_ABUSE, `Cumulative behavioral score: ${totalScore}`, '0.0.0.0');
+              } catch (secErr: any) {
+                if (secErr instanceof SecurityError || secErr?.name === 'SecurityError') {
+                  console.warn(`[SECURITY] Behavioral score threshold enforcement for identifier ${identifier}: ${secErr.message}`);
+                } else {
+                  throw secErr;
+                }
+              }
+            }
+            return;
+          }
+        }
+      } catch (e: any) {
+        if (e instanceof SecurityError || e?.name === 'SecurityError') {
+          console.warn(`[SECURITY] Behavioral signal enforcement for identifier ${identifier}: ${e.message}`);
+        } else {
+          this.tableExistence.security_behavioral_signals = false;
+        }
       }
-    } catch (e: any) {
-      if (e instanceof SecurityError || e?.name === 'SecurityError') {
-        console.warn(`[SECURITY] Behavioral signal enforcement for user ${userId}: ${e.message}`);
-      } else {
-        console.error('Unexpected error in trackBehavioralSignal:', e);
+    }
+
+    // Evaluate score using in-memory local tracking
+    const localUserSignals = this.localBehavioralSignals.filter(s => s.identifier === identifier && s.timestamp > cutoff);
+    const localTotalScore = localUserSignals.reduce((sum, s) => sum + (s.score || 0), 0);
+    if (localTotalScore >= 100) {
+      try {
+        await this.recordViolation(identifier, identifier, 'behavioral_abuse', SecuritySeverity.S2_ABUSE, `Cumulative behavioral score: ${localTotalScore}`, '0.0.0.0');
+      } catch (secErr: any) {
+        if (secErr instanceof SecurityError || secErr?.name === 'SecurityError') {
+          console.warn(`[SECURITY] Behavioral score threshold enforcement for identifier ${identifier}: ${secErr.message}`);
+        } else {
+          throw secErr;
+        }
       }
     }
   }

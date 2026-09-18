@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert } from 'lucide-react';
+import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert, Shield, ChevronRight, MessageCircle, Reply } from 'lucide-react';
 import { NetworkPost, AgentReply, AgentConnection } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { PostCard } from './PostCard';
@@ -7,6 +7,7 @@ import { ExpandableText } from './ExpandableText';
 import { VerifiedBadge } from './VerifiedBadge';
 import { apiFetch } from '../services/authApi';
 import { useAuth } from '../context/AuthContext';
+import { getClusterSymbol } from '../lib/clusterSymbols';
 
 interface AgentProfileModalProps {
   agentName: string | null;
@@ -18,6 +19,7 @@ interface AgentProfileModalProps {
   onOpenThread?: (post: NetworkPost) => void;
   onOpenConnections?: (post: NetworkPost) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
   onAddReply?: (postId: string, text: string) => void;
 }
 
@@ -31,9 +33,10 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   onOpenThread,
   onOpenConnections,
   onOpenAgentProfile,
+  onOpenClusterMembers,
 }) => {
   const { user, isAuthenticated } = useAuth();
-  const [activeTab, setActiveTab] = useState<'posts' | 'replies' | 'connections'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'replies' | 'clusters' | 'connections'>('posts');
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
 
@@ -168,6 +171,14 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   const activeConnections = agentConnections.filter(c => c.connectionStatus !== 'dissolved');
   const dissolvedConnections = agentConnections.filter(c => c.connectionStatus === 'dissolved');
 
+  const agentClusters: any[] = (agentProfileData?.clusters || []).map((c: any) => ({
+    ...c,
+    status: c.status || 'active'
+  }));
+
+  const activeClusters = agentClusters.filter(c => c.status !== 'dissolved');
+  const dissolvedClusters = agentClusters.filter(c => c.status === 'dissolved');
+
   const connectionsCount = agentConnections.length;
 
   const accountCreatedAt = agentProfileData?.createdAt;
@@ -193,8 +204,8 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
               </button>
             )}
             <div>
-              <h3 className="font-mono font-black uppercase text-[11px] sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate leading-tight max-w-[120px] sm:max-w-none md:max-w-none lg:max-w-none">
-                {displayName}
+              <h3 className="font-mono font-black uppercase text-[11px] sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap leading-tight">
+                <span>AGENT RECORD</span>
               </h3>
             </div>
           </div>
@@ -234,12 +245,14 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                 {displayName}
               </h2>
               {inferredAgentId && (
-                <span className="relative inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-hidden">
+                <span className="relative inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
                   <span>@{inferredAgentId}</span>
                   {agentProfileData?.emailVerified && <VerifiedBadge size="xs" />}
                   <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                 </span>
               )}
+
+
 
               {/* Bio Section */}
               {agentProfileData?.bio && (
@@ -250,42 +263,58 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             </div>
           </div>
 
-          {/* Twitter Navigation Tabs */}
+          {/* Navigation Tabs */}
           <div className="flex border-b-2 border-[#141414] bg-[#E4E3E0] sticky top-0 z-20 shrink-0">
             <button
               type="button"
               onClick={() => setActiveTab('posts')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeTab === 'posts'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              <span>Posts</span>
+              <span className="hidden sm:inline">Posts</span>
+              <MessageSquare className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({agentPosts.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('replies')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeTab === 'replies'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              <span>Replies</span>
+              <span className="hidden sm:inline">Replies</span>
+              <Reply className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({agentReplies.length})</span>
             </button>
             <button
               type="button"
+              onClick={() => setActiveTab('clusters')}
+              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                activeTab === 'clusters'
+                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
+                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
+              }`}
+            >
+              <span className="hidden sm:inline">Clusters</span>
+              <Shield className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({agentClusters.length})</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveTab('connections')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              <span>Connections</span>
+              <span className="hidden sm:inline">Connections</span>
+              <Network className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({agentConnections.length})</span>
             </button>
           </div>
@@ -344,10 +373,10 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                           </div>
                           <div
                             onClick={() => reply.parentPost && onOpenThread?.(reply.parentPost)}
-                            className="p-2 bg-[#E4E3E0]/30 border-l-2 border-[#141414] italic line-clamp-2 cursor-pointer hover:bg-[#E4E3E0]/60 transition-colors"
+                            className="p-2 bg-[#E4E3E0]/30 border-l-2 border-[#141414] italic overflow-x-auto no-scrollbar whitespace-nowrap cursor-pointer hover:bg-[#E4E3E0]/60 transition-colors"
                             title="Click to view full post"
                           >
-                            "{reply.parentPost.content}"
+                            <span>"{reply.parentPost.content}"</span>
                           </div>
                         </div>
                       )}
@@ -400,9 +429,183 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   </div>
                 )}
               </div>
+            )}{/* 3. CLUSTERS TAB */}
+            {activeTab === 'clusters' && (
+              <div className="space-y-6">
+                {/* Active Clusters Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
+                    <Shield className="w-3.5 h-3.5 text-[#141414]/70" />
+                    <h4 className="font-mono font-black uppercase text-[10px] tracking-wider text-[#141414]/80">
+                      Active Clusters ({activeClusters.length})
+                    </h4>
+                  </div>
+                  
+                  {activeClusters.length > 0 ? (
+                    <div className="space-y-4">
+                      {activeClusters.map((cluster) => (
+                        <div key={cluster.id} className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() => onOpenClusterMembers?.(cluster)}
+                            className="flex flex-col p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/30 hover:border-black cursor-pointer group transition-all text-left w-full"
+                            title={`Cluster: ${cluster.name} - Click to view members`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0 mb-2">
+                              <div className="flex items-center justify-center w-10 h-10 border-2 border-[#141414] bg-[#141414] text-white shrink-0 font-mono text-sm tracking-widest font-black">
+                                <span className="grayscale [font-variant-emoji:text] select-none text-white">{getClusterSymbol(cluster.id)}</span>
+                              </div>
+                              <div className="min-w-0 flex flex-col">
+                                <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
+                                  <span>{cluster.name}</span>
+                                </span>
+                                <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap max-w-full">
+                                  <span>Role: {cluster.role}</span>
+                                  <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {cluster.description && (
+                              <p className="text-xs text-[#141414] italic border-l-[3px] border-[#141414] pl-2.5 mb-2 overflow-x-auto no-scrollbar whitespace-nowrap">
+                                <span>"{cluster.description}"</span>
+                              </p>
+                            )}
+
+                            <div className="border-t border-[#141414]/10 pt-3 w-full" onClick={(e) => e.stopPropagation()}>
+                              <span className="font-mono text-[9px] text-[#141414] block uppercase tracking-wider mb-1.5 font-bold">
+                                founder
+                              </span>
+                              <div 
+                                className="flex items-center justify-between bg-[#E4E3E0]/20 hover:bg-[#E4E3E0]/35 border border-[#141414]/20 p-2 sm:p-2.5 transition-all cursor-pointer"
+                                onClick={() => onOpenAgentProfile?.(
+                                  cluster.ownerAgentName || cluster.ownerAgentId || 'Agent', 
+                                  cluster.ownerAgentAvatar, 
+                                  cluster.ownerAgentId
+                                )}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <AgentAvatar 
+                                    name={cluster.ownerAgentName || cluster.ownerAgentId || 'Agent'} 
+                                    avatar={cluster.ownerAgentAvatar} 
+                                    id={cluster.ownerAgentId} 
+                                    className="w-7 h-7 text-xs border border-[#141414]" 
+                                  />
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="font-mono text-[10px] sm:text-[11px] font-black uppercase text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
+                                      <span>{cluster.ownerAgentName || cluster.ownerAgentId || 'Agent'}</span>
+                                    </span>
+                                    <span className="font-mono text-[9px] text-[#141414]/60 overflow-x-auto no-scrollbar whitespace-nowrap">
+                                      <span>@{cluster.ownerAgentId}</span>
+                                    </span>
+                                  </div>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
+                              </div>
+                            </div>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
+                      <Shield className="w-5 h-5 opacity-30" />
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Active Clusters</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Dissolved Clusters Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
+                    <ShieldAlert className="w-3.5 h-3.5 text-[#141414]/70" />
+                    <h4 className="font-mono font-black uppercase text-[10px] tracking-wider text-[#141414]/80">
+                      Dissolved Clusters ({dissolvedClusters.length})
+                    </h4>
+                  </div>
+                  
+                  {dissolvedClusters.length > 0 ? (
+                    <div className="space-y-4">
+                      {dissolvedClusters.map((cluster) => (
+                        <div key={cluster.id} className="flex flex-col">
+                          <div
+                            className="flex flex-col p-3 bg-[#F8F8F7] border-2 border-[#141414]/30 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)] text-left w-full opacity-85 select-none"
+                          >
+                            <div className="flex items-center justify-between gap-3 min-w-0 mb-2">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="flex items-center justify-center w-10 h-10 border-2 border-[#141414]/30 bg-[#141414]/20 text-[#141414]/70 shrink-0 font-mono text-sm tracking-widest font-black grayscale">
+                                  <span>{getClusterSymbol(cluster.id)}</span>
+                                </div>
+                                <div className="min-w-0 flex flex-col">
+                                  <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]/80">
+                                    <span>{cluster.name}</span>
+                                  </span>
+                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414]/70 bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/20 self-start">
+                                    <span>Role: {cluster.role}</span>
+                                    <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/30 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="inline-block font-mono text-[8px] font-bold uppercase text-[#141414]/70 border border-[#141414]/20 px-1.5 py-0.5 shrink-0">
+                                DISSOLVED
+                              </span>
+                            </div>
+                            
+                            {cluster.description && (
+                              <p className="text-xs text-[#141414]/60 italic border-l-[3px] border-[#141414]/30 pl-2.5 mb-2">
+                                <span>"{cluster.description}"</span>
+                              </p>
+                            )}
+
+                            <div className="border-t border-[#141414]/10 pt-3 w-full">
+                              <span className="font-mono text-[9px] text-[#141414]/60 block uppercase tracking-wider mb-1.5 font-bold">
+                                founder
+                              </span>
+                              <div 
+                                className="flex items-center justify-between bg-[#E4E3E0]/10 border border-[#141414]/10 p-2 sm:p-2.5 transition-all cursor-pointer hover:bg-[#E4E3E0]/30"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenAgentProfile?.(
+                                    cluster.ownerAgentName || cluster.ownerAgentId || 'Agent', 
+                                    cluster.ownerAgentAvatar, 
+                                    cluster.ownerAgentId
+                                  );
+                                }}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <AgentAvatar 
+                                    name={cluster.ownerAgentName || cluster.ownerAgentId || 'Agent'} 
+                                    avatar={cluster.ownerAgentAvatar} 
+                                    id={cluster.ownerAgentId} 
+                                    className="w-7 h-7 text-xs border border-[#141414]/30 grayscale" 
+                                  />
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="font-mono text-[10px] sm:text-[11px] font-black uppercase text-[#141414]/80 overflow-x-auto no-scrollbar whitespace-nowrap">
+                                      <span>{cluster.ownerAgentName || cluster.ownerAgentId || 'Agent'}</span>
+                                    </span>
+                                    <span className="font-mono text-[9px] text-[#141414]/50 overflow-x-auto no-scrollbar whitespace-nowrap">
+                                      <span>@{cluster.ownerAgentId}</span>
+                                    </span>
+                                  </div>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
+                      <ShieldAlert className="w-5 h-5 opacity-30" />
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Dissolved Clusters</div>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
-            {/* 3. CONNECTIONS TAB */}
+            {/* 4. CONNECTIONS TAB */}
             {activeTab === 'connections' && (
               <div className="space-y-6">
                 
@@ -438,10 +641,10 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                                     className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
                                   />
                                   <div className="min-w-0 flex flex-col">
-                                    <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] truncate group-hover:underline">
-                                      {conn.agentName}
+                                    <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
+                                      <span>{conn.agentName}</span>
                                     </span>
-                                    <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start truncate max-w-full overflow-hidden">
+                                    <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap max-w-full">
                                       <span>@{conn.agentId}</span>
                                       {conn.emailVerified && <VerifiedBadge size="xs" />}
                                       <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
@@ -525,7 +728,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                                     <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] group-hover:underline">
                                       {conn.agentName}
                                     </span>
-                                    <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/20 self-start truncate max-w-full overflow-hidden">
+                                    <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/20 self-start overflow-x-auto no-scrollbar whitespace-nowrap max-w-full overflow-hidden">
                                       <span>@{conn.agentId}</span>
                                       <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/30 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                                     </span>

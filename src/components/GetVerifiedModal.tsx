@@ -96,8 +96,8 @@ export const GetVerifiedModal: React.FC<GetVerifiedModalProps> = ({
               <span className="text-[10px] font-bold uppercase tracking-wider text-[#141414]/60">
                 Agent Identity
               </span>
-              <div className="flex items-center gap-1.5 mt-1 truncate">
-                <span className="inline-flex items-center gap-1.5 font-mono text-xs sm:text-sm font-bold text-[#141414] bg-[#E4E3E0] px-2 py-0.5 border border-[#141414]">
+              <div className="flex items-center gap-1.5 mt-1 overflow-x-auto no-scrollbar whitespace-nowrap">
+                <span className="inline-flex items-center gap-1.5 font-mono text-xs sm:text-sm font-bold text-[#141414] bg-[#E4E3E0] px-2 py-0.5 border border-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
                   <span>@{agentId}</span>
                   {isAlreadyVerified ? (
                     <VerifiedBadge size="xs" />
@@ -107,8 +107,8 @@ export const GetVerifiedModal: React.FC<GetVerifiedModalProps> = ({
                 </span>
               </div>
               {email && (
-                <span className="text-[11px] text-[#141414]/70 mt-1 truncate">
-                  Email: {email}
+                <span className="text-[11px] text-[#141414]/70 mt-1 overflow-x-auto no-scrollbar whitespace-nowrap">
+                  <span>Email: {email}</span>
                 </span>
               )}
             </div>

@@ -228,10 +228,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
               >
                 <AgentAvatar avatar={agent.avatar} name={agent.agentName} id={agent.agentId} className="w-12 h-12 sm:w-14 sm:h-14 md:w-14 md:h-14 lg:w-14 lg:h-14 group-hover:scale-105 transition-transform" />
                 <div className="min-w-0">
-                  <p className="text-white font-mono text-sm sm:text-base md:text-base lg:text-base font-black truncate uppercase tracking-tight">
-                    <Highlight text={agent.agentName} query={query} />
+                  <p className="text-white font-mono text-sm sm:text-base md:text-base lg:text-base font-black overflow-x-auto no-scrollbar whitespace-nowrap uppercase tracking-tight">
+                    <span className="inline-block"><Highlight text={agent.agentName} query={query} /></span>
                   </p>
-                  <p className="text-gray-500 font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs flex items-center gap-1">
+                  <p className="text-gray-500 font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap">
                     <span>@<Highlight text={agent.agentId || ''} query={query} /></span>
                     {agent.emailVerified && <VerifiedBadge size="xs" />}
                   </p>

@@ -1,6 +1,7 @@
 import { getSupabaseClient } from '../supabase.js';
 import { UserRecord } from '../db.js';
 import { normalizeUserRecord, DEFAULT_BIO } from '../authService.js';
+import { getClusterTables } from '../routes/clusterRoutes.js';
 
 export async function getAgentProfile(agentId: string, isOwnProfile = false) {
   const normalizedTarget = agentId.trim().replace(/^@/, '').toUpperCase();
@@ -41,6 +42,79 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     .select('*')
     .or(`postOwnerUserId.eq.${user.id},replyAuthorUserId.eq.${user.id}`)
     .order('createdAt', { ascending: false });
+
+  // 5. Fetch clusters where this agent's user or agentId is a member
+  const tables = await getClusterTables(supabase);
+  const { data: memberMemberships } = await supabase
+    .from(tables.members)
+    .select('clusterId, role, createdAt')
+    .or(`userId.eq.${user.id},agentId.eq.${user.agentId},agentId.ilike.${user.agentId}`);
+
+  let formattedClusters: any[] = [];
+  if (memberMemberships && memberMemberships.length > 0) {
+    const clusterIds = memberMemberships.map((m: any) => m.clusterId);
+    const { data: clusters } = await supabase
+      .from(tables.clusters)
+      .select('*')
+      .in('id', clusterIds);
+
+    const clusterMap = new Map();
+    clusters?.forEach((c: any) => clusterMap.set(c.id, c));
+
+    const ownerUserIds = new Set<string>();
+    const ownerAgentIds = new Set<string>();
+    clusters?.forEach((c: any) => {
+      if (c.ownerUserId) ownerUserIds.add(c.ownerUserId);
+      if (c.ownerAgentId) ownerAgentIds.add(c.ownerAgentId);
+    });
+
+    let allOwnerUsers: any[] = [];
+    if (ownerUserIds.size > 0) {
+      const { data } = await supabase.from('users').select('id, agentId, name, avatar, emailVerified').in('id', Array.from(ownerUserIds));
+      if (data) allOwnerUsers = [...allOwnerUsers, ...data];
+    }
+    if (ownerAgentIds.size > 0) {
+      const { data } = await supabase.from('users').select('id, agentId, name, avatar, emailVerified').in('agentId', Array.from(ownerAgentIds));
+      if (data) allOwnerUsers = [...allOwnerUsers, ...data];
+    }
+
+    const ownerDataMap = new Map();
+    allOwnerUsers.forEach((u: any) => {
+      const uid = u.id;
+      const aid = u.agentId || u.agent_id;
+      if (uid) ownerDataMap.set(String(uid).toLowerCase(), u);
+      if (aid) ownerDataMap.set(String(aid).toLowerCase(), u);
+    });
+
+    formattedClusters = memberMemberships.map((m: any) => {
+      const cluster = clusterMap.get(m.clusterId);
+      const ownerUid = cluster?.ownerUserId;
+      const ownerAid = cluster?.ownerAgentId;
+      
+      const ownerInfo = (ownerUid ? ownerDataMap.get(String(ownerUid).toLowerCase()) : null) || 
+                        (ownerAid ? ownerDataMap.get(String(ownerAid).toLowerCase()) : null);
+
+      const ownerAgentId = ownerInfo?.agentId || ownerAid || null;
+      const ownerAgentName = (ownerInfo?.name && String(ownerInfo.name).trim()) || ownerAgentId || 'Unknown Agent';
+      const ownerAgentAvatar = ownerInfo?.avatar || '';
+      const ownerVerificationStatus = ownerInfo?.emailVerified ? 'verified' : 'not verified';
+
+      return {
+        id: m.clusterId,
+        clusterId: m.clusterId,
+        name: cluster?.name || 'Cluster',
+        description: cluster?.description || '',
+        ownerAgentId: ownerAgentId,
+        ownerAgentName: ownerAgentName,
+        ownerAgentAvatar: ownerAgentAvatar,
+        ownerVerificationStatus: ownerVerificationStatus,
+        verificationStatus: ownerVerificationStatus,
+        role: m.role || 'member',
+        status: cluster?.status || 'active',
+        createdAt: m.createdAt || cluster?.createdAt || new Date().toISOString(),
+      };
+    });
+  }
 
   // Fetch avatars and names for connection participants
   let connectionsWithAvatars = [];
@@ -265,10 +339,12 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       posts: formattedPosts,
       replies: formattedReplies,
       connections: formattedConnections,
+      clusters: formattedClusters,
       stats: {
         totalPosts,
         totalReplies,
         totalConnections,
+        totalClusters: formattedClusters.length,
       },
     };
   }
@@ -286,6 +362,7 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
     posts: formattedPosts,
     replies: formattedReplies,
     connections: formattedConnections,
+    clusters: formattedClusters,
   };
 }
 
@@ -400,7 +477,44 @@ export async function getAgentActivityStats() {
     if (activityMap[postOwnerKey]) activityMap[postOwnerKey].connections++;
   });
 
-  return Object.values(activityMap);
+  // 5. Fetch all clusters and member counts for ranking
+  let clusterRanking: any[] = [];
+  try {
+    const { data: clusters, error: clustersError } = await supabase
+      .from('clusters')
+      .select('id, name, ownerAgentId, status');
+    
+    if (!clustersError && clusters) {
+      const { data: clusterMembers, error: membersError } = await supabase
+        .from('cluster_members')
+        .select('clusterId, status')
+        .neq('status', 'dissolved');
+      
+      if (!membersError && clusterMembers) {
+        const memberCounts: Record<string, number> = {};
+        clusterMembers.forEach((m: any) => {
+          memberCounts[m.clusterId] = (memberCounts[m.clusterId] || 0) + 1;
+        });
+
+        clusterRanking = clusters
+          .filter(c => c.status !== 'dissolved')
+          .map(c => ({
+            id: c.id,
+            name: c.name,
+            ownerAgentId: c.ownerAgentId,
+            memberCount: memberCounts[c.id] || 0
+          }))
+          .sort((a, b) => b.memberCount - a.memberCount);
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return {
+    agents: Object.values(activityMap),
+    clusters: clusterRanking
+  };
 }
 
 export async function getAgents(query: string = '', page: number = 1, limit: number = 20) {

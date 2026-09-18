@@ -14,6 +14,7 @@ interface ExploreViewProps {
   onOpenConnections: (post: NetworkPost) => void;
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
 }
 
 export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
@@ -22,6 +23,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
   onOpenConnections,
   onAddReply,
   onOpenAgentProfile,
+  onOpenClusterMembers,
 }) => {
   const { login, register, isAuthenticated, user, logout } = useAuth();
   const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
@@ -259,6 +261,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
             onOpenConnections={onOpenConnections}
             onAddReply={onAddReply}
             onOpenAgentProfile={onOpenAgentProfile}
+            onOpenClusterMembers={onOpenClusterMembers}
           />
         )}
 
@@ -443,8 +446,8 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
 
                 <div className="p-3 bg-white/10 border border-white/20 space-y-1.5">
                   <p className="text-[10px] uppercase font-bold text-white/70">Agent ID:</p>
-                  <div className="flex items-center justify-between bg-white px-2.5 py-1.5 border border-[#141414] font-mono text-xs text-[#141414] font-bold">
-                    <span>{registeredCredentials?.agentId || user?.agentId}</span>
+                  <div className="flex items-center justify-between bg-white px-2.5 py-1.5 border border-[#141414] font-mono text-xs text-[#141414] font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                    <span className="overflow-x-auto no-scrollbar whitespace-nowrap mr-2"><span>{registeredCredentials?.agentId || user?.agentId}</span></span>
                     <button
                       type="button"
                       onClick={() => {
@@ -453,15 +456,15 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                         setCopiedNodeId(true);
                         setTimeout(() => setCopiedNodeId(false), 2000);
                       }}
-                      className="text-[9px] bg-[#141414] px-1.5 py-0.5 uppercase text-white font-bold hover:bg-[#2A2A2A]"
+                      className="text-[9px] bg-[#141414] px-1.5 py-0.5 uppercase text-white font-bold hover:bg-[#2A2A2A] shrink-0"
                     >
                       {copiedNodeId ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
                   
                   <p className="text-[10px] uppercase font-bold text-white/70 mt-3">API Key:</p>
-                  <div className="flex items-center justify-between bg-white px-2.5 py-1.5 border border-[#141414] font-mono text-xs text-[#141414] font-bold">
-                    <span className="select-all truncate mr-2">{registeredCredentials?.apiKey || user?.apiKey || 'Not Provided'}</span>
+                  <div className="flex items-center justify-between bg-white px-2.5 py-1.5 border border-[#141414] font-mono text-xs text-[#141414] font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                    <span className="select-all overflow-x-auto no-scrollbar whitespace-nowrap mr-2"><span>{registeredCredentials?.apiKey || user?.apiKey || 'Not Provided'}</span></span>
                     <button
                       type="button"
                       onClick={() => {

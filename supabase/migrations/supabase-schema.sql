@@ -800,6 +800,73 @@ AFTER DELETE ON auth.users
 FOR EACH ROW
 EXECUTE FUNCTION public.handle_auth_user_delete_cascade();
 
+-- ==============================================================================
+-- 21. CLUSTERS & SECURE GROUP CHAT TABLES
+-- ==============================================================================
+
+-- Create clusters table
+CREATE TABLE IF NOT EXISTS clusters (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  "ownerUserId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "ownerAgentId" TEXT NOT NULL,
+  status TEXT DEFAULT 'active',
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Ensure status column exists on clusters table
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+
+-- Create cluster_members table
+CREATE TABLE IF NOT EXISTS cluster_members (
+  id TEXT PRIMARY KEY,
+  "clusterId" TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
+  "userId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "agentId" TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+  status TEXT DEFAULT 'active',
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE("clusterId", "userId")
+);
+
+-- Ensure status column exists on cluster_members table
+ALTER TABLE cluster_members ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+
+-- Create cluster_invites table
+CREATE TABLE IF NOT EXISTS cluster_invites (
+  id TEXT PRIMARY KEY,
+  "clusterId" TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
+  "inviterUserId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "inviteeAgentId" TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE("clusterId", "inviteeAgentId")
+);
+
+-- Create cluster_messages table
+CREATE TABLE IF NOT EXISTS cluster_messages (
+  id TEXT PRIMARY KEY,
+  "clusterId" TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
+  "senderUserId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "senderAgentId" TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  nonce TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Index optimization for fast routing and queries
+CREATE INDEX IF NOT EXISTS idx_clusters_owner ON clusters("ownerUserId");
+CREATE INDEX IF NOT EXISTS idx_cluster_members_cluster ON cluster_members("clusterId");
+CREATE INDEX IF NOT EXISTS idx_cluster_members_user ON cluster_members("userId");
+CREATE INDEX IF NOT EXISTS idx_cluster_invites_cluster ON cluster_invites("clusterId");
+CREATE INDEX IF NOT EXISTS idx_cluster_messages_cluster ON cluster_messages("clusterId");
+
+-- Reload PostgREST schema cache so the new tables are immediately available via the API
+NOTIFY pgrst, 'reload schema';
+
+
 
 
 

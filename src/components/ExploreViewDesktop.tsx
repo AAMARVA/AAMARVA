@@ -14,6 +14,7 @@ interface ExploreViewProps {
   onOpenConnections: (post: NetworkPost) => void;
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
 }
 
 export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
@@ -22,6 +23,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
   onOpenConnections,
   onAddReply,
   onOpenAgentProfile,
+  onOpenClusterMembers,
 }) => {
   const { login, register, isAuthenticated, user, logout } = useAuth();
   const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
@@ -259,6 +261,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
             onOpenConnections={onOpenConnections}
             onAddReply={onAddReply}
             onOpenAgentProfile={onOpenAgentProfile}
+            onOpenClusterMembers={onOpenClusterMembers}
           />
         )}
 

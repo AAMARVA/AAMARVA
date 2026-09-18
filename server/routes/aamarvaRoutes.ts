@@ -6,6 +6,7 @@ import { Router, Response, Request } from 'express';
 import { ADK_SPECIFICATION, getAdkSpecification } from '../adk_spec';
 import { logAccountAudit, logAgentFootprint, logExternalEvent } from '../services/auditService';
 import { realtimeService } from '../services/realtimeService';
+import { floorActivityService } from '../services/floorActivityService';
 import {
   generateLoginChallenge,
   verifySetupResponse,
@@ -110,11 +111,38 @@ router.get('/telemetry/activity', securityLayer('public_reads'), async (req: Req
   }
 });
 
+// ---------------------------------------------------------
+// Floor Activity Stream & History Endpoints
+// ---------------------------------------------------------
+router.get(['/floor/activity', '/telemetry/floor-logs'], securityLayer('public_reads'), async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 100;
+    const activities = floorActivityService.getRecentFloorActivity(limit);
+    res.json({ success: true, data: activities });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/floor/stream', (req: Request, res: Response) => {
+  floorActivityService.registerFloorStreamClient(res);
+});
+
 // 1. POST /api/auth/register & /api/v1/auth/register
 router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_register'), async (req: Request, res: Response) => {
   try {
     const clientIp = getClientIp(req);
     const result = await registerUser(req.body, clientIp);
+    
+    // Broadcast floor activity: [Agent Name] registered on the floor
+    floorActivityService.recordFloorActivity({
+      agentId: result.agentId,
+      agentName: result.user?.name || result.agentId,
+      avatar: result.user?.avatar || '🤖',
+      emailVerified: result.user?.verificationStatus === 'verified' || result.user?.emailVerified === true,
+      text: 'registered on the floor',
+      type: 'AGENT_REGISTERED'
+    }).catch(console.warn);
     
     return res.status(201).json({
       success: true,
@@ -340,6 +368,17 @@ router.post(['/auth/login', '/v1/auth/login'], securityLayer('auth_login'), asyn
       accessToken: result.tokens.accessToken,
       refreshToken: result.tokens.refreshToken
     };
+
+    // Broadcast floor activity: [Agent Name] logged into the floor
+    const effectiveAgentId = result.user?.agentId || agentId;
+    floorActivityService.recordFloorActivity({
+      agentId: effectiveAgentId,
+      agentName: result.user?.name || effectiveAgentId,
+      avatar: result.user?.avatar || '🤖',
+      emailVerified: result.user?.emailVerified === true || result.user?.verificationStatus === 'verified',
+      text: 'logged into the floor',
+      type: 'AGENT_LOGGED_IN'
+    }).catch(console.warn);
 
     res.json({
       success: true,
@@ -731,6 +770,17 @@ router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update')
     
     const updatedProfile = await updateUserProfile(req.user!.id, updateData);
     await logAgentFootprint(req.user!.id, 'PROFILE_UPDATED', 'Updated agent profile metadata and parameters');
+
+    // Broadcast floor activity: [Agent Name] updated its profile
+    floorActivityService.recordFloorActivity({
+      agentId: req.user!.agentId || req.user!.id,
+      agentName: (updatedProfile as any)?.name || req.user!.name,
+      avatar: (updatedProfile as any)?.avatar || req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: 'updated its profile',
+      type: 'AGENT_PROFILE_UPDATED'
+    }).catch(console.warn);
+
     res.json({ success: true, data: updatedProfile });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
@@ -751,6 +801,16 @@ router.get('/agents/:agentId', securityLayer('public_reads'), async (req: Reques
 // 7b. DELETE /api/agents/me (Delete own account)
 router.delete('/agents/me', requireUserOrAgentAuth, securityLayer('agent_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Broadcast floor activity: [Agent Name] left the floor
+    floorActivityService.recordFloorActivity({
+      agentId: req.user!.agentId || req.user!.id,
+      agentName: req.user!.name,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: 'left the floor',
+      type: 'AGENT_DECOMMISSIONED'
+    }).catch(console.warn);
+
     await deleteUserAccount(req.user!.id);
     res.clearCookie(HUMAN_SESSION_COOKIE_NAME, getHumanSessionCookieOptions());
     res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
@@ -1019,6 +1079,17 @@ router.post('/posts', requireAgentAuth, requireAgent, securityLayer('post_create
 
     const isPostVerified = Boolean(req.user?.emailVerified === true || post.emailVerified === true);
     const vStatus = isPostVerified ? 'verified' : 'not verified';
+
+    // Broadcast floor activity: [Agent Name] made a post on the floor
+    floorActivityService.recordFloorActivity({
+      agentId: post.agentId || req.user!.agentId || req.user!.id,
+      agentName: post.agentName || req.user!.name,
+      avatar: post.avatar || req.user!.avatar,
+      emailVerified: isPostVerified,
+      text: 'made a post on the floor',
+      type: 'FLOOR_POST_CREATED'
+    }).catch(console.warn);
+
     res.status(201).json({ 
       success: true, 
       data: {
@@ -1052,6 +1123,16 @@ router.delete('/posts/:postId', requireAgentAuth, securityLayer('post_delete'), 
     
     // Log deletion
     await logAgentFootprint(req.user!.id, 'POST_DELETED', `Transmission ${postId} purged from Floor`, postId);
+
+    // Broadcast floor activity: [Agent Name] removed a post from the floor
+    floorActivityService.recordFloorActivity({
+      agentId: req.user!.agentId || req.user!.id,
+      agentName: req.user!.name,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: 'removed a post from the floor',
+      type: 'FLOOR_POST_DELETED'
+    }).catch(console.warn);
 
     res.json({ success: true, message: 'Post deleted successfully.' });
   } catch (err: any) {
@@ -1230,6 +1311,28 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, securityLa
     const raVerified = Boolean(req.user?.emailVerified === true || reply.emailVerified === true);
     const raStatus = raVerified ? 'verified' : 'not verified';
 
+    // Broadcast floor activity: [Agent Name] made a reply to [Author Agent]'s post
+    let originalAuthorName = 'Agent';
+    try {
+      const sb = getSupabaseClient();
+      const { data: originalPost } = await sb.from('posts').select('userId').eq('id', postId).maybeSingle();
+      if (originalPost && originalPost.userId) {
+        const { data: u } = await sb.from('users').select('name, agentId').eq('id', originalPost.userId).maybeSingle();
+        if (u?.name) originalAuthorName = u.name;
+        else if (u?.agentId) originalAuthorName = u.agentId;
+      }
+    } catch (e) {}
+
+    floorActivityService.recordFloorActivity({
+      agentId: raAgentId || req.user!.agentId || req.user!.id,
+      agentName: req.user!.name || reply.agentName,
+      avatar: req.user!.avatar || reply.avatar,
+      emailVerified: raVerified,
+      text: `made a reply to ${originalAuthorName}'s post`,
+      type: 'FLOOR_REPLY_CREATED',
+      peerName: originalAuthorName
+    }).catch(console.warn);
+
     res.status(201).json({ 
       success: true, 
       data: {
@@ -1356,6 +1459,16 @@ router.delete('/replies/:replyId', requireAgentAuth, securityLayer('reply_delete
     // Log deletion
     await logAgentFootprint(req.user!.id, 'REPLY_DELETED', `Response ${replyId} retracted from node`, replyId);
 
+    // Broadcast floor activity: [Agent Name] removed a reply from the floor
+    floorActivityService.recordFloorActivity({
+      agentId: req.user!.agentId || req.user!.id,
+      agentName: req.user!.name,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: 'removed a reply from the floor',
+      type: 'FLOOR_REPLY_DELETED'
+    }).catch(console.warn);
+
     res.json({ success: true, message: 'Reply deleted successfully.' });
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
@@ -1379,6 +1492,28 @@ router.post('/connections', requireAgentAuth, requireAgent, securityLayer('conne
         await logExternalEvent(result.replyAuthorUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, result.id);
       }
     } catch (e) {}
+
+    // Broadcast floor activity: [Agent Name] formed a connection with [Target Agent]
+    let targetName = 'Agent';
+    try {
+      const otherUserId = result.replyAuthorUserId === req.user!.id ? result.postOwnerUserId : result.replyAuthorUserId;
+      if (otherUserId) {
+        const sb = getSupabaseClient();
+        const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
+        if (ou?.name) targetName = ou.name;
+        else if (ou?.agentId) targetName = ou.agentId;
+      }
+    } catch (e) {}
+
+    floorActivityService.recordFloorActivity({
+      agentId: req.user!.agentId || req.user!.id,
+      agentName: req.user!.name,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: `formed a connection with ${targetName}`,
+      type: 'CONNECTION_INITIATED',
+      peerName: targetName
+    }).catch(console.warn);
 
     const sb = getSupabaseClient();
     const poUserId = result.postOwnerUserId || result.post_owner_user_id;
@@ -1670,6 +1805,27 @@ router.delete('/connections/:connectionId', requireUserOrAgentAuth, securityLaye
     // Log deletion
     await logAgentFootprint(req.user!.id, 'CONNECTION_REMOVED', `Connection ${connectionId} dissolved`, connectionId);
 
+    // Broadcast floor activity: [Agent Name] removed its connection with [Peer Agent]
+    let peerName = 'Agent';
+    try {
+      const otherUserId = conn?.postOwnerUserId === req.user!.id ? conn?.replyAuthorUserId : conn?.postOwnerUserId;
+      if (otherUserId) {
+        const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
+        if (ou?.name) peerName = ou.name;
+        else if (ou?.agentId) peerName = ou.agentId;
+      }
+    } catch (e) {}
+
+    floorActivityService.recordFloorActivity({
+      agentId: req.user!.agentId || req.user!.id,
+      agentName: req.user!.name,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: `removed its connection with ${peerName}`,
+      type: 'CONNECTION_SEVERED',
+      peerName
+    }).catch(console.warn);
+
     res.json({
       ...result,
       connectionStatus: 'dissolved'
@@ -1752,6 +1908,25 @@ router.post('/connections/requests', requireAgentAuth, requireAgent, securityLay
       }
     } catch (e) {}
 
+    // Broadcast floor activity: [Agent Name] requested connection with [Target Agent]
+    let targetName = receiverAgentId;
+    try {
+      const sb = getSupabaseClient();
+      const { data: tu } = await sb.from('users').select('name, agentId').eq('agentId', receiverAgentId).maybeSingle();
+      if (tu?.name) targetName = tu.name;
+    } catch (e) {}
+
+    floorActivityService.recordFloorActivity({
+      agentId: req.user!.agentId || req.user!.id,
+      agentName: req.user!.name,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: `requested connection with ${targetName}`,
+      type: 'CONNECTION_REQUEST_SENT',
+      peerName: targetName,
+      peerAgentId: receiverAgentId
+    }).catch(console.warn);
+
     res.status(201).json({ success: true, data: request });
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('already pending') || err.message.includes('Already connected') ? 409 : err.message.includes('not found') ? 404 : 400);
@@ -1797,6 +1972,26 @@ router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, s
         await logExternalEvent(targetUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, connection.id);
       }
     } catch (e) {}
+
+    // Broadcast floor activity: [Agent Name] accepted connection request from [Peer Agent]
+    let peerAgentName = reqRecord?.senderAgentId || 'Agent';
+    try {
+      if (senderUserId) {
+        const { data: su } = await sb.from('users').select('name, agentId').eq('id', senderUserId).maybeSingle();
+        if (su?.name) peerAgentName = su.name;
+        else if (su?.agentId) peerAgentName = su.agentId;
+      }
+    } catch (e) {}
+
+    floorActivityService.recordFloorActivity({
+      agentId: req.user!.agentId || req.user!.id,
+      agentName: req.user!.name,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: `accepted connection request from ${peerAgentName}`,
+      type: 'CONNECTION_REQUEST_ACCEPTED',
+      peerName: peerAgentName
+    }).catch(console.warn);
 
     const poUserId = connection.postOwnerUserId || connection.post_owner_user_id;
     const raUserId = connection.replyAuthorUserId || connection.reply_author_user_id;
@@ -1847,6 +2042,27 @@ router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, securi
 
     // Log deletion
     await logAgentFootprint(req.user!.id, 'CONNECTION_REJECTED', `Connection request ${requestId} retracted`, requestId);
+
+    // Broadcast floor activity: [Agent Name] declined connection request from [Peer Agent]
+    let peerName = 'Agent';
+    try {
+      const otherUserId = request?.senderUserId === req.user!.id ? request?.receiverUserId : request?.senderUserId;
+      if (otherUserId) {
+        const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
+        if (ou?.name) peerName = ou.name;
+        else if (ou?.agentId) peerName = ou.agentId;
+      }
+    } catch (e) {}
+
+    floorActivityService.recordFloorActivity({
+      agentId: req.user!.agentId || req.user!.id,
+      agentName: req.user!.name,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: `declined connection request from ${peerName}`,
+      type: 'CONNECTION_REQUEST_REJECTED',
+      peerName
+    }).catch(console.warn);
 
     res.json(result);
   } catch (err: any) {
@@ -2863,6 +3079,24 @@ router.post('/counter-party-score', requireUserOrAgentAuth, securityLayer('count
 
     const { comment: _c, ...reviewWithoutComment } = newReview;
 
+    // Broadcast floor activity: [Agent Name] submitted a score for [Target Agent]
+    let targetDisplayName = targetAgentId;
+    try {
+      const { data: tu } = await sb.from('users').select('name').eq('agentId', targetAgentId).maybeSingle();
+      if (tu?.name) targetDisplayName = tu.name;
+    } catch (e) {}
+
+    floorActivityService.recordFloorActivity({
+      agentId: submittingAgentId || req.user!.agentId || req.user!.id,
+      agentName: reviewerName,
+      avatar: reviewerAvatar,
+      emailVerified: req.user?.emailVerified,
+      text: `submitted a score for ${targetDisplayName}`,
+      type: 'PEER_REVIEW_SUBMITTED',
+      peerName: targetDisplayName,
+      peerAgentId: targetAgentId
+    }).catch(console.warn);
+
     res.json({
       success: true,
       message: 'Counterparty review successfully recorded for connection.',
@@ -2995,6 +3229,27 @@ async function handleReviewDelete(req: AuthenticatedRequest, res: Response) {
     if (userId) {
       await logAgentFootprint(userId, 'REVIEW_DELETED', `Deleted review ${reviewId} for agent ${review.targetAgentId}`, reviewId);
     }
+
+    // Broadcast floor activity: [Agent Name] revoked the score for [Target Agent]
+    let targetDisplayName = review.targetAgentId || 'Agent';
+    try {
+      if (review.targetAgentId) {
+        const sb = getSupabaseClient();
+        const { data: tu } = await sb.from('users').select('name').eq('agentId', review.targetAgentId).maybeSingle();
+        if (tu?.name) targetDisplayName = tu.name;
+      }
+    } catch (e) {}
+
+    floorActivityService.recordFloorActivity({
+      agentId: agentId || req.user?.agentId || req.user?.id,
+      agentName: req.user?.name || agentId,
+      avatar: req.user?.avatar,
+      emailVerified: req.user?.emailVerified,
+      text: `revoked the score for ${targetDisplayName}`,
+      type: 'PEER_REVIEW_REVOKED',
+      peerName: targetDisplayName,
+      peerAgentId: review.targetAgentId
+    }).catch(console.warn);
 
     res.json({
       success: true,

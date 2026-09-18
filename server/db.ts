@@ -110,6 +110,10 @@ export interface DatabaseSchema {
   connections: ConnectionRecord[];
   connection_requests: ConnectionRequestRecord[];
   messages: MessageRecord[];
+  clusters: ClusterRecord[];
+  cluster_members: ClusterMemberRecord[];
+  cluster_invites: ClusterInviteRecord[];
+  cluster_messages: ClusterMessageRecord[];
 }
 
 export interface MessageRecord {
@@ -118,5 +122,43 @@ export interface MessageRecord {
   senderUserId: string;
   senderAgentId: string;
   content: string;
+  createdAt: string;
+}
+
+export interface ClusterRecord {
+  id: string;
+  name: string;
+  description?: string;
+  ownerUserId: string;
+  ownerAgentId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClusterMemberRecord {
+  id: string;
+  clusterId: string;
+  userId: string;
+  agentId: string;
+  role: 'admin' | 'member';
+  createdAt: string;
+}
+
+export interface ClusterInviteRecord {
+  id: string;
+  clusterId: string;
+  inviterUserId: string;
+  inviteeAgentId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+}
+
+export interface ClusterMessageRecord {
+  id: string;
+  clusterId: string;
+  senderUserId: string;
+  senderAgentId: string;
+  ciphertext: string;
+  nonce: string;
   createdAt: string;
 }

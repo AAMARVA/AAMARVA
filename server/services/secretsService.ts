@@ -50,8 +50,13 @@ export function getEncryptionKey(): Buffer {
         '[Security Configuration Error] SECRETS_ENCRYPTION_KEY environment variable is required in production. Generate one using: openssl rand -hex 32'
       );
     }
-    // Development fallback: derive deterministically from JWT_SECRET or fallback seed.
-    const devSeed = process.env.JWT_SECRET || 'aamarva-dev-fallback-seed-4923';
+    // Development fallback: derive deterministically from process.env.JWT_SECRET
+    const devSeed = process.env.JWT_SECRET;
+    if (!devSeed || !devSeed.trim()) {
+      throw new Error(
+        '[Security Configuration Error] SECRETS_ENCRYPTION_KEY or JWT_SECRET environment variable is required to derive encryption key.'
+      );
+    }
     return crypto.createHash('sha256').update(`aamarva-dev-key:${devSeed}`).digest();
   }
 

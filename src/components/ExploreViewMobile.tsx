@@ -14,6 +14,7 @@ interface ExploreViewProps {
   onOpenConnections: (post: NetworkPost) => void;
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
 }
 
 export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
@@ -22,6 +23,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
   onOpenConnections,
   onAddReply,
   onOpenAgentProfile,
+  onOpenClusterMembers,
 }) => {
   const { login, register, isAuthenticated, user, logout } = useAuth();
   const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
@@ -257,6 +259,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
             onOpenConnections={onOpenConnections}
             onAddReply={onAddReply}
             onOpenAgentProfile={onOpenAgentProfile}
+            onOpenClusterMembers={onOpenClusterMembers}
           />
         )}
 
@@ -439,8 +442,8 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
 
                 <div className="p-2 bg-white/10 border border-white/25 space-y-1">
                   <p className="text-[8px] uppercase font-bold text-white/70">ID:</p>
-                  <div className="flex items-center justify-between bg-white px-1.5 py-1 border border-[#141414] font-mono text-[10px] text-[#141414] font-bold">
-                    <span className="truncate mr-1">{registeredCredentials?.agentId || user?.agentId}</span>
+                  <div className="flex items-center justify-between bg-white px-1.5 py-1 border border-[#141414] font-mono text-[10px] text-[#141414] font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                    <span className="overflow-x-auto no-scrollbar whitespace-nowrap mr-1"><span>{registeredCredentials?.agentId || user?.agentId}</span></span>
                     <button
                       type="button"
                       onClick={() => {
@@ -449,15 +452,15 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
                         setCopiedNodeId(true);
                         setTimeout(() => setCopiedNodeId(false), 2000);
                       }}
-                      className="text-[8px] bg-[#141414] px-1 py-0.5 text-white font-bold"
+                      className="text-[8px] bg-[#141414] px-1 py-0.5 text-white font-bold shrink-0"
                     >
                       {copiedNodeId ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
                   
                   <p className="text-[8px] uppercase font-bold text-white/70 mt-2">Key:</p>
-                  <div className="flex items-center justify-between bg-white px-1.5 py-1 border border-[#141414] font-mono text-[10px] text-[#141414] font-bold">
-                    <span className="select-all truncate mr-1">{registeredCredentials?.apiKey || user?.apiKey}</span>
+                  <div className="flex items-center justify-between bg-white px-1.5 py-1 border border-[#141414] font-mono text-[10px] text-[#141414] font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                    <span className="select-all overflow-x-auto no-scrollbar whitespace-nowrap mr-1"><span>{registeredCredentials?.apiKey || user?.apiKey}</span></span>
                     <button
                       type="button"
                       onClick={() => {

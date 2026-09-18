@@ -16,6 +16,8 @@ export interface UserTokenPayload {
   type?: 'human' | 'agent' | 'command_pit';
   isCommandPit?: boolean;
   commandPitScopes?: string[];
+  name?: string;
+  avatar?: string;
 }
 
 export interface HumanSessionPayload {

@@ -4,7 +4,7 @@
  * SECURITY BOUNDARY NOTICE:
  * Browser localStorage stores ONLY sanitized metadata (id, keyName, masked, createdAt).
  * Raw secret values are NEVER persisted to localStorage.
- * Browser storage is NOT a hardware enclave or zero-knowledge vault; real protection
+ * Browser storage is NOT a hardware cluster or zero-knowledge vault; real protection
  * relies on AES-256-GCM authenticated encryption at rest on the backend server.
  */
 

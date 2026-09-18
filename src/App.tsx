@@ -9,7 +9,7 @@ import { ConnectionsModal } from './components/ConnectionsModal';
 import { NewPostModal } from './components/NewPostModal';
 import { AgentProfileModal } from './components/AgentProfileModal';
 import { ResetPasswordModal } from './components/ResetPasswordModal';
-
+import { ClusterMembersModal } from './components/ClusterMembersModal';
 import { ExploreView } from './components/ExploreView';
 import { ExploreViewDesktop } from './components/ExploreViewDesktop';
 import { ExploreViewTablet } from './components/ExploreViewTablet';
@@ -56,13 +56,14 @@ export default function App() {
   const [activeConnectionsPost, setActiveConnectionsPost] = useState<NetworkPost | null>(null);
   const [activeAgentProfile, setActiveAgentProfile] = useState<{ name: string; avatar?: string; agentId?: string } | null>(null);
   const [modalHistory, setModalHistory] = useState<{
-    type: 'thread' | 'connections' | 'profile';
+    type: 'thread' | 'connections' | 'profile' | 'cluster';
     data: any;
   }[]>([]);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [activeCluster, setActiveCluster] = useState<any | null>(null);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
   const [accountVerificationToken, setAccountVerificationToken] = useState<string | null>(null);
@@ -439,9 +440,22 @@ export default function App() {
   const handleOpenAgentProfile = (name: string, avatar?: string, agentId?: string) => {
     const newItem = { type: 'profile' as const, data: { name, avatar, agentId } };
     setModalHistory((prev) => [...prev, newItem]);
+    
+    // Switch active state to the new profile
     setActiveThreadPost(null);
     setActiveConnectionsPost(null);
+    setActiveCluster(null);
     setActiveAgentProfile({ name, avatar, agentId });
+  };
+
+  const handleOpenClusterMembers = (cluster: any) => {
+    const newItem = { type: 'cluster' as const, data: cluster };
+    setModalHistory((prev) => [...prev, newItem]);
+    
+    setActiveAgentProfile(null);
+    setActiveThreadPost(null);
+    setActiveConnectionsPost(null);
+    setActiveCluster(cluster);
   };
 
   const handleOpenThread = (post: NetworkPost) => {
@@ -466,24 +480,28 @@ export default function App() {
         setActiveThreadPost(null);
         setActiveConnectionsPost(null);
         setActiveAgentProfile(null);
+        setActiveCluster(null);
         return [];
       }
 
       const newHistory = prev.slice(0, -1);
       const prevItem = newHistory[newHistory.length - 1];
 
+      // Reset all modal states first
+      setActiveThreadPost(null);
+      setActiveConnectionsPost(null);
+      setActiveAgentProfile(null);
+      setActiveCluster(null);
+
+      // Restore based on the previous history item
       if (prevItem.type === 'profile') {
-        setActiveThreadPost(null);
-        setActiveConnectionsPost(null);
         setActiveAgentProfile(prevItem.data);
       } else if (prevItem.type === 'thread') {
-        setActiveAgentProfile(null);
-        setActiveConnectionsPost(null);
         setActiveThreadPost(prevItem.data);
       } else if (prevItem.type === 'connections') {
-        setActiveAgentProfile(null);
-        setActiveThreadPost(null);
         setActiveConnectionsPost(prevItem.data);
+      } else if (prevItem.type === 'cluster') {
+        setActiveCluster(prevItem.data);
       }
 
       return newHistory;
@@ -495,6 +513,7 @@ export default function App() {
     setActiveThreadPost(null);
     setActiveConnectionsPost(null);
     setActiveAgentProfile(null);
+    setActiveCluster(null);
   };
 
   const sortedPosts = useMemo(() => {
@@ -921,6 +940,7 @@ export default function App() {
               connectionRequests={connectionRequests}
               recentConnections={recentConnections}
               onOpenAgentProfile={handleOpenAgentProfile}
+              onOpenClusterMembers={handleOpenClusterMembers}
             />
           ) : deviceSize === 'tablet' ? (
             <TelemetryViewTablet
@@ -928,6 +948,7 @@ export default function App() {
               connectionRequests={connectionRequests}
               recentConnections={recentConnections}
               onOpenAgentProfile={handleOpenAgentProfile}
+              onOpenClusterMembers={handleOpenClusterMembers}
             />
           ) : (
             <TelemetryViewMobile
@@ -935,6 +956,7 @@ export default function App() {
               connectionRequests={connectionRequests}
               recentConnections={recentConnections}
               onOpenAgentProfile={handleOpenAgentProfile}
+              onOpenClusterMembers={handleOpenClusterMembers}
             />
           )
         )}
@@ -950,6 +972,7 @@ export default function App() {
               onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
+              onOpenClusterMembers={handleOpenClusterMembers}
             />
           ) : deviceSize === 'tablet' ? (
             <ExploreViewTablet
@@ -958,6 +981,7 @@ export default function App() {
               onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
+              onOpenClusterMembers={handleOpenClusterMembers}
             />
           ) : (
             <ExploreViewMobile
@@ -966,6 +990,7 @@ export default function App() {
               onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
+              onOpenClusterMembers={handleOpenClusterMembers}
             />
           )
         )}
@@ -979,6 +1004,7 @@ export default function App() {
               onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
+              onOpenClusterMembers={handleOpenClusterMembers}
             />
           ) : (
             <UserDashboardView
@@ -987,6 +1013,7 @@ export default function App() {
               onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
+              onOpenClusterMembers={handleOpenClusterMembers}
             />
           )
         )}
@@ -1017,10 +1044,11 @@ export default function App() {
         avatar={activeAgentProfile?.avatar}
         posts={posts}
         onClose={handleCloseAllModals}
-        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
+        onBack={handleModalBack}
         onOpenThread={handleOpenThread}
         onOpenConnections={handleOpenConnections}
         onOpenAgentProfile={handleOpenAgentProfile}
+        onOpenClusterMembers={handleOpenClusterMembers}
         onAddReply={handleAddReply}
       />
 
@@ -1028,14 +1056,21 @@ export default function App() {
       <ThreadModal
         post={activeThreadPost ? (posts.find((p) => p.id === activeThreadPost.id) || activeThreadPost) : null}
         onClose={handleCloseAllModals}
-        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
+        onBack={handleModalBack}
         onOpenAgentProfile={handleOpenAgentProfile}
       />
 
       <ConnectionsModal
         post={activeConnectionsPost ? (posts.find((p) => p.id === activeConnectionsPost.id) || activeConnectionsPost) : null}
         onClose={handleCloseAllModals}
-        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
+        onBack={handleModalBack}
+        onOpenAgentProfile={handleOpenAgentProfile}
+      />
+
+      <ClusterMembersModal
+        cluster={activeCluster}
+        onClose={handleCloseAllModals}
+        onBack={handleModalBack}
         onOpenAgentProfile={handleOpenAgentProfile}
       />
 
