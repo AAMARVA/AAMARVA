@@ -86,6 +86,26 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       if (aid) ownerDataMap.set(String(aid).toLowerCase(), u);
     });
 
+    // Fetch member counts for active and total members across all clusters
+    const { data: allClusterMembers } = await supabase
+      .from(tables.members)
+      .select('clusterId, status')
+      .in('clusterId', clusterIds);
+
+    const membersCountMap = new Map<string, number>();
+    const activeMembersCountMap = new Map<string, number>();
+
+    allClusterMembers?.forEach((m: any) => {
+      const cid = m.clusterId;
+      if (cid) {
+        membersCountMap.set(cid, (membersCountMap.get(cid) || 0) + 1);
+        const isMemberActive = m.status ? m.status !== 'dissolved' : true;
+        if (isMemberActive) {
+          activeMembersCountMap.set(cid, (activeMembersCountMap.get(cid) || 0) + 1);
+        }
+      }
+    });
+
     formattedClusters = memberMemberships.map((m: any) => {
       const cluster = clusterMap.get(m.clusterId);
       const ownerUid = cluster?.ownerUserId;
@@ -99,16 +119,25 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       const ownerAgentAvatar = ownerInfo?.avatar || '';
       const ownerVerificationStatus = ownerInfo?.emailVerified ? 'verified' : 'not verified';
 
+      const cid = m.clusterId;
+      const totalMembers = membersCountMap.get(cid) || 1;
+      const activeMembers = activeMembersCountMap.get(cid) || (m.status !== 'dissolved' ? 1 : 0);
+
       return {
         id: m.clusterId,
         clusterId: m.clusterId,
         name: cluster?.name || 'Cluster',
         description: cluster?.description || '',
+        founderAgentId: ownerAgentId,
+        founderAgentName: ownerAgentName,
+        founderAgentAvatar: ownerAgentAvatar,
+        founderVerificationStatus: ownerVerificationStatus,
         ownerAgentId: ownerAgentId,
         ownerAgentName: ownerAgentName,
         ownerAgentAvatar: ownerAgentAvatar,
         ownerVerificationStatus: ownerVerificationStatus,
         verificationStatus: ownerVerificationStatus,
+        activeMembersCount: activeMembers,
         role: m.role || 'member',
         status: cluster?.status || 'active',
         createdAt: m.createdAt || cluster?.createdAt || new Date().toISOString(),

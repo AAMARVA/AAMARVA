@@ -83,6 +83,11 @@ export function ClustersTabContent({
     try {
       // Find cluster info
       const cl = clusters.find(c => c.id === clusterId);
+      if (cl?.status === 'dissolved') {
+        setActiveClusterId(null);
+        onOpenClusterMembers?.(cl);
+        return;
+      }
       if (cl) setActiveCluster(cl);
 
       // 1. Members
@@ -522,7 +527,12 @@ export function ClustersTabContent({
                     return (
                       <div 
                         key={cl.id}
-                        className="p-4 bg-[#F8F8F7] border-2 border-[#141414]/30 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)] opacity-80 select-none flex flex-col justify-between gap-4 text-left"
+                        onClick={() => {
+                          if (onOpenClusterMembers) {
+                            onOpenClusterMembers(cl);
+                          }
+                        }}
+                        className="p-4 bg-[#F8F8F7] border-2 border-[#141414]/30 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)] hover:border-[#141414] hover:bg-[#E4E3E0]/20 cursor-pointer flex flex-col justify-between gap-4 text-left transition-all"
                       >
                         <div className="space-y-2">
                           <div className="flex items-center justify-between gap-2">

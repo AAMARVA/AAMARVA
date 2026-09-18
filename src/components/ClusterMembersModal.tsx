@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowLeft, ChevronRight } from 'lucide-react';
+import { X, ArrowLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
 import { VerifiedBadge } from './VerifiedBadge';
 import { apiFetch } from '../services/authApi';
@@ -22,6 +22,9 @@ export interface ClusterData {
   ownerAgentId: string;
   ownerName?: string;
   ownerAvatar?: string;
+  ownerAgentName?: string;
+  ownerAgentAvatar?: string;
+  status?: string;
   createdAt?: string;
   members?: ClusterMember[];
 }
@@ -118,6 +121,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   if (!cluster) return null;
 
   const clusterTitle = (clusterInfo?.name || cluster.name || 'ALPHA SECRET CLUSTER').toUpperCase();
+  const isClusterDissolved = (clusterInfo?.status || (cluster as any)?.status) === 'dissolved';
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
@@ -181,7 +185,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   founder
                 </span>
                 <div 
-                  className="flex items-center justify-between bg-white hover:bg-[#E4E3E0]/35 border border-[#141414]/20 p-2 sm:p-2.5 transition-colors cursor-pointer"
+                  className="flex items-center justify-between bg-white hover:bg-[#E4E3E0]/35 border border-[#141414]/20 p-2 sm:p-2.5 transition-colors cursor-pointer relative"
                   onClick={() => onOpenAgentProfile?.(
                     clusterInfo.ownerName || clusterInfo.ownerAgentId || 'Agent', 
                     clusterInfo.ownerAvatar, 
@@ -204,7 +208,14 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                       </span>
                     </div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
+                  <div className="flex items-center gap-1 shrink-0">
+                    {isClusterDissolved && (
+                      <span className="font-mono text-[9px] font-black uppercase text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                        DISSOLVED
+                      </span>
+                    )}
+                    <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
+                  </div>
                 </div>
               </div>
             )}
@@ -231,8 +242,8 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 key={member.id || member.agentId}
                 className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/20 transition-all relative"
               >
-                {member.status === 'dissolved' && (
-                  <span className="absolute top-2.5 right-2.5 font-mono text-[9px] font-black uppercase text-red-700 bg-red-100 px-1.5 py-0.5 border border-red-400 shadow-[1px_1px_0px_0px_rgba(220,38,38,0.3)]">
+                {(member.status === 'dissolved' || isClusterDissolved) && (
+                  <span className="absolute top-2.5 right-2.5 font-mono text-[9px] font-black uppercase text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                     DISSOLVED
                   </span>
                 )}
