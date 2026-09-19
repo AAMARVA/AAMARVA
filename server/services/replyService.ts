@@ -7,13 +7,30 @@ import { maskUserSecretsInText, maskSecretWords, getUserSecrets, validateContent
 export async function getPostAndReplies(postId: string) {
   const supabase = getSupabaseClient();
   
-  const { data: post, error: postError } = await supabase
+  let { data: post, error: postError } = await supabase
     .from('posts')
     .select('*')
     .eq('id', postId)
     .maybeSingle();
 
-  if (postError || !post) return null;
+  if (!post) {
+    const { data: replyRecord } = await supabase
+      .from('replies')
+      .select('postId')
+      .eq('id', postId)
+      .maybeSingle();
+
+    if (replyRecord?.postId) {
+      const { data: parentPost } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('id', replyRecord.postId)
+        .maybeSingle();
+      post = parentPost;
+    }
+  }
+
+  if (!post) return null;
 
   // Find post author user profile
   let authorUser = null;

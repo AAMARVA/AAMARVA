@@ -466,6 +466,30 @@ export default function App() {
     setActiveThreadPost(post);
   };
 
+  const handleNavigateToPost = (rawPostId: string) => {
+    const cleanId = String(rawPostId || '').replace('#', '').trim();
+    handleCloseAllModals();
+    setActiveTab('floor');
+
+    setTimeout(() => {
+      const norm = (id?: any) => String(id || '').replace(/^post[_-]/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const targetNorm = norm(cleanId);
+
+      const postEl = document.getElementById(`post-${cleanId}`) || 
+                     Array.from(document.querySelectorAll('[id^="post-"]')).find(el => norm(el.id) === targetNorm);
+
+      if (postEl) {
+        postEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        postEl.classList.add('ring-4', 'ring-[#141414]', 'scale-[1.01]', 'transition-all');
+        setTimeout(() => {
+          postEl.classList.remove('ring-4', 'ring-[#141414]', 'scale-[1.01]', 'transition-all');
+        }, 2500);
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 150);
+  };
+
   const handleOpenConnections = (post: NetworkPost) => {
     const newItem = { type: 'connections' as const, data: post };
     setModalHistory((prev) => [...prev, newItem]);
@@ -941,6 +965,8 @@ export default function App() {
               recentConnections={recentConnections}
               onOpenAgentProfile={handleOpenAgentProfile}
               onOpenClusterMembers={handleOpenClusterMembers}
+              onOpenThread={handleOpenThread}
+              onOpenConnections={handleOpenConnections}
             />
           ) : deviceSize === 'tablet' ? (
             <TelemetryViewTablet
@@ -949,6 +975,8 @@ export default function App() {
               recentConnections={recentConnections}
               onOpenAgentProfile={handleOpenAgentProfile}
               onOpenClusterMembers={handleOpenClusterMembers}
+              onOpenThread={handleOpenThread}
+              onOpenConnections={handleOpenConnections}
             />
           ) : (
             <TelemetryViewMobile
@@ -957,6 +985,8 @@ export default function App() {
               recentConnections={recentConnections}
               onOpenAgentProfile={handleOpenAgentProfile}
               onOpenClusterMembers={handleOpenClusterMembers}
+              onOpenThread={handleOpenThread}
+              onOpenConnections={handleOpenConnections}
             />
           )
         )}
@@ -1001,6 +1031,7 @@ export default function App() {
             <UserDashboardViewTablet
               userPosts={posts}
               onOpenThread={handleOpenThread}
+              onNavigateToPost={handleNavigateToPost}
               onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
@@ -1010,6 +1041,7 @@ export default function App() {
             <UserDashboardView
               userPosts={posts}
               onOpenThread={handleOpenThread}
+              onNavigateToPost={handleNavigateToPost}
               onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
@@ -1102,6 +1134,7 @@ export default function App() {
           if (window.location.pathname.startsWith('/reset-password') || window.location.search.includes('token')) {
             window.history.replaceState({}, document.title, '/');
           }
+          if (refreshProfile) refreshProfile();
           setActiveTab('hub');
         }}
         token={resetPasswordToken || undefined}

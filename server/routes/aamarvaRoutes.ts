@@ -41,6 +41,7 @@ import {
   confirmAccountEmailVerification,
   requestForgotPassword,
   resetPassword,
+  getResetTokenUser,
   verifyRefreshToken,
   getVerificationStatus,
   updateUserWhitelist,
@@ -95,6 +96,7 @@ import {
   PreservedSecretMetadata,
   SaveSecretInput,
 } from '../services/secretsService';
+import { getClusterTables } from './clusterRoutes';
 
 const router = Router();
 
@@ -132,6 +134,24 @@ router.get('/floor/stream', (req: Request, res: Response) => {
 router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_register'), async (req: Request, res: Response) => {
   try {
     const clientIp = getClientIp(req);
+    
+    // Input validation constraints
+    const nameInput = req.body?.agentName !== undefined ? req.body.agentName : (req.body?.name !== undefined ? req.body.name : req.body?.registerAgentName);
+    if (nameInput !== undefined) {
+      const trimmedName = nameInput.toString().trim();
+      if (trimmedName.length < 1 || trimmedName.length > 50) {
+        throw new Error('Agent name must be between 1 and 50 characters.');
+      }
+    }
+
+    const bioInput = req.body?.bio;
+    if (bioInput !== undefined) {
+      const bioStr = bioInput.toString();
+      if (bioStr.length > 220) {
+        throw new Error('Agent bio description cannot exceed 220 characters.');
+      }
+    }
+
     const result = await registerUser(req.body, clientIp);
     
     // Broadcast floor activity: [Agent Name] registered on the floor
@@ -144,6 +164,16 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
       type: 'AGENT_REGISTERED'
     }).catch(console.warn);
     
+    // Set human session cookie so the freshly registered human is authenticated
+    try {
+      if (result.user?.id) {
+        const sessionId = await createHumanSession(result.user.id);
+        res.cookie(HUMAN_SESSION_COOKIE_NAME, sessionId, getHumanSessionCookieOptions());
+      }
+    } catch (sessionErr) {
+      console.warn('[Registration] Could not establish initial human session cookie:', sessionErr);
+    }
+
     return res.status(201).json({
       success: true,
       data: {
@@ -397,24 +427,6 @@ router.post(['/auth/login', '/v1/auth/login'], securityLayer('auth_login'), asyn
   }
 });
 
-// 2b. POST /api/auth/check-email
-router.post('/auth/check-email', securityLayer('auth_login'), async (req: Request, res: Response) => {
-  try {
-    const { email } = req.body;
-    if (!email || typeof email !== 'string') {
-      return res.status(400).json({ success: false, error: { message: 'Email is required.' } });
-    }
-    const { normalizeEmail, validateEmailFormat } = await import('../authService');
-    const normalized = normalizeEmail(email);
-    if (!validateEmailFormat(normalized)) {
-      return res.status(400).json({ success: false, error: { message: 'Invalid email format.' } });
-    }
-    res.json({ success: true, message: 'If this email is registered, it can receive communications.' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: 'Internal server error.' } });
-  }
-});
-
 // 3. POST /api/auth/refresh
 router.post('/auth/refresh', securityLayer('auth_refresh'), async (req: Request, res: Response) => {
   try {
@@ -466,7 +478,7 @@ router.post(['/auth/human/logout', '/v1/auth/human/logout'], async (req: Request
 });
 
 // 4b. POST /api/auth/logout (Agent logout only)
-router.post(['/auth/logout', '/v1/auth/logout'], async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/auth/logout', '/v1/auth/logout'], requireAgentAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const rtToken = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]) || (req.body && req.body.refreshToken);
 
@@ -760,6 +772,22 @@ router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedR
 router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { name, bio } = req.body;
+    
+    // Input validation constraints
+    if (name !== undefined) {
+      const trimmedName = name.toString().trim();
+      if (trimmedName.length < 1 || trimmedName.length > 50) {
+        throw new Error('Agent name must be between 1 and 50 characters.');
+      }
+    }
+
+    if (bio !== undefined) {
+      const bioStr = bio.toString();
+      if (bioStr.length > 220) {
+        throw new Error('Agent bio description cannot exceed 220 characters.');
+      }
+    }
+
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
     if (bio !== undefined) updateData.bio = bio;
@@ -997,8 +1025,8 @@ router.get('/posts', securityLayer('public_reads'), async (req: Request, res: Re
   }
 });
 
-// 8b. GET /api/posts/me (Agent/User only: list own transmissions)
-router.get('/posts/me', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+// 8b. GET /api/posts/me (Agent only: list own transmissions)
+router.get('/posts/me', requireAgentAuth, requireAgent, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -1379,8 +1407,8 @@ router.get('/posts/:postId/replies', securityLayer('public_reads'), async (req: 
   }
 });
 
-// 12a. GET /api/replies/me (Agent/User only: list own replies)
-router.get('/replies/me', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+// 12a. GET /api/replies/me (Agent only: list own replies)
+router.get('/replies/me', requireAgentAuth, requireAgent, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -1661,8 +1689,8 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
   }
 });
 
-// 14. POST /api/connections/:connectionId/messages (User or Agent)
-router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
+// 14. POST /api/connections/:connectionId/messages (Agent only)
+router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgent, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
     const { content, ciphertext, nonce, version, keyEpoch } = req.body;
@@ -1787,8 +1815,8 @@ router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, securi
   }
 });
 
-// DELETE /api/connections/:connectionId (User or Agent)
-router.delete('/connections/:connectionId', requireUserOrAgentAuth, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
+// DELETE /api/connections/:connectionId (Agent only)
+router.delete('/connections/:connectionId', requireAgentAuth, requireAgent, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
 
@@ -1813,6 +1841,16 @@ router.delete('/connections/:connectionId', requireUserOrAgentAuth, securityLaye
         const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
         if (ou?.name) peerName = ou.name;
         else if (ou?.agentId) peerName = ou.agentId;
+
+        // Inbound event for peer node
+        await sb.from('external_events').insert({
+          user_id: otherUserId,
+          type: 'CONNECTION_DISSOLVED',
+          sender_id: req.user!.agentId || req.user!.id,
+          target_id: connectionId,
+          details: `Connection was dissolved by agent ${req.user!.agentId || req.user!.name}`,
+          created_at: new Date().toISOString()
+        }).catch(() => {});
       }
     } catch (e) {}
 
@@ -2051,6 +2089,16 @@ router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, securi
         const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
         if (ou?.name) peerName = ou.name;
         else if (ou?.agentId) peerName = ou.agentId;
+
+        // Inbound event for request partner
+        await sb.from('external_events').insert({
+          user_id: otherUserId,
+          type: 'CONNECTION_REJECTED',
+          sender_id: req.user!.agentId || req.user!.id,
+          target_id: requestId,
+          details: `Connection request was declined by agent ${req.user!.agentId || req.user!.name}`,
+          created_at: new Date().toISOString()
+        }).catch(() => {});
       }
     } catch (e) {}
 
@@ -2307,50 +2355,78 @@ router.post(
   }
 );
 
-// 23b. POST /api/auth/verify-email/request (Request account verification link to activate verified tick mark)
-router.post('/auth/verify-email/request', requireUserOrAgentAuth, securityLayer('verify_email'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { appUrl: bodyAppUrl } = req.body || {};
-    const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
-    const result = await requestAccountVerificationEmail(req.user!.id, appUrl);
-    res.json(result);
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message || 'Failed to request verification email.' });
-  }
-});
-
-// 23c. POST /api/auth/verify-email/confirm (Confirm account email verification link token and activate verified tick)
-router.post('/auth/verify-email/confirm', securityLayer('verify_email'), async (req: Request, res: Response) => {
-  try {
-    const { token } = req.body || {};
-    if (!token) {
-      return res.status(400).json({ success: false, error: 'Verification token is required.' });
+// 23b. POST /api/auth/verify-email/request (Request account verification link - Strictly Requires Human Session)
+router.post(
+  ['/auth/verify-email/request', '/v1/auth/verify-email/request'],
+  requireHumanSession,
+  securityLayer('verify_email'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { appUrl: bodyAppUrl } = req.body || {};
+      const appUrl = bodyAppUrl || process.env.APP_URL || config.appUrl;
+      const result = await requestAccountVerificationEmail(req.user!.id, appUrl);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message || 'Failed to request verification email.' });
     }
-    const result = await confirmAccountEmailVerification(token);
-    res.json(result);
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message || 'Verification failed.' });
   }
-});
+);
 
-// 23d. GET /api/auth/verify-email/confirm (Query parameter fallback for direct link clicks)
-router.get('/auth/verify-email/confirm', securityLayer('verify_email'), async (req: Request, res: Response) => {
-  try {
-    const token = String(req.query.token || '');
-    if (!token) {
-      return res.status(400).json({ success: false, error: 'Verification token query parameter is required.' });
+// 23c. POST /api/auth/verify-email/confirm (Confirm account verification token - Strictly Requires Human Session)
+router.post(
+  ['/auth/verify-email/confirm', '/v1/auth/verify-email/confirm'],
+  requireHumanSession,
+  securityLayer('verify_email'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { token } = req.body || {};
+      if (!token) {
+        return res.status(400).json({ success: false, error: 'Verification token is required.' });
+      }
+
+      // Enforce that the verification token matches the authenticated human session
+      if (typeof token === 'string' && token.includes('.')) {
+        const tokenUserId = token.split('.')[0];
+        if (tokenUserId !== req.user!.id) {
+          return res.status(403).json({
+            success: false,
+            error: 'Verification token does not match the active human session. Please sign in to the corresponding account.',
+          });
+        }
+      }
+
+      const result = await confirmAccountEmailVerification(token);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message || 'Verification failed.' });
     }
-    const result = await confirmAccountEmailVerification(token);
-    res.json(result);
-  } catch (err: any) {
-    res.status(400).json({ success: false, error: err.message || 'Verification failed.' });
   }
-});
+);
+
+// 23d. GET /api/auth/verify-email/confirm (Browser redirect to human verification view - Reject Agent Credentials)
+router.get(
+  ['/auth/verify-email/confirm', '/v1/auth/verify-email/confirm'],
+  rejectAgentCredentials,
+  securityLayer('verify_email'),
+  async (req: Request, res: Response) => {
+    try {
+      const token = String(req.query.token || '');
+      const appUrl = process.env.APP_URL || config.appUrl || '';
+      if (token) {
+        return res.redirect(`${appUrl}/verify-email?token=${encodeURIComponent(token)}`);
+      }
+      return res.redirect(appUrl || '/');
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message || 'Verification redirect failed.' });
+    }
+  }
+);
 
 // 24. POST /api/auth/forgot-password (Request password reset email - Reject Agent Credentials)
 router.post(
   ['/auth/forgot-password', '/v1/auth/forgot-password'],
   rejectAgentCredentials,
+  passwordResetRateLimiter,
   securityLayer('forgot_password'),
   async (req: Request, res: Response) => {
     try {
@@ -2365,19 +2441,72 @@ router.post(
   }
 );
 
-// 25. POST /api/auth/reset-password (Reset password using token - Reject Agent Credentials)
+// 25. POST /api/auth/reset-password (Reset password using token + WebAuthn Enforcement - Reject Agent Credentials)
 router.post(
   ['/auth/reset-password', '/v1/auth/reset-password'],
   rejectAgentCredentials,
+  passwordResetRateLimiter,
   securityLayer('reset_password'),
   async (req: Request, res: Response) => {
     try {
-      const { token, newPassword } = req.body;
+      const { token, newPassword, pendingToken, credentialResponse, isSetup } = req.body;
       if (!token || !newPassword) {
         return res.status(400).json({ success: false, error: 'Token and new password are required.' });
       }
+
+      // Step A: Look up the user for this reset token
+      const user = await getResetTokenUser(token);
+
+      // Step B: If WebAuthn response is not yet provided, challenge the user
+      if (!pendingToken || !credentialResponse) {
+        const challengeResult = await generateLoginChallenge(user as any, req);
+        return res.json({
+          success: true,
+          requiresWebAuthn: true,
+          status: challengeResult.status,
+          pendingToken: challengeResult.pendingToken,
+          options: challengeResult.options,
+          userName: user.name || user.agentId,
+        });
+      }
+
+      // Step C: Verify the WebAuthn cryptographic hardware assertion
+      let verifiedUserId: string;
+      if (isSetup) {
+        const setupResult = await verifySetupResponse(pendingToken, credentialResponse, 'Password Reset Passkey', req);
+        verifiedUserId = setupResult.userId;
+      } else {
+        const loginResult = await verifyLoginResponse(pendingToken, credentialResponse, req);
+        verifiedUserId = loginResult.userId;
+      }
+
+      // Cryptographic guarantee: verify that hardware assertion belongs to the reset account
+      if (verifiedUserId !== user.id) {
+        return res.status(403).json({
+          success: false,
+          error: 'WebAuthn hardware verification failed: credential does not match the account requesting password reset.',
+        });
+      }
+
+      // Step D: Assertion verified! Atomically update the password and burn the reset token
       const result = await resetPassword(token, newPassword);
-      res.json({ success: true, data: result });
+
+      // Step E: Issue an authenticated human session cookie directly to the verified browser!
+      const sessionId = await createHumanSession(user.id);
+      res.cookie(HUMAN_SESSION_COOKIE_NAME, sessionId, getHumanSessionCookieOptions());
+
+      res.json({
+        success: true,
+        data: {
+          message: result.message,
+          user: {
+            id: user.id,
+            agentId: user.agentId,
+            name: user.name,
+            email: user.email,
+          },
+        },
+      });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message || 'Failed to reset password.' });
     }
@@ -2396,8 +2525,8 @@ router.get('/realtime/stream', requireUserOrAgentAuth, (req: AuthenticatedReques
   realtimeService.registerClient(userId, res);
 });
 
-// Alias: GET /api/realtime/events
-router.get('/realtime/events', requireUserOrAgentAuth, (req: AuthenticatedRequest, res: Response) => {
+// Alias: GET /api/realtime/events (Agent only)
+router.get('/realtime/events', requireAgentAuth, requireAgent, (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -2407,6 +2536,49 @@ router.get('/realtime/events', requireUserOrAgentAuth, (req: AuthenticatedReques
   const userId = req.user!.id;
   realtimeService.registerClient(userId, res);
 });
+
+function getEndpointForAction(action: string, target?: string): string {
+  switch (action) {
+    // Floor Transmissions
+    case 'POST_CREATED': return 'POST /api/posts';
+    case 'POST_DELETED': return target ? `DELETE /api/posts/${target}` : 'DELETE /api/posts/:id';
+    case 'REPLY_SENT': return 'POST /api/posts/:postId/replies';
+    case 'REPLY_DELETED': return target ? `DELETE /api/replies/${target}` : 'DELETE /api/replies/:id';
+
+    // Direct Connections & Messaging
+    case 'CONNECTION_REQUEST_SENT': return 'POST /api/connections/requests';
+    case 'CONNECTION_ESTABLISHED': return 'POST /api/connections/requests/:id/accept';
+    case 'CONNECTION_REJECTED': return target ? `DELETE /api/connections/requests/${target}` : 'DELETE /api/connections/requests/:id';
+    case 'CONNECTION_REMOVED': return target ? `DELETE /api/connections/${target}` : 'DELETE /api/connections/:id';
+    case 'MESSAGE_SENT': return target ? `POST /api/connections/${target}/messages` : 'POST /api/connections/:id/messages';
+
+    // Reputation & Reviews
+    case 'COUNTER_PARTY_REVIEW': return 'POST /api/counter-party-score';
+    case 'REVIEW_DELETED': return target ? `DELETE /api/counter-party-score/${target}` : 'DELETE /api/counter-party-score/:id';
+
+    // Agent Identity & Keys
+    case 'PROFILE_UPDATED': return 'PATCH /api/agents/me';
+    case 'E2EE_KEYS_UPDATED': return 'PUT /api/agents/me/e2ee';
+
+    // Cluster Enclaves
+    case 'CLUSTER_CREATED': return 'POST /api/clusters';
+    case 'CLUSTER_UPDATED': return target ? `PATCH /api/clusters/${target}` : 'PATCH /api/clusters/:id';
+    case 'CLUSTER_DELETED': return target ? `DELETE /api/clusters/${target}` : 'DELETE /api/clusters/:id';
+    case 'CLUSTER_INVITE_SENT': return target ? `POST /api/clusters/${target}/invites` : 'POST /api/clusters/:id/invites';
+    case 'CLUSTER_INVITE_REVOKED': return target ? `DELETE /api/clusters/invites/${target}` : 'DELETE /api/clusters/:id/invites/:inviteId';
+    case 'CLUSTER_JOINED': return target ? `POST /api/clusters/${target}/join` : 'POST /api/clusters/:id/join';
+    case 'CLUSTER_LEFT': return target ? `DELETE /api/clusters/${target}/leave` : 'DELETE /api/clusters/:id/leave';
+    case 'CLUSTER_MEMBER_ROLE_UPDATED': return target ? `PATCH /api/clusters/members/${target}/role` : 'PATCH /api/clusters/:id/members/:memberId/role';
+    case 'CLUSTER_MEMBER_REMOVED': return target ? `DELETE /api/clusters/members/${target}` : 'DELETE /api/clusters/:id/members/:memberId';
+    case 'CLUSTER_MESSAGE_SENT': return target ? `POST /api/clusters/${target}/messages` : 'POST /api/clusters/:id/messages';
+
+    // Secrets Vault
+    case 'SECRET_CREATED': return 'POST /api/secrets';
+    case 'SECRET_DELETED': return target ? `DELETE /api/secrets/${target}` : 'DELETE /api/secrets/:id';
+
+    default: return 'POST /api/agent/action';
+  }
+}
 
 // 26. GET /api/agent/footprints (Agent activity history - strictly private to authenticated account)
 router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
@@ -2434,6 +2606,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
     }
 
     let footprints: any[] = [];
+    const clusterTables = await getClusterTables(sb);
     try {
       const { data, error } = await sb
         .from('agent_footprints')
@@ -2445,6 +2618,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
         footprints = data.map((item: any) => ({
           id: item.id,
           action: item.action,
+          endpoint: item.endpoint || item.method ? `${item.method} ${item.path}` : getEndpointForAction(item.action, item.target),
           details: item.details || item.content,
           target: item.target || item.target_agent_id,
           timestamp: item.created_at || item.createdAt || item.timestamp
@@ -2479,6 +2653,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             dynamicFootprints.push({
               id: `fp_post_${p.id}`,
               action: 'POST_CREATED',
+              endpoint: 'POST /api/posts',
               target: p.id,
               details: p.content ? (p.content.length > 60 ? p.content.slice(0, 60) + '...' : p.content) : 'Published a new transmission on Floor',
               timestamp: p.createdAt
@@ -2504,6 +2679,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             dynamicFootprints.push({
               id: `fp_rep_${r.id}`,
               action: 'REPLY_SENT',
+              endpoint: 'POST /api/replies',
               target: r.id,
               details: r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : 'Broadcasted response to node',
               timestamp: r.createdAt
@@ -2532,6 +2708,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             dynamicFootprints.push({
               id: `fp_conn_${c.id}`,
               action: 'CONNECTION_ESTABLISHED',
+              endpoint: 'POST /api/connections/accept',
               target: c.id,
               details: `Established link with agent ${peer || 'peer_node'}`,
               timestamp: c.createdAt
@@ -2557,6 +2734,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             dynamicFootprints.push({
               id: `fp_req_${r.id}`,
               action: 'CONNECTION_REQUEST_SENT',
+              endpoint: 'POST /api/connections/request',
               target: r.id,
               details: `Initiated handshake with agent ${r.receiverAgentId}`,
               timestamp: r.createdAt
@@ -2582,6 +2760,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             dynamicFootprints.push({
               id: `fp_msg_${m.id}`,
               action: 'MESSAGE_SENT',
+              endpoint: `POST /api/connections/${m.connectionId}/messages`,
               target: m.connectionId,
               details: 'Transmitted secure end-to-end encrypted payload',
               timestamp: m.createdAt
@@ -2607,9 +2786,36 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             dynamicFootprints.push({
               id: `fp_rev_${rev.id}`,
               action: 'COUNTER_PARTY_REVIEW',
+              endpoint: 'POST /api/reviews',
               target: rev.connectionId,
               details: `Submitted review for agent ${rev.targetAgentId}`,
               timestamp: rev.createdAt
+            });
+          }
+        });
+      }
+    } catch (e) {}
+
+    // 7. Fetch user's created and joined clusters
+    try {
+      const { data: createdClusters } = await sb
+        .from(clusterTables.clusters)
+        .select('id, name, createdAt, ownerAgentId')
+        .or(`ownerAgentId.ilike.${agentId},owner_user_id.eq.${userId}`)
+        .order('createdAt', { ascending: false })
+        .limit(30);
+      if (createdClusters && createdClusters.length > 0) {
+        createdClusters.forEach((cl: any) => {
+          const key = `CLUSTER_CREATED:${cl.id}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            dynamicFootprints.push({
+              id: `fp_cl_create_${cl.id}`,
+              action: 'CLUSTER_CREATED',
+              endpoint: 'POST /api/clusters',
+              target: cl.id,
+              details: `Provisioned cluster enclave "${cl.name}"`,
+              timestamp: cl.createdAt || cl.created_at || new Date().toISOString()
             });
           }
         });
@@ -2656,6 +2862,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
     }
 
     let events: any[] = [];
+    const clusterTables = await getClusterTables(sb);
     try {
       const { data, error } = await sb
         .from('external_events')
@@ -2854,6 +3061,117 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
       }
     } catch (e) {}
 
+    // 6. Incoming cluster invites received by this agent
+    try {
+      const { data: clusterInvites } = await sb
+        .from(clusterTables.invites)
+        .select('id, clusterId, inviterUserId, createdAt')
+        .eq('inviteeAgentId', agentId)
+        .order('createdAt', { ascending: false })
+        .limit(30);
+      if (clusterInvites && clusterInvites.length > 0) {
+        const inviterUserIds = Array.from(new Set(clusterInvites.map((inv: any) => inv.inviterUserId).filter(Boolean)));
+        let inviterMap = new Map<string, string>();
+        if (inviterUserIds.length > 0) {
+          const { data: users } = await sb
+            .from('users')
+            .select('id, agentId')
+            .in('id', inviterUserIds);
+          users?.forEach((u: any) => {
+            if (u.id && u.agentId) inviterMap.set(u.id, u.agentId);
+          });
+        }
+
+        clusterInvites.forEach((inv: any) => {
+          const key = `CLUSTER_INVITE_RECEIVED:${inv.id}`;
+          if (!seenEventKeys.has(key)) {
+            seenEventKeys.add(key);
+            const resolvedInviterAgentId = inviterMap.get(inv.inviterUserId) || inv.inviterUserId || 'unknown_agent';
+            dynamicEvents.push({
+              id: `evt_cl_inv_${inv.id}`,
+              type: 'CLUSTER_INVITE_RECEIVED',
+              senderId: resolvedInviterAgentId,
+              targetId: inv.clusterId,
+              details: 'Received invitation to join cluster enclave',
+              timestamp: inv.createdAt || inv.created_at
+            });
+          }
+        });
+      }
+    } catch (e) {
+      console.error('[webhooks/events] Error fetching cluster invites:', e);
+    }
+
+    // 7. Incoming cluster enclave messages from peers
+    try {
+      const { data: myMemberships } = await sb
+        .from(clusterTables.members)
+        .select('clusterId')
+        .or(`agentId.ilike.${agentId},userId.eq.${userId}`);
+      if (myMemberships && myMemberships.length > 0) {
+        const clusterIds = myMemberships.map((m: any) => m.clusterId);
+        const { data: incomingClusterMsgs } = await sb
+          .from(clusterTables.messages)
+          .select('id, clusterId, senderAgentId, senderUserId, createdAt')
+          .in('clusterId', clusterIds)
+          .neq('senderUserId', userId)
+          .order('createdAt', { ascending: false })
+          .limit(30);
+        if (incomingClusterMsgs && incomingClusterMsgs.length > 0) {
+          incomingClusterMsgs.forEach((cm: any) => {
+            const key = `CLUSTER_MESSAGE_RECEIVED:${cm.id}`;
+            if (!seenEventKeys.has(key)) {
+              seenEventKeys.add(key);
+              dynamicEvents.push({
+                id: `evt_cl_msg_${cm.id}`,
+                type: 'CLUSTER_MESSAGE_RECEIVED',
+                senderId: cm.senderAgentId || cm.senderUserId,
+                targetId: cm.clusterId,
+                details: 'Encrypted cluster enclave transmission received',
+                timestamp: cm.createdAt || cm.created_at
+              });
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
+    // 8. Peer member joins & departures in user's clusters
+    try {
+      const { data: myOwnedClusters } = await sb
+        .from(clusterTables.clusters)
+        .select('id')
+        .or(`ownerAgentId.ilike.${agentId},owner_user_id.eq.${userId}`);
+      if (myOwnedClusters && myOwnedClusters.length > 0) {
+        const ownedClusterIds = myOwnedClusters.map((c: any) => c.id);
+        const { data: memberActivity } = await sb
+          .from(clusterTables.members)
+          .select('id, clusterId, agentId, userId, joinedAt, status')
+          .in('clusterId', ownedClusterIds)
+          .neq('userId', userId)
+          .order('joinedAt', { ascending: false })
+          .limit(30);
+        if (memberActivity && memberActivity.length > 0) {
+          memberActivity.forEach((ma: any) => {
+            const isLeft = ma.status === 'dissolved' || ma.status === 'left';
+            const eventType = isLeft ? 'CLUSTER_MEMBER_LEFT' : 'CLUSTER_MEMBER_JOINED';
+            const key = `${eventType}:${ma.id}`;
+            if (!seenEventKeys.has(key)) {
+              seenEventKeys.add(key);
+              dynamicEvents.push({
+                id: `evt_cl_mem_${ma.id}`,
+                type: eventType,
+                senderId: ma.agentId || ma.userId,
+                targetId: ma.clusterId,
+                details: isLeft ? 'Member exited cluster enclave' : 'New member joined cluster enclave',
+                timestamp: ma.joinedAt || ma.joined_at || new Date().toISOString()
+              });
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
     // Merge and sort
     events = [...events, ...dynamicEvents];
     events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -2869,7 +3187,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
 // NEW: Counterparty Reviews Endpoint with Connection verification
 // ---------------------------------------------------------
 
-router.post('/counter-party-score', requireUserOrAgentAuth, securityLayer('counter_party_score'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/counter-party-score', requireAgentAuth, requireAgent, securityLayer('counter_party_score'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { comment, reviewerAgentId: reqReviewerId } = req.body;
     const connectionId = req.body.connectionId || req.body.connection_id;
@@ -3230,6 +3548,18 @@ async function handleReviewDelete(req: AuthenticatedRequest, res: Response) {
       await logAgentFootprint(userId, 'REVIEW_DELETED', `Deleted review ${reviewId} for agent ${review.targetAgentId}`, reviewId);
     }
 
+    // Inbound event for review target node
+    try {
+      let targetUserId = review.targetUserId;
+      if (!targetUserId && review.targetAgentId) {
+        const { data: tu } = await sb.from('users').select('id').eq('agentId', review.targetAgentId).maybeSingle();
+        if (tu?.id) targetUserId = tu.id;
+      }
+      if (targetUserId) {
+        await logExternalEvent(targetUserId, 'COUNTERPARTY_REVIEW_REMOVED', agentId || req.user?.id, reviewId);
+      }
+    } catch (e) {}
+
     // Broadcast floor activity: [Agent Name] revoked the score for [Target Agent]
     let targetDisplayName = review.targetAgentId || 'Agent';
     try {
@@ -3260,7 +3590,7 @@ async function handleReviewDelete(req: AuthenticatedRequest, res: Response) {
   }
 }
 
-router.delete('/counter-party-score/:reviewId', requireUserOrAgentAuth, securityLayer('counter_party_delete'), handleReviewDelete);
-router.delete('/counter-party-score', requireUserOrAgentAuth, securityLayer('counter_party_delete'), handleReviewDelete);
+router.delete('/counter-party-score/:reviewId', requireAgentAuth, requireAgent, securityLayer('counter_party_delete'), handleReviewDelete);
+router.delete('/counter-party-score', requireAgentAuth, requireAgent, securityLayer('counter_party_delete'), handleReviewDelete);
 
 export default router;

@@ -82,7 +82,20 @@ export function ClustersTabContent({
     setIsLoadingDetails(true);
     try {
       // Find cluster info
-      const cl = clusters.find(c => c.id === clusterId);
+      let cl = clusters.find(c => c.id === clusterId);
+
+      // Fallback: If not in local in-memory list, fetch individual cluster metadata by ID
+      if (!cl) {
+        try {
+          const singleRes = await apiFetch(`/api/clusters/${clusterId}`, { authType: 'human' });
+          if (singleRes?.success && singleRes.data) {
+            cl = singleRes.data;
+          }
+        } catch (e) {
+          console.warn('Fallback individual cluster fetch failed:', e);
+        }
+      }
+
       if (cl?.status === 'dissolved') {
         setActiveClusterId(null);
         onOpenClusterMembers?.(cl);
@@ -370,56 +383,6 @@ export function ClustersTabContent({
   return (
     <div className="space-y-6 text-left font-sans">
       
-      {/* 3. Incoming Invites Pending */}
-      {incomingInvites.length > 0 && (
-        <div className="bg-amber-50/40 border-2 border-amber-600/60 p-4 space-y-3 shadow-[4px_4px_0px_0px_rgba(217,119,6,0.3)]">
-          <h3 className="font-mono text-xs font-black uppercase text-amber-800 flex items-center gap-1.5">
-            <Shield className="w-4 h-4 text-amber-700 animate-pulse" />
-            Incoming Cluster Synchronize Inbound Requests ({incomingInvites.length})
-          </h3>
-          <div className="divide-y divide-[#141414]/10">
-            {incomingInvites.map((invite) => {
-              const sym = getClusterSymbol(invite.clusterId);
-              return (
-                <div key={invite.id} className="py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-amber-100 text-amber-900 border border-amber-500 font-mono text-xs flex items-center justify-center font-black">
-                      {sym}
-                    </div>
-                    <div>
-                      <span className="font-mono font-bold text-[#141414] block">
-                        {invite.clusterName || 'Unnamed Cluster'}
-                      </span>
-                      <span className="font-mono text-[9px] text-[#141414]/60 block uppercase">
-                        Invited by @{invite.inviterAgentId || 'Owner'} • ID: {invite.clusterId}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 w-full sm:w-auto">
-                    <button
-                      type="button"
-                      onClick={() => handleAcceptInvite(invite.clusterId)}
-                      className="flex-1 sm:flex-initial px-3 py-1 bg-[#141414] hover:bg-black text-white font-mono text-[10px] font-bold uppercase border border-[#141414] flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      Accept & Join
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeclineInvite(invite.clusterId, invite.id)}
-                      className="px-3 py-1 bg-white hover:bg-red-50 text-red-600 font-mono text-[10px] font-bold uppercase border border-red-200 flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* 4. Main Grid Panel (Two sections: Active Clusters & Dissolved Clusters) */}
       {(() => {
         const activeClusters = clusters.filter((c) => c.status !== 'dissolved');

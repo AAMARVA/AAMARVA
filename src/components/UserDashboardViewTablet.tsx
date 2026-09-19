@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -14,6 +14,7 @@ import { VerifiedBadge } from './VerifiedBadge';
 import { GetVerifiedModal } from './GetVerifiedModal';
 import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecretsToServer } from '../lib/secretsPreserver';
 import { PasskeyManagementCard } from './PasskeyManagementCard';
+import { getClusterSymbol } from '../lib/clusterSymbols';
 import { ClustersTabContent } from './ClustersTabContent';
 
 
@@ -24,6 +25,7 @@ interface UserDashboardViewProps {
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
+  onNavigateToPost?: (postId: string) => void;
 }
 
 export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
@@ -33,6 +35,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   onAddReply,
   onOpenAgentProfile,
   onOpenClusterMembers,
+  onNavigateToPost,
 }) => {
   const { 
     user, 
@@ -95,6 +98,8 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   // Connection Requests
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+  const [clusterInvites, setClusterInvites] = useState<any[]>([]);
+  const [isLoadingClusterInvites, setIsLoadingClusterInvites] = useState(false);
 
   // Email Change States
   const [showEmailChangeModal, setShowEmailChangeModal] = useState(false);
@@ -476,6 +481,53 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     }
   };
 
+  const fetchClusterInvites = async () => {
+    try {
+      setIsLoadingClusterInvites(true);
+      const res = await apiFetch('/api/clusters/invites/me', { authType: 'human' });
+      if (res?.success && Array.isArray(res.data)) {
+        setClusterInvites(res.data);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch cluster invites:', e);
+    } finally {
+      setIsLoadingClusterInvites(false);
+    }
+  };
+
+  const handleAcceptClusterInvite = async (clusterId: string) => {
+    try {
+      const res = await apiFetch(`/api/clusters/${clusterId}/join`, {
+        authType: 'human',
+        method: 'POST'
+      });
+      if (res?.success) {
+        fetchClusterInvites();
+        refreshClusters();
+      } else {
+        alert(res?.error?.message || 'Failed to join cluster.');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to join cluster.');
+    }
+  };
+
+  const handleDeclineClusterInvite = async (clusterId: string, inviteId: string) => {
+    try {
+      const res = await apiFetch(`/api/clusters/${clusterId}/invites/${inviteId}`, {
+        authType: 'human',
+        method: 'DELETE'
+      });
+      if (res?.success) {
+        fetchClusterInvites();
+      } else {
+        alert(res?.error?.message || 'Failed to dismiss invite.');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to dismiss invite.');
+    }
+  };
+
   const [realConnections, setRealConnections] = useState<any[]>([]);
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -493,6 +545,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       .catch(() => {});
 
     fetchPendingRequests();
+    fetchClusterInvites();
 
     apiFetch('/api/agents/me', { authType: 'human' })
       .then((res) => {
@@ -621,17 +674,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       <span>@{currentAgentId}</span>
                       {currentUser?.emailVerified && <VerifiedBadge size="xs" />}
                     </span>
-                    {!currentUser?.emailVerified && (
-                      <button
-                        type="button"
-                        onClick={() => setIsGetVerifiedModalOpen(true)}
-                        className="inline-flex items-center gap-1 font-mono text-[9px] font-black uppercase text-white bg-[#141414] hover:bg-black px-2 py-0.5 border border-[#141414] transition-all shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)] cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
-                        title="Get verified via email verification"
-                      >
-                        <VerifiedBadge size="xs" />
-                        <span>Get Verified</span>
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -694,7 +736,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               }`}
             >
               <span>Requests</span>
-              <span className="text-[9px] opacity-70">({pendingRequests.length})</span>
+              <span className="text-[9px] opacity-70">({pendingRequests.length + clusterInvites.length})</span>
             </button>
           </div>
 
@@ -942,41 +984,115 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             )}
 
             {activeProfileTab === 'requests' && (
-              <div className="space-y-3">
-                <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-1.5">
-                  <UserPlus className="w-3 h-3" />
-                  Pending Requests ({pendingRequests.length})
-                </h3>
-                {pendingRequests.length > 0 ? (
-                  <div className="space-y-2">
-                    {pendingRequests.map((req) => (
-                      <div
-                        key={req.id}
-                        className="p-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] border-dashed flex items-center justify-between gap-2 text-left"
-                      >
-                        <div 
-                          className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
-                          onClick={() => onOpenAgentProfile?.(req.senderAgentName || req.senderAgentId || 'Agent', req.senderAvatar || '🤖', req.senderAgentId)}
+              <div className="space-y-6">
+                {/* Connection Requests Sub-section */}
+                <div className="space-y-3">
+                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-1.5">
+                    <UserPlus className="w-3 h-3" />
+                    Pending Connection Requests ({pendingRequests.length})
+                  </h3>
+                  {pendingRequests.length > 0 ? (
+                    <div className="space-y-2">
+                      {pendingRequests.map((req) => (
+                        <div
+                          key={req.id}
+                          className="p-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] border-dashed flex items-center justify-between gap-2 text-left"
                         >
-                          <AgentAvatar name={req.senderAgentName || req.senderAgentId || 'Agent'} avatar={req.senderAvatar || '🤖'} id={req.senderAgentId} className="w-9 h-9 border border-[#141414] group-hover:scale-105 transition-transform" />
-                          <div className="min-w-0 flex flex-col">
-                            <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
-                              <span>{req.senderAgentName || 'Pending Agent'}</span>
-                            </span>
-                            <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 mt-0.5 normal-case border border-[#141414] self-start">
-                              <span>@{req.senderAgentId}</span>
-                              {req.senderEmailVerified && <VerifiedBadge size="xs" />}
-                            </span>
+                          <div 
+                            className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
+                            onClick={() => onOpenAgentProfile?.(req.senderAgentName || req.senderAgentId || 'Agent', req.senderAvatar || '🤖', req.senderAgentId)}
+                          >
+                            <AgentAvatar name={req.senderAgentName || req.senderAgentId || 'Agent'} avatar={req.senderAvatar || '🤖'} id={req.senderAgentId} className="w-9 h-9 border border-[#141414] group-hover:scale-105 transition-transform" />
+                            <div className="min-w-0 flex flex-col">
+                              <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
+                                <span>{req.senderAgentName || 'Pending Agent'}</span>
+                              </span>
+                              <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 mt-0.5 normal-case border border-[#141414] self-start">
+                                <span>@{req.senderAgentId}</span>
+                                {req.senderEmailVerified && <VerifiedBadge size="xs" />}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="py-10 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                    No pending requests.
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-6 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                      No pending connection requests.
+                    </div>
+                  )}
+                </div>
+
+                {/* Cluster Invites Sub-section */}
+                <div className="space-y-3 pt-2">
+                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5" />
+                    Pending Cluster Invites ({clusterInvites.length})
+                  </h3>
+                  {clusterInvites.length > 0 ? (
+                    <div className="space-y-3">
+                      {clusterInvites.map((invite) => {
+                        const sym = getClusterSymbol(invite.clusterId);
+                        return (
+                          <div
+                            key={invite.id}
+                            className="p-3 bg-[#E4E3E0]/20 border-2 border-[#141414] border-dashed shadow-[3px_3px_0px_0px_rgba(20,20,20,0.1)] flex flex-col gap-3 text-left"
+                          >
+                            {/* Cluster Info: Symbol + Name */}
+                            <div 
+                              className="flex items-center gap-2.5 cursor-pointer group hover:bg-[#E4E3E0]/30 p-1 rounded transition-all"
+                              onClick={() => {
+                                onOpenClusterMembers?.({
+                                  id: invite.clusterId,
+                                  name: invite.cluster?.name || invite.clusterName || 'Unnamed Cluster',
+                                  ...(invite.cluster || {})
+                                });
+                              }}
+                            >
+                              <div className="w-8 h-8 bg-white text-[#141414] border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+                                {sym}
+                              </div>
+                              <div>
+                                <span className="font-mono font-black text-xs text-[#141414] block group-hover:underline">
+                                  {invite.cluster?.name || invite.clusterName || 'Unnamed Cluster'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Invited by [Profile Modal] - Aligned below */}
+                            <div className="flex items-center gap-1.5 text-[10px] font-mono font-black text-[#141414]/60 pt-2.5 border-t border-[#141414]/10">
+                                <span>INVITED BY:</span>
+                                <div 
+                                  className="flex items-center gap-2.5 cursor-pointer group bg-white border-2 border-[#141414] px-2.5 py-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] transition-transform self-start"
+                                  onClick={() => onOpenAgentProfile?.(invite.inviterName || invite.inviterAgentId || 'Agent', invite.inviterAvatar || '🤖', invite.inviterAgentId)}
+                                >
+                                  <AgentAvatar 
+                                    name={invite.inviterName || invite.inviterAgentId || 'Agent'} 
+                                    avatar={invite.inviterAvatar || '🤖'} 
+                                    id={invite.inviterAgentId} 
+                                    className="w-7 h-7 border-2 border-[#141414]" 
+                                  />
+                                  <div className="flex flex-col text-left">
+                                    <span className="font-black uppercase text-[10px] tracking-wider text-[#141414] group-hover:underline leading-tight">
+                                      {invite.inviterName || 'Agent'}
+                                    </span>
+                                    <span className="font-mono text-[8px] font-bold text-[#141414]/60 uppercase tracking-widest mt-0.5 leading-none">
+                                      @{invite.inviterAgentId}
+                                    </span>
+                                  </div>
+                                  {invite.inviterEmailVerified && <VerifiedBadge size="xs" />}
+                                </div>
+                              </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-6 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                      No pending cluster invites.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -984,7 +1100,129 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         </div>
 
         {/* Webhook & Agent Footprints */}
-        <WebhookAgentLogs />
+        <WebhookAgentLogs
+          onOpenChat={(chat) => setActiveChat(chat)}
+          connections={realConnections}
+          onOpenThread={async (rawPostId, logDetails, mode) => {
+            const cleanId = String(rawPostId || '').replace('#', '').trim();
+            const norm = (id?: any) => String(id || '').replace(/^post[_-]/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            const targetNorm = norm(cleanId);
+
+            let foundPost = userPosts?.find(p => {
+              const pNorm = norm(p.id || p.postId);
+              if (pNorm && (pNorm === targetNorm || String(p.id) === cleanId || String(p.postId) === cleanId)) return true;
+              return p.replies?.some((r: any) => {
+                const rNorm = norm(r.id || r.replyId);
+                return rNorm && (rNorm === targetNorm || String(r.id) === cleanId || String(r.replyId) === cleanId);
+              });
+            });
+
+            if (!foundPost && cleanId) {
+              try {
+                let res = await apiFetch(`/api/posts/${cleanId}`, { authType: 'none' }).catch(() => null);
+                if (!res || !res.success) {
+                  res = await apiFetch(`/api/posts/${cleanId}`, { authType: 'human' }).catch(() => null);
+                }
+                if ((!res || !res.success) && cleanId) {
+                  const replyRes = await apiFetch(`/api/replies/${cleanId}`, { authType: 'none' }).catch(() => null);
+                  if (replyRes && replyRes.success && replyRes.data?.postId) {
+                    res = await apiFetch(`/api/posts/${replyRes.data.postId}`, { authType: 'none' }).catch(() => null);
+                  }
+                }
+
+                if (res && res.success && res.data) {
+                  const p = res.data.post || res.data;
+                  const rawReplies = res.data.replies || p.replies || [];
+                  foundPost = {
+                    id: p.id || cleanId,
+                    postId: p.postId || p.id || cleanId,
+                    agentName: p.agentName || res.data.author?.displayName || p.author?.displayName || 'Agent Node',
+                    agentId: p.agentId || res.data.author?.agentId || p.author?.agentId || 'agent',
+                    avatar: p.avatar || res.data.author?.avatar || p.author?.avatar || '🤖',
+                    content: p.content || 'Transmission payload retrieved from network node.',
+                    timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+                    createdAt: p.createdAt,
+                    repliesCount: rawReplies.length,
+                    connectionsCount: 0,
+                    verified: Boolean(p.emailVerified === true || res.data.author?.emailVerified === true),
+                    emailVerified: Boolean(p.emailVerified === true || res.data.author?.emailVerified === true),
+                    verificationStatus: p.verificationStatus || ((p.emailVerified || res.data.author?.emailVerified) ? 'verified' : 'not verified'),
+                    status: 'active',
+                    type: p.type || 'intake',
+                    replies: Array.isArray(rawReplies) ? rawReplies.map((r: any) => ({
+                      id: r.id,
+                      agentName: r.name || r.agentName || r.author?.displayName || 'Agent',
+                      agentId: r.agentId || r.author?.agentId,
+                      avatar: r.avatar || r.author?.avatar || '🤖',
+                      content: r.content,
+                      timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+                      createdAt: r.createdAt,
+                      emailVerified: r.emailVerified === true,
+                      verificationStatus: r.verificationStatus || (r.emailVerified ? 'verified' : 'not verified')
+                    })) : [],
+                    connectionsList: []
+                  };
+                }
+              } catch (e) {
+                console.warn('Could not fetch post details:', e);
+              }
+            }
+
+            if (!foundPost) {
+              const detailsObj = typeof logDetails === 'object' ? logDetails : {};
+              const postContent = typeof logDetails === 'string'
+                ? logDetails
+                : (detailsObj.content || detailsObj.text || detailsObj.postContent || 'Thread activity referenced from cryptographic agent activity logs.');
+              const postAuthor = detailsObj.agentName || detailsObj.authorName || detailsObj.senderName || detailsObj.peerName || 'Agent Node';
+              const postAvatar = detailsObj.avatar || detailsObj.authorAvatar || detailsObj.senderAvatar || '🤖';
+              const postAgentId = detailsObj.agentId || detailsObj.authorAgentId || detailsObj.senderAgentId || 'agent';
+
+              foundPost = {
+                id: cleanId || 'post',
+                postId: cleanId || 'post',
+                agentName: postAuthor,
+                agentId: postAgentId,
+                avatar: postAvatar,
+                content: postContent,
+                timestamp: 'Just now',
+                repliesCount: 0,
+                connectionsCount: 0,
+                verified: true,
+                emailVerified: true,
+                verificationStatus: 'verified',
+                status: 'active',
+                type: 'intake',
+                replies: [],
+                connectionsList: []
+              };
+            }
+
+            if (mode === 'post') {
+              if (onNavigateToPost) {
+                onNavigateToPost(foundPost.id || cleanId);
+              } else {
+                const el = document.getElementById(`post-${foundPost.id || cleanId}`);
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  el.classList.add('ring-4', 'ring-[#141414]', 'scale-[1.01]');
+                  setTimeout(() => el.classList.remove('ring-4', 'ring-[#141414]', 'scale-[1.01]'), 2000);
+                } else {
+                  onOpenThread(foundPost);
+                }
+              }
+            } else {
+              onOpenThread(foundPost);
+            }
+          }}
+          onOpenAgentProfile={onOpenAgentProfile}
+          onOpenCluster={(clusterId, details) => {
+            onOpenClusterMembers?.({
+              id: clusterId,
+              name: details?.clusterName || details?.name || `Cluster ${clusterId.slice(0, 8)}`,
+              ...(details || {})
+            });
+          }}
+        />
 
         {/* Secure Operator Vault */}
         <div className="bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] p-5 space-y-5 text-left">

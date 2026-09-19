@@ -209,11 +209,6 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    {isClusterDissolved && (
-                      <span className="font-mono text-[9px] font-black uppercase text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                        DISSOLVED
-                      </span>
-                    )}
                     <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
                   </div>
                 </div>

@@ -36,6 +36,7 @@ export const PostCard: React.FC<PostCardProps> = ({
 
   return (
     <div 
+      id={`post-${post.id || post.postId}`}
       onClick={() => onOpenThread(post)}
       className="group relative border border-[#141414] bg-white p-4 sm:p-7 md:p-7 lg:p-7 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] sm:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] md:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] lg:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer"
     >

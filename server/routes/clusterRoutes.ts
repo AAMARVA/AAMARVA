@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
-import { requireUserOrAgentAuth, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { requireUserOrAgentAuth, requireAgentAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { getSupabaseClient } from '../supabase';
 import { logAgentFootprint } from '../services/auditService';
 import { getClusterSymbol } from '../lib/clusterSymbols';
@@ -125,7 +125,7 @@ router.get('/clusters/public/recent', async (req, res) => {
     const list = clusters || [];
     const mappedList = list.map((c: any) => ({
       ...c,
-      symbol: getClusterSymbol(c.name || c.id)
+      symbol: getClusterSymbol(c.id)
     }));
 
     if (error) throw error;
@@ -178,12 +178,12 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       };
     }
 
-    // Get members from DB
+    // Get members from DB (including dissolved members so history is preserved)
     const { data: dbMembers } = await supabase
       .from(tables.members)
       .select('id, clusterId, userId, agentId, role, status, createdAt')
       .eq('clusterId', cluster.id)
-      .neq('status', 'dissolved');
+      .order('createdAt', { ascending: true });
 
     // Collect all participant IDs for targeted user lookup
     const participantUserIds = new Set<string>();
@@ -272,6 +272,7 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
                       (oUid ? userMap.get(String(oUid).toLowerCase()) : null);
     const enrichedCluster = {
       ...cluster,
+      symbol: getClusterSymbol(cluster.id),
       ownerName: (ownerInfo?.name && String(ownerInfo.name).trim()) || cluster.ownerAgentId || 'Agent',
       ownerAvatar: ownerInfo?.avatar || '🤖'
     };
@@ -344,7 +345,7 @@ router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedReques
       agentId
     );
 
-    const clusterSymbol = getClusterSymbol(name.trim());
+    const clusterSymbol = getClusterSymbol(clusterId);
 
     // Broadcast floor activity: [Agent Name] created a new Cluster [symbol] "[Cluster Name]"
     floorActivityService.recordFloorActivity({
@@ -352,7 +353,7 @@ router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedReques
       agentName: req.user!.name,
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
-      text: `created a new Cluster ${clusterSymbol} "${name.trim()}"`,
+      text: `created a new Cluster "${name.trim()}"`,
       type: 'CLUSTER_CREATED',
       cluster: { 
         id: clusterId,
@@ -436,7 +437,7 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
         status: effectiveStatus,
         ownerAgentName: ownerInfo?.name || c.ownerAgentId || 'Unknown Agent',
         ownerAgentAvatar: ownerInfo?.avatar || '',
-        symbol: getClusterSymbol(c.name || c.id)
+        symbol: getClusterSymbol(c.id)
       };
     });
 
@@ -479,10 +480,29 @@ router.get('/clusters/invites/me', requireUserOrAgentAuth, async (req: Authentic
       clusters?.forEach((c: any) => clusterMap.set(c.id, c));
     }
 
+    const inviterUserIds = Array.from(new Set((invites || []).map((i: any) => i.inviterUserId).filter(Boolean)));
+    let inviterMap = new Map();
+    if (inviterUserIds.length > 0) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, agentId, name, avatar, emailVerified')
+        .in('id', inviterUserIds);
+      users?.forEach((u: any) => inviterMap.set(u.id, u));
+    }
+
     const enrichedInvites = (invites || []).map((i: any) => {
       const cl = clusterMap.get(i.clusterId);
+      const userObj = inviterMap.get(i.inviterUserId);
+      const inviterAgentId = i.inviterAgentId || userObj?.agentId || 'Owner';
+      const inviterName = userObj?.name || inviterAgentId;
+      const inviterAvatar = userObj?.avatar || '🤖';
+      const inviterEmailVerified = userObj?.emailVerified || false;
       return {
         ...i,
+        inviterAgentId,
+        inviterName,
+        inviterAvatar,
+        inviterEmailVerified,
         cluster: { 
           id: i.clusterId,
           name: cl?.name || 'Cluster',
@@ -539,7 +559,7 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
       data: {
         id: cluster.id,
         name: cluster.name,
-        symbol: getClusterSymbol(cluster.name || cluster.id),
+        symbol: getClusterSymbol(cluster.id),
         description: cluster.description,
         ownerAgentId: cluster.ownerAgentId,
         membersCount: count || 0,
@@ -551,8 +571,8 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
   }
 });
 
-// 4. PATCH /clusters/:clusterId (Update cluster metadata)
-router.patch('/clusters/:clusterId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+// 4. PATCH /clusters/:clusterId (Update cluster metadata - Agent only)
+router.patch('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_update');
     const clusterId = req.params.clusterId as string;
@@ -622,8 +642,8 @@ router.patch('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authent
   }
 });
 
-// 5. DELETE /clusters/:clusterId (Disband/Delete a cluster)
-router.delete('/clusters/:clusterId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+// 5. DELETE /clusters/:clusterId (Disband/Delete a cluster - Agent only)
+router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_delete');
     const clusterId = req.params.clusterId as string;
@@ -669,6 +689,30 @@ router.delete('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authen
       .delete()
       .eq('clusterId', clusterId);
 
+    // Notify all members of cluster disbandment
+    try {
+      const { data: membersList } = await supabase
+        .from(tables.members)
+        .select('userId')
+        .eq('clusterId', clusterId)
+        .neq('userId', userId);
+      if (membersList && membersList.length > 0) {
+        const events = membersList
+          .filter((m: any) => m.userId)
+          .map((m: any) => ({
+            user_id: m.userId,
+            type: 'CLUSTER_DISBANDED',
+            sender_id: req.user!.agentId || req.user!.id,
+            target_id: clusterId,
+            details: `Cluster "${clusterName}" was disbanded by owner`,
+            created_at: new Date().toISOString()
+          }));
+        if (events.length > 0) {
+          await supabase.from('external_events').insert(events).catch(() => {});
+        }
+      }
+    } catch (e) {}
+
     // Broadcast floor activity: [Agent Name] disbanded Cluster "[Cluster Name]"
     floorActivityService.recordFloorActivity({
       agentId: req.user!.agentId || req.user!.id,
@@ -677,7 +721,7 @@ router.delete('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authen
       emailVerified: req.user!.emailVerified,
       text: `disbanded Cluster "${clusterName}"`,
       type: 'CLUSTER_DISBANDED',
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterName) }
+      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
     }).catch(console.warn);
 
     res.json({ success: true, message: 'Cluster successfully disbanded.' });
@@ -805,7 +849,7 @@ router.post('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: 
       type: 'CLUSTER_INVITE_SENT',
       peerName: inviteeName,
       peerAgentId: invitee.agentId,
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterName) }
+      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
     }).catch(console.warn);
 
     res.json({
@@ -909,7 +953,7 @@ router.delete('/clusters/:clusterId/invites/:inviteId', requireUserOrAgentAuth, 
       emailVerified: req.user!.emailVerified,
       text: `revoked an invite for Cluster "${clusterName}"`,
       type: 'CLUSTER_INVITE_REVOKED',
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterName) }
+      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
     }).catch(console.warn);
 
     res.json({ success: true, message: 'Cluster invitation revoked successfully.' });
@@ -1013,16 +1057,16 @@ router.post('/clusters/:clusterId/join', requireUserOrAgentAuth, async (req: Aut
       const { data: c } = await supabase.from(tables.clusters).select('name').eq('id', clusterId).maybeSingle();
       if (c?.name) clusterName = c.name;
     } catch (e) {}
-    const cSymbol = getClusterSymbol(clusterName);
+    const cSymbol = getClusterSymbol(clusterId);
 
     floorActivityService.recordFloorActivity({
       agentId: agentId || req.user!.id,
       agentName: req.user!.name,
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
-      text: `joined Cluster ${cSymbol} "${clusterName}"`,
+      text: `joined Cluster "${clusterName}"`,
       type: 'CLUSTER_JOINED',
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterName) }
+      cluster: { name: clusterName, id: clusterId, symbol: cSymbol }
     }).catch(console.warn);
 
     res.json({ success: true, message: 'You have joined the cluster successfully.' });
@@ -1071,6 +1115,18 @@ router.patch('/clusters/:clusterId/members/:memberAgentId/role', requireUserOrAg
       .update({ role })
       .eq('id', member.id);
 
+    // Inbound event for target member
+    if (member.userId) {
+      await supabase.from('external_events').insert({
+        user_id: member.userId,
+        type: 'CLUSTER_ROLE_UPDATED',
+        sender_id: req.user!.agentId || req.user!.id,
+        target_id: clusterId,
+        details: `Your role in cluster was updated to ${role} by agent ${req.user!.agentId || req.user!.name}`,
+        created_at: new Date().toISOString()
+      }).catch(() => {});
+    }
+
     await logAgentFootprint(
       userId,
       'CLUSTER_ROLE_UPDATED',
@@ -1101,7 +1157,7 @@ router.patch('/clusters/:clusterId/members/:memberAgentId/role', requireUserOrAg
       type: 'CLUSTER_ROLE_UPDATED',
       peerName: targetMemberName,
       peerAgentId: memberAgentId,
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterName) }
+      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
     }).catch(console.warn);
 
     res.json({ success: true, message: `Member role updated to ${role} successfully.` });
@@ -1263,6 +1319,18 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentA
       throw new Error(`Failed to update member status: ${kickErr.message}`);
     }
 
+    // Inbound event for kicked member
+    if (member.userId) {
+      await supabase.from('external_events').insert({
+        user_id: member.userId,
+        type: 'CLUSTER_MEMBER_REMOVED',
+        sender_id: req.user!.agentId || req.user!.id,
+        target_id: clusterId,
+        details: `You were removed from cluster by admin agent ${req.user!.agentId || req.user!.name}`,
+        created_at: new Date().toISOString()
+      }).catch(() => {});
+    }
+
     // Broadcast floor activity: [Agent Name] removed [Target Agent] from Cluster "[Cluster Name]"
     let clusterName = 'Cluster';
     try {
@@ -1285,7 +1353,7 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentA
       type: 'CLUSTER_MEMBER_EJECTED',
       peerName: targetMemberName,
       peerAgentId: memberAgentId.trim(),
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterName) }
+      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
     }).catch(console.warn);
 
     res.json({ success: true, message: 'Member was successfully removed from the cluster.' });
@@ -1356,7 +1424,7 @@ router.delete('/clusters/:clusterId/leave', requireUserOrAgentAuth, async (req: 
       emailVerified: req.user!.emailVerified,
       text: `left Cluster "${clusterName}"`,
       type: 'CLUSTER_LEFT',
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterName) }
+      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
     }).catch(console.warn);
 
     res.json({ success: true, message: 'Successfully left the cluster.' });

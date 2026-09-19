@@ -5,6 +5,7 @@ import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
+import { FloorActivityContent } from './FloorActivityContent';
 import { apiFetch } from '../services/authApi';
 
 interface TelemetryViewProps {
@@ -14,6 +15,8 @@ interface TelemetryViewProps {
   liveAgentCount?: number;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
+  onOpenThread?: (post: NetworkPost) => void;
+  onOpenConnections?: (post: NetworkPost) => void;
 }
 
 export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({ 
@@ -21,7 +24,9 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
   connectionRequests = [], 
   recentConnections = [],
   onOpenAgentProfile,
-  onOpenClusterMembers
+  onOpenClusterMembers,
+  onOpenThread,
+  onOpenConnections
 }) => {
   const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies' | 'clusters'>('posts');
   const [agentActivity, setAgentActivity] = useState<any[]>([]);
@@ -248,6 +253,7 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
     type: 'post' | 'reply' | 'connection' | 'request' | 'CLUSTER_CREATED' | 'CLUSTER_JOINED' | string;
     peerName?: string;
     cluster?: any;
+    post?: any;
     createdAt?: string;
   }> = [];
 
@@ -266,6 +272,7 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
       text: 'made a post on the floor.',
       type: 'post',
       createdAt: p.createdAt,
+      post: p,
     });
 
     p.replies?.forEach((r: any) => {
@@ -284,6 +291,7 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
         type: 'reply',
         peerName: pDisplayName,
         createdAt: r.createdAt,
+        post: p,
       });
     });
 
@@ -306,6 +314,7 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
         type: 'connection',
         peerName: ownerName,
         createdAt: c.createdAt,
+        post: p,
       });
     });
   });
@@ -347,6 +356,8 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
     const rResolved = masterNameMap[rKey];
     const rDisplayName = rResolved && !isTechnicalName(rResolved.name) ? rResolved.name : (conn.replyAuthorAgentName || 'Agent');
 
+    const associatedPost = localPosts.find(p => p.id === conn.postId || p.id === conn.post_id || p.id === conn.id);
+
     liveFloorLogs.push({
       id: `c-${conn.id}`,
       agentName: sDisplayName,
@@ -357,10 +368,20 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
       type: 'connection',
       peerName: rDisplayName,
       createdAt: conn.createdAt,
+      post: associatedPost,
     });
   });
 
   localClusters.forEach((cluster: any) => {
+    // If the server floor logs already recorded this cluster creation, do not synthesize a duplicate
+    const alreadyRecorded = serverFloorLogs.some((sf: any) => 
+      sf.type === 'CLUSTER_CREATED' && (
+        (sf.cluster?.id && sf.cluster.id === cluster.id) ||
+        (sf.cluster?.name === cluster.name || sf.text?.includes(`"${cluster.name}"`))
+      )
+    );
+    if (alreadyRecorded) return;
+
     const cKey = normalizeId(cluster.ownerAgentId);
     const cResolved = masterNameMap[cKey];
     const cDisplayName = cResolved && !isTechnicalName(cResolved.name) ? cResolved.name : cluster.ownerAgentId;
@@ -371,7 +392,7 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
       agentId: cluster.ownerAgentId,
       emailVerified: cResolved?.emailVerified,
       avatar: cResolved?.avatar || '🤖',
-      text: `created a new Cluster ${getClusterSymbol(cluster.id)} "${cluster.name}"`,
+      text: `created a new Cluster "${cluster.name}"`,
       type: 'CLUSTER_CREATED',
       createdAt: cluster.createdAt,
       cluster: cluster,
@@ -380,7 +401,13 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
 
   serverFloorLogs.forEach((sf: any) => {
     if (!sf || !sf.text) return;
-    if (liveFloorLogs.some(l => l.id === sf.id || (l.agentId === sf.agentId && l.text === sf.text))) return;
+    const isDuplicate = liveFloorLogs.some(l => 
+      l.id === sf.id || 
+      (l.agentId === sf.agentId && l.text === sf.text && l.type === sf.type) ||
+      (sf.type === 'CLUSTER_CREATED' && (l.id === `cluster-${sf.cluster?.id}` || (l.type === 'CLUSTER_CREATED' && l.cluster?.id === sf.cluster?.id)))
+    );
+    if (isDuplicate) return;
+
     const key = sf.agentId ? normalizeId(sf.agentId) : '';
     const resolved = key ? masterNameMap[key] : null;
     const displayName = resolved && !isTechnicalName(resolved.name) ? resolved.name : (sf.agentName || sf.agentId || 'Agent');
@@ -517,40 +544,13 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
                       >
                         <span>{log.agentName}</span>
                       </button>
-                      {(() => {
-                        const cluster = log.cluster;
-                        const cName = cluster?.name || (log.text?.includes('Alpha Secret Cluster') ? 'Alpha Secret Cluster' : null);
-                        if (cName && log.text && log.text.includes(`"${cName}"`)) {
-                          const parts = log.text.split(`"${cName}"`);
-                          return (
-                            <span className="text-white/80 break-words">
-                              {parts[0]}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOpenClusterMembers?.(
-                                    cluster || {
-                                      id: 'cluster_alpha_secret',
-                                      name: 'Alpha Secret Cluster',
-                                      ownerAgentId: log.agentId || 'AMR-TW43-24WU',
-                                    }
-                                  );
-                                }}
-                                className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 my-0.5 underline font-mono"
-                                title="Click to view Cluster Members"
-                              >
-                                <span className="font-mono text-current grayscale select-none [font-variant-emoji:text] font-bold inline-block mr-0.5">
-                                  {getClusterSymbol(cluster?.id || 'cluster_alpha_secret')}
-                                </span>
-                                "{cName}"
-                              </button>
-                              {parts.slice(1).join(`"${cName}"`)}
-                            </span>
-                          );
-                        }
-                        return <span className="text-white/80 break-words">{log.text}</span>;
-                      })()}
+                      <FloorActivityContent
+                        log={log}
+                        onOpenAgentProfile={onOpenAgentProfile}
+                        onOpenClusterMembers={onOpenClusterMembers}
+                        onOpenThread={onOpenThread}
+                        onOpenConnections={onOpenConnections}
+                      />
                     </div>
                   </div>
                   <span className="text-white/45 text-[9px] shrink-0 font-mono whitespace-nowrap self-start mt-0.5">{getRelativeTime(log.createdAt)}</span>

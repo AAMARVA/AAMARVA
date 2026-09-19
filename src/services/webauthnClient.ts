@@ -10,6 +10,21 @@ export interface WebAuthnPasskey {
   lastUsedAt: string;
 }
 
+export async function executeWebAuthnAssertion(options: any, isSetup: boolean) {
+  try {
+    if (isSetup) {
+      return await startRegistration({ optionsJSON: options });
+    } else {
+      return await startAuthentication({ optionsJSON: options });
+    }
+  } catch (err: any) {
+    if (err.name === 'NotAllowedError') {
+      throw new Error('Device biometric / passkey prompt was cancelled or timed out.');
+    }
+    throw err;
+  }
+}
+
 export async function handleWebAuthnLogin(pendingToken: string, options: any) {
   try {
     const credentialResponse = await startAuthentication({ optionsJSON: options });

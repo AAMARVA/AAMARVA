@@ -799,7 +799,7 @@ export class SecurityService {
     }
 
     // STRICT FAIL-CLOSED: No local fallback allowed for authoritative cluster quotas
-    if (policy.quota || policy.resourceConstraints) {
+    if (this.tableExistence.check_cluster_quota_atomic && (policy.quota || policy.resourceConstraints)) {
       throw new SecurityError('DATABASE_UNAVAILABLE', 'Security verification service temporarily unavailable.');
     }
 

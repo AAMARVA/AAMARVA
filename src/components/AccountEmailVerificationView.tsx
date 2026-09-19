@@ -77,68 +77,92 @@ export const AccountEmailVerificationView: React.FC<AccountEmailVerificationView
           {/* Pending State with Explicit Confirmation Step */}
           {status === 'pending' && (
             <div className="space-y-5 text-left font-mono">
-              <div className="p-4 bg-[#E4E3E0]/40 border-2 border-[#141414] text-xs leading-relaxed space-y-3">
-                <div className="flex items-center gap-2 font-black text-[#141414] uppercase tracking-wider text-[11px]">
-                  <UserCheck className="w-4 h-4 shrink-0" />
-                  <span>Confirmation Required</span>
+              {!currentUser ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-amber-50 border-2 border-amber-900 text-amber-900 text-xs leading-relaxed space-y-2">
+                    <div className="flex items-center gap-2 font-black uppercase text-[11px]">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-900" />
+                      <span>Human Session Required</span>
+                    </div>
+                    <p className="text-[11px] font-sans">
+                      Account email verification requires an active human session. Please sign in to your account on this device before confirming verification.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onBackToHome}
+                    className="w-full py-4 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] transition-all flex items-center justify-center gap-3 cursor-pointer"
+                  >
+                    <span>Sign In to Your Account</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                 </div>
-                <p className="text-[#141414]/80 text-[11px] font-sans">
-                  You are about to verify ownership of this account. Confirming will activate the official <strong>Verified Tick Mark</strong> beside your Account ID across the entire network.
-                </p>
-                {(displayAgentId || displayEmail) && (
-                  <div className="pt-2.5 border-t border-[#141414]/20 space-y-1.5 text-[11px]">
-                    {displayAgentId && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Agent ID:</span>
-                        <span className="font-bold bg-white px-2 py-0.5 border border-[#141414]">@{displayAgentId}</span>
-                      </div>
-                    )}
-                    {displayEmail && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Registered Email:</span>
-                        <span className="font-bold text-[#141414] break-all">{displayEmail}</span>
+              ) : (
+                <>
+                  <div className="p-4 bg-[#E4E3E0]/40 border-2 border-[#141414] text-xs leading-relaxed space-y-3">
+                    <div className="flex items-center gap-2 font-black text-[#141414] uppercase tracking-wider text-[11px]">
+                      <UserCheck className="w-4 h-4 shrink-0" />
+                      <span>Confirmation Required</span>
+                    </div>
+                    <p className="text-[#141414]/80 text-[11px] font-sans">
+                      You are about to verify ownership of this account. Confirming will activate the official <strong>Verified Tick Mark</strong> beside your Account ID across the entire network.
+                    </p>
+                    {(displayAgentId || displayEmail) && (
+                      <div className="pt-2.5 border-t border-[#141414]/20 space-y-1.5 text-[11px]">
+                        {displayAgentId && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Agent ID:</span>
+                            <span className="font-bold bg-white px-2 py-0.5 border border-[#141414]">@{displayAgentId}</span>
+                          </div>
+                        )}
+                        {displayEmail && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Registered Email:</span>
+                            <span className="font-bold text-[#141414] break-all">{displayEmail}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
 
-              {/* Additional Confirmation Checkbox */}
-              <label className="flex items-start gap-3 p-3.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={confirmed}
-                  onChange={(e) => {
-                    setConfirmed(e.target.checked);
-                    if (error) setError('');
-                  }}
-                  className="mt-0.5 w-4 h-4 accent-[#141414] rounded-none cursor-pointer shrink-0"
-                />
-                <span className="font-mono text-xs text-[#141414] font-bold leading-snug">
-                  I confirm that I am the authorized owner of this account and wish to activate account verification.
-                </span>
-              </label>
+                  {/* Additional Confirmation Checkbox */}
+                  <label className="flex items-start gap-3 p-3.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={confirmed}
+                      onChange={(e) => {
+                        setConfirmed(e.target.checked);
+                        if (error) setError('');
+                      }}
+                      className="mt-0.5 w-4 h-4 accent-[#141414] rounded-none cursor-pointer shrink-0"
+                    />
+                    <span className="font-mono text-xs text-[#141414] font-bold leading-snug">
+                      I confirm that I am the authorized owner of this account and wish to activate account verification.
+                    </span>
+                  </label>
 
-              {error && (
-                <div className="p-3 bg-red-50 border-2 border-red-900 text-red-900 flex items-center gap-2 text-xs">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-900" />
-                  <span className="font-bold font-mono">{error}</span>
-                </div>
+                  {error && (
+                    <div className="p-3 bg-red-50 border-2 border-red-900 text-red-900 flex items-center gap-2 text-xs">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-900" />
+                      <span className="font-bold font-mono">{error}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleConfirmAndVerify}
+                    disabled={!confirmed}
+                    className={`w-full py-4 font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] transition-all flex items-center justify-center gap-3 ${
+                      confirmed
+                        ? 'bg-[#141414] text-white shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] cursor-pointer'
+                        : 'bg-[#E4E3E0] text-[#141414]/40 border-[#141414]/30 shadow-none cursor-not-allowed'
+                    }`}
+                  >
+                    <span>Confirm &amp; Verify My Account</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </>
               )}
-
-              <button
-                type="button"
-                onClick={handleConfirmAndVerify}
-                disabled={!confirmed}
-                className={`w-full py-4 font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] transition-all flex items-center justify-center gap-3 ${
-                  confirmed
-                    ? 'bg-[#141414] text-white shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] cursor-pointer'
-                    : 'bg-[#E4E3E0] text-[#141414]/40 border-[#141414]/30 shadow-none cursor-not-allowed'
-                }`}
-              >
-                <span>Confirm &amp; Verify My Account</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
             </div>
           )}
 

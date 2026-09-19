@@ -1824,6 +1824,44 @@ export async function requestForgotPassword(email: string, appUrl: string) {
 }
 
 /**
+ * Looks up the user corresponding to an active, unexpired, unused reset token.
+ * Does not burn the token so that WebAuthn challenge can be completed first.
+ */
+export async function getResetTokenUser(token: string) {
+  if (!token || typeof token !== 'string' || token.trim() === '') {
+    throw new Error('Reset token is required.');
+  }
+
+  const supabase = getSupabaseClient();
+  const tokenHash = crypto.createHash('sha256').update(token.trim()).digest('hex');
+  const nowIso = new Date().toISOString();
+
+  const { data: tokenRecord, error: tokenErr } = await supabase
+    .from('password_reset_tokens')
+    .select('*')
+    .eq('tokenHash', tokenHash)
+    .is('usedAt', null)
+    .gt('expiresAt', nowIso)
+    .maybeSingle();
+
+  if (tokenErr || !tokenRecord) {
+    throw new Error('Invalid, expired, or already used password reset token.');
+  }
+
+  const { data: user, error: userErr } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', tokenRecord.userId)
+    .maybeSingle();
+
+  if (userErr || !user) {
+    throw new Error('User associated with reset token not found.');
+  }
+
+  return user;
+}
+
+/**
  * Resets user password using a raw reset token (strict database persistence, no in-memory fallback):
  */
 export async function resetPassword(token: string, newPassword: string) {

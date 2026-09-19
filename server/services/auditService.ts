@@ -24,7 +24,7 @@ export async function logAccountAudit(params: AuditLogParams) {
   }
 }
 
-export async function logAgentFootprint(userId: string, action: string, details: string, target?: string, agentId?: string) {
+export async function logAgentFootprint(userId: string, action: string, details: string, target?: string, agentId?: string, endpoint?: string) {
   const footprintId = `fp_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
   const footprintRecord = {
@@ -32,6 +32,7 @@ export async function logAgentFootprint(userId: string, action: string, details:
     user_id: userId,
     agent_id: agentId || null,
     action,
+    endpoint: endpoint || null,
     details,
     target: target || null,
     created_at: now

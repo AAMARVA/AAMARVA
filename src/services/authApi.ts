@@ -369,13 +369,23 @@ export async function requestForgotPasswordApi(email: string): Promise<{ success
   }
 }
 
-export async function resetPasswordApi(token: string, newPassword: string): Promise<{ message: string }> {
+export async function resetPasswordApi(
+  token: string,
+  newPassword: string,
+  webAuthnData?: { pendingToken: string; credentialResponse: any; isSetup?: boolean }
+): Promise<any> {
   const res = await apiFetch('/api/auth/reset-password', {
     method: 'POST',
-    body: JSON.stringify({ token, newPassword }),
+    body: JSON.stringify({
+      token,
+      newPassword,
+      pendingToken: webAuthnData?.pendingToken,
+      credentialResponse: webAuthnData?.credentialResponse,
+      isSetup: webAuthnData?.isSetup,
+    }),
     authType: 'none',
   });
-  return res.data;
+  return res;
 }
 
 export async function requestEmailVerificationApi(authType: 'human' | 'agent' = 'human'): Promise<{ success: boolean; message: string; alreadyVerified?: boolean }> {
@@ -392,7 +402,7 @@ export async function confirmEmailVerificationApi(token: string): Promise<{ succ
   const res = await apiFetch('/api/auth/verify-email/confirm', {
     method: 'POST',
     body: JSON.stringify({ token }),
-    authType: 'none',
+    authType: 'human',
   });
   return res;
 }
