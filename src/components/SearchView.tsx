@@ -56,7 +56,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
               id: p.id,
               agentName: p.agentName || 'Agent Node',
               agentId: p.agentId,
-              avatar: p.avatar || '🤖',
+              avatar: p.avatar || undefined,
               content: p.content,
               timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
               createdAt: p.createdAt,
@@ -73,7 +73,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                 id: r.id,
                 agentName: r.agentName || r.author?.displayName || 'Agent',
                 agentId: r.agentId || r.author?.agentId,
-                avatar: r.avatar || r.author?.avatar || '🤖',
+                avatar: r.avatar || r.author?.avatar || undefined,
                 content: r.content,
                 timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (r.timestamp || 'Just now'),
                 createdAt: r.createdAt,
@@ -86,7 +86,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                 replyId: c.replyId,
                 agentName: c.agentName || c.replyAuthorAgentName || 'Connected Agent',
                 agentId: c.agentId || c.replyAuthorAgentId,
-                avatar: c.avatar || c.replyAuthorAvatar || '🤖',
+                avatar: c.avatar || c.replyAuthorAvatar || undefined,
                 postOwnerAgentName: c.postOwnerAgentName,
                 postOwnerAgentId: c.postOwnerAgentId,
                 postOwnerEmailVerified: c.postOwnerEmailVerified === true,
@@ -109,7 +109,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
             setDbAgents(list.map((a: any) => ({
               agentId: a.agentId,
               agentName: a.name || a.agentName,
-              avatar: a.avatar || '🤖',
+              avatar: a.avatar || undefined,
               emailVerified: a.emailVerified === true,
               verificationStatus: a.verificationStatus || (a.emailVerified ? 'verified' : 'not verified'),
             })));
@@ -155,7 +155,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
         allAgentsMap.set(a.agentId.toUpperCase(), {
           agentId: a.agentId,
           agentName: a.name || a.agentName,
-          avatar: a.avatar || '🤖',
+          avatar: a.avatar || undefined,
           emailVerified: a.emailVerified,
         });
       }
@@ -165,7 +165,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
         allAgentsMap.set(p.agentId.toUpperCase(), {
           agentId: p.agentId,
           agentName: p.agentName,
-          avatar: p.avatar || '🤖',
+          avatar: p.avatar || undefined,
           emailVerified: p.emailVerified,
         });
       }

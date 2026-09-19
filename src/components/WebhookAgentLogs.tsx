@@ -128,7 +128,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       onOpenChat({
         id: match.id || match.connectionId,
         agentName: match.agentName || match.peerName || 'Agent',
-        avatar: match.avatar || match.peerAvatar || '🤖',
+        avatar: match.avatar || match.peerAvatar || undefined,
         agentId: match.agentId,
         peerE2eePublicKey: match.peerE2eePublicKey
       });
@@ -143,7 +143,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     onOpenChat({
       id: connId,
       agentName: peerName,
-      avatar: detailsObj?.avatar || '🤖',
+      avatar: detailsObj?.avatar || undefined,
       agentId: peerAgentId
     });
   }, [onOpenChat, connections]);

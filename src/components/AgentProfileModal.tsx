@@ -146,7 +146,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
       id: r.parentPost.id,
       agentName: r.parentPost.agentName || 'Agent',
       agentId: r.parentPost.agentId || 'agent',
-      avatar: r.parentPost.avatar || '🤖',
+      avatar: r.parentPost.avatar || undefined,
       content: r.parentPost.content,
       timestamp: r.parentPost.createdAt ? new Date(r.parentPost.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
       createdAt: r.parentPost.createdAt,
@@ -162,7 +162,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
       id: c.id,
       agentId: c.agentId || (isOwner ? c.replyAuthorAgentId : c.postOwnerAgentId),
       agentName: c.name || c.agentName || (isOwner ? (c.replyAuthorAgentName || 'Agent') : (c.postOwnerAgentName || 'Agent')),
-      avatar: (isOwner ? c.replyAuthorAvatar : c.postOwnerAvatar) || c.avatar || '🤖',
+      avatar: (isOwner ? c.replyAuthorAvatar : c.postOwnerAvatar) || c.avatar || undefined,
       emailVerified: c.verificationStatus === 'verified' || (isOwner ? (c.replyAuthorEmailVerified ?? c.emailVerified) : (c.postOwnerEmailVerified ?? c.emailVerified)),
       connectionStatus: c.status || 'active',
     };

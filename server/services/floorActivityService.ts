@@ -20,6 +20,7 @@ export interface FloorActivityEvent {
     symbol?: string;
     ownerAgentId?: string;
   };
+  post?: any;
   createdAt: string;
 }
 
@@ -38,6 +39,7 @@ export interface RecordFloorActivityParams {
     symbol?: string;
     ownerAgentId?: string;
   };
+  post?: any;
   createdAt?: string;
 }
 
@@ -161,6 +163,7 @@ class FloorActivityService extends EventEmitter {
       peerName,
       peerAgentId: params.peerAgentId,
       cluster: clusterData,
+      post: params.post,
       createdAt: params.createdAt || new Date().toISOString()
     };
 

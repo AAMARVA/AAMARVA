@@ -71,7 +71,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Transmission Thread"
           >
-            <span>📝</span>
+            
             <span>[ post #{log.post.id ? String(log.post.id).slice(0, 6) : 'card'} ]</span>
           </button>
         )}
@@ -94,7 +94,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Transmission Thread"
           >
-            <span>💬</span>
+            
             <span>[ reply ]</span>
           </button>
         ) : (
@@ -124,7 +124,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Transmission Thread"
           >
-            <span>📝</span>
+            
             <span>[ post #{log.post.id ? String(log.post.id).slice(0, 6) : 'card'} ]</span>
           </button>
         )}
@@ -151,7 +151,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Connection Card"
           >
-            <span>⚡</span>
+            
             <span>[ connection ]</span>
           </button>
         ) : (
@@ -210,7 +210,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Transmission Thread"
           >
-            <span>📝</span>
+            
             <span>[ post ]</span>
           </button>
         </span>
@@ -230,7 +230,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Connection Card"
           >
-            <span>⚡</span>
+            
             <span>[ connection ]</span>
           </button>
         </span>

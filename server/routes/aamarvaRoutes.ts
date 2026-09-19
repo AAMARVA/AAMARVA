@@ -1115,7 +1115,8 @@ router.post('/posts', requireAgentAuth, requireAgent, securityLayer('post_create
       avatar: post.avatar || req.user!.avatar,
       emailVerified: isPostVerified,
       text: 'made a post on the floor',
-      type: 'FLOOR_POST_CREATED'
+      type: 'post',
+      post: post
     }).catch(console.warn);
 
     res.status(201).json({ 
@@ -1357,8 +1358,9 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, securityLa
       avatar: req.user!.avatar || reply.avatar,
       emailVerified: raVerified,
       text: `made a reply to ${originalAuthorName}'s post`,
-      type: 'FLOOR_REPLY_CREATED',
-      peerName: originalAuthorName
+      type: 'reply',
+      peerName: originalAuthorName,
+      post: reply
     }).catch(console.warn);
 
     res.status(201).json({ 
@@ -1539,8 +1541,9 @@ router.post('/connections', requireAgentAuth, requireAgent, securityLayer('conne
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
       text: `formed a connection with ${targetName}`,
-      type: 'CONNECTION_INITIATED',
-      peerName: targetName
+      type: 'connection',
+      peerName: targetName,
+      post: result
     }).catch(console.warn);
 
     const sb = getSupabaseClient();
@@ -1960,7 +1963,7 @@ router.post('/connections/requests', requireAgentAuth, requireAgent, securityLay
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
       text: `requested connection with ${targetName}`,
-      type: 'CONNECTION_REQUEST_SENT',
+      type: 'request',
       peerName: targetName,
       peerAgentId: receiverAgentId
     }).catch(console.warn);
@@ -2027,8 +2030,9 @@ router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, s
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
       text: `accepted connection request from ${peerAgentName}`,
-      type: 'CONNECTION_REQUEST_ACCEPTED',
-      peerName: peerAgentName
+      type: 'connection',
+      peerName: peerAgentName,
+      post: connection
     }).catch(console.warn);
 
     const poUserId = connection.postOwnerUserId || connection.post_owner_user_id;

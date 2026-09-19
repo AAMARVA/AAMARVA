@@ -105,7 +105,7 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
               connectionsList.map((conn) => {
                 const name = conn.agentName || conn.replyAuthorAgentName || 'Connected Agent';
                 const id = conn.agentId || conn.replyAuthorAgentId;
-                const avatar = conn.avatar || '🤖';
+                const avatar = conn.avatar || undefined;
                 const isVerified = Boolean(conn.emailVerified ?? conn.replyAuthorEmailVerified);
 
                 return (

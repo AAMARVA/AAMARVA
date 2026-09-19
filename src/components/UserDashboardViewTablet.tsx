@@ -421,7 +421,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       } else {
         await login(loginAgentId.trim(), password);
         setSuccessMsg('Authentication successful! Welcome back to your dashboard.');
-        setTimeout(() => {
+        /* setTimeout(() => {
           try {
             const stored = localStorage.getItem('aamarva_user');
             if (stored) {
@@ -434,7 +434,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
           } catch (e) {
             // ignore
           }
-        }, 200);
+        }, 200); */
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please check your credentials.');
@@ -614,17 +614,17 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
     const userConnectionsRaw: any[] = (agentProfileData?.connections || realConnections || []).map((c: any) => {
       if (typeof c === 'string') {
-        return { id: c, agentId: c, agentName: 'Agent', avatar: '🤖', status: 'active' };
+        return { id: c, agentId: c, agentName: 'Agent', avatar: undefined, status: 'active' };
       }
       const isOwner = c.postOwnerAgentId?.toUpperCase() === (loggedInAgentId || '').toUpperCase();
       const peerAgentId = isOwner ? c.replyAuthorAgentId : (c.postOwnerAgentId || c.peerAgentId || c.agentId || c.id);
       const peerAgentName = isOwner ? (c.replyAuthorAgentName || c.peerName || 'Agent') : (c.postOwnerAgentName || c.peerName || 'Agent');
-      const peerAvatar = isOwner ? (c.replyAuthorAvatar || c.peerAvatar || '🤖') : (c.postOwnerAvatar || c.peerAvatar || '🤖');
+      const peerAvatar = isOwner ? (c.replyAuthorAvatar || c.peerAvatar || undefined) : (c.postOwnerAvatar || c.peerAvatar || undefined);
       return {
         id: c.id || c.connectionId,
         agentId: peerAgentId || 'agent',
         agentName: peerAgentName || 'Agent',
-        avatar: peerAvatar || '🤖',
+        avatar: peerAvatar || undefined,
         status: c.status || 'active'
       };
     });
@@ -674,6 +674,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       <span>@{currentAgentId}</span>
                       {currentUser?.emailVerified && <VerifiedBadge size="xs" />}
                     </span>
+
                   </div>
                 )}
               </div>
@@ -1000,9 +1001,9 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         >
                           <div 
                             className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
-                            onClick={() => onOpenAgentProfile?.(req.senderAgentName || req.senderAgentId || 'Agent', req.senderAvatar || '🤖', req.senderAgentId)}
+                            onClick={() => onOpenAgentProfile?.(req.senderAgentName || req.senderAgentId || 'Agent', req.senderAvatar || undefined, req.senderAgentId)}
                           >
-                            <AgentAvatar name={req.senderAgentName || req.senderAgentId || 'Agent'} avatar={req.senderAvatar || '🤖'} id={req.senderAgentId} className="w-9 h-9 border border-[#141414] group-hover:scale-105 transition-transform" />
+                            <AgentAvatar name={req.senderAgentName || req.senderAgentId || 'Agent'} avatar={req.senderAvatar || undefined} id={req.senderAgentId} className="w-9 h-9 border border-[#141414] group-hover:scale-105 transition-transform" />
                             <div className="min-w-0 flex flex-col">
                               <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
                                 <span>{req.senderAgentName || 'Pending Agent'}</span>
@@ -1064,11 +1065,11 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                                 <span>INVITED BY:</span>
                                 <div 
                                   className="flex items-center gap-2.5 cursor-pointer group bg-white border-2 border-[#141414] px-2.5 py-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] transition-transform self-start"
-                                  onClick={() => onOpenAgentProfile?.(invite.inviterName || invite.inviterAgentId || 'Agent', invite.inviterAvatar || '🤖', invite.inviterAgentId)}
+                                  onClick={() => onOpenAgentProfile?.(invite.inviterName || invite.inviterAgentId || 'Agent', invite.inviterAvatar || undefined, invite.inviterAgentId)}
                                 >
                                   <AgentAvatar 
                                     name={invite.inviterName || invite.inviterAgentId || 'Agent'} 
-                                    avatar={invite.inviterAvatar || '🤖'} 
+                                    avatar={invite.inviterAvatar || undefined} 
                                     id={invite.inviterAgentId} 
                                     className="w-7 h-7 border-2 border-[#141414]" 
                                   />
@@ -1138,7 +1139,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                     postId: p.postId || p.id || cleanId,
                     agentName: p.agentName || res.data.author?.displayName || p.author?.displayName || 'Agent Node',
                     agentId: p.agentId || res.data.author?.agentId || p.author?.agentId || 'agent',
-                    avatar: p.avatar || res.data.author?.avatar || p.author?.avatar || '🤖',
+                    avatar: p.avatar || res.data.author?.avatar || p.author?.avatar || undefined,
                     content: p.content || 'Transmission payload retrieved from network node.',
                     timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
                     createdAt: p.createdAt,
@@ -1153,7 +1154,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       id: r.id,
                       agentName: r.name || r.agentName || r.author?.displayName || 'Agent',
                       agentId: r.agentId || r.author?.agentId,
-                      avatar: r.avatar || r.author?.avatar || '🤖',
+                      avatar: r.avatar || r.author?.avatar || undefined,
                       content: r.content,
                       timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
                       createdAt: r.createdAt,
@@ -1174,7 +1175,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 ? logDetails
                 : (detailsObj.content || detailsObj.text || detailsObj.postContent || 'Thread activity referenced from cryptographic agent activity logs.');
               const postAuthor = detailsObj.agentName || detailsObj.authorName || detailsObj.senderName || detailsObj.peerName || 'Agent Node';
-              const postAvatar = detailsObj.avatar || detailsObj.authorAvatar || detailsObj.senderAvatar || '🤖';
+              const postAvatar = detailsObj.avatar || detailsObj.authorAvatar || detailsObj.senderAvatar || undefined;
               const postAgentId = detailsObj.agentId || detailsObj.authorAgentId || detailsObj.senderAgentId || 'agent';
 
               foundPost = {

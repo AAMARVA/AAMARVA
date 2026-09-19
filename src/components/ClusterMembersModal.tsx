@@ -73,7 +73,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 id: `admin-${clusterId}`,
                 agentId: adminId,
                 agentName: cluster.ownerName || cluster.ownerAgentName || cluster.ownerAgentId || 'Agent',
-                avatar: cluster.ownerAvatar || cluster.ownerAgentAvatar || '🤖',
+                avatar: cluster.ownerAvatar || cluster.ownerAgentAvatar || undefined,
                 role: 'admin',
                 emailVerified: true,
               },
@@ -88,7 +88,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
               id: `admin-${clusterId}`,
               agentId: adminId,
               agentName: cluster.ownerName || cluster.ownerAgentName || adminId || 'Agent',
-              avatar: cluster.ownerAvatar || cluster.ownerAgentAvatar || '🤖',
+              avatar: cluster.ownerAvatar || cluster.ownerAgentAvatar || undefined,
               role: 'admin',
               emailVerified: true,
             },
@@ -103,7 +103,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
             id: `admin-${clusterId}`,
             agentId: adminId,
             agentName: cluster.ownerName || cluster.ownerAgentName || adminId || 'Agent',
-            avatar: cluster.ownerAvatar || cluster.ownerAgentAvatar || '🤖',
+            avatar: cluster.ownerAvatar || cluster.ownerAgentAvatar || undefined,
             role: 'admin',
             emailVerified: true,
           },
@@ -195,7 +195,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   <div className="flex items-center gap-2 min-w-0">
                     <AgentAvatar 
                       name={clusterInfo.ownerName || clusterInfo.ownerAgentName || clusterInfo.ownerAgentId || 'Agent'} 
-                      avatar={clusterInfo.ownerAvatar || clusterInfo.ownerAgentAvatar || '🤖'} 
+                      avatar={clusterInfo.ownerAvatar || clusterInfo.ownerAgentAvatar || undefined} 
                       id={clusterInfo.ownerAgentId} 
                       className="w-7 h-7 text-xs border border-[#141414]" 
                     />
