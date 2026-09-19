@@ -345,13 +345,21 @@ export async function requestEmailChangeApi(newEmail: string): Promise<{ message
   return res.data;
 }
 
-export async function verifyEmailChangeApi(token: string): Promise<{ email: string }> {
+export async function verifyEmailChangeApi(
+  token: string,
+  webAuthnData?: { pendingToken: string; credentialResponse: any; isSetup?: boolean }
+): Promise<any> {
   const res = await apiFetch('/api/auth/change-email/verify', {
     method: 'POST',
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ 
+      token,
+      pendingToken: webAuthnData?.pendingToken,
+      credentialResponse: webAuthnData?.credentialResponse,
+      isSetup: webAuthnData?.isSetup,
+    }),
     authType: 'none',
   });
-  return res.data;
+  return res.data || res;
 }
 
 export async function requestForgotPasswordApi(email: string): Promise<{ success?: boolean; message: string }> {
@@ -405,6 +413,23 @@ export async function confirmEmailVerificationApi(token: string): Promise<{ succ
     authType: 'human',
   });
   return res;
+}
+
+export async function confirmAgentApiKeyRotationApi(
+  token: string,
+  webAuthnData?: { pendingToken: string; credentialResponse: any; isSetup?: boolean }
+): Promise<any> {
+  const res = await apiFetch('/api/auth/agent/rotate-api-key/confirm', {
+    method: 'POST',
+    body: JSON.stringify({
+      token,
+      pendingToken: webAuthnData?.pendingToken,
+      credentialResponse: webAuthnData?.credentialResponse,
+      isSetup: webAuthnData?.isSetup,
+    }),
+    authType: 'none',
+  });
+  return res.data || res;
 }
 
 export async function getConnectionRequestsApi(authType: 'human' | 'agent' = 'human'): Promise<any[]> {

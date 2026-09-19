@@ -2263,9 +2263,40 @@ router.post(
         // Confirmation with token (reject agent credentials if present)
         return rejectAgentCredentials(req, res, async () => {
           try {
+            const { pendingToken, credentialResponse, isSetup } = req.body || {};
+            
+            // Step A: Extract user ID from token and verify existence
+            const userId = token.split('.')[0];
+            const user = await getUserById(userId);
+            if (!user) throw new Error('User account not found.');
+
+            // Step B: If WebAuthn response is not yet provided, challenge the user
+            if (!pendingToken || !credentialResponse) {
+              const challengeResult = await generateLoginChallenge(user as any, req);
+              return res.json({
+                success: true,
+                requiresWebAuthn: true,
+                status: challengeResult.status,
+                pendingToken: challengeResult.pendingToken,
+                options: challengeResult.options,
+                userName: user.name || user.agentId,
+              });
+            }
+
+            // Step C: Verify the WebAuthn cryptographic hardware assertion
+            if (isSetup) {
+              await verifySetupResponse(pendingToken, credentialResponse, 'API Key Security Passkey', req);
+            } else {
+              const loginResult = await verifyLoginResponse(pendingToken, credentialResponse, req);
+              if (loginResult.userId !== user.id) {
+                throw new Error('WebAuthn hardware verification failed: account mismatch.');
+              }
+            }
+
+            // Step D: Assertion verified! Finalize the rotation
             const result = await confirmAgentApiKeyRotation(token);
-            await logAgentFootprint(token.split('.')[0] || 'system', 'API_KEY_ROTATED', 'Rotated agent API key via email confirmation link');
-            return res.json({ success: true, data: result, message: 'API key successfully rotated via email confirmation link.' });
+            await logAgentFootprint(token.split('.')[0] || 'system', 'API_KEY_ROTATED', 'Rotated agent API key via email confirmation link and hardware assertion');
+            return res.json({ success: true, data: result, message: 'API key successfully rotated via email confirmation link and hardware assertion.' });
           } catch (err: any) {
             return res.status(400).json({ success: false, error: err.message || 'Failed to confirm API key rotation.' });
           }
@@ -2305,15 +2336,47 @@ router.all(
   async (req: Request, res: Response) => {
     try {
       const token = String(req.body?.token || req.query?.token || '');
+      const { pendingToken, credentialResponse, isSetup } = req.body || {};
+      
       if (!token) {
         return res.status(400).json({ success: false, error: 'Rotation confirmation token is required.' });
       }
+
+      // Step A: Extract user ID from token and verify existence
+      const userId = token.split('.')[0];
+      const user = await getUserById(userId);
+      if (!user) throw new Error('User account not found.');
+
+      // Step B: If WebAuthn response is not yet provided, challenge the user
+      if (!pendingToken || !credentialResponse) {
+        const challengeResult = await generateLoginChallenge(user as any, req);
+        return res.json({
+          success: true,
+          requiresWebAuthn: true,
+          status: challengeResult.status,
+          pendingToken: challengeResult.pendingToken,
+          options: challengeResult.options,
+          userName: user.name || user.agentId,
+        });
+      }
+
+      // Step C: Verify the WebAuthn cryptographic hardware assertion
+      if (isSetup) {
+        await verifySetupResponse(pendingToken, credentialResponse, 'API Key Security Passkey', req);
+      } else {
+        const loginResult = await verifyLoginResponse(pendingToken, credentialResponse, req);
+        if (loginResult.userId !== user.id) {
+          throw new Error('WebAuthn hardware verification failed: account mismatch.');
+        }
+      }
+
+      // Step D: Assertion verified! Finalize the rotation
       const result = await confirmAgentApiKeyRotation(token);
-      await logAgentFootprint(token.split('.')[0] || 'system', 'API_KEY_ROTATED', 'Rotated agent API key via email confirmation link');
+      await logAgentFootprint(token.split('.')[0] || 'system', 'API_KEY_ROTATED', 'Rotated agent API key via email confirmation link and hardware assertion');
       res.json({
         success: true,
         data: result,
-        message: 'API key successfully rotated via email confirmation link.',
+        message: 'API key successfully rotated via email confirmation link and hardware assertion.',
       });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message || 'Failed to confirm API key rotation.' });
@@ -2349,8 +2412,38 @@ router.post(
   securityLayer('change_email'),
   async (req: Request, res: Response) => {
     try {
-      const { token } = req.body;
+      const { token, pendingToken, credentialResponse, isSetup } = req.body;
       if (!token) return res.status(400).json({ success: false, error: 'Token is required.' });
+
+      // Step A: Extract user ID from token
+      const userId = token.split('.')[0];
+      const user = await getUserById(userId);
+      if (!user) throw new Error('User account not found.');
+
+      // Step B: If WebAuthn response is not yet provided, challenge the user
+      if (!pendingToken || !credentialResponse) {
+        const challengeResult = await generateLoginChallenge(user as any, req);
+        return res.json({
+          success: true,
+          requiresWebAuthn: true,
+          status: challengeResult.status,
+          pendingToken: challengeResult.pendingToken,
+          options: challengeResult.options,
+          userName: user.name || user.agentId,
+        });
+      }
+
+      // Step C: Verify the WebAuthn cryptographic hardware assertion
+      if (isSetup) {
+        await verifySetupResponse(pendingToken, credentialResponse, 'Email Security Passkey', req);
+      } else {
+        const loginResult = await verifyLoginResponse(pendingToken, credentialResponse, req);
+        if (loginResult.userId !== user.id) {
+          throw new Error('WebAuthn hardware verification failed: account mismatch.');
+        }
+      }
+
+      // Step D: Assertion verified! Finalize the change
       const result = await verifyEmailChange(token);
       res.json({ success: true, data: result });
     } catch (err: any) {

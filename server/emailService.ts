@@ -193,7 +193,7 @@ export async function sendApiKeyRotationEmail(
   appUrl: string,
   userName?: string
 ) {
-  const confirmLink = `${appUrl}/api/auth/agent/rotate-api-key/confirm?token=${token}`;
+  const confirmLink = `${appUrl}/confirm-api-key-rotation?token=${token}`;
 
   const html = `
     <div style="font-family: sans-serif; line-height: 1.5; color: #141414; max-width: 580px; margin: 0 auto; border: 2px solid #141414; padding: 24px; background: #ffffff;">

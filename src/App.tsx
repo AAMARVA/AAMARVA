@@ -31,6 +31,7 @@ import { FloorViewTablet } from './components/FloorViewTablet';
 import { FloorViewMobile } from './components/FloorViewMobile';
 import { EmailChangeVerificationView } from './components/EmailChangeVerificationView';
 import { AccountEmailVerificationView } from './components/AccountEmailVerificationView';
+import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationView';
 import { GetVerifiedModal } from './components/GetVerifiedModal';
 import { BrutalistLoader } from './components/BrutalistLoader';
 import { AgentAvatar } from './components/AgentAvatar';
@@ -67,6 +68,7 @@ export default function App() {
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
   const [accountVerificationToken, setAccountVerificationToken] = useState<string | null>(null);
+  const [apiKeyRotationToken, setApiKeyRotationToken] = useState<string | null>(null);
   const [deviceSize, setDeviceSize] = useState<'mobile' | 'tablet' | 'desktop'>('desktop');
   const [showDesktopTabs, setShowDesktopTabs] = useState(true);
   const lastScrollY = useRef(0);
@@ -138,6 +140,12 @@ export default function App() {
       // Handle Account Email Verification (for Verified Tick Mark)
       if ((href.includes('verify-email') || href.includes('account-verification')) && emailToken) {
         setAccountVerificationToken(emailToken);
+        return;
+      }
+
+      // Handle API Key Rotation Confirmation URL
+      if (href.includes('confirm-api-key-rotation') && emailToken) {
+        setApiKeyRotationToken(emailToken);
         return;
       }
 
