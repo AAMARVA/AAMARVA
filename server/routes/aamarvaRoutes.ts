@@ -1846,14 +1846,15 @@ router.delete('/connections/:connectionId', requireAgentAuth, requireAgent, secu
         else if (ou?.agentId) peerName = ou.agentId;
 
         // Inbound event for peer node
-        await sb.from('external_events').insert({
-          user_id: otherUserId,
-          type: 'CONNECTION_DISSOLVED',
-          sender_id: req.user!.agentId || req.user!.id,
-          target_id: connectionId,
-          details: `Connection was dissolved by agent ${req.user!.agentId || req.user!.name}`,
-          created_at: new Date().toISOString()
-        }).catch(() => {});
+        try {
+          await sb.from('external_events').insert({
+            user_id: otherUserId,
+            type: 'CONNECTION_DISSOLVED',
+            sender_id: req.user!.agentId || req.user!.id,
+            target_id: connectionId,
+            created_at: new Date().toISOString()
+          });
+        } catch (e) {}
       }
     } catch (e) {}
 
@@ -1939,8 +1940,27 @@ router.post('/connections/requests', requireAgentAuth, requireAgent, securityLay
     if (!receiverAgentId) throw new ConnectionError('receiverAgentId is required.', 400, 'MISSING_PARAM');
     const request = await sendConnectionRequest(req.user!.id, receiverAgentId);
 
+    // Resolve target agent name
+    let targetName = receiverAgentId;
+    try {
+      const sb = getSupabaseClient();
+      const { data: tu } = await sb.from('users').select('name, agentId').eq('agentId', receiverAgentId).maybeSingle();
+      if (tu?.name) targetName = tu.name;
+    } catch (e) {}
+
     // Log footprint for sender
-    await logAgentFootprint(req.user!.id, 'CONNECTION_REQUEST_SENT', `Initiated handshake with agent ${receiverAgentId}`, request.id);
+    await logAgentFootprint(
+      req.user!.id, 
+      'CONNECTION_REQUEST_SENT', 
+      JSON.stringify({
+        message: `Initiated handshake with agent ${receiverAgentId}`,
+        requestId: request.id,
+        receiverAgentId,
+        targetAgentId: receiverAgentId,
+        receiverAgentName: targetName
+      }), 
+      request.id
+    );
 
     // Log external event for receiver
     try {
@@ -1950,13 +1970,6 @@ router.post('/connections/requests', requireAgentAuth, requireAgent, securityLay
     } catch (e) {}
 
     // Broadcast floor activity: [Agent Name] requested connection with [Target Agent]
-    let targetName = receiverAgentId;
-    try {
-      const sb = getSupabaseClient();
-      const { data: tu } = await sb.from('users').select('name, agentId').eq('agentId', receiverAgentId).maybeSingle();
-      if (tu?.name) targetName = tu.name;
-    } catch (e) {}
-
     floorActivityService.recordFloorActivity({
       agentId: req.user!.agentId || req.user!.id,
       agentName: req.user!.name,
@@ -2095,14 +2108,15 @@ router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, securi
         else if (ou?.agentId) peerName = ou.agentId;
 
         // Inbound event for request partner
-        await sb.from('external_events').insert({
-          user_id: otherUserId,
-          type: 'CONNECTION_REJECTED',
-          sender_id: req.user!.agentId || req.user!.id,
-          target_id: requestId,
-          details: `Connection request was declined by agent ${req.user!.agentId || req.user!.name}`,
-          created_at: new Date().toISOString()
-        }).catch(() => {});
+        try {
+          await sb.from('external_events').insert({
+            user_id: otherUserId,
+            type: 'CONNECTION_REJECTED',
+            sender_id: req.user!.agentId || req.user!.id,
+            target_id: requestId,
+            created_at: new Date().toISOString()
+          });
+        } catch (e) {}
       }
     } catch (e) {}
 
@@ -2712,14 +2726,114 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
         .order('created_at', { ascending: false })
         .limit(50);
       if (!error && data && data.length > 0) {
-        footprints = data.map((item: any) => ({
-          id: item.id,
-          action: item.action,
-          endpoint: item.endpoint || item.method ? `${item.method} ${item.path}` : getEndpointForAction(item.action, item.target),
-          details: item.details || item.content,
-          target: item.target || item.target_agent_id,
-          timestamp: item.created_at || item.createdAt || item.timestamp
-        }));
+        // Collect request IDs to resolve connection request metadata
+        const reqIdsToFetch = new Set<string>();
+        data.forEach((item: any) => {
+          const act = (item.action || '').toUpperCase();
+          const tgt = (item.target || '').toLowerCase();
+          if (act.includes('CONNECTION_REQUEST') || tgt.startsWith('req_')) {
+            if (tgt.startsWith('req_')) reqIdsToFetch.add(tgt);
+            if (typeof item.details === 'object' && item.details?.requestId) {
+              reqIdsToFetch.add(String(item.details.requestId).toLowerCase());
+            }
+          }
+        });
+
+        const reqMap: Record<string, any> = {};
+        if (reqIdsToFetch.size > 0) {
+          try {
+            const { data: matchedReqs } = await sb
+              .from('connection_requests')
+              .select('id, senderUserId, senderAgentId, senderAgentName, receiverUserId, receiverAgentId, status')
+              .in('id', Array.from(reqIdsToFetch));
+            if (matchedReqs) {
+              matchedReqs.forEach(r => {
+                reqMap[r.id.toLowerCase()] = r;
+              });
+            }
+          } catch (e) {}
+        }
+
+        // Also resolve agent profiles for matched requests
+        const targetAgentIds = new Set<string>();
+        Object.values(reqMap).forEach((r: any) => {
+          if (r.senderUserId === userId && r.receiverAgentId) targetAgentIds.add(r.receiverAgentId);
+          else if (r.receiverUserId === userId && r.senderAgentId) targetAgentIds.add(r.senderAgentId);
+        });
+
+        // Also check if any item details contains "handshake with agent AMR-..."
+        data.forEach((item: any) => {
+          let str = '';
+          if (typeof item.details === 'string') {
+            str = item.details;
+          } else if (item.details && typeof item.details === 'object') {
+            str = item.details.message || item.details.targetAgentId || item.details.receiverAgentId || '';
+            if (item.details.targetAgentId) targetAgentIds.add(item.details.targetAgentId);
+            if (item.details.receiverAgentId) targetAgentIds.add(item.details.receiverAgentId);
+          }
+          const m = str.match(/(?:handshake with agent|with agent|to agent|agent)\s+([A-Za-z0-9_-]+)/i);
+          if (m && m[1] && !m[1].toLowerCase().startsWith('req_')) {
+            targetAgentIds.add(m[1]);
+          }
+        });
+
+        const userMap: Record<string, any> = {};
+        if (targetAgentIds.size > 0) {
+          try {
+            const { data: matchedUsers } = await sb
+              .from('users')
+              .select('agentId, name, avatar')
+              .in('agentId', Array.from(targetAgentIds));
+            if (matchedUsers) {
+              matchedUsers.forEach(u => {
+                userMap[u.agentId] = u;
+              });
+            }
+          } catch (e) {}
+        }
+
+        footprints = data.map((item: any) => {
+          const act = (item.action || '').toUpperCase();
+          const tgt = (item.target || '').toLowerCase();
+          const matchedReq = reqMap[tgt] || (typeof item.details === 'object' && item.details?.requestId ? reqMap[String(item.details.requestId).toLowerCase()] : null);
+          
+          let targetAgentId = item.target_agent_id;
+          let requestId = null;
+
+          if (tgt.startsWith('req_')) {
+            requestId = item.target;
+          }
+
+          if (matchedReq) {
+            targetAgentId = (matchedReq.senderUserId === userId ? matchedReq.receiverAgentId : matchedReq.senderAgentId) || targetAgentId;
+            requestId = matchedReq.id || requestId;
+          }
+
+          if (!targetAgentId) {
+            let str = '';
+            if (typeof item.details === 'string') str = item.details;
+            else if (item.details && typeof item.details === 'object') str = item.details.message || item.details.targetAgentId || item.details.receiverAgentId || '';
+            const m = str.match(/(?:handshake with agent|with agent|to agent|agent)\s+([A-Za-z0-9_-]+)/i);
+            if (m && m[1] && !m[1].toLowerCase().startsWith('req_')) {
+              targetAgentId = m[1];
+            }
+          }
+
+          const targetUser = targetAgentId ? userMap[targetAgentId] : null;
+
+          return {
+            id: item.id,
+            action: item.action,
+            endpoint: item.endpoint || item.method ? `${item.method} ${item.path}` : getEndpointForAction(item.action, item.target),
+            details: item.details || item.content,
+            target: item.target || item.target_agent_id,
+            targetAgentId: targetAgentId || undefined,
+            targetAgentName: targetUser?.name || matchedReq?.senderAgentName || targetAgentId || undefined,
+            targetAvatar: targetUser?.avatar || undefined,
+            requestId: requestId || undefined,
+            timestamp: item.created_at || item.createdAt || item.timestamp
+          };
+        });
       }
     } catch (e) {
       // Table may not exist yet in Supabase
@@ -2824,16 +2938,44 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
         .order('createdAt', { ascending: false })
         .limit(30);
       if (reqs && reqs.length > 0) {
+        const receiverAgentIds = [...new Set(reqs.map((r: any) => r.receiverAgentId).filter(Boolean))];
+        const userMap: Record<string, any> = {};
+        if (receiverAgentIds.length > 0) {
+          try {
+            const { data: matchedUsers } = await sb
+              .from('users')
+              .select('agentId, name, avatar')
+              .in('agentId', receiverAgentIds);
+            if (matchedUsers) {
+              matchedUsers.forEach((u: any) => {
+                userMap[u.agentId] = u;
+              });
+            }
+          } catch (e) {}
+        }
+
         reqs.forEach((r: any) => {
           const key = `CONNECTION_REQUEST_SENT:${r.id}`;
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
+            const targetUser = userMap[r.receiverAgentId];
             dynamicFootprints.push({
               id: `fp_req_${r.id}`,
               action: 'CONNECTION_REQUEST_SENT',
               endpoint: 'POST /api/connections/request',
-              target: r.id,
-              details: `Initiated handshake with agent ${r.receiverAgentId}`,
+              target: r.receiverAgentId || r.id,
+              targetAgentId: r.receiverAgentId,
+              targetAgentName: targetUser?.name || r.receiverAgentId,
+              targetAvatar: targetUser?.avatar,
+              requestId: r.id,
+              details: {
+                message: `Initiated handshake with agent ${r.receiverAgentId}`,
+                requestId: r.id,
+                targetAgentId: r.receiverAgentId,
+                targetAgentName: targetUser?.name || r.receiverAgentId,
+                targetAvatar: targetUser?.avatar,
+                receiverAgentId: r.receiverAgentId
+              },
               timestamp: r.createdAt
             });
           }

@@ -464,7 +464,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       } else {
         await login(loginAgentId.trim(), password);
         setSuccessMsg('Authentication successful! Welcome back to your dashboard.');
-        /* setTimeout(() => {
+        setTimeout(() => {
           try {
             const stored = localStorage.getItem('aamarva_user');
             if (stored) {
@@ -477,7 +477,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           } catch (e) {
             // ignore
           }
-        }, 200); */
+        }, 200);
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please check your credentials.');
@@ -537,6 +537,26 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       setIsLoadingClusterInvites(false);
     }
   };
+
+  const handleOpenRequestsTab = () => {
+    setActiveProfileTab('requests');
+    fetchPendingRequests();
+    fetchClusterInvites();
+    setTimeout(() => {
+      const targetEl = document.getElementById('account-requests-tab') || document.getElementById('profile-navigation-tabs');
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetEl.classList.add('ring-4', 'ring-[#141414]', 'scale-[1.02]');
+        setTimeout(() => targetEl.classList.remove('ring-4', 'ring-[#141414]', 'scale-[1.02]'), 1500);
+      }
+    }, 100);
+  };
+
+  useEffect(() => {
+    if (window.location.hash === '#requests' || window.location.hash === '#account-requests') {
+      handleOpenRequestsTab();
+    }
+  }, []);
 
   const handleAcceptClusterInvite = async (clusterId: string) => {
     try {
@@ -769,7 +789,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
 
           {/* Twitter Navigation Tabs */}
-          <div className="flex border-t-2 border-b-2 border-[#141414] bg-[#E4E3E0] sticky top-0 z-20 shrink-0">
+          <div id="profile-navigation-tabs" className="flex border-t-2 border-b-2 border-[#141414] bg-[#E4E3E0] sticky top-0 z-20 shrink-0">
             <button
               type="button"
               onClick={() => setActiveProfileTab('posts')}
@@ -823,6 +843,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({clusters.length})</span>
             </button>
             <button
+              id="account-requests-tab"
               type="button"
               onClick={() => setActiveProfileTab('requests')}
               className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
@@ -1239,6 +1260,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         <WebhookAgentLogs
           onOpenChat={(chat) => setActiveChat(chat)}
           connections={realConnections}
+          pendingRequests={pendingRequests}
           onOpenThread={async (rawPostId, logDetails, mode) => {
             const cleanId = String(rawPostId || '').replace('#', '').trim();
             const norm = (id?: any) => String(id || '').replace(/^post[_-]/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -1364,6 +1386,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               ...(details || {})
             });
           }}
+          onOpenRequestsTab={handleOpenRequestsTab}
         />
 
         {/* Secure Operator Vault */}
@@ -1482,7 +1505,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
               <div className="flex flex-col gap-2 flex-grow py-1">
                 {secrets.length === 0 ? (
-                  <span className="text-xs text-[#141414]/60 italic py-2">No secrets stored</span>
+                  <span className="text-xs text-[#141414]/60 italic py-2 leading-relaxed">
+                    Add the secrets you never want your agent to display on the AAMARVA
+                  </span>
                 ) : (
                   <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
                     {secrets.map((sec) => {

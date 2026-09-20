@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   "agentId" TEXT UNIQUE NOT NULL,
   email TEXT UNIQUE NOT NULL,
   "passwordHash" TEXT NOT NULL,
-  name TEXT NOT NULL,
+  name TEXT DEFAULT 'Agent Operator',
   status TEXT NOT NULL DEFAULT 'active',
   avatar TEXT,
   "apiKeyHash" TEXT,
@@ -21,11 +21,15 @@ CREATE TABLE IF NOT EXISTS users (
   "whitelisted_networks" TEXT[]
 );
 
--- Ensure apiKeyFingerprint, emailVerified columns exist on existing deployments
+-- Ensure name, apiKeyFingerprint, emailVerified columns exist on existing deployments
+ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'Agent Operator';
+ALTER TABLE users ALTER COLUMN name DROP NOT NULL;
+ALTER TABLE users ALTER COLUMN name SET DEFAULT 'Agent Operator';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "apiKeyFingerprint" TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerified" BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerifiedAt" TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "whitelisted_networks" TEXT[];
+ALTER TABLE users ADD COLUMN IF NOT EXISTS "plan" TEXT DEFAULT 'free';
 
 -- 2. Posts Table
 CREATE TABLE IF NOT EXISTS posts (
@@ -552,6 +556,7 @@ ALTER TABLE external_events ADD COLUMN IF NOT EXISTS sender_id TEXT;
 ALTER TABLE external_events ADD COLUMN IF NOT EXISTS "senderId" TEXT;
 ALTER TABLE external_events ADD COLUMN IF NOT EXISTS target_id TEXT;
 ALTER TABLE external_events ADD COLUMN IF NOT EXISTS "targetId" TEXT;
+ALTER TABLE external_events ADD COLUMN IF NOT EXISTS details TEXT;
 ALTER TABLE external_events ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS idx_external_events_user_id ON external_events(user_id);
@@ -863,7 +868,194 @@ CREATE INDEX IF NOT EXISTS idx_cluster_members_user ON cluster_members("userId")
 CREATE INDEX IF NOT EXISTS idx_cluster_invites_cluster ON cluster_invites("clusterId");
 CREATE INDEX IF NOT EXISTS idx_cluster_messages_cluster ON cluster_messages("clusterId");
 
--- Reload PostgREST schema cache so the new tables are immediately available via the API
+-- Strictly enforce Max 1 Active Cluster per account
+CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_one_active_per_owner 
+ON clusters ("ownerUserId") 
+WHERE (status = 'active');
+
+-- ==============================================================================
+-- 22. WEBAUTHN / PASSKEY HARDWARE AUTHENTICATION TABLES
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "publicKey" TEXT NOT NULL,
+  "counter" BIGINT NOT NULL DEFAULT 0,
+  "transports" TEXT[],
+  "deviceType" TEXT,
+  "backedUp" BOOLEAN DEFAULT FALSE,
+  "friendlyName" TEXT,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "lastUsedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "challenge" TEXT NOT NULL,
+  "purpose" TEXT NOT NULL,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user ON webauthn_credentials("userId");
+CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_user ON webauthn_challenges("userId");
+
+-- ==============================================================================
+-- 23. SECURITY QUOTAS & ATOMIC RATE LIMITING
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS security_quotas (
+  identifier TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  "monthlyCount" INTEGER NOT NULL DEFAULT 0,
+  "dailyCount" INTEGER NOT NULL DEFAULT 0,
+  "monthStart" TIMESTAMPTZ NOT NULL,
+  "dayStart" TIMESTAMPTZ NOT NULL,
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (identifier, endpoint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_quotas_identifier ON security_quotas(identifier);
+
+-- Atomic Quota & Rate Limit Check Function
+CREATE OR REPLACE FUNCTION check_cluster_quota_atomic(
+  p_identifier TEXT,
+  p_endpoint TEXT,
+  p_window_start TIMESTAMPTZ,
+  p_max_burst INTEGER,
+  p_month_start TIMESTAMPTZ,
+  p_max_monthly INTEGER,
+  p_day_start TIMESTAMPTZ,
+  p_max_daily INTEGER,
+  p_resource_table TEXT DEFAULT NULL,
+  p_resource_owner_col TEXT DEFAULT NULL,
+  p_resource_max INTEGER DEFAULT NULL,
+  p_resource_status_col TEXT DEFAULT NULL,
+  p_resource_active_status TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_burst_count INTEGER := 0;
+  v_monthly_count INTEGER := 0;
+  v_daily_count INTEGER := 0;
+  v_active_resources INTEGER := 0;
+  v_now TIMESTAMPTZ := NOW();
+  v_quota_month_start TIMESTAMPTZ;
+  v_quota_day_start TIMESTAMPTZ;
+BEGIN
+  -- 1. Check Active Resource Limit (e.g. Max Active Clusters)
+  IF p_resource_table IS NOT NULL AND p_resource_owner_col IS NOT NULL AND p_resource_max IS NOT NULL THEN
+    EXECUTE format(
+      'SELECT count(*) FROM %I WHERE %I = $1 AND (%I IS NULL OR %I = $2)',
+      p_resource_table, p_resource_owner_col, p_resource_status_col, p_resource_status_col
+    ) 
+    INTO v_active_resources 
+    USING p_identifier, p_resource_active_status;
+
+    IF v_active_resources >= p_resource_max THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'error', 'RESOURCE_LIMIT_EXCEEDED',
+        'message', format('Maximum active %s reached (%s)', p_resource_table, p_resource_max)
+      );
+    END IF;
+  END IF;
+
+  -- 2. Ensure row exists in Burst Buckets and lock it
+  INSERT INTO security_rate_limit_buckets (identifier, endpoint, "windowStart", "requestCount", "updatedAt")
+  VALUES (p_identifier, p_endpoint, p_window_start, 0, v_now)
+  ON CONFLICT (identifier, endpoint, "windowStart") DO NOTHING;
+
+  -- Lock row
+  SELECT "requestCount" INTO v_burst_count
+  FROM security_rate_limit_buckets
+  WHERE identifier = p_identifier AND endpoint = p_endpoint AND "windowStart" = p_window_start
+  FOR UPDATE;
+
+  -- Boundary Check BEFORE Increment
+  IF v_burst_count >= p_max_burst THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'RATE_LIMIT_EXCEEDED',
+      'message', 'Burst limit exceeded',
+      'burstCount', v_burst_count
+    );
+  END IF;
+
+  -- 3. Ensure row exists in Quotas and lock it
+  INSERT INTO security_quotas (identifier, endpoint, "monthlyCount", "dailyCount", "monthStart", "dayStart", "updatedAt")
+  VALUES (p_identifier, p_endpoint, 0, 0, p_month_start, p_day_start, v_now)
+  ON CONFLICT (identifier, endpoint) DO NOTHING;
+
+  -- Lock row
+  SELECT "monthlyCount", "dailyCount", "monthStart", "dayStart"
+  INTO v_monthly_count, v_daily_count, v_quota_month_start, v_quota_day_start
+  FROM security_quotas
+  WHERE identifier = p_identifier AND endpoint = p_endpoint
+  FOR UPDATE;
+
+  -- Handle Resets (Reset state in memory first)
+  IF v_quota_month_start < p_month_start THEN
+    v_monthly_count := 0;
+  END IF;
+  IF v_quota_day_start < p_day_start THEN
+    v_daily_count := 0;
+  END IF;
+
+  -- Boundary Check BEFORE Increment
+  IF v_monthly_count >= p_max_monthly THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'MONTHLY_QUOTA_EXCEEDED',
+      'message', 'Monthly quota exceeded',
+      'monthlyCount', v_monthly_count
+    );
+  END IF;
+
+  IF v_daily_count >= p_max_daily THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'DAILY_PACING_EXCEEDED',
+      'message', 'Daily pacing target exceeded',
+      'dailyCount', v_daily_count
+    );
+  END IF;
+
+  -- 4. ALL CHECKS PASSED -> INCREMENT ATOMICALLY
+  
+  -- Update Burst
+  UPDATE security_rate_limit_buckets
+  SET "requestCount" = "requestCount" + 1, "updatedAt" = v_now
+  WHERE identifier = p_identifier AND endpoint = p_endpoint AND "windowStart" = p_window_start
+  RETURNING "requestCount" INTO v_burst_count;
+
+  -- Update Quota
+  UPDATE security_quotas
+  SET
+    "monthlyCount" = CASE WHEN "monthStart" < p_month_start THEN 1 ELSE "monthlyCount" + 1 END,
+    "dailyCount" = CASE WHEN "dayStart" < p_day_start THEN 1 ELSE "dailyCount" + 1 END,
+    "monthStart" = GREATEST("monthStart", p_month_start),
+    "dayStart" = GREATEST("dayStart", p_day_start),
+    "updatedAt" = v_now
+  WHERE identifier = p_identifier AND endpoint = p_endpoint
+  RETURNING "monthlyCount", "dailyCount" INTO v_monthly_count, v_daily_count;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'burstCount', v_burst_count,
+    'monthlyCount', v_monthly_count,
+    'dailyCount', v_daily_count
+  );
+END;
+$$;
+
+-- Reload PostgREST schema cache so all changes are immediately available via the API
 NOTIFY pgrst, 'reload schema';
 
 

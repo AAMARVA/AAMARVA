@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GitCommit, Loader2, RotateCw } from 'lucide-react';
+import { GitCommit, Loader2, RotateCw, Inbox } from 'lucide-react';
 import { apiFetch, buildApiUrl } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { getClusterSymbol } from '../lib/clusterSymbols';
@@ -13,16 +13,22 @@ interface LogItem {
   senderId?: string;
   target?: string;
   targetId?: string;
+  targetAgentId?: string;
+  targetAgentName?: string;
+  targetAvatar?: string;
+  requestId?: string;
   timestamp: string;
 }
 
 interface WebhookAgentLogsProps {
   onOpenChat?: (chat: { id: string; agentName: string; avatar?: string; agentId?: string; peerE2eePublicKey?: string }) => void;
   connections?: any[];
+  pendingRequests?: any[];
   onOpenThread?: (postId: string, details?: any, mode?: 'post' | 'reply') => void;
   onOpenPost?: (postId: string, details?: any) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenCluster?: (clusterId: string, details?: any) => void;
+  onOpenRequestsTab?: () => void;
 }
 
 // Map footprint actions to their exact API endpoint
@@ -95,10 +101,12 @@ const CHAT_ELIGIBLE_TYPES = new Set([
 export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({ 
   onOpenChat, 
   connections, 
+  pendingRequests,
   onOpenThread, 
   onOpenPost,
   onOpenAgentProfile,
-  onOpenCluster
+  onOpenCluster,
+  onOpenRequestsTab
 }) => {
   const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>('footprints');
   const [logs, setLogs] = useState<LogItem[]>([]);
@@ -322,44 +330,191 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     return ep.trim();
   };
 
-  const renderAgentBadge = (rawId?: string, details?: any) => {
-    if (!rawId && !details) return null;
+  const resolveLogEntities = (log: LogItem) => {
+    const detailsObj = typeof log.details === 'object' && log.details !== null ? log.details : {};
+    const detailsStr = typeof log.details === 'string' ? log.details : (detailsObj?.message || detailsObj?.details || '');
+    const actionKey = (log.action || log.type || '').toUpperCase();
+    const rawTarget = log.target || log.targetId || detailsObj?.targetId;
 
-    const detailsObj = typeof details === 'object' ? details : {};
-    const searchKey = String(rawId || detailsObj?.senderId || detailsObj?.targetId || detailsObj?.agentId || '').toLowerCase();
+    const isRequestAction = 
+      actionKey.includes('CONNECTION_REQUEST') ||
+      actionKey.includes('REQUEST_SENT') ||
+      actionKey.includes('REQUEST_RECEIVED') ||
+      (log.endpoint && (log.endpoint.includes('/connections/request') || log.endpoint.includes('/connections/requests')));
 
-    const match = connections?.find((c: any) => {
-      const cId = String(c.id || c.connectionId || '').toLowerCase();
-      const cAgentId = String(c.agentId || '').toLowerCase();
-      return cId === searchKey || (cAgentId && cAgentId === searchKey);
-    });
+    // 1. Identify request ID
+    let requestId: string | null = null;
+    if (log.requestId) {
+      requestId = log.requestId;
+    } else if (detailsObj?.requestId) {
+      requestId = detailsObj.requestId;
+    } else if (rawTarget && (rawTarget.toLowerCase().startsWith('req_') || rawTarget.toUpperCase().startsWith('REQ_'))) {
+      requestId = rawTarget;
+    } else if (log.id && (log.id.startsWith('req_') || log.id.startsWith('REQ_') || log.id.startsWith('fp_req_'))) {
+      requestId = log.id.replace(/^fp_req_/, '');
+    }
 
-    const agentName = match?.agentName || match?.peerName || detailsObj?.senderName || detailsObj?.agentName || detailsObj?.peerName || rawId || 'Agent';
-    const agentId = match?.agentId || detailsObj?.senderAgentId || detailsObj?.agentId || detailsObj?.peerAgentId || rawId || 'agent';
-    const avatar = match?.avatar || match?.peerAvatar || detailsObj?.avatar || detailsObj?.senderAvatar;
+    // 2. Identify agent ID
+    let agentId: string | null = null;
+    if (log.targetAgentId) {
+      agentId = log.targetAgentId;
+    } else if (detailsObj?.targetAgentId) {
+      agentId = detailsObj.targetAgentId;
+    } else if (detailsObj?.receiverAgentId) {
+      agentId = detailsObj.receiverAgentId;
+    } else if (detailsObj?.senderAgentId) {
+      agentId = detailsObj.senderAgentId;
+    } else if (log.senderId && !log.senderId.toLowerCase().startsWith('req_')) {
+      agentId = log.senderId;
+    } else if (
+      rawTarget && 
+      !rawTarget.toLowerCase().startsWith('req_') && 
+      !rawTarget.toUpperCase().startsWith('REQ_') && 
+      !rawTarget.toLowerCase().startsWith('post_') && 
+      !rawTarget.toLowerCase().startsWith('cluster_')
+    ) {
+      agentId = rawTarget;
+    }
+
+    // If agentId is still empty, parse from details string (e.g. "Initiated handshake with agent AMR-FEZV-4FCC")
+    if (!agentId && detailsStr) {
+      const match = detailsStr.match(/(?:handshake with agent|with agent|to agent|from agent|agent)\s+([A-Za-z0-9_-]+)/i);
+      if (match && match[1] && !match[1].toLowerCase().startsWith('req_')) {
+        agentId = match[1];
+      }
+    }
+
+    let agentName = log.targetAgentName || detailsObj?.targetAgentName || detailsObj?.receiverAgentName || detailsObj?.senderAgentName || detailsObj?.agentName || detailsObj?.peerName || null;
+    let agentAvatar = log.targetAvatar || detailsObj?.targetAvatar || detailsObj?.receiverAvatar || detailsObj?.senderAvatar || detailsObj?.avatar || null;
+
+    // Check pending requests
+    if (requestId && pendingRequests && pendingRequests.length > 0) {
+      const cleanReqId = requestId.toLowerCase();
+      const matchedReq = pendingRequests.find((pr: any) => String(pr.id || '').toLowerCase() === cleanReqId);
+      if (matchedReq) {
+        if (!agentId) {
+          agentId = matchedReq.receiverAgentId || matchedReq.senderAgentId;
+        }
+        if (!agentName) {
+          agentName = matchedReq.receiverAgentName || matchedReq.senderAgentName;
+        }
+        if (!agentAvatar) {
+          agentAvatar = matchedReq.receiverAvatar || matchedReq.senderAvatar;
+        }
+      }
+    }
+
+    // Check connections
+    if (agentId && connections && connections.length > 0) {
+      const cleanAgentId = agentId.toLowerCase();
+      const match = connections.find((c: any) => {
+        const cId = String(c.id || c.connectionId || '').toLowerCase();
+        const cAgentId = String(c.agentId || '').toLowerCase();
+        return cId === cleanAgentId || cAgentId === cleanAgentId;
+      });
+      if (match) {
+        if (!agentName) agentName = match.agentName || match.peerName;
+        if (!agentAvatar) agentAvatar = match.avatar || match.peerAvatar;
+      }
+    }
+
+    const isRequest = Boolean(isRequestAction || requestId);
+
+    return {
+      isRequest,
+      requestId,
+      agentId,
+      agentName: agentName || agentId || 'Agent',
+      agentAvatar
+    };
+  };
+
+  const renderAgentBadge = (rawAgentId?: string, agentName?: string | null, avatar?: string | null, details?: any) => {
+    if (!rawAgentId && !details) return null;
+
+    const detailsObj = typeof details === 'object' && details !== null ? details : {};
+    const finalAgentId = rawAgentId || detailsObj?.agentId || detailsObj?.targetAgentId || detailsObj?.receiverAgentId || detailsObj?.senderAgentId || 'agent';
+
+    // If finalAgentId is a request ID or cluster or post, don't render it as an agent
+    if (
+      finalAgentId.toLowerCase().startsWith('req_') || 
+      finalAgentId.toUpperCase().startsWith('REQ_') ||
+      finalAgentId.toLowerCase().startsWith('post_') ||
+      finalAgentId.toLowerCase().startsWith('cluster_')
+    ) {
+      return null;
+    }
+
+    let displayName = agentName || detailsObj?.agentName || detailsObj?.targetAgentName || detailsObj?.receiverAgentName || detailsObj?.senderAgentName || detailsObj?.name;
+    let resolvedAvatar = avatar || detailsObj?.avatar || detailsObj?.targetAvatar || detailsObj?.receiverAvatar || detailsObj?.senderAvatar;
+
+    if ((!displayName || !resolvedAvatar) && connections && connections.length > 0) {
+      const searchKey = finalAgentId.toLowerCase();
+      const match = connections.find((c: any) => {
+        const cId = String(c.id || c.connectionId || '').toLowerCase();
+        const cAgentId = String(c.agentId || '').toLowerCase();
+        return cId === searchKey || cAgentId === searchKey;
+      });
+      if (match) {
+        if (!displayName) displayName = match.agentName || match.peerName;
+        if (!resolvedAvatar) resolvedAvatar = match.avatar || match.peerAvatar;
+      }
+    }
+
+    const finalName = displayName || finalAgentId || 'Agent';
 
     return (
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          onOpenAgentProfile?.(agentName, avatar, agentId);
+          onOpenAgentProfile?.(finalName, resolvedAvatar || undefined, finalAgentId);
         }}
         className="inline-flex items-center gap-2 bg-[#141414] hover:bg-white hover:text-[#141414] group border border-white/20 px-2 py-1 transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
-        title={`View profile for ${agentName}`}
+        title={`View profile for ${finalName} (@${finalAgentId})`}
       >
         <AgentAvatar 
-          name={agentName} 
-          avatar={avatar} 
-          id={agentId} 
+          name={finalName} 
+          avatar={resolvedAvatar || undefined} 
+          id={finalAgentId} 
           className="w-5 h-5 border border-white/20 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.1)] shrink-0" 
         />
         <div className="flex flex-col text-left leading-none">
-          <span className="font-black text-[10px] tracking-wider uppercase text-white/90 group-hover:text-[#141414]">
-            {agentName}
+          <span className="font-black text-[10px] tracking-wider uppercase text-white/90 group-hover:text-[#141414] transition-colors">
+            {finalName}
           </span>
-          <span className="font-mono text-[8px] font-bold text-white/60 group-hover:text-[#141414]/80 tracking-wider mt-0.5">
-            @{agentId}
+          <span className="font-mono text-[8px] font-bold text-white/60 group-hover:text-[#141414]/80 tracking-wider mt-0.5 transition-colors">
+            @{finalAgentId}
+          </span>
+        </div>
+      </button>
+    );
+  };
+
+  const renderRequestBadge = (rawRequestId: string) => {
+    if (!rawRequestId) return null;
+    const cleanId = rawRequestId.toUpperCase();
+    const displayId = cleanId.length > 20 ? `${cleanId.slice(0, 16)}...` : cleanId;
+
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenRequestsTab?.();
+        }}
+        className="inline-flex items-center gap-2 bg-[#141414] hover:bg-white hover:text-[#141414] group border border-white/20 px-2 py-1 transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
+        title={`Request ID: ${cleanId} — Click to redirect to Account Requests tab`}
+      >
+        <div className="w-5 h-5 bg-white/10 border border-white/20 flex items-center justify-center text-white/90 group-hover:text-[#141414] group-hover:bg-[#141414]/10 shrink-0 transition-colors">
+          <Inbox className="w-3 h-3" />
+        </div>
+        <div className="flex flex-col text-left leading-none">
+          <span className="font-black text-[10px] tracking-wider uppercase text-white/90 group-hover:text-[#141414] transition-colors">
+            {displayId}
+          </span>
+          <span className="font-mono text-[8px] font-bold text-white/60 group-hover:text-[#141414]/80 tracking-wider mt-0.5 transition-colors">
+            ACCOUNT REQUEST
           </span>
         </div>
       </button>
@@ -496,6 +651,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
               const isPostTarget = !isReplyTarget && (actionKey.includes('POST') || (log.endpoint && log.endpoint.includes('/posts')) || (targetStr && (targetStr.startsWith('post_') || targetStr.startsWith('POST_'))));
               const isThreadTarget = isPostTarget || isReplyTarget;
               const isClusterTarget = actionKey.includes('CLUSTER') || (targetStr && (targetStr.startsWith('cluster_') || targetStr.startsWith('cls_'))) || Boolean(log.details?.clusterId);
+              const entities = resolveLogEntities(log);
 
               // Footprint Layout
               if (activeTab === 'footprints') {
@@ -517,13 +673,11 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
                       </code>
                     </div>
 
-                    {/* Row 3: Direct Link Boxes (Standard Agent / Cluster Badge + Action Boxes) */}
+                    {/* Row 3: Direct Link Boxes (Agent Profile Badge + Request Badge + Action Boxes) */}
                     <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
-                      {/* Standard Target Agent or Cluster Badge */}
-                      {!isThreadTarget && (
-                        isClusterTarget 
-                          ? renderClusterBadge(targetStr || log.details?.clusterId, log.details)
-                          : targetStr ? renderAgentBadge(targetStr, log.details) : null
+                      {/* Cluster Badge if cluster event */}
+                      {isClusterTarget && (
+                        renderClusterBadge(targetStr || log.details?.clusterId, log.details)
                       )}
 
                       {/* Thread or Direct Post Link Box */}
@@ -550,6 +704,19 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
                         </button>
                       )}
 
+                      {/* If Connection Request: Show Agent Profile Badge (opens Profile Modal) AND Request Link (redirects to Requests tab) */}
+                      {!isClusterTarget && !isThreadTarget && entities.isRequest && (
+                        <>
+                          {entities.agentId && renderAgentBadge(entities.agentId, entities.agentName, entities.agentAvatar, log.details)}
+                          {entities.requestId && renderRequestBadge(entities.requestId)}
+                        </>
+                      )}
+
+                      {/* Standard Agent Badge if NOT a Request and NOT Cluster/Thread */}
+                      {!isClusterTarget && !isThreadTarget && !entities.isRequest && (
+                        renderAgentBadge(entities.agentId || targetStr, entities.agentName, entities.agentAvatar, log.details)
+                      )}
+
                       {/* Open Chat Direct Link Box */}
                       {onOpenChat && isChatable && (
                         <button
@@ -558,6 +725,22 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
                           className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
                         >
                           Open Chat
+                        </button>
+                      )}
+
+                      {/* Account Requests Direct Link Box */}
+                      {onOpenRequestsTab && entities.isRequest && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenRequestsTab();
+                          }}
+                          className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-1.5"
+                          title="Redirect to Account Requests tab"
+                        >
+                          <Inbox className="w-3.5 h-3.5 text-[#141414]" />
+                          <span>Account Requests</span>
                         </button>
                       )}
                     </div>
@@ -584,10 +767,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
 
                   {/* Row 3: Direct Link Boxes */}
                   <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
-                    {/* Standard Sender Agent Profile Badge */}
-                    {senderStr && renderAgentBadge(senderStr, log.details)}
-
-                    {/* Standard Cluster Badge if cluster event */}
+                    {/* Cluster Badge if cluster event */}
                     {isClusterTarget && renderClusterBadge(log.details?.clusterId || targetStr, log.details)}
 
                     {/* Thread or Direct Post Link Box */}
@@ -614,6 +794,19 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
                       </button>
                     )}
 
+                    {/* If Connection Request: Show Agent Profile Badge (opens Profile Modal) AND Request Link (redirects to Requests tab) */}
+                    {!isClusterTarget && !isThreadTarget && entities.isRequest && (
+                      <>
+                        {entities.agentId && renderAgentBadge(entities.agentId, entities.agentName, entities.agentAvatar, log.details)}
+                        {entities.requestId && renderRequestBadge(entities.requestId)}
+                      </>
+                    )}
+
+                    {/* Standard Agent Badge if NOT a Request and NOT Cluster/Thread */}
+                    {!isClusterTarget && !isThreadTarget && !entities.isRequest && (
+                      renderAgentBadge(entities.agentId || senderStr || targetStr, entities.agentName, entities.agentAvatar, log.details)
+                    )}
+
                     {/* Open Chat Direct Link Box */}
                     {onOpenChat && isChatable && (
                       <button
@@ -622,6 +815,22 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
                         className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
                       >
                         Open Chat
+                      </button>
+                    )}
+
+                    {/* Account Requests Direct Link Box */}
+                    {onOpenRequestsTab && entities.isRequest && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenRequestsTab();
+                        }}
+                        className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-1.5"
+                        title="Redirect to Account Requests tab"
+                      >
+                        <Inbox className="w-3.5 h-3.5 text-[#141414]" />
+                        <span>Account Requests</span>
                       </button>
                     )}
                   </div>

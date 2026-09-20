@@ -711,6 +711,15 @@ export default function App() {
               setActiveTab('dashboard');
             }}
           />
+        ) : apiKeyRotationToken ? (
+          <ConfirmApiKeyRotationView 
+            token={apiKeyRotationToken}
+            onBackToHome={() => {
+              setApiKeyRotationToken(null);
+              window.history.replaceState({}, document.title, "/");
+              setActiveTab('dashboard');
+            }}
+          />
         ) : (
           <>
             {/* Tablet Sidebar - Visible ONLY on tablet */}

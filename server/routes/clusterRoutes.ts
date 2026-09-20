@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { requireUserOrAgentAuth, requireAgentAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { getSupabaseClient } from '../supabase';
-import { logAgentFootprint } from '../services/auditService';
+import { logAgentFootprint, logExternalEvent } from '../services/auditService';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { floorActivityService } from '../services/floorActivityService';
 import { SecurityService } from '../services/securityService';
@@ -708,7 +708,9 @@ router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req
             created_at: new Date().toISOString()
           }));
         if (events.length > 0) {
-          await supabase.from('external_events').insert(events).catch(() => {});
+          try {
+            await supabase.from('external_events').insert(events);
+          } catch (e) {}
         }
       }
     } catch (e) {}
@@ -1117,14 +1119,15 @@ router.patch('/clusters/:clusterId/members/:memberAgentId/role', requireUserOrAg
 
     // Inbound event for target member
     if (member.userId) {
-      await supabase.from('external_events').insert({
-        user_id: member.userId,
-        type: 'CLUSTER_ROLE_UPDATED',
-        sender_id: req.user!.agentId || req.user!.id,
-        target_id: clusterId,
-        details: `Your role in cluster was updated to ${role} by agent ${req.user!.agentId || req.user!.name}`,
-        created_at: new Date().toISOString()
-      }).catch(() => {});
+      try {
+        await supabase.from('external_events').insert({
+          user_id: member.userId,
+          type: 'CLUSTER_ROLE_UPDATED',
+          sender_id: req.user!.agentId || req.user!.id,
+          target_id: clusterId,
+          created_at: new Date().toISOString()
+        });
+      } catch (e) {}
     }
 
     await logAgentFootprint(
@@ -1297,13 +1300,35 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentA
       return res.status(403).json({ success: false, error: { message: 'Forbidden: Only cluster admins or owners can kick members.' } });
     }
 
-    // Find the member record
-    const { data: member, error: memberErr } = await supabase
+    const cleanMemberAgentId = memberAgentId.trim().replace(/^@/, '');
+
+    // Find the member record (flexible lookup by agentId, clean agentId, or userId)
+    let { data: member, error: memberErr } = await supabase
       .from(tables.members)
       .select('*')
       .eq('clusterId', clusterId)
       .eq('agentId', memberAgentId.trim())
       .maybeSingle();
+
+    if (!member && cleanMemberAgentId !== memberAgentId.trim()) {
+      const { data: memberAlt } = await supabase
+        .from(tables.members)
+        .select('*')
+        .eq('clusterId', clusterId)
+        .eq('agentId', cleanMemberAgentId)
+        .maybeSingle();
+      if (memberAlt) member = memberAlt;
+    }
+
+    if (!member) {
+      const { data: memberByUserId } = await supabase
+        .from(tables.members)
+        .select('*')
+        .eq('clusterId', clusterId)
+        .eq('userId', cleanMemberAgentId)
+        .maybeSingle();
+      if (memberByUserId) member = memberByUserId;
+    }
 
     if (memberErr || !member) {
       return res.status(404).json({ success: false, error: { message: 'Member not found in this cluster.' } });
@@ -1319,42 +1344,69 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentA
       throw new Error(`Failed to update member status: ${kickErr.message}`);
     }
 
-    // Inbound event for kicked member
-    if (member.userId) {
-      await supabase.from('external_events').insert({
-        user_id: member.userId,
-        type: 'CLUSTER_MEMBER_REMOVED',
-        sender_id: req.user!.agentId || req.user!.id,
-        target_id: clusterId,
-        details: `You were removed from cluster by admin agent ${req.user!.agentId || req.user!.name}`,
-        created_at: new Date().toISOString()
-      }).catch(() => {});
-    }
-
-    // Broadcast floor activity: [Agent Name] removed [Target Agent] from Cluster "[Cluster Name]"
+    // Broadcast floor activity & metadata lookup
     let clusterName = 'Cluster';
     try {
       const { data: c } = await supabase.from(tables.clusters).select('name').eq('id', clusterId).maybeSingle();
       if (c?.name) clusterName = c.name;
     } catch (e) {}
 
-    let targetMemberName = memberAgentId.trim();
+    let targetMemberName = cleanMemberAgentId;
     try {
-      const targetMeta = await floorActivityService.resolveAgentMeta(memberAgentId.trim());
+      const targetMeta = await floorActivityService.resolveAgentMeta(cleanMemberAgentId);
       if (targetMeta?.name) targetMemberName = targetMeta.name;
     } catch (e) {}
 
-    floorActivityService.recordFloorActivity({
-      agentId: req.user!.agentId || req.user!.id,
-      agentName: req.user!.name,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `removed ${targetMemberName} from Cluster "${clusterName}"`,
-      type: 'CLUSTER_MEMBER_EJECTED',
-      peerName: targetMemberName,
-      peerAgentId: memberAgentId.trim(),
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
-    }).catch(console.warn);
+    // Inbound event for kicked member
+    if (member.userId) {
+      try {
+        await logExternalEvent(
+          member.userId,
+          'CLUSTER_MEMBER_REMOVED',
+          req.user!.agentId || req.user!.id,
+          clusterId,
+          { clusterId, clusterName, memberAgentId: member.agentId || cleanMemberAgentId }
+        );
+      } catch (e) {
+        try {
+          await supabase.from('external_events').insert({
+            user_id: member.userId,
+            type: 'CLUSTER_MEMBER_REMOVED',
+            sender_id: req.user!.agentId || req.user!.id,
+            target_id: clusterId,
+            created_at: new Date().toISOString()
+          });
+        } catch (e2) {}
+      }
+    }
+
+    // Footprint tracking for audit trail
+    try {
+      await logAgentFootprint(
+        userId,
+        'CLUSTER_MEMBER_REMOVED',
+        `agent ${req.user!.agentId || userId} removed member ${cleanMemberAgentId} from cluster ${clusterId}`,
+        clusterId,
+        req.user!.agentId
+      );
+    } catch (e) {}
+
+    // Floor activity record safely handled
+    try {
+      await floorActivityService.recordFloorActivity({
+        agentId: req.user!.agentId || req.user!.id,
+        agentName: req.user!.name,
+        avatar: req.user!.avatar,
+        emailVerified: req.user!.emailVerified,
+        text: `removed ${targetMemberName} from Cluster "${clusterName}"`,
+        type: 'CLUSTER_MEMBER_EJECTED',
+        peerName: targetMemberName,
+        peerAgentId: cleanMemberAgentId,
+        cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
+      });
+    } catch (err) {
+      console.warn('[ClusterRoutes] Failed to record floor activity:', err);
+    }
 
     res.json({ success: true, message: 'Member was successfully removed from the cluster.' });
   } catch (err: any) {

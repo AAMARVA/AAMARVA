@@ -35,8 +35,73 @@ export function getSupabaseClient() {
         autoRefreshToken: false,
       },
     });
+    patchPostgrestBuilder(supabaseClient);
   }
   return supabaseClient;
+}
+
+function patchPostgrestBuilder(client: any) {
+  if (!client) return;
+
+  // 1. Prototype patching on PostgrestBuilder
+  try {
+    const probe = client.from('__proto_probe__').select('id');
+    let proto = Object.getPrototypeOf(probe);
+    while (proto && proto !== Object.prototype) {
+      if (proto.constructor && (proto.constructor.name === 'PostgrestBuilder' || proto.constructor.name === 'PostgrestFilterBuilder')) {
+        if (typeof proto.catch !== 'function') {
+          proto.catch = function(onRejected: any) {
+            return this.then(undefined, onRejected);
+          };
+        }
+        if (typeof proto.finally !== 'function') {
+          proto.finally = function(onFinally: any) {
+            return this.then(
+              (val: any) => Promise.resolve(onFinally && onFinally()).then(() => val),
+              (err: any) => Promise.resolve(onFinally && onFinally()).then(() => { throw err; })
+            );
+          };
+        }
+      }
+      proto = Object.getPrototypeOf(proto);
+    }
+  } catch (e) {}
+
+  // 2. Wrap client.from methods to ensure any returned builder has .catch and .finally
+  try {
+    if (!client.__isCatchPatched) {
+      client.__isCatchPatched = true;
+      const originalFrom = client.from.bind(client);
+      client.from = function(table: string, options?: any) {
+        const builder = originalFrom(table, options);
+        ['insert', 'update', 'delete', 'select', 'upsert'].forEach((method) => {
+          const originalMethod = builder[method]?.bind(builder);
+          if (typeof originalMethod === 'function') {
+            builder[method] = function(...args: any[]) {
+              const queryResult = originalMethod(...args);
+              if (queryResult && typeof queryResult.then === 'function') {
+                if (typeof queryResult.catch !== 'function') {
+                  queryResult.catch = function(onRejected: any) {
+                    return this.then(undefined, onRejected);
+                  };
+                }
+                if (typeof queryResult.finally !== 'function') {
+                  queryResult.finally = function(onFinally: any) {
+                    return this.then(
+                      (val: any) => Promise.resolve(onFinally && onFinally()).then(() => val),
+                      (err: any) => Promise.resolve(onFinally && onFinally()).then(() => { throw err; })
+                    );
+                  };
+                }
+              }
+              return queryResult;
+            };
+          }
+        });
+        return builder;
+      };
+    }
+  } catch (e) {}
 }
 
 export async function checkDatabaseConnectivity(): Promise<void> {
@@ -62,6 +127,18 @@ export async function checkDatabaseConnectivity(): Promise<void> {
     const { error: clusterError } = await supabase.from('clusters').select('id').limit(1);
     if (clusterError && (clusterError.code === '42P01' || clusterError.message?.includes('does not exist'))) {
       console.warn(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase/migrations/add_clusters_tables.sql" in your Supabase SQL Editor to enable Clusters.`);
+    }
+
+    // Check external_events table & details column
+    const { error: eventError } = await supabase.from('external_events').select('id, details').limit(1);
+    if (eventError && eventError.message?.includes('details does not exist')) {
+      console.warn(`👉 SCHEMA NOTICE: Column "details" is missing on "external_events". Run "supabase/migrations/update_schema_external_events_and_passkeys.sql" in Supabase SQL Editor.`);
+    }
+
+    // Check webauthn_credentials table
+    const { error: webauthnError } = await supabase.from('webauthn_credentials').select('id').limit(1);
+    if (webauthnError && (webauthnError.code === '42P01' || webauthnError.message?.includes('does not exist'))) {
+      console.warn(`👉 SCHEMA NOTICE: WebAuthn tables not found. If using Passkeys/WebAuthn hardware tokens, run "supabase/migrations/update_schema_external_events_and_passkeys.sql" in Supabase SQL Editor.`);
     }
   } catch (err: any) {
     console.warn(`⚠️ Warning connecting to Supabase: ${err?.message || err}`);
