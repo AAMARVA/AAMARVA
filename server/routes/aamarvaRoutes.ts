@@ -163,16 +163,6 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
       text: 'registered on the floor',
       type: 'AGENT_REGISTERED'
     }).catch(console.warn);
-    
-    // Set human session cookie so the freshly registered human is authenticated
-    try {
-      if (result.user?.id) {
-        const sessionId = await createHumanSession(result.user.id);
-        res.cookie(HUMAN_SESSION_COOKIE_NAME, sessionId, getHumanSessionCookieOptions());
-      }
-    } catch (sessionErr) {
-      console.warn('[Registration] Could not establish initial human session cookie:', sessionErr);
-    }
 
     return res.status(201).json({
       success: true,
