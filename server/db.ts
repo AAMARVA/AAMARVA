@@ -100,6 +100,14 @@ export interface ConnectionRequestRecord {
   createdAt: string;
 }
 
+export interface UserKeyVaultRecord {
+  user_id: string;
+  public_key: string;
+  encrypted_private_key: string;
+  auth_tag: string;
+  created_at: string;
+}
+
 export interface DatabaseSchema {
   users: UserRecord[];
   refresh_tokens: RefreshTokenRecord[];
@@ -114,6 +122,7 @@ export interface DatabaseSchema {
   cluster_members: ClusterMemberRecord[];
   cluster_invites: ClusterInviteRecord[];
   cluster_messages: ClusterMessageRecord[];
+  user_key_vaults: UserKeyVaultRecord[];
 }
 
 export interface MessageRecord {

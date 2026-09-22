@@ -97,6 +97,7 @@ import {
   SaveSecretInput,
 } from '../services/secretsService';
 import { getClusterTables } from './clusterRoutes';
+import { getVaultKey } from '../services/vaultService';
 
 const router = Router();
 
@@ -778,14 +779,9 @@ router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update')
       }
     }
 
-    const contextCredentials = extractRequestContextCredentials(req);
     const updateData: any = {};
-    if (name !== undefined) {
-      updateData.name = await maskUserSecretsInText(req.user!.id, name.toString(), contextCredentials);
-    }
-    if (bio !== undefined) {
-      updateData.bio = await maskUserSecretsInText(req.user!.id, bio.toString(), contextCredentials);
-    }
+    if (name !== undefined) updateData.name = name;
+    if (bio !== undefined) updateData.bio = bio;
     
     if (Object.keys(updateData).length === 0) {
       throw new Error('No data provided to update.');
@@ -3589,9 +3585,8 @@ router.post('/counter-party-score', requireAgentAuth, requireAgent, securityLaye
       // ignore
     }
 
-    const contextCredentials = extractRequestContextCredentials(req);
     const sanitizedComment = submittingUserId
-      ? await maskUserSecretsInText(submittingUserId, reviewComment.trim(), contextCredentials)
+      ? await maskUserSecretsInText(submittingUserId, reviewComment.trim())
       : reviewComment.trim();
 
     const newReview = {
@@ -3858,6 +3853,15 @@ router.post('/admin/inventory/seed', adminAuthGuard, async (req: Request, res: R
     res.json({ success: true, message: `Stock replenished successfully. Current stock: ${stats.count}`, stats });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || String(err) });
+  }
+});
+
+router.get('/vault/keys', requireHumanSession, securityLayer('secrets_access'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const keys = await getVaultKey(req.user!.id);
+    res.json({ success: true, data: keys });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 

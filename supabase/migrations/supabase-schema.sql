@@ -21,6 +21,15 @@ CREATE TABLE IF NOT EXISTS users (
   "whitelisted_networks" TEXT[]
 );
 
+-- 1.5. User Key Vaults Table (Session-Based Decryption)
+CREATE TABLE IF NOT EXISTS user_key_vaults (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  public_key TEXT NOT NULL,
+  encrypted_private_key TEXT NOT NULL,
+  auth_tag TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Ensure name, apiKeyFingerprint, emailVerified columns exist on existing deployments
 ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'Agent Operator';
 ALTER TABLE users ALTER COLUMN name DROP NOT NULL;
