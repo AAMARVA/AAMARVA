@@ -1055,6 +1055,37 @@ BEGIN
 END;
 $$;
 
+-- Agent Inventory Buffer Table (Pre-generated Agent IDs and Avatars Queue)
+CREATE TABLE IF NOT EXISTS agent_inventory (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "agentId" TEXT UNIQUE NOT NULL,
+  avatar TEXT NOT NULL,
+  is_recycled BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for ultra-fast First-In First-Out (FIFO) pop queries
+CREATE INDEX IF NOT EXISTS idx_agent_inventory_created_at 
+ON agent_inventory (created_at ASC);
+
+-- Enable Row Level Security (RLS) on agent_inventory
+ALTER TABLE agent_inventory ENABLE ROW LEVEL SECURITY;
+
+-- Allow service_role full access to agent_inventory
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'agent_inventory' AND policyname = 'Allow service_role full access to agent_inventory'
+  ) THEN
+    CREATE POLICY "Allow service_role full access to agent_inventory"
+    ON agent_inventory
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
+
 -- Reload PostgREST schema cache so all changes are immediately available via the API
 NOTIFY pgrst, 'reload schema';
 

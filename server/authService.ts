@@ -6,6 +6,7 @@ import { getSupabaseClient, isSupabaseConfigured } from './supabase.js';
 import { sendEmailVerification, sendPasswordResetEmail, sendAccountVerificationEmail, sendApiKeyRotationEmail } from './emailService.js';
 import { config } from './config.js';
 import { validateAndNormalizeWhitelist, isIpAllowed } from './utils/networkWhitelist.js';
+import { popInventoryItem, recycleAvatarToInventory } from './services/inventoryService.js';
 
 
 export interface UserTokenPayload {
@@ -595,27 +596,30 @@ export async function registerUser(data: {
     return `AMR-${segment(4)}-${segment(4)}`;
   };
 
-  // Generate unique Agent ID
-  let agentId = '';
-  let isUniqueAgentId = false;
-  let idAttempts = 0;
-  while (!isUniqueAgentId && idAttempts < 10) {
-    const prospectiveId = generateId();
-    let isUsed = false;
-    try {
-      const { data: ext1 } = await supabase.from('users').select('id').eq('agentId', prospectiveId).limit(1);
-      if (ext1 && ext1.length > 0) isUsed = true;
-    } catch (e) {
-      // ignore
+  // Claim pre-generated Agent ID & Avatar from inventory buffer
+  const inventoryItem = await popInventoryItem();
+  let agentId = (data.agentId || inventoryItem.agentId).trim();
+  const assignedAvatar = inventoryItem.avatar || `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`;
+
+  if (!data.agentId) {
+    let isUniqueAgentId = false;
+    let idAttempts = 0;
+    while (!isUniqueAgentId && idAttempts < 10) {
+      let isUsed = false;
+      try {
+        const { data: ext1 } = await supabase.from('users').select('id').eq('agentId', agentId).limit(1);
+        if (ext1 && ext1.length > 0) isUsed = true;
+      } catch (e) {
+        // ignore
+      }
+      if (!isUsed) {
+        isUniqueAgentId = true;
+      } else {
+        const fallbackItem = await popInventoryItem();
+        agentId = fallbackItem.agentId;
+      }
+      idAttempts++;
     }
-    if (!isUsed) {
-      agentId = prospectiveId;
-      isUniqueAgentId = true;
-    }
-    idAttempts++;
-  }
-  if (!agentId) {
-    agentId = generateId();
   }
 
   // Generate unique API Key
@@ -654,7 +658,7 @@ export async function registerUser(data: {
             user_metadata: {
               agentId,
               name: agentName,
-              avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
+              avatar: assignedAvatar,
               bio: (data.bio || '').trim() || DEFAULT_BIO
             },
             app_metadata: { apiKeyHash, apiKeyFingerprint, emailVerified: false, whitelisted_networks }
@@ -698,7 +702,7 @@ export async function registerUser(data: {
             data: {
               agentId,
               name: agentName,
-              avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
+              avatar: assignedAvatar,
               bio: (data.bio || '').trim() || DEFAULT_BIO
             }
           }
@@ -731,7 +735,7 @@ export async function registerUser(data: {
     apiKeyFingerprint: apiKeyFingerprint,
     name: agentName,
     status: 'active',
-    avatar: `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`,
+    avatar: assignedAvatar,
     bio: (data.bio || '').trim() || DEFAULT_BIO,
     emailVerified: false,
     whitelisted_networks,
@@ -1024,7 +1028,7 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   // 0. Pre-check: Verify user exists before attempting deletion
   const { data: userBefore, error: findErr } = await supabase
     .from('users')
-    .select('id, agentId, email')
+    .select('id, agentId, email, avatar')
     .eq('id', userId)
     .maybeSingle();
 
@@ -1035,6 +1039,13 @@ export async function deleteUserAccount(userId: string): Promise<void> {
 
   if (!userBefore) {
     throw new Error('Account deletion failed: User account not found or already deleted.');
+  }
+
+  // Recycle deleted agent's avatar to inventory paired with a brand-new Agent ID (bypasses Max Capacity cap)
+  if (userBefore?.avatar) {
+    recycleAvatarToInventory(userBefore.avatar).catch(err => {
+      console.warn('[Account Deletion] Failed to recycle avatar to inventory:', err?.message || err);
+    });
   }
 
   const userEmail = (userBefore.email || '').trim().toLowerCase();
@@ -1078,6 +1089,80 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   try {
     await supabase.from('external_events').delete().eq('userId', userId);
   } catch (e) {}
+
+  // Step 7.5: Delete Cluster Memberships & Orphaned Clusters
+  try {
+    const rawAgentId = (userBefore.agentId || '').trim();
+    const cleanAgentId = rawAgentId.replace(/^@/, '');
+    const prefixedAgentId = cleanAgentId ? `@${cleanAgentId}` : '';
+
+    const clusterTablesList = ['cluster_members', 'enclave_cluster_members'];
+    const clusterMainList = ['clusters', 'enclave_clusters'];
+    const clusterInvitesList = ['cluster_invites', 'enclave_cluster_invites'];
+    const clusterMessagesList = ['cluster_messages', 'enclave_cluster_messages'];
+
+    for (let i = 0; i < clusterTablesList.length; i++) {
+      const membersTable = clusterTablesList[i];
+      const clustersTable = clusterMainList[i];
+      const invitesTable = clusterInvitesList[i];
+      const messagesTable = clusterMessagesList[i];
+
+      const memberOrConditions = [
+        `userId.eq.${userId}`,
+        rawAgentId ? `agentId.eq.${rawAgentId}` : null,
+        prefixedAgentId ? `agentId.eq.${prefixedAgentId}` : null,
+        cleanAgentId ? `agentId.eq.${cleanAgentId}` : null,
+      ].filter(Boolean).join(',');
+
+      // 1. Find all clusters this agent/user belongs to
+      const { data: memberRows } = await supabase
+        .from(membersTable)
+        .select('id, clusterId')
+        .or(memberOrConditions);
+
+      const affectedClusterIds = Array.from(new Set((memberRows || []).map((r: any) => r.clusterId).filter(Boolean)));
+
+      // 2. Delete member rows for this agent/user
+      await supabase
+        .from(membersTable)
+        .delete()
+        .or(memberOrConditions);
+
+      // 3. Delete cluster invites associated with this user/agent
+      const inviteOrConditions = [
+        `inviterUserId.eq.${userId}`,
+        `inviteeUserId.eq.${userId}`,
+        rawAgentId ? `inviterAgentId.eq.${rawAgentId}` : null,
+        rawAgentId ? `invitedAgentId.eq.${rawAgentId}` : null,
+        cleanAgentId ? `inviterAgentId.eq.${cleanAgentId}` : null,
+        cleanAgentId ? `invitedAgentId.eq.${cleanAgentId}` : null,
+      ].filter(Boolean).join(',');
+
+      try {
+        await supabase.from(invitesTable).delete().or(inviteOrConditions);
+      } catch (e) {}
+
+      // 4. Inspect each affected cluster: if no remaining active members, remove the entire cluster
+      for (const clusterId of affectedClusterIds) {
+        const { data: remainingMembers } = await supabase
+          .from(membersTable)
+          .select('id, status')
+          .eq('clusterId', clusterId);
+
+        const activeRemaining = (remainingMembers || []).filter((m: any) => m.status !== 'dissolved');
+
+        if (!remainingMembers || remainingMembers.length === 0 || activeRemaining.length === 0) {
+          try { await supabase.from(messagesTable).delete().eq('clusterId', clusterId); } catch (e) {}
+          try { await supabase.from(invitesTable).delete().eq('clusterId', clusterId); } catch (e) {}
+          try { await supabase.from(membersTable).delete().eq('clusterId', clusterId); } catch (e) {}
+          try { await supabase.from(clustersTable).delete().eq('id', clusterId); } catch (e) {}
+          console.log(`[Account Deletion] Removed cluster ${clusterId} as it has no remaining active members after user deletion.`);
+        }
+      }
+    }
+  } catch (clusterErr) {
+    console.warn('[Account Deletion] Warning during cluster membership cleanup:', clusterErr);
+  }
 
   // Step 8: Delete Account Audit Logs for this agent
   if (userBefore.agentId) {

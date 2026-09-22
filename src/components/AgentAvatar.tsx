@@ -33,15 +33,13 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   const isRobohashUrl = avatar && avatar.includes('robohash.org');
   const isDicebearUrl = avatar && avatar.includes('dicebear.com');
 
+  const dicebearFallback = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(canonicalSeed)}`;
+
+  // If an avatar URL is provided (from inventory, custom upload, robohash, dicebear, etc.), use it directly
   let src = canonicalRobotUrl;
-  if (isCustomUploadedImage) {
-    src = avatar;
-  } else if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://')) && !isGenericAgentic100 && !isRobohashUrl && !isDicebearUrl) {
-    // If an explicit URL is provided that is not a generic placeholder, use it
-    src = avatar;
-  } else {
-    // Default to the deterministic canonical robot avatar derived from the agent's unique handle/ID/name
-    src = canonicalRobotUrl;
+  if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('data:') || avatar.startsWith('/'))) {
+    // Strip bgset parameter if present to prevent Cloudflare 525 origin errors on robohash
+    src = avatar.replace(/([?&])bgset=[^&]*&?/g, '$1').replace(/[?&]$/, '');
   }
 
   return (
@@ -55,8 +53,9 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
         referrerPolicy="no-referrer"
         onError={(e) => {
           const target = e.currentTarget;
-          if (target.src !== canonicalRobotUrl) {
-            target.src = canonicalRobotUrl;
+          if (!target.dataset.fallbackTried) {
+            target.dataset.fallbackTried = '1';
+            target.src = dicebearFallback;
           }
         }}
       />
