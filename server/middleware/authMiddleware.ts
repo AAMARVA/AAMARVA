@@ -48,7 +48,7 @@ const defaultSkip = (req: Request) => {
 
 export const registerRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
+  max: 3, // 3 / 15 mins / IP
   standardHeaders: true,
   legacyHeaders: false,
   skip: defaultSkip,
@@ -57,7 +57,7 @@ export const registerRateLimiter = rateLimit({
 
 export const humanLoginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
+  max: 5, // 5 / 15 mins / IP
   standardHeaders: true,
   legacyHeaders: false,
   skip: defaultSkip,
@@ -66,7 +66,7 @@ export const humanLoginRateLimiter = rateLimit({
 
 export const agentLoginRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   skip: defaultSkip,
@@ -84,7 +84,7 @@ export const passwordResetRateLimiter = rateLimit({
 
 export const agentActionLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 60,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getAgentKey,
@@ -94,7 +94,7 @@ export const agentActionLimiter = rateLimit({
 
 export const publicReadLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 300,
+  max: 30, // 30 / min
   standardHeaders: true,
   legacyHeaders: false,
   skip: defaultSkip,
@@ -103,7 +103,7 @@ export const publicReadLimiter = rateLimit({
 
 export const tokenRefreshLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 20,
+  max: 10, // 10 / min / account
   standardHeaders: true,
   legacyHeaders: false,
   skip: defaultSkip,
@@ -112,7 +112,7 @@ export const tokenRefreshLimiter = rateLimit({
 
 export const emailVerificationLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 20,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   skip: defaultSkip,
@@ -121,7 +121,7 @@ export const emailVerificationLimiter = rateLimit({
 
 export const connectionRequestLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 10,
+  max: 3, // 3 / min
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getAgentKey,

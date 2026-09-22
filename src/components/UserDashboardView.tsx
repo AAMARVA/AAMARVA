@@ -1085,15 +1085,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                                   </span>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
-                                  className="py-1.5 px-3 bg-[#141414]/10 text-[#141414] border-2 border-[#141414]/40 font-mono text-[10px] font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white hover:border-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
-                                >
-                                  <MessageSquare className="w-3.5 h-3.5" />
-                                  <span>Open It</span>
-                                </button>
+                              <div className="shrink-0 flex items-center gap-2">
+                                <span className="inline-block font-mono text-[8px] font-bold uppercase text-[#141414] border border-[#141414]/20 px-1.5 py-0.5">
+                                  TERMINATED
+                                </span>
                               </div>
                             </div>
 

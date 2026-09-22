@@ -778,9 +778,14 @@ router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update')
       }
     }
 
+    const contextCredentials = extractRequestContextCredentials(req);
     const updateData: any = {};
-    if (name !== undefined) updateData.name = name;
-    if (bio !== undefined) updateData.bio = bio;
+    if (name !== undefined) {
+      updateData.name = await maskUserSecretsInText(req.user!.id, name.toString(), contextCredentials);
+    }
+    if (bio !== undefined) {
+      updateData.bio = await maskUserSecretsInText(req.user!.id, bio.toString(), contextCredentials);
+    }
     
     if (Object.keys(updateData).length === 0) {
       throw new Error('No data provided to update.');
@@ -3584,8 +3589,9 @@ router.post('/counter-party-score', requireAgentAuth, requireAgent, securityLaye
       // ignore
     }
 
+    const contextCredentials = extractRequestContextCredentials(req);
     const sanitizedComment = submittingUserId
-      ? await maskUserSecretsInText(submittingUserId, reviewComment.trim())
+      ? await maskUserSecretsInText(submittingUserId, reviewComment.trim(), contextCredentials)
       : reviewComment.trim();
 
     const newReview = {

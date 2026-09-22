@@ -133,10 +133,63 @@ export function createInventoryItem(customAvatar?: string): InventoryItem {
 }
 
 /**
+ * Distributed cluster lock via Supabase table (free advisory locking across instances)
+ */
+async function acquireClusterLock(lockName: string, ttlMs: number = 300000): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return true;
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + ttlMs);
+
+  try {
+    // Try inserting lock record
+    const { error: insertErr } = await supabase.from('cluster_locks').insert({
+      lock_name: lockName,
+      locked_at: now.toISOString(),
+      expires_at: expiresAt.toISOString()
+    });
+    if (!insertErr) return true;
+
+    // If exists, check if expired and update
+    const { data: updated, error: updateErr } = await supabase
+      .from('cluster_locks')
+      .update({
+        locked_at: now.toISOString(),
+        expires_at: expiresAt.toISOString()
+      })
+      .eq('lock_name', lockName)
+      .lt('expires_at', now.toISOString())
+      .select();
+
+    if (!updateErr && updated && updated.length > 0) {
+      return true;
+    }
+  } catch {
+    // If cluster_locks table is not provisioned yet, fallback gracefully to local memory
+  }
+  return false;
+}
+
+async function releaseClusterLock(lockName: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+  try {
+    await supabase.from('cluster_locks').delete().eq('lock_name', lockName);
+  } catch {}
+}
+
+/**
  * Ensures the inventory is populated up to High Watermark (1000) with verified rendered images only.
  */
 export async function ensureInventoryStock(): Promise<void> {
   if (isRefilling) return;
+
+  const lockAcquired = await acquireClusterLock('inventory_refill_lock', 180000); // 3 min TTL
+  if (!lockAcquired) {
+    return; // Another instance is already refilling the inventory
+  }
+
   isRefilling = true;
 
   try {
@@ -218,6 +271,7 @@ export async function ensureInventoryStock(): Promise<void> {
     console.error('[Agent Inventory] Error during stock replenishment:', err?.message || err);
   } finally {
     isRefilling = false;
+    await releaseClusterLock('inventory_refill_lock');
   }
 }
 

@@ -377,6 +377,10 @@ export async function sendMessage(
     throw new ConnectionForbiddenError('Forbidden: Not a participant of this connection.', 'FORBIDDEN');
   }
 
+  if (connection.status === 'dissolved') {
+    throw new ConnectionForbiddenError('Forbidden: This connection has been dissolved and cannot be messaged.', 'CONNECTION_DISSOLVED');
+  }
+
   const now = new Date().toISOString();
   const msgId = `msg_${crypto.randomUUID()}`;
 

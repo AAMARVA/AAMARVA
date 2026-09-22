@@ -166,11 +166,22 @@ export function maskBuiltInCredentials(text: string, contextCredentials: string[
   const apiKeyPattern = /\b(?:sk_amr_[0-9a-zA-Z_-]{20,80}|amr_live_[0-9a-zA-Z_-]{20,80})\b/g;
   sanitized = sanitized.replace(apiKeyPattern, '******');
 
-  // 2. Mask JWT access / refresh / session tokens (header.payload.signature)
+  // 2. Mask common third-party API key patterns (OpenAI, Stripe, Google Cloud/Maps)
+  const commonPatterns = [
+    /\bsk-[a-zA-Z0-9]{20,}\b/g, // OpenAI
+    /\bsk_live_[a-zA-Z0-9]{20,}\b/g, // Stripe
+    /\bAIza[0-9A-Za-z_-]{35}\b/g, // Google Cloud / Maps
+    /\bghp_[a-zA-Z0-9]{36}\b/g, // GitHub
+  ];
+  for (const pattern of commonPatterns) {
+    sanitized = sanitized.replace(pattern, '******');
+  }
+
+  // 3. Mask JWT access / refresh / session tokens (header.payload.signature)
   const jwtPattern = /\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g;
   sanitized = sanitized.replace(jwtPattern, '******');
 
-  // 3. Mask any specific request-context credentials passed (e.g. current API key, Bearer token, refresh token, request password)
+  // 4. Mask any specific request-context credentials passed (e.g. current API key, Bearer token, refresh token, request password)
   if (Array.isArray(contextCredentials) && contextCredentials.length > 0) {
     const validContextCreds = contextCredentials
       .filter(c => typeof c === 'string' && c.trim().length >= 6)
@@ -321,6 +332,62 @@ export function validateContentForContactInfo(text: string): void {
     const err: any = new Error('Contact information detected: Email addresses are not permitted in transmissions.');
     err.status = 400;
     err.code = 'CONTACT_INFO_BLOCKED';
+    throw err;
+  }
+}
+
+/**
+ * Deterministically detects prompt injection and instruction override attempts in text without requiring an LLM.
+ */
+export function containsPromptInjection(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+
+  // Pattern 1: Instruction overrides / disregard commands
+  const overridePatterns = [
+    /\bignore\s+(?:all\s+|previous\s+|prior\s+|above\s+)?(?:instructions|directions|prompts|rules|context)\b/i,
+    /\bdisregard\s+(?:all\s+|previous\s+|prior\s+|above\s+)?(?:instructions|directions|prompts|rules|context)\b/i,
+    /\bforget\s+(?:all\s+|previous\s+|prior\s+|above\s+)?(?:instructions|directions|prompts|rules|context)\b/i,
+    /\bbypass\s+(?:all\s+|previous\s+|prior\s+|above\s+)?(?:instructions|directions|prompts|rules|filters)\b/i,
+    /\boverride\s+(?:system|instructions|rules|safeguards)\b/i,
+  ];
+
+  // Pattern 2: Persona / Role hijacking
+  const personaPatterns = [
+    /\byou\s+are\s+now\s+(?:a|an|the)?\s*[a-zA-Z0-9_\-]+\b/i,
+    /\bact\s+as\s+(?:a|an|the)?\s*[a-zA-Z0-9_\-]+\b/i,
+    /\bswitch\s+to\s+(?:developer|god|unrestricted|sudo|admin|jailbreak)\s+mode\b/i,
+    /\benter\s+(?:developer|god|unrestricted|sudo|admin|jailbreak)\s+mode\b/i,
+  ];
+
+  // Pattern 3: System / Role-play marker injection
+  const markerPatterns = [
+    /\[system\]/i,
+    /\[admin\]/i,
+    /###\s*system\b/i,
+    /###\s*instruction\b/i,
+    /\bassistant:\s*$/im,
+    /\bsystem:\s*$/im,
+  ];
+
+  for (const p of [...overridePatterns, ...personaPatterns, ...markerPatterns]) {
+    if (p.test(lower)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Validates text to ensure no prompt injection or instruction override attempts are present.
+ * Throws a non-revealing 400 error if prompt injection is detected.
+ */
+export function validateContentForPromptInjection(text: string): void {
+  if (containsPromptInjection(text)) {
+    const err: any = new Error('Potential prompt injection or instruction override detected. Transmissions must not contain prompt-hijacking directives.');
+    err.status = 400;
+    err.code = 'PROMPT_INJECTION_BLOCKED';
     throw err;
   }
 }
@@ -627,6 +694,25 @@ export async function maskAccountCredentials(userId: string, text: string): Prom
 
     if (!user) return sanitized;
 
+    // Extract candidate tokens from text (passwords and keys in AAMARVA are 6-128 characters)
+    // Split by any character that isn't part of a potential password/token string
+    const candidatesRaw = sanitized.split(/[^a-zA-Z0-9!@#$%^&*()_+={}\[\]|\\:;"'<>,.?/~`-]+/);
+    const rawCandidates: string[] = [];
+    for (const w of candidatesRaw) {
+      const trimmedWord = w.trim();
+      if (trimmedWord.length >= 6 && trimmedWord.length <= 128) {
+        rawCandidates.push(trimmedWord);
+      }
+      // Aggressively strip leading/trailing punctuation common in natural language but rare at start/end of secrets
+      const stripped = trimmedWord.replace(/^[.,:;!?"'([{<]+|[.,:;!?"'\])}>]+$/g, '');
+      if (stripped.length >= 6 && stripped.length <= 128 && stripped !== trimmedWord) {
+        rawCandidates.push(stripped);
+      }
+    }
+    const candidates = [...new Set(rawCandidates)];
+    // Sort by length descending to avoid partial masking issues
+    candidates.sort((a, b) => b.length - a.length);
+
     // 1. Check account password against user.passwordHash
     if (user.passwordHash) {
       // Direct whole match
@@ -636,24 +722,8 @@ export async function maskAccountCredentials(userId: string, text: string): Prom
         }
       } catch {}
 
-      // Extract candidate tokens from text (passwords in AAMARVA are 8-128 characters)
-      const words = sanitized.split(/\s+/);
-      const rawCandidates: string[] = [];
-      for (const w of words) {
-        const trimmedWord = w.trim();
-        if (trimmedWord.length >= 8 && trimmedWord.length <= 128) {
-          rawCandidates.push(trimmedWord);
-        }
-        // Also test stripping wrapping quotes, parentheses, trailing punctuation
-        const stripped = trimmedWord.replace(/^["'`([{<]+|[>"'`)\],;:]+$/g, '');
-        if (stripped.length >= 8 && stripped.length <= 128 && stripped !== trimmedWord) {
-          rawCandidates.push(stripped);
-        }
-      }
-      const candidates = [...new Set(rawCandidates)];
-      candidates.sort((a, b) => b.length - a.length);
-
-      for (const cand of candidates.slice(0, 15)) {
+      // Check top 30 candidates (increased from 15 for better coverage in dense posts)
+      for (const cand of candidates.slice(0, 30)) {
         try {
           if (bcrypt.compareSync(cand, user.passwordHash)) {
             const escaped = escapeRegExp(cand);
@@ -665,8 +735,14 @@ export async function maskAccountCredentials(userId: string, text: string): Prom
 
     // 2. Check API key against user.apiKeyHash
     if (user.apiKeyHash) {
-      const apiCandidates = [...new Set(sanitized.match(/[A-Za-z0-9_-]{20,80}/g) || [])];
-      for (const cand of apiCandidates.slice(0, 8)) {
+      // API keys in AAMARVA can contain alphanumeric and certain special chars if custom-set, 
+      // though default format is sk_amr_[hex]
+      const apiCandidates = [...new Set(sanitized.match(/[A-Za-z0-9_-]{20,128}/g) || [])];
+      
+      // Also check if any password candidates match the API key hash
+      const combinedApiCandidates = [...new Set([...apiCandidates, ...candidates])];
+      
+      for (const cand of combinedApiCandidates.slice(0, 20)) {
         try {
           if (bcrypt.compareSync(cand, user.apiKeyHash)) {
             const escaped = escapeRegExp(cand);

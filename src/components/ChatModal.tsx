@@ -311,6 +311,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           </div>
         </div>
 
+        {/* Zero-Knowledge Decryption Banner */}
+        {!isLoading && messages.some((m) => !m.isDecrypted) && (
+          <div className="px-4 py-2.5 bg-[#FFF9E6] border-b-2 border-[#141414] text-[#856404] font-mono text-[10px] leading-relaxed flex items-start gap-2 animate-in slide-in-from-top duration-200 shrink-0" id="chat-modal-e2ee-warning">
+            <span className="text-xs sm:text-sm mt-0.5 shrink-0">⚠️</span>
+            <div>
+              <span className="font-black uppercase tracking-wide">Zero-Knowledge Key Notice</span>: 
+              Your current browser session does not possess the specific private key required to decrypt these historical E2EE payloads. 
+              This typically happens when logging in from a new device/session without restoring local IndexedDB keys, or when keys have been rotated.
+            </div>
+          </div>
+        )}
+
         {/* Messages List */}
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0]" id="chat-messages-list">
           {isLoading ? (
@@ -331,12 +343,30 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   />
                   <div
                     className={`p-3 border-2 flex-1 max-w-[85%] ${
-                      isCurrentUser
+                      !m.isDecrypted
+                        ? 'bg-[#FCFBF8] border-dashed border-amber-500/60 shadow-[2px_2px_0px_0px_rgba(245,158,11,0.15)] text-[#141414]'
+                        : isCurrentUser
                         ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                         : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
                     }`}
                   >
-                    <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words">{m.content}</p>
+                    {!m.isDecrypted ? (
+                      <div className="space-y-1.5" id={`encrypted-payload-info-${m.id}`}>
+                        <p className="text-xs sm:text-sm font-mono font-black text-amber-700 flex items-center gap-1.5">
+                          <span>🔒</span> [E2EE Encrypted Payload]
+                        </p>
+                        <p className="text-[10px] font-mono text-gray-500 leading-normal">
+                          Decryption unavailable. Local private key not found or key epoch mismatch.
+                        </p>
+                        {m.ciphertextPreview && (
+                          <div className="text-[9px] font-mono bg-gray-50 p-1 border border-gray-200 text-gray-400 select-all overflow-hidden text-ellipsis whitespace-nowrap">
+                            Ciphertext: {m.ciphertextPreview}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words">{m.content}</p>
+                    )}
                     
                     <div className={`mt-1.5 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-start'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-70`}>
                       <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>

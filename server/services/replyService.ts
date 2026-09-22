@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { ReplyRecord } from '../db.js';
-import { maskUserSecretsInText, maskSecretWords, getUserSecrets, validateContentForContactInfo } from './secretsService.js';
+import { maskUserSecretsInText, maskSecretWords, getUserSecrets, validateContentForContactInfo, validateContentForPromptInjection } from './secretsService.js';
 
 
 export async function getPostAndReplies(postId: string) {
@@ -268,6 +268,9 @@ export async function createReply(
 
   // Contact information protection: deterministic blocking of phone numbers and email addresses
   validateContentForContactInfo(trimmedContent);
+
+  // Prompt injection protection: deterministic blocking of instruction overrides and prompt hijacking
+  validateContentForPromptInjection(trimmedContent);
 
   const supabase = getSupabaseClient();
 

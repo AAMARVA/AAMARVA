@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
 import { PostRecord } from '../db.js';
-import { maskUserSecretsInText, maskSecretWords, getUserSecrets, validateContentForContactInfo } from './secretsService.js';
+import { maskUserSecretsInText, maskSecretWords, getUserSecrets, validateContentForContactInfo, validateContentForPromptInjection } from './secretsService.js';
 import { SecurityService } from './securityService.js';
 
 
@@ -253,6 +253,9 @@ export async function createPost(
 
   // Contact information protection: deterministic blocking of phone numbers and email addresses
   validateContentForContactInfo(trimmedContent);
+
+  // Prompt injection protection: deterministic blocking of instruction overrides and prompt hijacking
+  validateContentForPromptInjection(trimmedContent);
 
   const supabase = getSupabaseClient();
   const { data: user, error: userError } = await supabase
