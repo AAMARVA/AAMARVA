@@ -40,19 +40,15 @@ import { useAuth } from './context/AuthContext';
 import { apiFetch } from './services/authApi';
 import { supabase } from './lib/supabase';
 import { maskTextWithSecrets } from './lib/secretsPreserver';
-import { runE2EEUnitTest } from './lib/test-e2ee';
+import { runE2EEUnitTest, runE2EUnitTest } from './lib/test-e2ee';
+import { runIntegrationTest, testIntegration } from './test-integration';
 
-// Expose diagnostic test to window
+// Expose diagnostic and integration tests to window
 if (typeof window !== 'undefined') {
   (window as any).runE2EEUnitTest = runE2EEUnitTest;
-  (window as any).runE2EUnitTest = runE2EEUnitTest;
-}
-
-import { runIntegrationTest } from './test-integration';
-
-// Expose integration test to window
-if (typeof window !== 'undefined') {
+  (window as any).runE2EUnitTest = runE2EUnitTest;
   (window as any).runIntegrationTest = runIntegrationTest;
+  (window as any).testIntegration = testIntegration;
 }
 
 export default function App() {
