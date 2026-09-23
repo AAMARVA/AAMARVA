@@ -81,76 +81,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (typeof window === 'undefined' || !agentId) return;
     try {
       const activeCredential = credential || userPassword;
+      // Fetch current server profile to get registered public key and fingerprint
+      const profile = await fetchCurrentProfileApi().catch(() => null);
+      const serverFp = profile?.e2eePublicKeyFingerprint || user?.e2eePublicKeyFingerprint || null;
+      const serverKeyEpoch = profile?.e2eeKeyEpoch || user?.e2eeKeyEpoch || 1;
+
+      // 1. Load existing local key pair
       let keys = await getLocalKeyPair(agentId, undefined, activeCredential || undefined);
+      let localFp = keys?.fingerprint || (keys?.publicKey ? await computeKeyFingerprint(keys.publicKey) : null);
 
-      if (keys && keys.publicKey && keys.privateKey && !forceRotate) {
-        // 1. Valid local key pair already exists: retain existing private key and complete binding if needed
-        if (!keys.identityPublicKey || !keys.signature || !keys.identityPrivateKey) {
-          const idSign = await generateIdentitySigningKeyPair();
-          const fp = keys.fingerprint || (await computeKeyFingerprint(keys.publicKey));
-          const signature = await signKeyBinding(idSign.identityPrivateKey, agentId, fp);
-          await saveLocalKeyPair(
-            agentId,
-            keys.publicKey,
-            keys.privateKey,
-            fp,
-            idSign.identityPublicKey,
-            idSign.identityPrivateKey,
-            signature,
-            keys.keyEpoch || 1
-          );
-          keys = {
-            ...keys,
-            fingerprint: fp,
-            identityPublicKey: idSign.identityPublicKey,
-            identityPrivateKey: idSign.identityPrivateKey,
-            signature,
-            keyEpoch: keys.keyEpoch || 1
-          };
-        }
-      } else if (!keys && !forceRotate) {
-        // 2. No local key pair exists: generate or deterministically derive P-256 ECDH key pair
-        console.log('Establishing cryptographic identity for agent:', agentId);
-        const identity = activeCredential 
-          ? await deriveAgentCryptoIdentity(agentId, activeCredential)
-          : await generateAgentCryptoIdentity(agentId);
+      // Report non-sensitive comparison metadata
+      console.log('E2EE_KEY_SYNC_CHECK', {
+        localPublicKeyFingerprint: localFp,
+        serverPublicKeyFingerprint: serverFp,
+        match: !!localFp && !!serverFp && localFp === serverFp,
+        keyEpoch: keys?.keyEpoch || serverKeyEpoch || 1
+      });
 
-        await saveLocalKeyPair(
-          agentId,
-          identity.e2eePublicKey,
-          identity.e2eePrivateKey,
-          identity.fingerprint,
-          identity.identityPublicKey,
-          identity.identityPrivateKey,
-          identity.signature,
-          identity.keyEpoch || 1
-        );
-        keys = {
-          publicKey: identity.e2eePublicKey,
-          privateKey: identity.e2eePrivateKey,
-          fingerprint: identity.fingerprint,
-          identityPublicKey: identity.identityPublicKey,
-          identityPrivateKey: identity.identityPrivateKey,
-          signature: identity.signature,
-          keyEpoch: identity.keyEpoch || 1
-        };
-      } else if (forceRotate) {
-        // 3. Explicit key rotation
-        console.log('Performing authorized key rotation for agent:', agentId);
-        const rotated = await rotateAgentCryptoIdentity(agentId, keys?.keyEpoch);
-        keys = {
-          publicKey: rotated.e2eePublicKey,
-          privateKey: rotated.e2eePrivateKey,
-          fingerprint: rotated.fingerprint,
-          identityPublicKey: rotated.identityPublicKey,
-          identityPrivateKey: rotated.identityPrivateKey,
-          signature: rotated.signature,
-          keyEpoch: rotated.keyEpoch
-        };
-      }
-
-      if (keys && keys.publicKey) {
-        // Determine whether request is authenticated via agent token, agent api key, or human cookie
+      const publishKey = async (keyEntry: any, allowRotation: boolean) => {
         const isAgentToken = typeof window !== 'undefined' && !!getAccessToken();
         const authType: AuthType = isAgentToken ? 'agent' : 'human';
         const headers: Record<string, string> = {};
@@ -158,20 +106,112 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           headers['x-api-key'] = user.apiKey;
         }
 
-        // Publish ONLY public key and identity binding to server using existing PUT /api/agents/me/e2ee
         await apiFetch('/api/agents/me/e2ee', {
           method: 'PUT',
           authType,
           headers,
-          body: JSON.stringify({ 
-            publicKey: keys.publicKey,
-            fingerprint: keys.fingerprint,
-            identityKey: keys.identityPublicKey,
-            signature: keys.signature,
-            keyEpoch: keys.keyEpoch || 1,
-            allowRotation: forceRotate
+          body: JSON.stringify({
+            publicKey: keyEntry.publicKey,
+            fingerprint: keyEntry.fingerprint,
+            identityKey: keyEntry.identityPublicKey,
+            signature: keyEntry.signature,
+            keyEpoch: keyEntry.keyEpoch || 1,
+            allowRotation
           })
         });
+      };
+
+      if (forceRotate) {
+        console.log('Performing explicit authorized key rotation for agent:', agentId);
+        const nextEpoch = Math.max(serverKeyEpoch, keys?.keyEpoch || 1);
+        const rotated = await rotateAgentCryptoIdentity(agentId, nextEpoch);
+        await publishKey(rotated, true);
+        return;
+      }
+
+      if (keys && keys.publicKey && keys.privateKey) {
+        if (serverFp && localFp === serverFp) {
+          // (d) Keys match! Continue normally.
+          if (!keys.identityPublicKey || !keys.signature || !keys.identityPrivateKey) {
+            const idSign = await generateIdentitySigningKeyPair();
+            const fp = keys.fingerprint || (await computeKeyFingerprint(keys.publicKey));
+            const signature = await signKeyBinding(idSign.identityPrivateKey, agentId, fp);
+            await saveLocalKeyPair(
+              agentId,
+              keys.publicKey,
+              keys.privateKey,
+              fp,
+              idSign.identityPublicKey,
+              idSign.identityPrivateKey,
+              signature,
+              keys.keyEpoch || 1
+            );
+          }
+          return;
+        }
+
+        if (!serverFp) {
+          // (e) Server has no public key: publish local public key
+          await publishKey(keys, false);
+          return;
+        }
+
+        if (serverFp && localFp !== serverFp) {
+          // (f) Server has a public key but local key does NOT match!
+          // Perform authorized key rotation to establish synchronized key pair.
+          console.warn('E2EE_KEY_MISMATCH_DETECTED: Local key does not match server registered key. Initiating authorized key rotation.');
+          const nextEpoch = Math.max(serverKeyEpoch, keys.keyEpoch || 1);
+          const rotated = await rotateAgentCryptoIdentity(agentId, nextEpoch);
+          await publishKey(rotated, true);
+          return;
+        }
+      } else {
+        // No local key pair exists
+        if (!serverFp) {
+          console.log('Establishing fresh cryptographic identity for agent:', agentId);
+          const identity = activeCredential 
+            ? await deriveAgentCryptoIdentity(agentId, activeCredential)
+            : await generateAgentCryptoIdentity(agentId);
+
+          await saveLocalKeyPair(
+            agentId,
+            identity.e2eePublicKey,
+            identity.e2eePrivateKey,
+            identity.fingerprint,
+            identity.identityPublicKey,
+            identity.identityPrivateKey,
+            identity.signature,
+            identity.keyEpoch || 1
+          );
+          await publishKey(identity, false);
+        } else {
+          // Server has a key, but client has no local key
+          let derivedMatch = false;
+          if (activeCredential) {
+            try {
+              const derived = await deriveAgentCryptoIdentity(agentId, activeCredential, serverKeyEpoch);
+              if (derived.fingerprint === serverFp) {
+                await saveLocalKeyPair(
+                  agentId,
+                  derived.e2eePublicKey,
+                  derived.e2eePrivateKey,
+                  derived.fingerprint,
+                  derived.identityPublicKey,
+                  derived.identityPrivateKey,
+                  derived.signature,
+                  derived.keyEpoch
+                );
+                derivedMatch = true;
+              }
+            } catch (dErr) {}
+          }
+
+          if (!derivedMatch) {
+            console.warn('E2EE_LOCAL_KEY_MISSING: Cannot recover private key for server public key. Authorizing key rotation.');
+            const rotated = await rotateAgentCryptoIdentity(agentId, serverKeyEpoch);
+            await publishKey(rotated, true);
+          }
+        }
       }
     } catch (e: any) {
       console.warn('E2EE Key initialization notice:', e?.message || e);

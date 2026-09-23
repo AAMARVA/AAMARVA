@@ -14,27 +14,6 @@ import {
   sanitizeDecryptedMessage 
 } from '../lib/secretsPreserver';
 
-/**
- * Safely decodes base64-encoded UTF-8 text payloads (such as agent transmission envelopes).
- * Returns null if the payload is binary/AES-GCM ciphertext or invalid UTF-8.
- */
-function tryBase64Utf8Decode(b64: string): string | null {
-  if (!b64 || typeof b64 !== 'string') return null;
-  try {
-    const cleanB64 = b64.trim().replace(/-/g, '+').replace(/_/g, '/');
-    const binary = atob(cleanB64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    if (/^[\x20-\x7E\s\u00A0-\uFFFF]*$/.test(decoded) && decoded.trim().length > 0) {
-      return decoded;
-    }
-  } catch {}
-  return null;
-}
-
 interface ChatModalProps {
   connectionId: string;
   peerName: string;
@@ -109,11 +88,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         }
 
         const resolvedPeerKey = channelKeyData?.data?.peerE2eePublicKey || initialPeerKey || null;
+        const resolvedEpochKeys = channelKeyData?.data?.peerEpochHistory || channelKeyData?.data?.peerEpochKeys || {};
         if (resolvedPeerKey && isMounted) {
           setPeerKey(resolvedPeerKey);
         }
-        if (channelKeyData?.data?.peerEpochKeys && isMounted) {
-          setPeerEpochKeys(channelKeyData.data.peerEpochKeys);
+        if (resolvedEpochKeys && isMounted) {
+          setPeerEpochKeys(resolvedEpochKeys);
         }
       } catch (err: any) {
         console.warn('Crypto context initialization note:', err);
@@ -140,15 +120,16 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         let currentPeerKey = peerKey || initialPeerKey || null;
         let currentPeerEpochKeys = peerEpochKeys;
 
-        if (!currentPeerKey) {
+        if (!currentPeerKey || !currentPeerEpochKeys || Object.keys(currentPeerEpochKeys).length === 0) {
           try {
             const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: 'human' });
             if (keyRes?.data?.peerE2eePublicKey) {
               currentPeerKey = keyRes.data.peerE2eePublicKey;
               setPeerKey(currentPeerKey);
             }
-            if (keyRes?.data?.peerEpochKeys) {
-              currentPeerEpochKeys = keyRes.data.peerEpochKeys;
+            const resEpochs = keyRes?.data?.peerEpochHistory || keyRes?.data?.peerEpochKeys;
+            if (resEpochs) {
+              currentPeerEpochKeys = resEpochs;
               setPeerEpochKeys(currentPeerEpochKeys);
             }
           } catch (err) {
@@ -170,7 +151,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 msgEpoch,
                 hasLocalKeys: !!currentLocalKeys,
                 hasPeerKey: !!currentPeerKey,
-                hasPeerEpochKeys: !!currentPeerEpochKeys
+                hasPeerEpochKeys: !!currentPeerEpochKeys && Object.keys(currentPeerEpochKeys).length > 0
               });
             }
 
@@ -194,16 +175,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
             // 2. Encrypted private E2EE message: attempt WebCrypto AES-256-GCM + ECDH local decryption
             if (ciphertext && nonce && currentLocalKeys) {
+              let decKey = currentLocalKeys.privateKey;
               try {
-                let decKey = currentLocalKeys.privateKey;
                 if (currentLocalKeys.keyEpoch !== msgEpoch) {
-                  console.log('DIAGNOSTIC: Message epoch mismatch. Searching historical keys.');
                   const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, userPassword || undefined);
                   if (historicalEntry?.privateKey) {
                     decKey = historicalEntry.privateKey;
-                    console.log('DIAGNOSTIC: Found historical key for epoch:', msgEpoch);
-                  } else {
-                    console.warn('DIAGNOSTIC: No historical key found for epoch:', msgEpoch);
                   }
                 }
 
@@ -215,8 +192,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   currentPeerKey
                 );
 
+                console.log('E2EE_DECRYPT_ATTEMPT', {
+                  messageId: m.id,
+                  senderAgentId: sender,
+                  recipientAgentId: user.agentId,
+                  keyEpoch: msgEpoch,
+                  ciphertextLength: ciphertext?.length || 0,
+                  nonceLength: nonce?.length || 0,
+                  localPrivateKeyPresent: !!decKey,
+                  senderPublicKeyPresent: !!senderPubKey,
+                });
+
                 if (senderPubKey && decKey) {
-                  console.log('DIAGNOSTIC: Attempting decryption.');
                   resolvedPlaintext = await decryptMessage(
                     { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
                     decKey,
@@ -224,22 +211,35 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     connectionId,
                     sender
                   );
-                  console.log('DIAGNOSTIC: Decryption success.');
+                  console.log('E2EE_DECRYPT_SUCCESS', {
+                    messageId: m.id,
+                    resolvedPlaintextExists: !!resolvedPlaintext,
+                  });
                 } else {
-                  console.warn('DIAGNOSTIC: Decryption skipped (keys missing).', { senderPubKey: !!senderPubKey, decKey: !!decKey });
+                  console.warn('E2EE_DECRYPT_KEYS_MISSING', {
+                    messageId: m.id,
+                    localPrivateKeyPresent: !!decKey,
+                    senderPublicKeyPresent: !!senderPubKey,
+                  });
                 }
-              } catch (decErr) {
-                console.error('DIAGNOSTIC: Decryption failed for message:', m.id, decErr);
+              } catch (decErr: any) {
+                console.error('E2EE_DECRYPT_ERROR', {
+                  name: decErr?.name,
+                  message: decErr?.message,
+                  stack: decErr?.stack,
+                  messageId: m.id,
+                });
               }
+            } else if (ciphertext && nonce && !currentLocalKeys) {
+              console.warn('E2EE_DECRYPT_ABORTED_NO_LOCAL_KEYS', {
+                messageId: m.id,
+                recipientAgentId: user.agentId,
+              });
             }
 
-            // 3. Fallback resolution: check if content was provided or if compatible base64 envelope exists
-            if (!resolvedPlaintext) {
-              if (typeof m.content === 'string' && m.content.trim().length > 0) {
-                resolvedPlaintext = m.content;
-              } else if (ciphertext) {
-                resolvedPlaintext = tryBase64Utf8Decode(ciphertext);
-              }
+            // 3. Fallback resolution: only for public connection context messages (where m.content was explicitly provided)
+            if (!resolvedPlaintext && typeof m.content === 'string' && m.content.trim().length > 0) {
+              resolvedPlaintext = m.content;
             }
 
             // 4. Transparent Plaintext Display (WhatsApp-style UX): Sanitize locally and display plaintext

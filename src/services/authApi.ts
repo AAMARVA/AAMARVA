@@ -1,5 +1,6 @@
 import { frontendConfig } from '../config';
 import { handleWebAuthnLogin, handleWebAuthnSetup } from './webauthnClient';
+import { getLocalKeyPair, encryptMessage } from '../lib/e2ee';
 
 export interface UserProfile {
   id: string;
@@ -13,6 +14,10 @@ export interface UserProfile {
   createdAt: string;
   updatedAt: string;
   emailVerified?: boolean;
+  e2eePublicKey?: string;
+  e2eePublicKeyFingerprint?: string;
+  e2eeIdentityKey?: string;
+  e2eeKeyEpoch?: number;
 }
 
 export function buildApiUrl(endpoint: string): string {
@@ -455,3 +460,79 @@ export async function deleteConnectionRequestApi(requestId: string, authType: 'h
   });
   return res.data;
 }
+
+/**
+ * Sends a private end-to-end encrypted message over an established connection channel.
+ * Strictly adheres to E2EE protocol:
+ * 1. Plaintext input
+ * 2. Retrieves sender's local private key (fails closed if missing)
+ * 3. Retrieves recipient's public key from /api/connections/:id/peer-key (fails closed if missing)
+ * 4. Calls existing encryptMessage() with AES-256-GCM + ECDH + AAD
+ * 5. Transmits { ciphertext, nonce, version, keyEpoch } to POST /api/connections/:id/messages
+ */
+export async function sendPrivateMessageApi(
+  connectionId: string,
+  plaintext: string,
+  senderAgentId: string,
+  options?: {
+    authType?: AuthType;
+    password?: string;
+  }
+): Promise<any> {
+  const authType = options?.authType || 'agent';
+  const password = options?.password;
+
+  if (!plaintext || typeof plaintext !== 'string' || plaintext.trim().length === 0) {
+    throw new Error('E2EE Error: Message content cannot be empty.');
+  }
+
+  // 1. Key retrieval: Sender's existing local private key
+  const localKeys = await getLocalKeyPair(senderAgentId, undefined, password);
+  if (!localKeys?.privateKey) {
+    throw new Error(
+      `E2EE Error: Missing local private key for agent ${senderAgentId}. Outbound message transmission aborted.`
+    );
+  }
+
+  // 2. Peer public key: Fetch recipient's public key from connection peer-key endpoint
+  const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key`, {
+    authType: authType === 'none' ? 'agent' : authType,
+    method: 'GET',
+  });
+
+  const peerPublicKey = keyRes?.data?.peerE2eePublicKey;
+  if (!peerPublicKey) {
+    throw new Error(
+      `E2EE Error: Recipient public key not registered for connection ${connectionId}. Outbound message transmission aborted.`
+    );
+  }
+
+  const keyEpoch = localKeys.keyEpoch || keyRes?.data?.peerKeyEpoch || 1;
+
+  // 3. Encrypt message: call existing encryptMessage()
+  const encrypted = await encryptMessage(
+    plaintext,
+    localKeys.privateKey,
+    peerPublicKey,
+    connectionId,
+    senderAgentId,
+    keyEpoch
+  );
+
+  // 4. ciphertext + nonce -> POST /api/connections/:connectionId/messages
+  const res = await apiFetch(`/api/connections/${connectionId}/messages`, {
+    authType,
+    method: 'POST',
+    body: JSON.stringify({
+      ciphertext: encrypted.ciphertext,
+      nonce: encrypted.nonce,
+      version: encrypted.version || 1,
+      keyEpoch: encrypted.keyEpoch || 1,
+    }),
+  });
+
+  return res.data || res;
+}
+
+export const sendConnectionMessageApi = sendPrivateMessageApi;
+

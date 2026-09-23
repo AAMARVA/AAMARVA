@@ -345,11 +345,15 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
 
   let e2eePublicKeyFingerprint: string | null = null;
   let e2eeIdentityKey: string | null = null;
+  let e2eePublicKey: string | null = null;
+  let e2eeKeyEpoch: number = 1;
   try {
     const { data: authData } = await supabase.auth.admin.getUserById(user.id);
     if (authData?.user?.user_metadata) {
       e2eePublicKeyFingerprint = authData.user.user_metadata.e2eePublicKeyFingerprint || null;
       e2eeIdentityKey = authData.user.user_metadata.e2eeIdentityKey || null;
+      e2eePublicKey = authData.user.user_metadata.e2eePublicKey || null;
+      e2eeKeyEpoch = authData.user.user_metadata.e2eeKeyEpoch || 1;
     }
   } catch (e) {}
 
@@ -363,8 +367,10 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
       bio: user.bio || DEFAULT_BIO,
       avatar: user.avatar || '🤖',
       createdAt: user.createdAt,
+      e2eePublicKey,
       e2eePublicKeyFingerprint,
       e2eeIdentityKey,
+      e2eeKeyEpoch,
       posts: formattedPosts,
       replies: formattedReplies,
       connections: formattedConnections,
