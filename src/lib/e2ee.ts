@@ -1205,7 +1205,7 @@ function constructAAD(connectionId: string, version: number, senderAgentId: stri
 
 /**
  * Encrypts a private-channel message locally before transmission.
- * Returns only ciphertext, nonce, version, and keyEpoch.
+ * Returns ciphertext, nonce, version, keyEpoch, and optional digital signature.
  */
 export async function encryptMessage(
   message: string,
@@ -1213,8 +1213,9 @@ export async function encryptMessage(
   receiverPublicKeyJwk: string | object | CryptoKey,
   connectionId: string,
   senderAgentId: string,
-  keyEpoch: number = 1
-): Promise<{ ciphertext: string; nonce: string; version: number; keyEpoch: number }> {
+  keyEpoch: number = 1,
+  senderIdentityPrivateKey?: CryptoKey | string
+): Promise<{ ciphertext: string; nonce: string; signature?: string; version: number; keyEpoch: number }> {
   if (!message || typeof message !== 'string') {
     throw new Error('E2EE Error: Message content cannot be empty.');
   }
@@ -1242,12 +1243,92 @@ export async function encryptMessage(
     encodedPlaintext
   );
 
+  const ciphertextBase64 = bufferToBase64(ciphertextBuf);
+  const nonceBase64 = bufferToBase64(iv.buffer);
+
+  let signatureBase64: string | undefined;
+  if (senderIdentityPrivateKey) {
+    try {
+      signatureBase64 = await signMessagePayload(
+        senderIdentityPrivateKey,
+        connectionId,
+        senderAgentId,
+        nonceBase64,
+        ciphertextBase64
+      );
+    } catch (sigErr) {
+      console.warn('E2EE Warning: Could not sign message payload:', sigErr);
+    }
+  }
+
   return {
-    ciphertext: bufferToBase64(ciphertextBuf),
-    nonce: bufferToBase64(iv.buffer),
+    ciphertext: ciphertextBase64,
+    nonce: nonceBase64,
+    signature: signatureBase64,
     version,
     keyEpoch: epoch
   };
+}
+
+/**
+ * Digitally signs an encrypted message payload (ciphertext + nonce) using the sender's ECDSA Identity Private Key.
+ */
+export async function signMessagePayload(
+  identityPrivateKey: CryptoKey | string,
+  connectionId: string,
+  senderAgentId: string,
+  nonce: string,
+  ciphertext: string
+): Promise<string> {
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+  const canonicalAgentId = senderAgentId.trim().toUpperCase();
+  const statement = new TextEncoder().encode(
+    `AAMARVA-E2EE-MSG:v1:${connectionId}:${canonicalAgentId}:${nonce}:${ciphertext}`
+  );
+  const idPrivKey = await importSigningKey(identityPrivateKey, 'private', false);
+  const sigBuf = await cryptoObj.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    idPrivKey,
+    statement
+  );
+  return bufferToBase64(sigBuf);
+}
+
+/**
+ * Cryptographically verifies an encrypted message payload digital signature using the sender's ECDSA Identity Public Key.
+ */
+export async function verifyMessageSignature(
+  identityPublicKeyJwk: string | object,
+  connectionId: string,
+  senderAgentId: string,
+  nonce: string,
+  ciphertext: string,
+  signatureBase64: string
+): Promise<boolean> {
+  try {
+    const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+    const canonicalAgentId = senderAgentId.trim().toUpperCase();
+    const statement = new TextEncoder().encode(
+      `AAMARVA-E2EE-MSG:v1:${connectionId}:${canonicalAgentId}:${nonce}:${ciphertext}`
+    );
+    const parsed = typeof identityPublicKeyJwk === 'string' ? JSON.parse(identityPublicKeyJwk) : identityPublicKeyJwk;
+    const idKey = await cryptoObj.subtle.importKey(
+      'jwk',
+      parsed,
+      SIGN_ALGO,
+      true,
+      ['verify']
+    );
+    const sigBuf = base64ToBuffer(signatureBase64);
+    return await cryptoObj.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      idKey,
+      sigBuf,
+      statement
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -1285,16 +1366,7 @@ export async function decryptMessage(
     },
     channelKey,
     ciphertext
-  ).catch((err) => {
-    console.error('E2EE Decryption failure details:', {
-      error: err,
-      connectionId,
-      senderAgentId,
-      version,
-      keyEpoch
-    });
-    throw err;
-  });
+  );
 
   return new TextDecoder().decode(decryptedBuf);
 }

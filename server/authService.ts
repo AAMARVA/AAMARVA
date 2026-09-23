@@ -265,6 +265,7 @@ export async function verifyHumanSession(rawSessionId: string): Promise<HumanSes
       .maybeSingle();
 
     if (sessionErr || !sessionRecord) {
+      console.error('[verifyHumanSession] Session record lookup failed:', { sessionErr, sessionRecordFound: !!sessionRecord });
       return null; // session does not exist in database (revoked/deleted)
     }
 
@@ -286,6 +287,7 @@ export async function verifyHumanSession(rawSessionId: string): Promise<HumanSes
       type: 'human',
     };
   } catch (err: any) {
+    console.error('[verifyHumanSession catch error]', err?.message || err);
     return null;
   }
 }

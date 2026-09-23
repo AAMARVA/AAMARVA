@@ -72,8 +72,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (!user?.agentId) return;
 
       try {
-        const activeCred = userPassword || user?.apiKey || getAccessToken() || undefined;
-        const stored = await getLocalKeyPair(user.agentId, undefined, activeCred);
+        const stored = await getLocalKeyPair(user.agentId, undefined, userPassword || undefined);
         if (stored && isMounted) {
           setLocalKeys(stored);
         }
@@ -89,12 +88,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         }
 
         const resolvedPeerKey = channelKeyData?.data?.peerE2eePublicKey || initialPeerKey || null;
-        const resolvedEpochKeys = channelKeyData?.data?.peerEpochHistory || channelKeyData?.data?.peerEpochKeys || {};
         if (resolvedPeerKey && isMounted) {
           setPeerKey(resolvedPeerKey);
         }
-        if (resolvedEpochKeys && isMounted) {
-          setPeerEpochKeys(resolvedEpochKeys);
+        if (channelKeyData?.data?.peerEpochKeys && isMounted) {
+          setPeerEpochKeys(channelKeyData.data.peerEpochKeys);
         }
       } catch (err: any) {
         console.warn('Crypto context initialization note:', err);
@@ -109,7 +107,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   }, [user?.agentId, userPassword, connectionId, initialPeerKey, peerAgentId]);
 
   // 2. Fetch and render messages
-  const fetchMessages = useCallback(async (retryCount = 0) => {
+  const fetchMessages = useCallback(async () => {
     if (!user?.agentId) return;
 
     try {
@@ -117,26 +115,22 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       const rawList = responseData.data || responseData;
 
       if (Array.isArray(rawList)) {
-        const activeCred = userPassword || user?.apiKey || getAccessToken() || undefined;
-        const currentLocalKeys = localKeys || (await getLocalKeyPair(user.agentId, undefined, activeCred));
+        const currentLocalKeys = localKeys || (await getLocalKeyPair(user.agentId, undefined, userPassword || undefined));
         let currentPeerKey = peerKey || initialPeerKey || null;
         let currentPeerEpochKeys = peerEpochKeys;
 
-        if (!currentPeerKey || !currentPeerEpochKeys || Object.keys(currentPeerEpochKeys).length === 0) {
+        if (!currentPeerKey) {
           try {
             const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: 'human' });
             if (keyRes?.data?.peerE2eePublicKey) {
               currentPeerKey = keyRes.data.peerE2eePublicKey;
               setPeerKey(currentPeerKey);
             }
-            const resEpochs = keyRes?.data?.peerEpochHistory || keyRes?.data?.peerEpochKeys;
-            if (resEpochs) {
-              currentPeerEpochKeys = resEpochs;
+            if (keyRes?.data?.peerEpochKeys) {
+              currentPeerEpochKeys = keyRes.data.peerEpochKeys;
               setPeerEpochKeys(currentPeerEpochKeys);
             }
-          } catch (err) {
-            console.error('Failed to fetch peer key for connection:', err);
-          }
+          } catch {}
         }
 
         const processed: DecryptedChatMessage[] = await Promise.all(
@@ -145,17 +139,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             const ciphertext = m.ciphertext;
             const nonce = m.nonce;
             const msgEpoch = m.keyEpoch || 1;
-
-            if (ciphertext) {
-              console.log('DIAGNOSTIC: Processing E2EE message:', {
-                messageId: m.id,
-                connectionId: m.connectionId,
-                msgEpoch,
-                hasLocalKeys: !!currentLocalKeys,
-                hasPeerKey: !!currentPeerKey,
-                hasPeerEpochKeys: !!currentPeerEpochKeys && Object.keys(currentPeerEpochKeys).length > 0
-              });
-            }
 
             const isPublicContext = m.id && (m.id.startsWith('msg_post_') || m.id.startsWith('msg_reply_'));
 
@@ -175,12 +158,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
             let resolvedPlaintext: string | null = null;
 
+            let decryptionErrorOccurred = false;
+
             // 2. Encrypted private E2EE message: attempt WebCrypto AES-256-GCM + ECDH local decryption
             if (ciphertext && nonce && currentLocalKeys) {
-              let decKey = currentLocalKeys.privateKey;
               try {
+                let decKey = currentLocalKeys.privateKey;
                 if (currentLocalKeys.keyEpoch !== msgEpoch) {
-                  const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, activeCred);
+                  const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, userPassword || undefined);
                   if (historicalEntry?.privateKey) {
                     decKey = historicalEntry.privateKey;
                   }
@@ -194,17 +179,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   currentPeerKey
                 );
 
-                console.log('E2EE_DECRYPT_ATTEMPT', {
-                  messageId: m.id,
-                  senderAgentId: sender,
-                  recipientAgentId: user.agentId,
-                  keyEpoch: msgEpoch,
-                  ciphertextLength: ciphertext?.length || 0,
-                  nonceLength: nonce?.length || 0,
-                  localPrivateKeyPresent: !!decKey,
-                  senderPublicKeyPresent: !!senderPubKey,
-                });
-
                 if (senderPubKey && decKey) {
                   resolvedPlaintext = await decryptMessage(
                     { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
@@ -213,35 +187,17 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     connectionId,
                     sender
                   );
-                  console.log('E2EE_DECRYPT_SUCCESS', {
-                    messageId: m.id,
-                    resolvedPlaintextExists: !!resolvedPlaintext,
-                  });
-                } else {
-                  console.warn('E2EE_DECRYPT_KEYS_MISSING', {
-                    messageId: m.id,
-                    localPrivateKeyPresent: !!decKey,
-                    senderPublicKeyPresent: !!senderPubKey,
-                  });
                 }
-              } catch (decErr: any) {
-                console.error('E2EE_DECRYPT_ERROR', {
-                  name: decErr?.name,
-                  message: decErr?.message,
-                  stack: decErr?.stack,
-                  messageId: m.id,
-                });
+              } catch (decErr) {
+                decryptionErrorOccurred = true;
               }
-            } else if (ciphertext && nonce && !currentLocalKeys) {
-              console.warn('E2EE_DECRYPT_ABORTED_NO_LOCAL_KEYS', {
-                messageId: m.id,
-                recipientAgentId: user.agentId,
-              });
             }
 
-            // 3. Fallback resolution: only for public connection context messages (where m.content was explicitly provided)
-            if (!resolvedPlaintext && typeof m.content === 'string' && m.content.trim().length > 0) {
-              resolvedPlaintext = m.content;
+            // 3. Resolution for public/legacy non-encrypted context messages ONLY
+            if (!resolvedPlaintext && !ciphertext && !nonce) {
+              if (typeof m.content === 'string' && m.content.trim().length > 0) {
+                resolvedPlaintext = m.content;
+              }
             }
 
             // 4. Transparent Plaintext Display (WhatsApp-style UX): Sanitize locally and display plaintext
@@ -260,11 +216,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             }
 
             // 5. Fallback for unrecognized, corrupted, or truly un-decryptable payload
+            const fallbackContent = decryptionErrorOccurred
+              ? '⚠️ [Decryption Failed: Invalid Tag or Ciphertext]'
+              : '🔒 [E2EE Encrypted Payload]';
+
             return {
               id: m.id,
               connectionId: m.connectionId,
               senderAgentId: sender,
-              content: '🔒 [E2EE Encrypted Payload]',
+              content: fallbackContent,
               ciphertextPreview: ciphertext ? `${ciphertext.substring(0, 48)}...` : undefined,
               isDecrypted: false,
               keyEpoch: msgEpoch,
@@ -277,14 +237,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         setFetchError(null);
       }
     } catch (e: any) {
-      if (retryCount < 3) {
-        console.warn(`Transient error, retrying (${retryCount + 1}/3):`, e);
-        setTimeout(() => fetchMessages(retryCount + 1), 1000 * (retryCount + 1));
-      } else {
-        setFetchError(e.message || 'Failed to fetch conversation logs.');
-      }
+      setFetchError(e.message || 'Failed to fetch conversation logs.');
     } finally {
-      if (retryCount === 0) setIsLoading(false);
+      setIsLoading(false);
     }
   }, [connectionId, user?.agentId, userPassword, localKeys, peerKey, initialPeerKey, peerEpochKeys, peerAgentId, activeContextCredentials]);
 

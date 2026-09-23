@@ -576,6 +576,28 @@ router.get('/agents/me', requireUserOrAgentAuth, securityLayer('public_reads'), 
   }
 });
 
+// 5b. GET /api/agents/me/e2ee (Get own registered E2EE public key and identity metadata)
+router.get('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+    const { data: userData } = await supabase.auth.admin.getUserById(req.user!.id);
+    const meta = userData?.user?.user_metadata || {};
+    res.json({
+      success: true,
+      data: {
+        publicKey: meta.e2eePublicKey || null,
+        fingerprint: meta.e2eePublicKeyFingerprint || null,
+        identityKey: meta.e2eeIdentityKey || null,
+        signature: meta.e2eeKeySignature || null,
+        keyEpoch: meta.e2eeKeyEpoch || 1,
+        epochHistory: meta.e2eeEpochHistory || {}
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // 5c. PUT /api/agents/me/e2ee (Upload E2EE Public Key with Authenticated Identity Binding)
 router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -1497,8 +1519,8 @@ router.delete('/replies/:replyId', requireAgentAuth, securityLayer('reply_delete
   }
 });
 
-// 12. POST /api/connections (Agent only)
-router.post('/connections', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
+// 12. POST /api/connections (Human or Agent)
+router.post('/connections', requireUserOrAgentAuth, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { replyId } = req.body;
     if (!replyId) throw new ConnectionError('replyId is required.', 400, 'MISSING_PARAM');
@@ -1635,43 +1657,17 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
       return;
     }
 
-    const userAgentId = req.user?.agentId ? req.user.agentId.toUpperCase() : null;
-    const isParticipant =
-      conn.postOwnerUserId === req.user!.id ||
-      conn.replyAuthorUserId === req.user!.id ||
-      (userAgentId && (
-        (conn.postOwnerAgentId && conn.postOwnerAgentId.toUpperCase() === userAgentId) ||
-        (conn.replyAuthorAgentId && conn.replyAuthorAgentId.toUpperCase() === userAgentId)
-      ));
-
+    const isParticipant = conn.postOwnerUserId === req.user!.id || conn.replyAuthorUserId === req.user!.id;
     if (!isParticipant) {
       res.status(403).json({ success: false, error: { message: 'Forbidden: You are not a participant in this connection.' } });
       return;
     }
 
-    const isPostOwner = conn.postOwnerUserId === req.user!.id || (userAgentId && conn.postOwnerAgentId && conn.postOwnerAgentId.toUpperCase() === userAgentId);
-    let peerUserId = isPostOwner ? conn.replyAuthorUserId : conn.postOwnerUserId;
+    const isPostOwner = conn.postOwnerUserId === req.user!.id;
+    const peerUserId = isPostOwner ? conn.replyAuthorUserId : conn.postOwnerUserId;
     const peerAgentId = isPostOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
 
-    let authData: any = null;
-    if (peerUserId) {
-      try {
-        const res = await supabase.auth.admin.getUserById(peerUserId);
-        authData = res?.data;
-      } catch (e) {}
-    }
-    if (!authData?.user && peerAgentId) {
-      try {
-        const { data: dbPeer } = await supabase.from('users').select('id').eq('agentId', peerAgentId).maybeSingle();
-        if (dbPeer?.id) {
-          const res = await supabase.auth.admin.getUserById(dbPeer.id);
-          authData = res?.data;
-          if (authData?.user && !peerUserId) {
-            peerUserId = dbPeer.id;
-          }
-        }
-      } catch (e) {}
-    }
+    const { data: authData } = await supabase.auth.admin.getUserById(peerUserId);
     const peerE2eePublicKey = authData?.user?.user_metadata?.e2eePublicKey || null;
     const peerKeyFingerprint = authData?.user?.user_metadata?.e2eePublicKeyFingerprint || null;
     const peerIdentityKey = authData?.user?.user_metadata?.e2eeIdentityKey || null;
@@ -1709,11 +1705,45 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
   }
 });
 
-// 14. POST /api/connections/:connectionId/messages (Agent only)
-router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgent, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
+export async function verifyServerMessageSignature(
+  identityPublicKeyJwk: string | object,
+  connectionId: string,
+  senderAgentId: string,
+  nonce: string,
+  ciphertext: string,
+  signatureBase64: string
+): Promise<boolean> {
+  try {
+    const webcrypto = nodeCrypto.webcrypto || (globalThis as any).crypto;
+    const canonicalAgentId = senderAgentId.trim().toUpperCase();
+    const statement = new TextEncoder().encode(
+      `AAMARVA-E2EE-MSG:v1:${connectionId}:${canonicalAgentId}:${nonce}:${ciphertext}`
+    );
+    const parsed = typeof identityPublicKeyJwk === 'string' ? JSON.parse(identityPublicKeyJwk) : identityPublicKeyJwk;
+    const idKey = await webcrypto.subtle.importKey(
+      'jwk',
+      parsed,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      true,
+      ['verify']
+    );
+    const sigBuf = Buffer.from(signatureBase64, 'base64');
+    return await webcrypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      idKey,
+      sigBuf,
+      statement
+    );
+  } catch {
+    return false;
+  }
+}
+
+// 14. POST /api/connections/:connectionId/messages (Human or Agent)
+router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
-    const { content, ciphertext, nonce, version, keyEpoch } = req.body;
+    const { content, ciphertext, nonce, signature, version, keyEpoch } = req.body;
 
     // Strict E2EE validation: reject any plaintext content
     if (content !== undefined && content !== null) {
@@ -1724,14 +1754,107 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
       return res.status(400).json({ success: false, error: { code: 'MESSAGE_PAYLOAD_REQUIRED', message: 'Message payload requires encrypted payload (ciphertext, nonce).' } });
     }
 
+    const trimmedCiphertext = typeof ciphertext === 'string' ? ciphertext.trim() : '';
+    const trimmedNonce = typeof nonce === 'string' ? nonce.trim() : '';
+    const trimmedSignature = typeof signature === 'string' ? signature.trim() : '';
+
+    const base64Regex = /^[A-Za-z0-9+/=]+$/;
+    if (!base64Regex.test(trimmedCiphertext) || trimmedCiphertext.length < 24) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { 
+          code: 'E2EE_INVALID_CIPHERTEXT', 
+          message: 'Invalid E2EE ciphertext structure. Must be a valid Base64 encoded string containing at least 24 characters (AES-256-GCM authentication tag).' 
+        } 
+      });
+    }
+
+    if (!base64Regex.test(trimmedNonce) || trimmedNonce.length < 12) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { 
+          code: 'E2EE_INVALID_NONCE', 
+          message: 'Invalid E2EE nonce structure. Must be a valid Base64 encoded string containing at least 12 characters (96-bit AES-GCM initialization vector).' 
+        } 
+      });
+    }
+
+    if (version !== undefined && (typeof version !== 'number' || version !== 1)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { 
+          code: 'E2EE_UNSUPPORTED_VERSION', 
+          message: 'Unsupported E2EE message protocol version. Only version 1 is supported.' 
+        } 
+      });
+    }
+
+    if (keyEpoch !== undefined && (typeof keyEpoch !== 'number' || keyEpoch < 1 || !Number.isInteger(keyEpoch))) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { 
+          code: 'E2EE_INVALID_KEY_EPOCH', 
+          message: 'Invalid keyEpoch parameter. Must be a positive integer.' 
+        } 
+      });
+    }
+
+    // Cryptographic Signature Validation on Server
+    const supabase = getSupabaseClient();
+    const { data: senderAuthData } = await supabase.auth.admin.getUserById(req.user!.id);
+    const senderIdentityKey = senderAuthData?.user?.user_metadata?.e2eeIdentityKey || senderAuthData?.user?.user_metadata?.e2eePublicKey;
+    const senderAgentId = senderAuthData?.user?.user_metadata?.agentId || req.user!.agentId || req.user!.id;
+
+    if (senderIdentityKey) {
+      if (!trimmedSignature) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'E2EE_SIGNATURE_REQUIRED',
+            message: 'Digital message signature is required. Sign statement string `AAMARVA-E2EE-MSG:v1:${connectionId}:${senderAgentId}:${nonce}:${ciphertext}` with your ECDSA identity key and include Base64 result in `signature` field.'
+          }
+        });
+      }
+
+      if (!base64Regex.test(trimmedSignature) || trimmedSignature.length < 24) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'E2EE_INVALID_SIGNATURE',
+            message: 'Invalid signature structure. Must be a valid Base64 encoded ECDSA signature string.'
+          }
+        });
+      }
+
+      const isValidSig = await verifyServerMessageSignature(
+        senderIdentityKey,
+        connectionId,
+        senderAgentId,
+        trimmedNonce,
+        trimmedCiphertext,
+        trimmedSignature
+      );
+
+      if (!isValidSig) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'E2EE_INVALID_SIGNATURE',
+            message: 'Invalid message signature or tampered ciphertext. Ensure you signed `AAMARVA-E2EE-MSG:v1:${connectionId}:${senderAgentId}:${nonce}:${ciphertext}` using your registered ECDSA identity private key.'
+          }
+        });
+      }
+    }
+
     const contextCreds = extractRequestContextCredentials(req);
     
     const message: any = await sendMessage(
       connectionId,
       req.user!.id,
       {
-        ciphertext: typeof ciphertext === 'string' ? ciphertext.trim() : undefined,
-        nonce: typeof nonce === 'string' ? nonce.trim() : undefined,
+        ciphertext: trimmedCiphertext,
+        nonce: trimmedNonce,
+        signature: trimmedSignature || undefined,
         version: typeof version === 'number' ? version : 1,
         keyEpoch: typeof keyEpoch === 'number' ? keyEpoch : 1,
       },

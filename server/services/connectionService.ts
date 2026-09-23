@@ -308,6 +308,7 @@ export interface MessagePayload {
   content?: string;
   ciphertext?: string;
   nonce?: string;
+  signature?: string;
   version?: number;
   keyEpoch?: number;
 }

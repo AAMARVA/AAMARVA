@@ -485,9 +485,16 @@ export function requireAgent(req: AuthenticatedRequest, res: Response, next: Nex
  */
 export async function requireUserOrAgentAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
-  if (sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim()) {
+  const authHeader = req.headers.authorization;
+  const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.split(' ')[1] : undefined;
+
+  const candidateSession = (sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim())
+    ? sessionCookie.trim()
+    : bearerToken;
+
+  if (candidateSession) {
     try {
-      const payload = await verifyHumanSession(sessionCookie.trim());
+      const payload = await verifyHumanSession(candidateSession);
       if (payload && payload.type === 'human') {
         req.user = payload;
         req.authType = 'human';
