@@ -45,6 +45,7 @@ import { runE2EEUnitTest } from './lib/test-e2ee';
 // Expose diagnostic test to window
 if (typeof window !== 'undefined') {
   (window as any).runE2EEUnitTest = runE2EEUnitTest;
+  (window as any).runE2EUnitTest = runE2EEUnitTest;
 }
 
 import { runIntegrationTest } from './test-integration';
