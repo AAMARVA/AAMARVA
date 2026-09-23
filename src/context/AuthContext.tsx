@@ -202,82 +202,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setServerFingerprint(keys.fingerprint);
             setE2eeStatus('E2EE_READY');
           } else {
-            // Check if activeCredential derives the server key epoch or current identity
+            // Check if activeCredential derives the server key epoch
             let resolvedServerMatch = false;
-            if (activeCredential) {
-              try {
-                const derivedCurrent = await deriveAgentCryptoIdentity(agentId, activeCredential, serverPubKeyData?.keyEpoch || 1);
-                if (derivedCurrent.fingerprint === serverFp) {
-                  // Local IndexedDB was outdated, but activeCredential derives the exact server key!
-                  await saveLocalKeyPair(
-                    agentId,
-                    derivedCurrent.e2eePublicKey,
-                    derivedCurrent.e2eePrivateKey,
-                    derivedCurrent.fingerprint,
-                    derivedCurrent.identityPublicKey,
-                    derivedCurrent.identityPrivateKey,
-                    derivedCurrent.signature,
-                    derivedCurrent.keyEpoch
-                  );
-                  setLocalFingerprint(derivedCurrent.fingerprint);
-                  setE2eeStatus('E2EE_READY');
-                  resolvedServerMatch = true;
-                } else {
-                  // Active credential produces valid current key: sync server & local keystore
-                  await apiFetch('/api/agents/me/e2ee', {
-                    method: 'PUT',
-                    authType,
-                    body: JSON.stringify({ 
-                      publicKey: derivedCurrent.e2eePublicKey,
-                      fingerprint: derivedCurrent.fingerprint,
-                      identityKey: derivedCurrent.identityPublicKey,
-                      signature: derivedCurrent.signature,
-                      keyEpoch: derivedCurrent.keyEpoch || 1,
-                      allowRotation: true
-                    })
-                  });
-                  await saveLocalKeyPair(
-                    agentId,
-                    derivedCurrent.e2eePublicKey,
-                    derivedCurrent.e2eePrivateKey,
-                    derivedCurrent.fingerprint,
-                    derivedCurrent.identityPublicKey,
-                    derivedCurrent.identityPrivateKey,
-                    derivedCurrent.signature,
-                    derivedCurrent.keyEpoch
-                  );
-                  setLocalFingerprint(derivedCurrent.fingerprint);
-                  setServerFingerprint(derivedCurrent.fingerprint);
-                  setE2eeStatus('E2EE_READY');
-                  resolvedServerMatch = true;
-                }
-              } catch (reSyncErr) {
-                console.warn('E2EE Auto-Resync note:', reSyncErr);
+            if (activeCredential && serverPubKeyData?.keyEpoch) {
+              const serverEpochDerived = await deriveAgentCryptoIdentity(agentId, activeCredential, serverPubKeyData.keyEpoch);
+              if (serverEpochDerived.fingerprint === serverFp) {
+                // Derived key matching server epoch found! Save locally and mark ready.
+                await saveLocalKeyPair(
+                  agentId,
+                  serverEpochDerived.e2eePublicKey,
+                  serverEpochDerived.e2eePrivateKey,
+                  serverEpochDerived.fingerprint,
+                  serverEpochDerived.identityPublicKey,
+                  serverEpochDerived.identityPrivateKey,
+                  serverEpochDerived.signature,
+                  serverEpochDerived.keyEpoch
+                );
+                setLocalFingerprint(serverEpochDerived.fingerprint);
+                setE2eeStatus('E2EE_READY');
+                resolvedServerMatch = true;
               }
             }
 
             if (!resolvedServerMatch) {
-              try {
-                // Perform authorized key sync to align server fingerprint with active client identity
-                await apiFetch('/api/agents/me/e2ee', {
-                  method: 'PUT',
-                  authType,
-                  body: JSON.stringify({ 
-                    publicKey: keys.publicKey,
-                    fingerprint: keys.fingerprint,
-                    identityKey: keys.identityPublicKey,
-                    signature: keys.signature,
-                    keyEpoch: keys.keyEpoch || 1,
-                    allowRotation: true
-                  })
-                });
-                setServerFingerprint(keys.fingerprint);
-                setE2eeStatus('E2EE_READY');
-                resolvedServerMatch = true;
-              } catch (syncErr) {
-                console.warn(`E2EE_KEY_DESYNC for agent [${agentId}]: Local fingerprint (${calculatedLocalFingerprint}) != Server fingerprint (${serverFp})`, syncErr);
-                setE2eeStatus('E2EE_KEY_DESYNC');
-              }
+              // E2EE_KEY_DESYNC: Local key and server key mismatch!
+              // STOP initialization. Do NOT silently overwrite server key or generate fake key.
+              console.error(`E2EE_KEY_DESYNC for agent [${agentId}]: Local fingerprint (${calculatedLocalFingerprint}) != Server fingerprint (${serverFp})`);
+              setE2eeStatus('E2EE_KEY_DESYNC');
             }
           }
         }

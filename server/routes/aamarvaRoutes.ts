@@ -1705,7 +1705,7 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
   }
 });
 
-export async function verifyServerMessageSignature(
+async function verifyServerMessageSignature(
   identityPublicKeyJwk: string | object,
   connectionId: string,
   senderAgentId: string,
