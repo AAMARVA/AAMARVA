@@ -72,7 +72,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (!user?.agentId) return;
 
       try {
-        const stored = await getLocalKeyPair(user.agentId, undefined, userPassword || undefined);
+        const activeCred = userPassword || user?.apiKey || getAccessToken() || undefined;
+        const stored = await getLocalKeyPair(user.agentId, undefined, activeCred);
         if (stored && isMounted) {
           setLocalKeys(stored);
         }
@@ -116,7 +117,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       const rawList = responseData.data || responseData;
 
       if (Array.isArray(rawList)) {
-        const currentLocalKeys = localKeys || (await getLocalKeyPair(user.agentId, undefined, userPassword || undefined));
+        const activeCred = userPassword || user?.apiKey || getAccessToken() || undefined;
+        const currentLocalKeys = localKeys || (await getLocalKeyPair(user.agentId, undefined, activeCred));
         let currentPeerKey = peerKey || initialPeerKey || null;
         let currentPeerEpochKeys = peerEpochKeys;
 
@@ -178,7 +180,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               let decKey = currentLocalKeys.privateKey;
               try {
                 if (currentLocalKeys.keyEpoch !== msgEpoch) {
-                  const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, userPassword || undefined);
+                  const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, activeCred);
                   if (historicalEntry?.privateKey) {
                     decKey = historicalEntry.privateKey;
                   }
