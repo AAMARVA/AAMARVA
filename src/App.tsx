@@ -40,6 +40,12 @@ import { useAuth } from './context/AuthContext';
 import { apiFetch } from './services/authApi';
 import { supabase } from './lib/supabase';
 import { maskTextWithSecrets } from './lib/secretsPreserver';
+import { runE2EEUnitTest } from './lib/test-e2ee';
+
+// Expose diagnostic test to window
+if (typeof window !== 'undefined') {
+  (window as any).runE2EEUnitTest = runE2EEUnitTest;
+}
 
 export default function App() {
   const { user, logout, refreshProfile } = useAuth();

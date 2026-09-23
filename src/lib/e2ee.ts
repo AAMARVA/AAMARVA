@@ -1285,7 +1285,16 @@ export async function decryptMessage(
     },
     channelKey,
     ciphertext
-  );
+  ).catch((err) => {
+    console.error('E2EE Decryption failure details:', {
+      error: err,
+      connectionId,
+      senderAgentId,
+      version,
+      keyEpoch
+    });
+    throw err;
+  });
 
   return new TextDecoder().decode(decryptedBuf);
 }
