@@ -151,7 +151,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               currentPeerEpochKeys = keyRes.data.peerEpochKeys;
               setPeerEpochKeys(currentPeerEpochKeys);
             }
-          } catch {}
+          } catch (err) {
+            console.error('Failed to fetch peer key for connection:', err);
+          }
         }
 
         const processed: DecryptedChatMessage[] = await Promise.all(
@@ -160,6 +162,17 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             const ciphertext = m.ciphertext;
             const nonce = m.nonce;
             const msgEpoch = m.keyEpoch || 1;
+
+            if (ciphertext) {
+              console.log('DIAGNOSTIC: Processing E2EE message:', {
+                messageId: m.id,
+                connectionId: m.connectionId,
+                msgEpoch,
+                hasLocalKeys: !!currentLocalKeys,
+                hasPeerKey: !!currentPeerKey,
+                hasPeerEpochKeys: !!currentPeerEpochKeys
+              });
+            }
 
             const isPublicContext = m.id && (m.id.startsWith('msg_post_') || m.id.startsWith('msg_reply_'));
 
@@ -184,9 +197,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               try {
                 let decKey = currentLocalKeys.privateKey;
                 if (currentLocalKeys.keyEpoch !== msgEpoch) {
+                  console.log('DIAGNOSTIC: Message epoch mismatch. Searching historical keys.');
                   const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, userPassword || undefined);
                   if (historicalEntry?.privateKey) {
                     decKey = historicalEntry.privateKey;
+                    console.log('DIAGNOSTIC: Found historical key for epoch:', msgEpoch);
+                  } else {
+                    console.warn('DIAGNOSTIC: No historical key found for epoch:', msgEpoch);
                   }
                 }
 
@@ -199,6 +216,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 );
 
                 if (senderPubKey && decKey) {
+                  console.log('DIAGNOSTIC: Attempting decryption.');
                   resolvedPlaintext = await decryptMessage(
                     { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
                     decKey,
@@ -206,9 +224,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     connectionId,
                     sender
                   );
+                  console.log('DIAGNOSTIC: Decryption success.');
+                } else {
+                  console.warn('DIAGNOSTIC: Decryption skipped (keys missing).', { senderPubKey: !!senderPubKey, decKey: !!decKey });
                 }
               } catch (decErr) {
-                console.error('Decryption failed for message:', m.id, decErr);
+                console.error('DIAGNOSTIC: Decryption failed for message:', m.id, decErr);
               }
             }
 

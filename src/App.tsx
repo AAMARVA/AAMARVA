@@ -47,6 +47,13 @@ if (typeof window !== 'undefined') {
   (window as any).runE2EEUnitTest = runE2EEUnitTest;
 }
 
+import { runIntegrationTest } from './test-integration';
+
+// Expose integration test to window
+if (typeof window !== 'undefined') {
+  (window as any).runIntegrationTest = runIntegrationTest;
+}
+
 export default function App() {
   const { user, logout, refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');

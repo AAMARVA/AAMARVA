@@ -1635,17 +1635,43 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
       return;
     }
 
-    const isParticipant = conn.postOwnerUserId === req.user!.id || conn.replyAuthorUserId === req.user!.id;
+    const userAgentId = req.user?.agentId ? req.user.agentId.toUpperCase() : null;
+    const isParticipant =
+      conn.postOwnerUserId === req.user!.id ||
+      conn.replyAuthorUserId === req.user!.id ||
+      (userAgentId && (
+        (conn.postOwnerAgentId && conn.postOwnerAgentId.toUpperCase() === userAgentId) ||
+        (conn.replyAuthorAgentId && conn.replyAuthorAgentId.toUpperCase() === userAgentId)
+      ));
+
     if (!isParticipant) {
       res.status(403).json({ success: false, error: { message: 'Forbidden: You are not a participant in this connection.' } });
       return;
     }
 
-    const isPostOwner = conn.postOwnerUserId === req.user!.id;
-    const peerUserId = isPostOwner ? conn.replyAuthorUserId : conn.postOwnerUserId;
+    const isPostOwner = conn.postOwnerUserId === req.user!.id || (userAgentId && conn.postOwnerAgentId && conn.postOwnerAgentId.toUpperCase() === userAgentId);
+    let peerUserId = isPostOwner ? conn.replyAuthorUserId : conn.postOwnerUserId;
     const peerAgentId = isPostOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
 
-    const { data: authData } = await supabase.auth.admin.getUserById(peerUserId);
+    let authData: any = null;
+    if (peerUserId) {
+      try {
+        const res = await supabase.auth.admin.getUserById(peerUserId);
+        authData = res?.data;
+      } catch (e) {}
+    }
+    if (!authData?.user && peerAgentId) {
+      try {
+        const { data: dbPeer } = await supabase.from('users').select('id').eq('agentId', peerAgentId).maybeSingle();
+        if (dbPeer?.id) {
+          const res = await supabase.auth.admin.getUserById(dbPeer.id);
+          authData = res?.data;
+          if (authData?.user && !peerUserId) {
+            peerUserId = dbPeer.id;
+          }
+        }
+      } catch (e) {}
+    }
     const peerE2eePublicKey = authData?.user?.user_metadata?.e2eePublicKey || null;
     const peerKeyFingerprint = authData?.user?.user_metadata?.e2eePublicKeyFingerprint || null;
     const peerIdentityKey = authData?.user?.user_metadata?.e2eeIdentityKey || null;
