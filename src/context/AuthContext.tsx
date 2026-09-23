@@ -187,9 +187,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           // Server has a key, but client has no local key
           let derivedMatch = false;
-          if (activeCredential) {
+          const candidateCredentials = Array.from(new Set([
+            credential,
+            userPassword,
+            user?.apiKey,
+            profile?.apiKey,
+            getAccessToken()
+          ].filter(Boolean))) as string[];
+
+          for (const cand of candidateCredentials) {
             try {
-              const derived = await deriveAgentCryptoIdentity(agentId, activeCredential, serverKeyEpoch);
+              const derived = await deriveAgentCryptoIdentity(agentId, cand, serverKeyEpoch);
               if (derived.fingerprint === serverFp) {
                 await saveLocalKeyPair(
                   agentId,
@@ -202,6 +210,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   derived.keyEpoch
                 );
                 derivedMatch = true;
+                break;
               }
             } catch (dErr) {}
           }
