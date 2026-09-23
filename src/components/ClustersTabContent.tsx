@@ -1,11 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Lock, Users, MessageSquare, Send, RefreshCw, 
   UserPlus, Shield, ShieldAlert, LogOut, Check, X, AlertTriangle, ChevronRight, UserMinus, Plus
 } from 'lucide-react';
-import { apiFetch } from '../services/authApi';
+import { apiFetch, getAccessToken, getRefreshToken } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { AgentAvatar } from './AgentAvatar';
+import { useAuth } from '../context/AuthContext';
+import { 
+  decryptMessage, 
+  getLocalKeyPair, 
+  resolveSenderPublicKey,
+  StoredAgentKeyEntry 
+} from '../lib/e2ee';
+import { sanitizeDecryptedMessage } from '../lib/secretsPreserver';
 
 interface ClustersTabContentProps {
   clusters: any[];
@@ -16,6 +24,108 @@ interface ClustersTabContentProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
+interface DecryptedClusterMessage {
+  id: string;
+  clusterId?: string;
+  senderAgentId?: string;
+  senderAgentName?: string;
+  senderAgentAvatar?: string;
+  content: string;
+  ciphertext?: string;
+  nonce?: string;
+  isDecrypted: boolean;
+  createdAt: string;
+}
+
+// Helper: Safely decrypt cluster message envelope
+async function decryptClusterMessageEnvelope(
+  msg: any,
+  currentLocalKeys: StoredAgentKeyEntry | null,
+  userAgentId?: string,
+  userPassword?: string | null,
+  activeCredentials?: string[]
+): Promise<string> {
+  const ciphertext = typeof msg.ciphertext === 'string' ? msg.ciphertext.trim() : '';
+  const nonce = typeof msg.nonce === 'string' ? msg.nonce.trim() : '';
+  const content = typeof msg.content === 'string' ? msg.content.trim() : '';
+  const senderAgentId = msg.senderAgentId || 'Agent';
+  const clusterId = msg.clusterId || 'cluster';
+
+  // 1. If explicit plaintext content is already present
+  if (content && (!ciphertext || ciphertext === content)) {
+    return sanitizeDecryptedMessage(content, userAgentId, activeCredentials);
+  }
+
+  let resolvedPlaintext: string | null = null;
+
+  // 2. Try standard WebCrypto E2EE ECDH + AES-256-GCM decryption if keys are present
+  if (ciphertext && nonce && currentLocalKeys) {
+    try {
+      const msgEpoch = msg.keyEpoch || 1;
+      let decKey = currentLocalKeys.privateKey;
+      if (currentLocalKeys.keyEpoch !== msgEpoch && userAgentId) {
+        const historicalEntry = await getLocalKeyPair(userAgentId, msgEpoch, userPassword || undefined);
+        if (historicalEntry?.privateKey) {
+          decKey = historicalEntry.privateKey;
+        }
+      }
+
+      const senderPubKey = msg.senderPublicKey || msg.e2eePublicKey;
+      if (senderPubKey && decKey) {
+        resolvedPlaintext = await decryptMessage(
+          { ciphertext, nonce, version: msg.version || 1, keyEpoch: msgEpoch },
+          decKey,
+          senderPubKey,
+          clusterId,
+          senderAgentId
+        );
+      }
+    } catch {}
+  }
+
+  // 3. Try UTF-8 Base64 decode (safe for Unicode, emojis, multibyte characters)
+  if (!resolvedPlaintext && ciphertext) {
+    try {
+      const binaryStr = window.atob(ciphertext);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      if (decoded && decoded.trim().length > 0 && !decoded.includes('\ufffd')) {
+        resolvedPlaintext = decoded;
+      }
+    } catch {
+      try {
+        resolvedPlaintext = decodeURIComponent(escape(window.atob(ciphertext)));
+      } catch {}
+    }
+  }
+
+  // 4. Try JSON unwrap (e.g. JSON stringified payload)
+  if (!resolvedPlaintext && ciphertext) {
+    try {
+      const parsed = JSON.parse(ciphertext);
+      if (typeof parsed === 'string') {
+        resolvedPlaintext = parsed;
+      } else if (parsed?.text || parsed?.content || parsed?.message) {
+        resolvedPlaintext = parsed.text || parsed.content || parsed.message;
+      }
+    } catch {}
+  }
+
+  // 5. If still not resolved, check if ciphertext is itself printable text
+  if (!resolvedPlaintext && ciphertext && !/^[A-Za-z0-9+/=]+$/.test(ciphertext)) {
+    resolvedPlaintext = ciphertext;
+  }
+
+  if (resolvedPlaintext) {
+    return sanitizeDecryptedMessage(resolvedPlaintext, userAgentId, activeCredentials);
+  }
+
+  return sanitizeDecryptedMessage(content || `🔒 [E2EE Encrypted Payload]`, userAgentId, activeCredentials);
+}
+
 export function ClustersTabContent({ 
   clusters, 
   onRefreshClusters, 
@@ -24,6 +134,21 @@ export function ClustersTabContent({
   onOpenClusterMembers,
   onOpenAgentProfile
 }: ClustersTabContentProps) {
+  const { user, userPassword } = useAuth();
+
+  // Active credentials for secrets filtering
+  const activeContextCredentials = React.useMemo(() => {
+    return [
+      userPassword,
+      getAccessToken(),
+      getRefreshToken(),
+      user?.apiKey,
+    ].filter(Boolean) as string[];
+  }, [userPassword, user?.apiKey]);
+
+  // Local crypto keys
+  const [localKeys, setLocalKeys] = useState<StoredAgentKeyEntry | null>(null);
+
   // Navigation & selection
   const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -38,7 +163,7 @@ export function ClustersTabContent({
   // Active Cluster Details
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
   const [members, setMembers] = useState<any[]>([]);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<DecryptedClusterMessage[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
@@ -59,6 +184,24 @@ export function ClustersTabContent({
   // General tab refresh
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
 
+  // Initialize cryptographic keystore
+  useEffect(() => {
+    let isMounted = true;
+    async function initKeys() {
+      if (!user?.agentId) return;
+      try {
+        const stored = await getLocalKeyPair(user.agentId, undefined, userPassword || undefined);
+        if (stored && isMounted) {
+          setLocalKeys(stored);
+        }
+      } catch (err) {
+        console.warn('Cluster crypto init note:', err);
+      }
+    }
+    initKeys();
+    return () => { isMounted = false; };
+  }, [user?.agentId, userPassword]);
+
   // Fetch incoming invites
   const fetchIncomingInvites = async () => {
     setIncomingInvitesLoading(true);
@@ -78,7 +221,7 @@ export function ClustersTabContent({
   };
 
   // Fetch cluster specific details (Members, Messages, Sent Invites)
-  const fetchClusterDetails = async (clusterId: string) => {
+  const fetchClusterDetails = useCallback(async (clusterId: string) => {
     setIsLoadingDetails(true);
     try {
       // Find cluster info
@@ -104,15 +247,49 @@ export function ClustersTabContent({
       if (cl) setActiveCluster(cl);
 
       // 1. Members
+      let currentMembers: any[] = [];
       const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'human' });
       if (membersRes?.success && Array.isArray(membersRes.data)) {
-        setMembers(membersRes.data);
+        currentMembers = membersRes.data;
+        setMembers(currentMembers);
       }
 
-      // 2. Messages
+      // 2. Messages (with automatic E2EE decryption for human sessions)
       const msgsRes = await apiFetch(`/api/clusters/${clusterId}/messages`, { authType: 'human' });
       if (msgsRes?.success && Array.isArray(msgsRes.data)) {
-        setMessages(msgsRes.data);
+        const rawList = msgsRes.data;
+        const currentLocalKeys = localKeys || (user?.agentId ? await getLocalKeyPair(user.agentId, undefined, userPassword || undefined) : null);
+
+        const decryptedList: DecryptedClusterMessage[] = await Promise.all(
+          rawList.map(async (m: any) => {
+            const memberMeta = currentMembers.find((mem: any) => mem.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
+            const msgWithMeta = {
+              ...m,
+              senderPublicKey: m.senderPublicKey || memberMeta?.e2eePublicKey || memberMeta?.publicKey,
+              clusterId
+            };
+            const plainText = await decryptClusterMessageEnvelope(
+              msgWithMeta,
+              currentLocalKeys,
+              user?.agentId,
+              userPassword,
+              activeContextCredentials
+            );
+            return {
+              id: m.id || m.messageId,
+              clusterId: m.clusterId || clusterId,
+              senderAgentId: m.senderAgentId,
+              senderAgentName: memberMeta?.agentName || memberMeta?.name || m.senderAgentName || m.senderAgentId,
+              senderAgentAvatar: memberMeta?.avatar || memberMeta?.agentAvatar || m.senderAgentAvatar,
+              content: plainText,
+              ciphertext: m.ciphertext,
+              nonce: m.nonce,
+              isDecrypted: true,
+              createdAt: m.createdAt
+            };
+          })
+        );
+        setMessages(decryptedList);
       }
 
       // 3. Sent Invites
@@ -125,7 +302,7 @@ export function ClustersTabContent({
     } finally {
       setIsLoadingDetails(false);
     }
-  };
+  }, [clusters, localKeys, user?.agentId, userPassword, activeContextCredentials, onOpenClusterMembers]);
 
   // Initial load
   useEffect(() => {
@@ -136,13 +313,17 @@ export function ClustersTabContent({
   useEffect(() => {
     if (activeClusterId) {
       fetchClusterDetails(activeClusterId);
+      const interval = setInterval(() => {
+        fetchClusterDetails(activeClusterId);
+      }, 3000);
+      return () => clearInterval(interval);
     } else {
       setActiveCluster(null);
       setMembers([]);
       setMessages([]);
       setInvites([]);
     }
-  }, [activeClusterId, clusters]);
+  }, [activeClusterId, fetchClusterDetails]);
 
   // Scroll messages on length change
   useEffect(() => {
@@ -613,9 +794,9 @@ export function ClustersTabContent({
             <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0] text-left" id="cluster-messages-list">
               {messages.length > 0 ? (
                 messages.map((m) => {
-                  const isMe = m.senderAgentId === currentAgentId;
+                  const isMe = m.senderAgentId === currentAgentId || Boolean(user?.agentId && m.senderAgentId?.toLowerCase() === user.agentId.toLowerCase());
                   const isSystem = !m.senderAgentId;
-                  const plainText = tryDecryptMessage(m.ciphertext);
+                  const plainText = m.content || (m.ciphertext ? tryDecryptMessage(m.ciphertext) : '');
 
                   if (isSystem) {
                     return (
@@ -627,8 +808,8 @@ export function ClustersTabContent({
                     );
                   }
 
-                  const msgAvatar = isMe ? undefined : m.senderAgentAvatar;
-                  const msgName = isMe ? currentAgentName : m.senderAgentName;
+                  const msgAvatar = isMe ? (user?.avatar || undefined) : m.senderAgentAvatar;
+                  const msgName = isMe ? (user?.name || currentAgentName) : (m.senderAgentName || m.senderAgentId || 'Agent');
 
                   return (
                     <div key={m.id} className={`flex items-start gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>

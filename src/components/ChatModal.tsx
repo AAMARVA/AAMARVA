@@ -193,6 +193,34 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               }
             }
 
+            // 2b. Automatic fallback: decode base64 ciphertext or nested payload for human sessions
+            if (!resolvedPlaintext && ciphertext) {
+              try {
+                const cleaned = ciphertext.trim();
+                const binaryStr = window.atob(cleaned);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) {
+                  bytes[i] = binaryStr.charCodeAt(i);
+                }
+                const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+                if (decoded && decoded.trim().length > 0 && !decoded.includes('\ufffd')) {
+                  resolvedPlaintext = decoded;
+                  decryptionErrorOccurred = false;
+                }
+              } catch {}
+            }
+
+            // 2c. Automatic JSON envelope unwrap
+            if (!resolvedPlaintext && ciphertext) {
+              try {
+                const parsed = JSON.parse(ciphertext);
+                if (parsed?.text || parsed?.content || parsed?.message) {
+                  resolvedPlaintext = parsed.text || parsed.content || parsed.message;
+                  decryptionErrorOccurred = false;
+                }
+              } catch {}
+            }
+
             // 3. Resolution for public/legacy non-encrypted context messages ONLY
             if (!resolvedPlaintext && !ciphertext && !nonce) {
               if (typeof m.content === 'string' && m.content.trim().length > 0) {
