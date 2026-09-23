@@ -13,11 +13,15 @@ import {
   deleteAccountApi,
   updateProfileApi,
   apiFetch,
+  AuthType,
 } from '../services/authApi';
 import { 
   generateAgentCryptoIdentity, 
   deriveAgentCryptoIdentity, 
   rotateAgentCryptoIdentity, 
+  generateIdentitySigningKeyPair,
+  signKeyBinding,
+  computeKeyFingerprint,
   getLocalKeyPair, 
   saveLocalKeyPair 
 } from '../lib/e2ee';
@@ -78,9 +82,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const activeCredential = credential || userPassword;
       let keys = await getLocalKeyPair(agentId, undefined, activeCredential || undefined);
-      const isCompleteKey = !!(keys && keys.publicKey && keys.privateKey && keys.identityPublicKey && keys.signature);
 
-      if (!isCompleteKey && !forceRotate) {
+      if (keys && keys.publicKey && keys.privateKey && !forceRotate) {
+        // 1. Valid local key pair already exists: retain existing private key and complete binding if needed
+        if (!keys.identityPublicKey || !keys.signature || !keys.identityPrivateKey) {
+          const idSign = await generateIdentitySigningKeyPair();
+          const fp = keys.fingerprint || (await computeKeyFingerprint(keys.publicKey));
+          const signature = await signKeyBinding(idSign.identityPrivateKey, agentId, fp);
+          await saveLocalKeyPair(
+            agentId,
+            keys.publicKey,
+            keys.privateKey,
+            fp,
+            idSign.identityPublicKey,
+            idSign.identityPrivateKey,
+            signature,
+            keys.keyEpoch || 1
+          );
+          keys = {
+            ...keys,
+            fingerprint: fp,
+            identityPublicKey: idSign.identityPublicKey,
+            identityPrivateKey: idSign.identityPrivateKey,
+            signature,
+            keyEpoch: keys.keyEpoch || 1
+          };
+        }
+      } else if (!keys && !forceRotate) {
+        // 2. No local key pair exists: generate or deterministically derive P-256 ECDH key pair
         console.log('Establishing cryptographic identity for agent:', agentId);
         const identity = activeCredential 
           ? await deriveAgentCryptoIdentity(agentId, activeCredential)
@@ -106,6 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           keyEpoch: identity.keyEpoch || 1
         };
       } else if (forceRotate) {
+        // 3. Explicit key rotation
         console.log('Performing authorized key rotation for agent:', agentId);
         const rotated = await rotateAgentCryptoIdentity(agentId, keys?.keyEpoch);
         keys = {
@@ -119,11 +149,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      if (keys) {
-        // Publish public key and identity binding to server with authorized rotation when explicitly requested
+      if (keys && keys.publicKey) {
+        // Determine whether request is authenticated via agent token, agent api key, or human cookie
+        const isAgentToken = typeof window !== 'undefined' && !!getAccessToken();
+        const authType: AuthType = isAgentToken ? 'agent' : 'human';
+        const headers: Record<string, string> = {};
+        if (!isAgentToken && user?.apiKey) {
+          headers['x-api-key'] = user.apiKey;
+        }
+
+        // Publish ONLY public key and identity binding to server using existing PUT /api/agents/me/e2ee
         await apiFetch('/api/agents/me/e2ee', {
           method: 'PUT',
-          authType: 'human',
+          authType,
+          headers,
           body: JSON.stringify({ 
             publicKey: keys.publicKey,
             fingerprint: keys.fingerprint,
@@ -195,7 +234,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initAuth = async () => {
       // Attempt silent profile restoration via HttpOnly cookie or localStorage token
-      await refreshProfile();
+      try {
+        await refreshProfile();
+      } catch (e) {}
+
+      // Recover and register local E2EE key pair for current authenticated account if present
+      const storedUser = (() => {
+        try {
+          const raw = typeof window !== 'undefined' ? localStorage.getItem('aamarva_user') : null;
+          return raw ? JSON.parse(raw) : null;
+        } catch {
+          return null;
+        }
+      })();
+      const targetAgentId = storedUser?.agentId || user?.agentId;
+      if (targetAgentId) {
+        ensureE2EEKeys(targetAgentId);
+      }
+
       setIsLoading(false);
     };
 
