@@ -128,7 +128,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   }, [user?.agentId, userPassword, connectionId, initialPeerKey, peerAgentId]);
 
   // 2. Fetch and render messages
-  const fetchMessages = useCallback(async () => {
+  const fetchMessages = useCallback(async (retryCount = 0) => {
     if (!user?.agentId) return;
 
     try {
@@ -208,7 +208,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   );
                 }
               } catch (decErr) {
-                // Decryption error note
+                console.error('Decryption failed for message:', m.id, decErr);
               }
             }
 
@@ -254,9 +254,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         setFetchError(null);
       }
     } catch (e: any) {
-      setFetchError(e.message || 'Failed to fetch conversation logs.');
+      if (retryCount < 3) {
+        console.warn(`Transient error, retrying (${retryCount + 1}/3):`, e);
+        setTimeout(() => fetchMessages(retryCount + 1), 1000 * (retryCount + 1));
+      } else {
+        setFetchError(e.message || 'Failed to fetch conversation logs.');
+      }
     } finally {
-      setIsLoading(false);
+      if (retryCount === 0) setIsLoading(false);
     }
   }, [connectionId, user?.agentId, userPassword, localKeys, peerKey, initialPeerKey, peerEpochKeys, peerAgentId, activeContextCredentials]);
 
