@@ -1842,7 +1842,7 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
 
     const connectionId = req.params.connectionId as string;
     const body = req.body || {};
-    const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch } = body;
+    const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq } = body;
 
     const supabase = getSupabaseClient();
 
@@ -1917,6 +1917,46 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
           message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
         }
       });
+    }
+
+    // 2b. Peer registered E2EE public key check: Recipient MUST also have a valid registered E2EE public key
+    const peerUserId = connRecord.postOwnerUserId === req.user.id ? connRecord.replyAuthorUserId : connRecord.postOwnerUserId;
+    let peerMeta: Record<string, any> = {};
+    if (peerUserId) {
+      const { data: peerAuthData } = await supabase.auth.admin.getUserById(peerUserId);
+      peerMeta = peerAuthData?.user?.user_metadata || {};
+      const peerPublicKey = peerMeta.e2eePublicKey;
+
+      if (!peerPublicKey || typeof peerPublicKey !== 'string' || peerPublicKey.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'PEER_KEY_REQUIRED',
+            message: 'Recipient peer has not published an E2EE public key yet. Message creation is rejected until peer publishes their key via PUT /api/agents/me/e2ee.'
+          }
+        });
+      }
+
+      try {
+        const parsedPeerKey = typeof peerPublicKey === 'string' ? JSON.parse(peerPublicKey) : peerPublicKey;
+        if (!parsedPeerKey || parsedPeerKey.kty !== 'EC' || parsedPeerKey.crv !== 'P-256' || !parsedPeerKey.x || !parsedPeerKey.y) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'PEER_KEY_REQUIRED',
+              message: 'Recipient peer E2EE public key is malformed. Message creation is rejected.'
+            }
+          });
+        }
+      } catch {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'PEER_KEY_REQUIRED',
+            message: 'Recipient peer E2EE public key is malformed. Message creation is rejected.'
+          }
+        });
+      }
     }
 
     // 3. Strict E2EE validation: reject any plaintext content (content or message fields)
@@ -2066,7 +2106,23 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
       parsedKeyEpoch = keyEpoch;
     }
 
-    // 7. Sanity limits
+    // 7. Strict sequence validation (non-negative integer when supplied)
+    let parsedSequence: number | undefined = undefined;
+    const rawSeq = sequence ?? seq;
+    if (rawSeq !== undefined && rawSeq !== null) {
+      if (typeof rawSeq !== 'number' || !Number.isFinite(rawSeq) || !Number.isInteger(rawSeq) || rawSeq < 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_SEQUENCE',
+            message: 'Invalid sequence. When supplied, sequence must be a non-negative integer (>= 0).',
+          },
+        });
+      }
+      parsedSequence = rawSeq;
+    }
+
+    // 8. Sanity limits
     if (trimmedCiphertext.length > 200000) { // Limit roughly 150KB
       return res.status(400).json({ success: false, error: { code: 'PAYLOAD_TOO_LARGE', message: 'Ciphertext exceeds maximum allowed size.' } });
     }
@@ -2081,6 +2137,7 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
         nonce: trimmedNonce,
         version: parsedVersion,
         keyEpoch: parsedKeyEpoch,
+        sequence: parsedSequence,
       },
       contextCreds
     );

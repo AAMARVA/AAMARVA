@@ -312,6 +312,8 @@ export interface MessagePayload {
   signature?: string;
   version?: number;
   keyEpoch?: number;
+  sequence?: number;
+  seq?: number;
 }
 
 // Helper: strict Base64 validation
@@ -563,6 +565,9 @@ export async function sendMessage(
   const now = new Date().toISOString();
   const msgId = `msg_${crypto.randomUUID()}`;
 
+  const rawSeq = payload.sequence ?? payload.seq;
+  const parsedSequence = typeof rawSeq === 'number' && Number.isFinite(rawSeq) && Number.isInteger(rawSeq) && rawSeq >= 0 ? rawSeq : null;
+
   // Store message record with strictly sanitized content and payload
   const messageRecord: Record<string, any> = {
     id: msgId,
@@ -574,6 +579,7 @@ export async function sendMessage(
     nonce: nonce,
     version,
     keyEpoch,
+    sequence: parsedSequence,
     createdAt: now,
   };
 
@@ -595,6 +601,7 @@ export async function sendMessage(
     nonce: nonce,
     version,
     keyEpoch,
+    sequence: parsedSequence,
     createdAt: now,
   };
 }
@@ -649,6 +656,7 @@ export async function getConnectionMessages(connectionId: string, userId: string
     let resolvedNonce = m.nonce !== undefined && m.nonce !== null ? m.nonce : null;
     let resolvedVersion = m.version !== undefined && m.version !== null ? m.version : 1;
     let resolvedKeyEpoch = m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : 1;
+    let resolvedSequence = typeof m.sequence === 'number' && Number.isFinite(m.sequence) ? m.sequence : undefined;
 
     let resolvedContent: string | null = null;
     // For genuine E2EE private messages (where ciphertext exists), content MUST be null
@@ -669,11 +677,22 @@ export async function getConnectionMessages(connectionId: string, userId: string
       nonce: resolvedNonce,
       version: resolvedVersion,
       keyEpoch: resolvedKeyEpoch,
+      sequence: resolvedSequence,
       createdAt: m.createdAt,
     };
   });
 
-  return sanitizedMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return sanitizedMessages.sort((a, b) => {
+    if (typeof a.sequence === 'number' && typeof b.sequence === 'number' && a.sequence !== b.sequence) {
+      return a.sequence - b.sequence;
+    }
+    const timeDiff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    if (typeof a.sequence === 'number' && typeof b.sequence === 'number') {
+      return a.sequence - b.sequence;
+    }
+    return String(a.id).localeCompare(String(b.id));
+  });
 }
 
 export async function deleteConnection(connectionId: string, userId: string) {

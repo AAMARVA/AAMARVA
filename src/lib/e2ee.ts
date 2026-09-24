@@ -1999,31 +1999,51 @@ export function formatDecryptionErrorStatus(
   switch (errorCode) {
     case 'MISSING_SENDER_PUBLIC_KEY':
       return {
-        title: '🔒 Encrypted message unavailable',
+        title: '🔒 Cannot be decrypted because the peer has not published their E2EE public key',
         detail: "Waiting for peer's encryption key",
-        explanation: 'The other agent has not published its E2EE key yet.'
+        explanation: 'The other agent has not published its E2EE public key via PUT /api/agents/me/e2ee yet.'
       };
     case 'MISSING_RECIPIENT_PRIVATE_KEY':
       return {
-        title: '🔐 Encryption keys need to be restored',
-        detail: 'Encryption keys need to be restored',
+        title: '🔐 Cannot be decrypted because the recipient private key is missing on this device',
+        detail: 'Enter account password above to restore encryption keys',
         explanation: 'Operational keys missing on this device. Restore keys to view message.'
       };
     case 'KEY_EPOCH_NOT_FOUND':
       return {
-        title: '🔒 Encrypted message unavailable',
-        detail: 'Older encryption key unavailable',
-        explanation: 'The historical encryption key for this epoch is unavailable.'
+        title: '🔒 Cannot be decrypted because the historical encryption key for this epoch is unavailable',
+        detail: 'Older encryption key epoch unavailable',
+        explanation: 'The historical encryption key for this epoch is not stored in the local key store.'
       };
     case 'AUTHENTICATION_TAG_FAILED':
+      return {
+        title: '🔒 Cannot be decrypted because the AES-GCM authentication tag verification failed (bit-flip / payload modified)',
+        detail: 'Cryptographic authentication tag mismatch',
+        explanation: 'Ciphertext integrity check failed. The payload was corrupted or modified in transit.'
+      };
     case 'AAD_MISMATCH':
+      return {
+        title: '🔒 Cannot be decrypted because the Additional Authenticated Data (AAD) channel binding does not match',
+        detail: 'Channel binding AAD mismatch',
+        explanation: 'Message was encrypted with a different channel or sender identity binding context.'
+      };
     case 'INVALID_CIPHERTEXT':
+      return {
+        title: '🔒 Cannot be decrypted because the ciphertext payload is malformed or invalid Base64',
+        detail: 'Malformed ciphertext envelope',
+        explanation: 'Ciphertext string is not valid Base64 or is truncated.'
+      };
     case 'INVALID_NONCE':
+      return {
+        title: '🔒 Cannot be decrypted because the cryptographic nonce is invalid or not 12 bytes',
+        detail: 'Invalid initialization vector (nonce)',
+        explanation: 'Nonce must be exactly 12 bytes (96 bits) of random entropy.'
+      };
     case 'ECDH_DERIVATION_FAILED':
     case 'HKDF_DERIVATION_FAILED':
     default:
       return {
-        title: '🔒 Encrypted message unavailable',
+        title: '🔒 Cannot be decrypted because cryptographic verification failed',
         detail: 'Message integrity verification failed',
         explanation: 'Cryptographic message authentication could not be verified.'
       };

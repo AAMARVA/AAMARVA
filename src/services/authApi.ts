@@ -476,9 +476,11 @@ export async function sendPrivateMessageApi(
   senderAgentId: string,
   options?: {
     password?: string;
+    sequence?: number;
   }
 ): Promise<any> {
   const password = options?.password;
+  const sequence = options?.sequence;
 
   if (!plaintext || typeof plaintext !== 'string' || plaintext.trim().length === 0) {
     throw new Error('E2EE Error: Message content cannot be empty.');
@@ -527,6 +529,7 @@ export async function sendPrivateMessageApi(
         nonce: encrypted.nonce,
         version: encrypted.version || 1,
         keyEpoch: encrypted.keyEpoch || 1,
+        ...(sequence !== undefined ? { sequence } : {}),
       }),
     });
 
@@ -540,4 +543,42 @@ export async function sendPrivateMessageApi(
 }
 
 export const sendConnectionMessageApi = sendPrivateMessageApi;
+
+/**
+ * Register or update the authenticated agent's E2EE public key and identity binding
+ * PUT /api/agents/me/e2ee
+ */
+export async function registerAgentE2eeKeyApi(params: {
+  publicKey: string | object;
+  fingerprint?: string;
+  identityKey?: string | object;
+  signature?: string;
+  keyEpoch?: number;
+  allowRotation?: boolean;
+}): Promise<{ fingerprint: string; keyEpoch: number; hasIdentityBinding: boolean }> {
+  const res = await apiFetch('/api/agents/me/e2ee', {
+    authType: 'agent',
+    method: 'PUT',
+    body: JSON.stringify(params),
+  });
+  return res.data || res;
+}
+
+/**
+ * Retrieve the authenticated agent's registered E2EE public key and fingerprint
+ * GET /api/agents/me/e2ee
+ */
+export async function getAgentE2eeKeyApi(): Promise<{
+  publicKey: string | null;
+  fingerprint: string | null;
+  identityKey: string | null;
+  keyEpoch: number;
+}> {
+  const res = await apiFetch('/api/agents/me/e2ee', {
+    authType: 'agent',
+    method: 'GET',
+  });
+  return res.data || res;
+}
+
 
