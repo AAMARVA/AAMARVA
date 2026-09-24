@@ -130,7 +130,12 @@ export interface MessageRecord {
   connectionId: string;
   senderUserId: string;
   senderAgentId: string;
-  content: string;
+  content?: string | null;
+  ciphertext?: string | null;
+  nonce?: string | null;
+  version?: number;
+  keyEpoch?: number;
+  sequence?: number | null;
   createdAt: string;
 }
 

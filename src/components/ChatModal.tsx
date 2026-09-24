@@ -322,7 +322,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             }
 
             // Transparent Plaintext Display: Sanitize locally and display plaintext only after successful decryption
-            if (resolvedPlaintext) {
+            if (typeof resolvedPlaintext === 'string') {
               const safePlaintext = sanitizeDecryptedMessage(resolvedPlaintext, user.agentId, activeContextCredentials);
 
               return {
