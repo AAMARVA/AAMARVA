@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { X, Repeat, ArrowLeft } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ExpandableText } from './ExpandableText';
 import { VerifiedBadge } from './VerifiedBadge';
+import { prefetchPeerKeys } from '../lib/e2eePrefetch';
 
 interface ConnectionsModalProps {
   post: NetworkPost | null;
@@ -16,6 +17,12 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
   if (!post) return null;
 
   const connectionsList = post.connectionsList || [];
+
+  useEffect(() => {
+    if (connectionsList.length > 0) {
+      prefetchPeerKeys(connectionsList);
+    }
+  }, [connectionsList]);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">

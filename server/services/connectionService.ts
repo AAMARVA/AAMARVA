@@ -481,6 +481,85 @@ export async function sendMessage(
     throw new ConnectionForbiddenError('Forbidden: This connection has been dissolved and cannot be messaged.', 'CONNECTION_DISSOLVED');
   }
 
+  const recipientUserId = connection.postOwnerUserId === currentUser.id ? connection.replyAuthorUserId : connection.postOwnerUserId;
+
+  // 1. Strict Server-Side E2EE Public Key Enforcement: Sender MUST have a registered E2EE public key
+  let senderMeta: Record<string, any> = {};
+  let recipientMeta: Record<string, any> = {};
+
+  try {
+    const [senderAuthRes, recipientAuthRes] = await Promise.all([
+      supabase.auth.admin.getUserById(currentUser.id),
+      recipientUserId ? supabase.auth.admin.getUserById(recipientUserId) : Promise.resolve({ data: null, error: null })
+    ]);
+
+    senderMeta = senderAuthRes?.data?.user?.user_metadata || {};
+    recipientMeta = recipientAuthRes?.data?.user?.user_metadata || {};
+  } catch (lookupErr: any) {
+    if (lookupErr instanceof ConnectionError) throw lookupErr;
+    throw new ConnectionForbiddenError(
+      'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.',
+      'E2EE_KEY_REQUIRED'
+    );
+  }
+
+  const senderPublicKey = senderMeta.e2eePublicKey;
+  if (!senderPublicKey || typeof senderPublicKey !== 'string' || senderPublicKey.trim().length === 0) {
+    throw new ConnectionForbiddenError(
+      'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.',
+      'E2EE_KEY_REQUIRED'
+    );
+  }
+
+  // Cryptographic structural validation of sender's registered public key JWK
+  try {
+    const parsedKey = typeof senderPublicKey === 'string' ? JSON.parse(senderPublicKey) : senderPublicKey;
+    if (!parsedKey || parsedKey.kty !== 'EC' || parsedKey.crv !== 'P-256' || !parsedKey.x || !parsedKey.y) {
+      throw new ConnectionForbiddenError(
+        'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.',
+        'E2EE_KEY_REQUIRED'
+      );
+    }
+  } catch (jwkErr: any) {
+    if (jwkErr instanceof ConnectionError) throw jwkErr;
+    throw new ConnectionForbiddenError(
+      'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.',
+      'E2EE_KEY_REQUIRED'
+    );
+  }
+
+  // 2. Validate incoming keyEpoch against registered activeKeyEpoch of sender and recipient
+  if (recipientUserId) {
+    try {
+      const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
+      const recipientActiveEpoch = typeof recipientMeta.e2eeKeyEpoch === 'number' ? recipientMeta.e2eeKeyEpoch : 1;
+
+      const senderEpochHistory = senderMeta.e2eeEpochHistory || {};
+      const recipientEpochHistory = recipientMeta.e2eeEpochHistory || {};
+
+      const senderHasEpoch = keyEpoch === senderActiveEpoch || !!senderEpochHistory[String(keyEpoch)] || (keyEpoch <= senderActiveEpoch && !!senderMeta.e2eePublicKey);
+      const recipientHasEpoch = keyEpoch === recipientActiveEpoch || !!recipientEpochHistory[String(keyEpoch)] || (keyEpoch <= recipientActiveEpoch && !!recipientMeta.e2eePublicKey);
+
+      if (!senderHasEpoch && !recipientHasEpoch) {
+        throw new ConnectionError(
+          `Invalid keyEpoch ${keyEpoch}. Neither connection participant has published or registered an active E2EE key for epoch ${keyEpoch}.`,
+          400,
+          'INVALID_KEY_EPOCH'
+        );
+      }
+    } catch (e: any) {
+      if (e instanceof ConnectionError) throw e;
+      // If auth user lookup fails unexpectedly (e.g. test environment mock user IDs), reject arbitrary large unvalidated epochs
+      if (keyEpoch > 50) {
+        throw new ConnectionError(
+          `Invalid keyEpoch ${keyEpoch}. Exceeds registered active key epochs for connection participants.`,
+          400,
+          'INVALID_KEY_EPOCH'
+        );
+      }
+    }
+  }
+
   const now = new Date().toISOString();
   const msgId = `msg_${crypto.randomUUID()}`;
 

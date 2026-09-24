@@ -345,6 +345,72 @@ export async function runE2EETestMatrix() {
     }
     console.log(`✓ TEST 2.3 PASSED: Agent C -> Connection(A, B) rejected with HTTP ${unauthorizedAgentRes.status}.\n`);
 
+    // TEST 2.4: Agent D (Participant without registered E2EE public key) -> REJECT 403 E2EE_KEY_REQUIRED
+    console.log('TEST 2.4: Participant agent without registered E2EE public key -> REJECT 403 E2EE_KEY_REQUIRED...');
+    const emailD = `e2ee_agent_d_nokey_${timestamp}@aamarva.test`;
+    const regResD = await registerUser({ email: emailD, password: 'TestPassword123!', agentName: `Agent D NoKey ${timestamp}` });
+    const agentIdD = regResD.user.agentId;
+    const apiKeyD = regResD.apiKey;
+
+    const loginAgentD = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId: agentIdD, apiKey: apiKeyD })
+    });
+    const loginAgentDJson = await safeJson(loginAgentD);
+    const agentTokenD = loginAgentDJson.data?.tokens?.accessToken;
+
+    // Establish connection between Agent A and Agent D
+    const postResD = await fetch(`${BASE_URL}/api/posts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenA}` },
+      body: JSON.stringify({ content: 'Post for Agent D connection test' })
+    });
+    const postJsonD = await safeJson(postResD);
+    const postIdD = postJsonD.data?.id || postJsonD.data?.postId;
+
+    const replyResD = await fetch(`${BASE_URL}/api/posts/${postIdD}/replies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenD}` },
+      body: JSON.stringify({ content: 'Reply from Agent D' })
+    });
+    const replyJsonD = await safeJson(replyResD);
+    const replyIdD = replyJsonD.data?.id || replyJsonD.data?.replyId;
+
+    const connResD = await fetch(`${BASE_URL}/api/connections`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenA}` },
+      body: JSON.stringify({ replyId: replyIdD })
+    });
+    const connJsonD = await safeJson(connResD);
+    const connectionIdD = connJsonD.data?.id || connJsonD.data?.connectionId;
+
+    // Agent D (has NO E2EE public key registered) attempts to send private message
+    const countBefore = (await supabase.from('messages').select('id', { count: 'exact' }).eq('connectionId', connectionIdD)).count || 0;
+
+    const noKeySendRes = await fetch(`${BASE_URL}/api/connections/${connectionIdD}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenD}` },
+      body: JSON.stringify({
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: 1,
+        keyEpoch: 1
+      })
+    });
+    const noKeySendJson = await safeJson(noKeySendRes);
+
+    if (noKeySendRes.status !== 403 || noKeySendJson.error?.code !== 'E2EE_KEY_REQUIRED') {
+      throw new Error(`TEST 2.4 FAILED: Agent without E2EE key was NOT rejected with 403 E2EE_KEY_REQUIRED! Status: ${noKeySendRes.status}, Error: ${JSON.stringify(noKeySendJson)}`);
+    }
+
+    const countAfter = (await supabase.from('messages').select('id', { count: 'exact' }).eq('connectionId', connectionIdD)).count || 0;
+    if (countAfter !== countBefore) {
+      throw new Error('TEST 2.4 FAILED: A message record was inserted in the database despite missing E2EE public key!');
+    }
+
+    console.log('✓ TEST 2.4 PASSED: Agent without registered E2EE public key rejected with HTTP 403 E2EE_KEY_REQUIRED and no DB record created.\n');
+
     // =============================================================
     // CATEGORY 3: INVALID MESSAGE SCENARIOS
     // =============================================================

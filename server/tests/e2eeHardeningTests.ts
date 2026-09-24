@@ -802,6 +802,23 @@ export async function runE2EEHardeningTests() {
       const sbModule = await import('../supabase');
       const origGetSupabaseClient = sbModule.getSupabaseClient;
       sbModule.getSupabaseClient = () => ({
+        auth: {
+          admin: {
+            getUserById: async (id: string) => ({
+              data: {
+                user: {
+                  id,
+                  user_metadata: {
+                    e2eePublicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'mockX123456789012345678901234567890', y: 'mockY123456789012345678901234567890' }),
+                    e2eeKeyEpoch: 1,
+                    e2eeEpochHistory: {}
+                  }
+                }
+              },
+              error: null
+            })
+          }
+        },
         from: (table: string) => {
           if (table === 'connections') {
             return {
@@ -1223,6 +1240,400 @@ export async function runE2EEHardeningTests() {
       console.error('Test 36 failed:', e);
     }
     recordResult('messaging_test36_internal_error_classification', test36Success, 'Decryption failures are accurately categorized into internal diagnostic error classifications.');
+
+    // --- MESSAGING TEST 37: Unregistered / non-existent keyEpoch rejection ---
+    let test37Success = false;
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      sbModule.setSupabaseClient({
+        auth: {
+          admin: {
+            getUserById: async (id: string) => ({
+              data: {
+                user: {
+                  id,
+                  user_metadata: {
+                    e2eeKeyEpoch: 1,
+                    e2eePublicKey: '{"kty":"EC","crv":"P-256","x":"123","y":"456"}',
+                    e2eeEpochHistory: { '1': { keyEpoch: 1 } }
+                  }
+                }
+              },
+              error: null
+            })
+          }
+        },
+        from: (table: string) => {
+          if (table === 'connections') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'c1', status: 'active', postOwnerUserId: 'u1', replyAuthorUserId: 'u2' }, error: null })
+                })
+              })
+            };
+          }
+          if (table === 'users') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'u1', agentId: 'a1', status: 'active' }, error: null })
+                })
+              })
+            };
+          }
+          return {
+            insert: async () => ({ error: null })
+          };
+        }
+      } as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      try {
+        await sendMessage('c1', 'u1', {
+          ciphertext: 'AQIDBAUGBwgJCgsMDQ4PEA==',
+          nonce: Buffer.alloc(12).toString('base64'),
+          keyEpoch: 9999 // Non-existent unverified epoch
+        });
+      } catch (err: any) {
+        if (err.code === 'INVALID_KEY_EPOCH') {
+          test37Success = true;
+        }
+      } finally {
+        sbModule.setSupabaseClient(origClient);
+      }
+    } catch {}
+    recordResult('messaging_test37_unregistered_key_epoch_rejected', test37Success, 'Arbitrary unverified keyEpochs (e.g. 9999) without published keys are strictly rejected by the backend.');
+
+    // --- MESSAGING TEST 38: Sender without registered E2EE public key is rejected (403 E2EE_KEY_REQUIRED) ---
+    let test38Success = false;
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      let insertCalled = false;
+      sbModule.setSupabaseClient({
+        auth: {
+          admin: {
+            getUserById: async (id: string) => ({
+              data: {
+                user: {
+                  id,
+                  user_metadata: {
+                    // No e2eePublicKey registered!
+                  }
+                }
+              },
+              error: null
+            })
+          }
+        },
+        from: (table: string) => {
+          if (table === 'connections') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'c1', status: 'active', postOwnerUserId: 'u1', replyAuthorUserId: 'u2' }, error: null })
+                })
+              })
+            };
+          }
+          if (table === 'users') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'u1', agentId: 'a1', status: 'active' }, error: null })
+                })
+              })
+            };
+          }
+          return {
+            insert: async () => {
+              insertCalled = true;
+              return { error: null };
+            }
+          };
+        }
+      } as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      try {
+        await sendMessage('c1', 'u1', {
+          ciphertext: Buffer.from('validCiphertext').toString('base64'),
+          nonce: Buffer.from(new Uint8Array(12)).toString('base64'),
+          version: 1,
+          keyEpoch: 1
+        });
+      } catch (err: any) {
+        if (err.code === 'E2EE_KEY_REQUIRED' && err.statusCode === 403 && !insertCalled) {
+          test38Success = true;
+        }
+      } finally {
+        sbModule.setSupabaseClient(origClient);
+      }
+    } catch {}
+    recordResult('messaging_test38_no_public_key_rejected_with_403_e2ee_key_required', test38Success, 'Agent without a registered E2EE public key is rejected with HTTP 403 E2EE_KEY_REQUIRED and creates no DB message.');
+
+    // --- MESSAGING TEST 39: Sender with malformed public key JWK is rejected ---
+    let test39Success = false;
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      sbModule.setSupabaseClient({
+        auth: {
+          admin: {
+            getUserById: async (id: string) => ({
+              data: {
+                user: {
+                  id,
+                  user_metadata: {
+                    e2eePublicKey: '{"kty":"RSA","n":"malformed"}' // Non-EC P-256 key
+                  }
+                }
+              },
+              error: null
+            })
+          }
+        },
+        from: (table: string) => {
+          if (table === 'connections') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'c1', status: 'active', postOwnerUserId: 'u1', replyAuthorUserId: 'u2' }, error: null })
+                })
+              })
+            };
+          }
+          if (table === 'users') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'u1', agentId: 'a1', status: 'active' }, error: null })
+                })
+              })
+            };
+          }
+          return {
+            insert: async () => ({ error: null })
+          };
+        }
+      } as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      try {
+        await sendMessage('c1', 'u1', {
+          ciphertext: Buffer.from('validCiphertext').toString('base64'),
+          nonce: Buffer.from(new Uint8Array(12)).toString('base64'),
+          version: 1,
+          keyEpoch: 1
+        });
+      } catch (err: any) {
+        if (err.code === 'E2EE_KEY_REQUIRED' && err.statusCode === 403) {
+          test39Success = true;
+        }
+      } finally {
+        sbModule.setSupabaseClient(origClient);
+      }
+    } catch {}
+    recordResult('messaging_test39_malformed_public_key_rejected', test39Success, 'Malformed or non-EC public keys fail verification and require proper E2EE key registration.');
+
+    // --- MESSAGING TEST 40: Sender with valid registered E2EE public key succeeds ---
+    let test40Success = false;
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      let insertedPayload: any = null;
+      sbModule.setSupabaseClient({
+        auth: {
+          admin: {
+            getUserById: async (id: string) => ({
+              data: {
+                user: {
+                  id,
+                  user_metadata: {
+                    e2eePublicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'valid_mock_x_coordinate_32_bytes', y: 'valid_mock_y_coordinate_32_bytes' }),
+                    e2eeKeyEpoch: 1,
+                    e2eeEpochHistory: {}
+                  }
+                }
+              },
+              error: null
+            })
+          }
+        },
+        from: (table: string) => {
+          if (table === 'connections') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'c1', status: 'active', postOwnerUserId: 'u1', replyAuthorUserId: 'u2' }, error: null })
+                })
+              })
+            };
+          }
+          if (table === 'users') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'u1', agentId: 'a1', status: 'active' }, error: null })
+                })
+              })
+            };
+          }
+          return {
+            insert: async (records: any[]) => {
+              insertedPayload = records[0];
+              return { error: null };
+            }
+          };
+        }
+      } as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      const sentMsg = await sendMessage('c1', 'u1', {
+        ciphertext: Buffer.from('validCiphertext').toString('base64'),
+        nonce: Buffer.from(new Uint8Array(12)).toString('base64'),
+        version: 1,
+        keyEpoch: 1
+      });
+
+      if (sentMsg && insertedPayload && insertedPayload.content === null && insertedPayload.ciphertext) {
+        test40Success = true;
+      }
+      sbModule.setSupabaseClient(origClient);
+    } catch {}
+    recordResult('messaging_test40_valid_public_key_accepted', test40Success, 'Agent with registered EC P-256 public key successfully sends ciphertext-only message.');
+
+    // --- MESSAGING TEST 41: Unauthorized non-participant agent is rejected (403 FORBIDDEN) ---
+    let test41Success = false;
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      sbModule.setSupabaseClient({
+        auth: {
+          admin: {
+            getUserById: async (id: string) => ({
+              data: {
+                user: {
+                  id,
+                  user_metadata: {
+                    e2eePublicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x1', y: 'y1' }),
+                    e2eeKeyEpoch: 1
+                  }
+                }
+              },
+              error: null
+            })
+          }
+        },
+        from: (table: string) => {
+          if (table === 'connections') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'c1', status: 'active', postOwnerUserId: 'u1', replyAuthorUserId: 'u2' }, error: null })
+                })
+              })
+            };
+          }
+          if (table === 'users') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'u_impostor', agentId: 'a_impostor', status: 'active' }, error: null })
+                })
+              })
+            };
+          }
+          return {
+            insert: async () => ({ error: null })
+          };
+        }
+      } as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      try {
+        await sendMessage('c1', 'u_impostor', {
+          ciphertext: Buffer.from('validCiphertext').toString('base64'),
+          nonce: Buffer.from(new Uint8Array(12)).toString('base64'),
+          version: 1,
+          keyEpoch: 1
+        });
+      } catch (err: any) {
+        if (err.code === 'FORBIDDEN' && err.statusCode === 403) {
+          test41Success = true;
+        }
+      } finally {
+        sbModule.setSupabaseClient(origClient);
+      }
+    } catch {}
+    recordResult('messaging_test41_unauthorized_non_participant_agent_rejected', test41Success, 'Agent attempting to message a connection they are not a participant of is rejected with HTTP 403 FORBIDDEN.');
+
+    // --- MESSAGING TEST 42: Dissolved connection messaging rejected (403 CONNECTION_DISSOLVED) ---
+    let test42Success = false;
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      sbModule.setSupabaseClient({
+        auth: {
+          admin: {
+            getUserById: async (id: string) => ({
+              data: {
+                user: {
+                  id,
+                  user_metadata: {
+                    e2eePublicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x1', y: 'y1' }),
+                    e2eeKeyEpoch: 1
+                  }
+                }
+              },
+              error: null
+            })
+          }
+        },
+        from: (table: string) => {
+          if (table === 'connections') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'c1', status: 'dissolved', postOwnerUserId: 'u1', replyAuthorUserId: 'u2' }, error: null })
+                })
+              })
+            };
+          }
+          if (table === 'users') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: { id: 'u1', agentId: 'a1', status: 'active' }, error: null })
+                })
+              })
+            };
+          }
+          return {
+            insert: async () => ({ error: null })
+          };
+        }
+      } as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      try {
+        await sendMessage('c1', 'u1', {
+          ciphertext: Buffer.from('validCiphertext').toString('base64'),
+          nonce: Buffer.from(new Uint8Array(12)).toString('base64'),
+          version: 1,
+          keyEpoch: 1
+        });
+      } catch (err: any) {
+        if (err.code === 'CONNECTION_DISSOLVED' && err.statusCode === 403) {
+          test42Success = true;
+        }
+      } finally {
+        sbModule.setSupabaseClient(origClient);
+      }
+    } catch {}
+    recordResult('messaging_test42_dissolved_connection_rejected', test42Success, 'Sending message to dissolved connection is rejected with HTTP 403 CONNECTION_DISSOLVED.');
 
   } catch (err: any) {
     console.error('Test Suite Fatal Error:', err);

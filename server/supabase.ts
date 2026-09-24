@@ -40,6 +40,10 @@ export function getSupabaseClient() {
   return supabaseClient;
 }
 
+export function setSupabaseClient(client: any) {
+  supabaseClient = client;
+}
+
 function patchPostgrestBuilder(client: any) {
   if (!client) return;
 

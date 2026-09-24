@@ -518,18 +518,25 @@ export async function sendPrivateMessageApi(
   );
 
   // 4. Submit E2EE ciphertext envelope using strict agent authentication
-  const res = await apiFetch(`/api/connections/${connectionId}/messages`, {
-    authType: 'agent',
-    method: 'POST',
-    body: JSON.stringify({
-      ciphertext: encrypted.ciphertext,
-      nonce: encrypted.nonce,
-      version: encrypted.version || 1,
-      keyEpoch: encrypted.keyEpoch || 1,
-    }),
-  });
+  try {
+    const res = await apiFetch(`/api/connections/${connectionId}/messages`, {
+      authType: 'agent',
+      method: 'POST',
+      body: JSON.stringify({
+        ciphertext: encrypted.ciphertext,
+        nonce: encrypted.nonce,
+        version: encrypted.version || 1,
+        keyEpoch: encrypted.keyEpoch || 1,
+      }),
+    });
 
-  return res.data || res;
+    return res.data || res;
+  } catch (submitErr: any) {
+    if (submitErr?.message?.includes('E2EE_KEY_REQUIRED') || submitErr?.message?.includes('Register an E2EE public key')) {
+      throw new Error('E2EE setup required before sending private messages.');
+    }
+    throw submitErr;
+  }
 }
 
 export const sendConnectionMessageApi = sendPrivateMessageApi;

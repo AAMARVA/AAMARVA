@@ -1844,7 +1844,82 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
     const body = req.body || {};
     const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch } = body;
 
-    // 1. Strict E2EE validation: reject any plaintext content (content or message fields)
+    const supabase = getSupabaseClient();
+
+    // 1. Connection participant authorization check
+    const { data: connRecord, error: connErr } = await supabase
+      .from('connections')
+      .select('id, postOwnerUserId, replyAuthorUserId, status')
+      .eq('id', connectionId)
+      .maybeSingle();
+
+    if (connErr || !connRecord) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'CONNECTION_NOT_FOUND',
+          message: 'Connection not found.'
+        }
+      });
+    }
+
+    if (connRecord.status === 'dissolved') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'CONNECTION_DISSOLVED',
+          message: 'Forbidden: This connection has been dissolved and cannot be messaged.'
+        }
+      });
+    }
+
+    if (connRecord.postOwnerUserId !== req.user.id && connRecord.replyAuthorUserId !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Forbidden: Not a participant of this connection.'
+        }
+      });
+    }
+
+    // 2. Sender registered E2EE public key check: Sender MUST have a valid registered E2EE public key
+    const { data: senderAuthData } = await supabase.auth.admin.getUserById(req.user.id);
+    const senderMeta = senderAuthData?.user?.user_metadata || {};
+    const senderPublicKey = senderMeta.e2eePublicKey;
+
+    if (!senderPublicKey || typeof senderPublicKey !== 'string' || senderPublicKey.trim().length === 0) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'E2EE_KEY_REQUIRED',
+          message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+        }
+      });
+    }
+
+    try {
+      const parsedKey = typeof senderPublicKey === 'string' ? JSON.parse(senderPublicKey) : senderPublicKey;
+      if (!parsedKey || parsedKey.kty !== 'EC' || parsedKey.crv !== 'P-256' || !parsedKey.x || !parsedKey.y) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'E2EE_KEY_REQUIRED',
+            message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+          }
+        });
+      }
+    } catch {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'E2EE_KEY_REQUIRED',
+          message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+        }
+      });
+    }
+
+    // 3. Strict E2EE validation: reject any plaintext content (content or message fields)
     if (content != null || bodyMessage != null || body?.message != null || body?.content != null) {
       return res.status(400).json({ 
         success: false, 

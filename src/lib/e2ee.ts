@@ -1982,3 +1982,50 @@ export async function decryptMessage(
 
   return new TextDecoder().decode(decryptedBuf);
 }
+
+export interface FormattedDecryptionStatus {
+  title: string;
+  detail?: string;
+  explanation?: string;
+}
+
+/**
+ * Maps internal E2EE decryption error codes to clear, non-leaking user-facing status indicators.
+ * Retains safe generic lock fallback while providing actionable status.
+ */
+export function formatDecryptionErrorStatus(
+  errorCode?: E2EEDecryptionErrorCode | string | null
+): FormattedDecryptionStatus {
+  switch (errorCode) {
+    case 'MISSING_SENDER_PUBLIC_KEY':
+      return {
+        title: '🔒 Encrypted message unavailable',
+        detail: "Waiting for peer's encryption key",
+        explanation: 'The other agent has not published its E2EE key yet.'
+      };
+    case 'MISSING_RECIPIENT_PRIVATE_KEY':
+      return {
+        title: '🔐 Encryption keys need to be restored',
+        detail: 'Encryption keys need to be restored',
+        explanation: 'Operational keys missing on this device. Restore keys to view message.'
+      };
+    case 'KEY_EPOCH_NOT_FOUND':
+      return {
+        title: '🔒 Encrypted message unavailable',
+        detail: 'Older encryption key unavailable',
+        explanation: 'The historical encryption key for this epoch is unavailable.'
+      };
+    case 'AUTHENTICATION_TAG_FAILED':
+    case 'AAD_MISMATCH':
+    case 'INVALID_CIPHERTEXT':
+    case 'INVALID_NONCE':
+    case 'ECDH_DERIVATION_FAILED':
+    case 'HKDF_DERIVATION_FAILED':
+    default:
+      return {
+        title: '🔒 Encrypted message unavailable',
+        detail: 'Message integrity verification failed',
+        explanation: 'Cryptographic message authentication could not be verified.'
+      };
+  }
+}

@@ -16,6 +16,7 @@ import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecrets
 import { PasskeyManagementCard } from './PasskeyManagementCard';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { ClustersTabContent } from './ClustersTabContent';
+import { prefetchPeerKeys } from '../lib/e2eePrefetch';
 
 
 interface UserDashboardViewProps {
@@ -559,7 +560,9 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     apiFetch('/api/connections', { authType: 'human' })
       .then((res) => {
         if (isMounted && (res?.data?.connections || Array.isArray(res?.data))) {
-          setRealConnections(res.data.connections || res.data);
+          const list = res.data.connections || res.data;
+          setRealConnections(list);
+          prefetchPeerKeys(list);
         }
       })
       .catch(() => {});

@@ -23,6 +23,7 @@ import {
   createEncryptedRecoveryVault,
   restoreFromEncryptedRecoveryVault,
   clearTransientJwkKeys,
+  normalizeAgentId,
   StoredAgentKeyEntry
 } from '../lib/e2ee';
 
@@ -106,14 +107,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const isCompleteKey = !!(keys && keys.publicKey && keys.privateKey && keys.identityPublicKey && keys.signature);
 
         if (!isCompleteKey && !forceRotate) {
-          if (!activeCredential) {
-            // Genuinely missing local key and no credential available in memory to reconstruct or recover identity.
-            // Mark state as recovery_required so UI can prompt for recovery credential without breaking other features.
-            console.warn('E2EE identity missing in local keystore and no credential in memory to recover.');
-            setE2EEStatus('recovery_required');
-            return false;
-          }
-
           setE2EEStatus('recovery_in_progress');
 
           // Query the server for an existing recovery vault
@@ -122,15 +115,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             recoveryRes = await apiFetch('/api/agents/me/e2ee/recovery', { authType: 'human' });
           } catch (recFetchErr) {
             console.error('E2EE recovery vault fetch failed (network or server error):', recFetchErr);
-            // FAIL-CLOSED (Requirement 3): Network or download failure when querying recovery vault.
-            // We MUST NOT assume "no vault exists" and MUST NOT create replacement keys.
+            // FAIL-CLOSED: Network or download failure when querying recovery vault.
             setE2EEStatus('recovery_required');
             return false;
           }
 
           if (!recoveryRes || recoveryRes.success === false) {
             console.error('E2EE recovery query unsuccessful:', recoveryRes);
-            // FAIL-CLOSED: Server returned unsuccessful response. Never generate replacement keys.
             setE2EEStatus('recovery_required');
             return false;
           }
@@ -139,11 +130,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const hasRecoveryVault = rawVault !== null && rawVault !== undefined;
 
           if (hasRecoveryVault) {
+            if (!activeCredential) {
+              // Recovery vault exists on server but no credential in memory to decrypt it
+              console.warn('E2EE identity missing in local keystore and recovery vault exists on server; recovery required.');
+              setE2EEStatus('recovery_required');
+              return false;
+            }
+
             // State B or State C: An encrypted recovery vault exists on the server.
             // Failure to recover this vault must NEVER fall through to first-time key generation or identity replacement.
             if (typeof rawVault !== 'object' || !rawVault.ciphertext || !rawVault.nonce) {
               console.error('E2EE recovery vault exists on server but structure is corrupted or missing ciphertext/nonce.');
-              // FAIL-CLOSED: Malformed or corrupted vault artifact.
               setE2EEStatus('recovery_required');
               return false;
             }
@@ -165,20 +162,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             } catch (restoreErr: any) {
               console.error('E2EE recovery vault decryption/restoration failed:', restoreErr?.message || restoreErr);
-              // FAIL-CLOSED (Requirements 1, 2, 3, 4, 9):
-              // Recovery failed (wrong credential, corrupted ciphertext, tamper, decryption error).
-              // DO NOT fall through to key derivation.
-              // DO NOT generate replacement keys.
-              // DO NOT overwrite recovery vault.
-              // DO NOT replace server-side public E2EE identity.
+              // FAIL-CLOSED: Recovery failed (wrong credential, corrupted ciphertext, tamper, decryption error).
               setE2EEStatus('recovery_required');
               return false;
             }
           }
 
-          // State A: Server confirms that NO recovery vault exists (first-time setup or legacy account that never had a vault)
+          // State A: Server confirms that NO recovery vault exists (first-time setup for brand new agent)
           console.log('Establishing initial cryptographic identity for agent (first-time setup):', normalizedAgentId);
-          const identity = await deriveAgentCryptoIdentity(normalizedAgentId, activeCredential);
+          const identity = activeCredential 
+            ? await deriveAgentCryptoIdentity(normalizedAgentId, activeCredential)
+            : await generateAgentCryptoIdentity(normalizedAgentId);
 
           await saveLocalKeyPair(
             normalizedAgentId,
@@ -220,18 +214,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.warn('E2EE key publication note:', pubErr?.message || pubErr);
           }
 
-          // Create and store encrypted recovery vault on server for future multi-device sync
+          // If credential is in memory, create and store encrypted recovery vault on server
+          if (activeCredential) {
+            try {
+              const vault = await createEncryptedRecoveryVault(normalizedAgentId, activeCredential);
+              await apiFetch('/api/agents/me/e2ee/recovery', {
+                method: 'PUT',
+                authType: 'human',
+                body: JSON.stringify({ recoveryVault: vault })
+              });
+              // Explicitly clear transient JWKs ONLY after successful recovery-vault upload
+              clearTransientJwkKeys(normalizedAgentId);
+            } catch (vaultErr: any) {
+              console.warn('E2EE recovery vault preservation note:', vaultErr?.message || vaultErr);
+            }
+          }
+        } else if (isCompleteKey) {
+          // Verify that server has published public key matching existing local keys
           try {
-            const vault = await createEncryptedRecoveryVault(normalizedAgentId, activeCredential);
-            await apiFetch('/api/agents/me/e2ee/recovery', {
-              method: 'PUT',
-              authType: 'human',
-              body: JSON.stringify({ recoveryVault: vault })
-            });
-            // Explicitly clear transient JWKs ONLY after successful recovery-vault upload
-            clearTransientJwkKeys(normalizedAgentId);
-          } catch (vaultErr: any) {
-            console.warn('E2EE recovery vault preservation note:', vaultErr?.message || vaultErr);
+            const currentE2ee = await apiFetch('/api/agents/me/e2ee', { authType: 'human' });
+            if (!currentE2ee?.data?.publicKey || currentE2ee.data.publicKey !== keys.publicKey) {
+              await apiFetch('/api/agents/me/e2ee', {
+                method: 'PUT',
+                authType: 'human',
+                body: JSON.stringify({ 
+                  publicKey: keys.publicKey,
+                  fingerprint: keys.fingerprint,
+                  identityKey: keys.identityPublicKey,
+                  signature: keys.signature,
+                  keyEpoch: keys.keyEpoch || 1,
+                  allowRotation: false
+                })
+              });
+            }
+          } catch (syncErr: any) {
+            // Non-fatal
           }
         } else if (forceRotate) {
           console.log('Performing authorized key rotation for agent:', normalizedAgentId);

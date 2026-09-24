@@ -9,8 +9,14 @@ import {
   getLocalKeyPair, 
   resolveSenderPublicKey,
   normalizeAgentId,
+  formatDecryptionErrorStatus,
+  FormattedDecryptionStatus,
   StoredAgentKeyEntry
 } from '../lib/e2ee';
+import { 
+  getCachedPeerKey, 
+  setCachedPeerKey 
+} from '../lib/e2eePrefetch';
 import { 
   sanitizeDecryptedMessage 
 } from '../lib/secretsPreserver';
@@ -29,6 +35,7 @@ interface DecryptedChatMessage {
   connectionId: string;
   senderAgentId: string;
   content: string;
+  decryptionStatus?: FormattedDecryptionStatus;
   isDecrypted: boolean;
   createdAt: string;
   keyEpoch?: number;
@@ -120,10 +127,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         }
       }
 
-      // 3. Resolve peer's cryptographic keys if not already available
+      // 3. Resolve peer's cryptographic keys from prefetch cache or fetch if not available
       let currentPeerKey = peerKey || initialPeerKey || null;
       let currentPeerEpochKeys = peerEpochKeys;
       let currentPeerId = resolvedPeerAgentId || peerAgentId;
+
+      // Check prefetch cache first for instant key availability
+      const cachedPeer = getCachedPeerKey(connectionId);
+      if (cachedPeer) {
+        if (!currentPeerKey && cachedPeer.peerPublicKey) {
+          currentPeerKey = cachedPeer.peerPublicKey;
+          if (isMountedRef.current) setPeerKey(currentPeerKey);
+        }
+        if (Object.keys(currentPeerEpochKeys).length === 0 && cachedPeer.peerEpochKeys) {
+          currentPeerEpochKeys = cachedPeer.peerEpochKeys;
+          if (isMountedRef.current) setPeerEpochKeys(currentPeerEpochKeys);
+        }
+        if (!currentPeerId && cachedPeer.peerAgentId) {
+          currentPeerId = cachedPeer.peerAgentId;
+          if (isMountedRef.current) setResolvedPeerAgentId(currentPeerId);
+        }
+      }
 
       if (!currentPeerKey || !currentPeerId || Object.keys(currentPeerEpochKeys).length === 0) {
         try {
@@ -141,6 +165,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               currentPeerId = keyRes.data.peerAgentId;
               if (isMountedRef.current) setResolvedPeerAgentId(currentPeerId);
             }
+            // Update cache
+            setCachedPeerKey(connectionId, {
+              connectionId,
+              peerUserId: keyRes.data.peerUserId,
+              peerAgentId: keyRes.data.peerAgentId,
+              peerPublicKey: keyRes.data.peerE2eePublicKey || null,
+              peerKeyFingerprint: keyRes.data.peerKeyFingerprint,
+              peerIdentityKey: keyRes.data.peerIdentityKey,
+              peerKeySignature: keyRes.data.peerKeySignature,
+              peerKeyEpoch: keyRes.data.peerKeyEpoch,
+              peerEpochKeys: keyRes.data.peerEpochKeys
+            });
           }
         } catch {
           try {
@@ -182,10 +218,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             }
 
             let resolvedPlaintext: string | null = null;
+            let decryptionErrorReason: string | null = null;
 
             // Encrypted private E2EE message: attempt WebCrypto AES-256-GCM + ECDH local decryption
             if (ciphertext && nonce) {
               if (!currentLocalKeys) {
+                decryptionErrorReason = 'MISSING_RECIPIENT_PRIVATE_KEY';
                 if (process.env.NODE_ENV !== 'production') {
                   console.debug(`[E2EE Decrypt Diagnostic] Failure [MISSING_RECIPIENT_PRIVATE_KEY] on msg ${m.id}`);
                 }
@@ -197,6 +235,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     if (historicalEntry?.privateKey) {
                       decKey = historicalEntry.privateKey;
                     } else {
+                      decryptionErrorReason = 'KEY_EPOCH_NOT_FOUND';
                       if (process.env.NODE_ENV !== 'production') {
                         console.debug(`[E2EE Decrypt Diagnostic] Warning [KEY_EPOCH_NOT_FOUND] for epoch ${msgEpoch}`);
                       }
@@ -214,12 +253,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   );
 
                   if (!senderPubKey) {
+                    decryptionErrorReason = 'MISSING_SENDER_PUBLIC_KEY';
                     if (process.env.NODE_ENV !== 'production') {
                       console.debug(`[E2EE Decrypt Diagnostic] Failure [MISSING_SENDER_PUBLIC_KEY] on msg ${m.id} for peer ${targetPeer}`);
                     }
                   } else if (!decKey) {
+                    decryptionErrorReason = (currentLocalKeys.keyEpoch !== msgEpoch) ? 'KEY_EPOCH_NOT_FOUND' : 'MISSING_RECIPIENT_PRIVATE_KEY';
                     if (process.env.NODE_ENV !== 'production') {
-                      console.debug(`[E2EE Decrypt Diagnostic] Failure [MISSING_RECIPIENT_PRIVATE_KEY] on msg ${m.id}`);
+                      console.debug(`[E2EE Decrypt Diagnostic] Failure [${decryptionErrorReason}] on msg ${m.id}`);
                     }
                   } else {
                     resolvedPlaintext = await decryptMessage(
@@ -232,9 +273,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   }
                 } catch (decErr: any) {
                   // AES-GCM authentication/decryption failure: fail closed, do not expose plaintext
+                  decryptionErrorReason = decErr?.code || 'AUTHENTICATION_TAG_FAILED';
                   if (process.env.NODE_ENV !== 'production') {
-                    const errCode = decErr?.code || 'AUTHENTICATION_TAG_FAILED';
-                    console.debug(`[E2EE Decrypt Diagnostic] Failure [${errCode}] on msg ${m.id}:`, decErr?.message);
+                    console.debug(`[E2EE Decrypt Diagnostic] Failure [${decryptionErrorReason}] on msg ${m.id}:`, decErr?.message);
                   }
                   resolvedPlaintext = null;
                 }
@@ -256,12 +297,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               };
             }
 
-            // Safe failure state: Never treat encoding as decryption, never expose raw ciphertext
+            // Safe failure state with informative status: Never treat encoding as decryption, never expose raw ciphertext
             return {
               id: m.id,
               connectionId: m.connectionId,
               senderAgentId: sender,
               content: '🔒 Encrypted message unavailable',
+              decryptionStatus: formatDecryptionErrorStatus(decryptionErrorReason),
               isDecrypted: false,
               keyEpoch: msgEpoch,
               createdAt: m.createdAt,
@@ -397,7 +439,25 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                         : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
                     }`}
                   >
-                    <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words">{m.content}</p>
+                    {m.isDecrypted ? (
+                      <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words">{m.content}</p>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className={`flex items-center gap-1.5 font-mono text-xs font-bold ${isCurrentUser ? 'text-white/90' : 'text-[#141414]/90'}`}>
+                          <span>{m.decryptionStatus?.title || '🔒 Encrypted message unavailable'}</span>
+                        </div>
+                        {m.decryptionStatus?.detail && (
+                          <div 
+                            className={`text-[11px] font-mono pl-2.5 border-l-2 ${
+                              isCurrentUser ? 'text-white/70 border-white/30' : 'text-[#141414]/70 border-[#141414]/30'
+                            }`}
+                            title={m.decryptionStatus?.explanation || m.decryptionStatus?.detail}
+                          >
+                            {m.decryptionStatus.detail}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     
                     <div className={`mt-1.5 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-start'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-70`}>
                       <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
