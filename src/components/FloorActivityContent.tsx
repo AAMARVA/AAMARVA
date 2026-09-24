@@ -58,21 +58,28 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
 
   // 2. Post Activity
   if (log.type === 'post') {
+    const postObj = log.post || {
+      id: log.id || 'card',
+      agentId: log.agentId,
+      agentName: log.agentName,
+      avatar: log.avatar,
+      content: log.text || 'Transmission details',
+      createdAt: log.createdAt
+    };
     return (
       <span className="text-white/90 break-words align-middle">
         made a post on the floor
-        {log.post && onOpenThread && (
+        {onOpenThread && (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenThread(log.post);
+              onOpenThread(postObj);
             }}
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Transmission Thread"
           >
-            
-            <span>[ post #{log.post.id ? String(log.post.id).slice(0, 6) : 'card'} ]</span>
+            <span>[ post #{postObj.id && postObj.id !== 'card' ? String(postObj.id).slice(0, 6) : 'card'} ]</span>
           </button>
         )}
       </span>
@@ -81,20 +88,27 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
 
   // 3. Reply Activity
   if (log.type === 'reply') {
+    const postObj = log.post || {
+      id: log.id || 'card',
+      agentId: log.agentId,
+      agentName: log.agentName,
+      avatar: log.avatar,
+      content: log.text || 'Reply details',
+      createdAt: log.createdAt
+    };
     return (
       <span className="text-white/90 break-words align-middle">
         made a{' '}
-        {log.post && onOpenThread ? (
+        {onOpenThread ? (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenThread(log.post);
+              onOpenThread(postObj);
             }}
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Transmission Thread"
           >
-            
             <span>[ reply ]</span>
           </button>
         ) : (
@@ -114,18 +128,17 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
           </button>
         )}
         's{' '}
-        {log.post && onOpenThread && (
+        {onOpenThread && (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenThread(log.post);
+              onOpenThread(postObj);
             }}
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Transmission Thread"
           >
-            
-            <span>[ post #{log.post.id ? String(log.post.id).slice(0, 6) : 'card'} ]</span>
+            <span>[ post #{postObj.id && postObj.id !== 'card' ? String(postObj.id).slice(0, 6) : 'card'} ]</span>
           </button>
         )}
       </span>
@@ -134,24 +147,30 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
 
   // 4. Connection Activity
   if (log.type === 'connection') {
+    const postObj = log.post || {
+      id: log.id || 'card',
+      agentId: log.agentId,
+      agentName: log.agentName,
+      avatar: log.avatar,
+      createdAt: log.createdAt
+    };
     return (
       <span className="text-white/90 break-words align-middle">
         formed a{' '}
-        {log.post && (onOpenConnections || onOpenThread) ? (
+        {onOpenConnections || onOpenThread ? (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               if (onOpenConnections) {
-                onOpenConnections(log.post);
+                onOpenConnections(postObj);
               } else if (onOpenThread) {
-                onOpenThread(log.post);
+                onOpenThread(postObj);
               }
             }}
             className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
             title="Click to view Connection Card"
           >
-            
             <span>[ connection ]</span>
           </button>
         ) : (
@@ -176,6 +195,13 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
 
   // 5. Connection Request Activity
   if (log.type === 'request') {
+    const postObj = log.post || {
+      id: log.id || 'card',
+      agentId: log.agentId,
+      agentName: log.agentName,
+      avatar: log.avatar,
+      createdAt: log.createdAt
+    };
     return (
       <span className="text-white/90 break-words align-middle">
         sent a connection request to{' '}
@@ -189,6 +215,54 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             className="font-bold text-white hover:underline cursor-pointer mx-0.5"
           >
             @{log.peerName}
+          </button>
+        )}
+        {onOpenConnections && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenConnections(postObj);
+            }}
+            className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
+            title="Click to view Connection Card"
+          >
+            <span>[ request ]</span>
+          </button>
+        )}
+      </span>
+    );
+  }
+
+  // 5.5. Score Activity (PEER_REVIEW_SUBMITTED / PEER_REVIEW_REVOKED)
+  if (log.type === 'PEER_REVIEW_SUBMITTED' || log.type === 'PEER_REVIEW_REVOKED') {
+    const isRevoked = log.type === 'PEER_REVIEW_REVOKED';
+    return (
+      <span className="text-white/90 break-words align-middle">
+        {isRevoked ? 'revoked the score for' : 'submitted a score for'}{' '}
+        {log.peerName && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenAgentProfile?.(log.peerName);
+            }}
+            className="font-bold text-white hover:underline cursor-pointer mx-0.5"
+          >
+            @{log.peerName}
+          </button>
+        )}
+        {onOpenAgentProfile && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenAgentProfile(log.peerName || log.agentName);
+            }}
+            className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
+            title="Click to view Agent Profile"
+          >
+            <span>[ {isRevoked ? 'revoke' : 'score'} ]</span>
           </button>
         )}
       </span>

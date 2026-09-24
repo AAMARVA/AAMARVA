@@ -154,8 +154,9 @@ export function maskSecretWords(text: string, secretValues: string[]): string {
 }
 
 /**
- * Automatically masks AAMARVA API keys, JWT access/refresh tokens, and request credentials with '******'.
- * Does not require manual enrollment in Secrets Preserver.
+ * Automatically masks AAMARVA API keys, JWT access/refresh tokens, provider API keys, PEM private keys,
+ * Authorization Bearer tokens, contextual credential assignments (passwords, api keys, access tokens, refresh tokens, client secrets),
+ * and request credentials with '******'. Does not require manual enrollment in Secrets Preserver.
  */
 export function maskBuiltInCredentials(text: string, contextCredentials: string[] = []): string {
   if (!text || typeof text !== 'string') return text;
@@ -166,22 +167,44 @@ export function maskBuiltInCredentials(text: string, contextCredentials: string[
   const apiKeyPattern = /\b(?:sk_amr_[0-9a-zA-Z_-]{20,80}|amr_live_[0-9a-zA-Z_-]{20,80})\b/g;
   sanitized = sanitized.replace(apiKeyPattern, '******');
 
-  // 2. Mask common third-party API key patterns (OpenAI, Stripe, Google Cloud/Maps)
-  const commonPatterns = [
+  // 2. Mask common third-party API key and token patterns (OpenAI, Stripe, Google Cloud/Maps, GitHub, AWS, Slack, SendGrid)
+  const providerPatterns = [
     /\bsk-[a-zA-Z0-9]{20,}\b/g, // OpenAI
-    /\bsk_live_[a-zA-Z0-9]{20,}\b/g, // Stripe
+    /\borg-[a-zA-Z0-9]{20,}\b/g, // OpenAI org
+    /\bsk_live_[a-zA-Z0-9]{20,}\b/g, // Stripe live
+    /\brk_live_[a-zA-Z0-9]{20,}\b/g, // Stripe restricted live
     /\bAIza[0-9A-Za-z_-]{35}\b/g, // Google Cloud / Maps
-    /\bghp_[a-zA-Z0-9]{36}\b/g, // GitHub
+    /\b(?:ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{36}\b/g, // GitHub tokens
+    /\bgithub_pat_[a-zA-Z0-9_]{22,}\b/g, // GitHub fine-grained PAT
+    /\bAKIA[0-9A-Z]{16}\b/g, // AWS Access Key ID
+    /\bxox[bpas]-[a-zA-Z0-9-]{10,}\b/g, // Slack tokens
+    /\bSG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}\b/g, // SendGrid API key
   ];
-  for (const pattern of commonPatterns) {
+  for (const pattern of providerPatterns) {
     sanitized = sanitized.replace(pattern, '******');
   }
 
-  // 3. Mask JWT access / refresh / session tokens (header.payload.signature)
+  // 3. Mask Private Key PEM blocks (RSA, EC, DSA, OPENSSH, PRIVATE KEY)
+  const pemPattern = /-----\s*BEGIN\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+|PRIVATE\s+)KEY-----[^-]+-----\s*END\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+|PRIVATE\s+)KEY-----/g;
+  sanitized = sanitized.replace(pemPattern, '******');
+
+  // 4. Mask JWT access / refresh / session tokens (header.payload.signature)
   const jwtPattern = /\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g;
   sanitized = sanitized.replace(jwtPattern, '******');
 
-  // 4. Mask any specific request-context credentials passed (e.g. current API key, Bearer token, refresh token, request password)
+  // 5. Mask Authorization Bearer tokens
+  sanitized = sanitized.replace(/\bAuthorization:\s*Bearer\s+[a-zA-Z0-9_\-\.~+\/=]+/gi, 'Authorization: Bearer ******');
+  sanitized = sanitized.replace(/\bBearer\s+[a-zA-Z0-9_\-\.~+\/=]{10,}\b/gi, 'Bearer ******');
+
+  // 6. Mask Contextual Key-Value Credential Assignments & Query Parameters (password=..., pass: "...", api_key: "...", ?password=..., &password=..., etc.)
+  const contextualRegex = /(?:([?&])?(["']?)(password|passwd|pass|passphrase|api_key|apiKey|api-key|access_token|accessToken|access-token|refresh_token|refreshToken|refresh-token|client_secret|clientSecret|client-secret|auth_token|authToken|auth-token|secret|secret_key|secretKey)\2)\s*([=:]\s*)(['"]?)([a-zA-Z0-9_\-\.~+\/]{6,128})\5/gi;
+  sanitized = sanitized.replace(contextualRegex, (match, prefix, openKeyQuote, key, delim, quote, val) => {
+    const pfx = prefix || '';
+    const kQuote = openKeyQuote || '';
+    return `${pfx}${kQuote}${key}${kQuote}${delim}${quote}******${quote}`;
+  });
+
+  // 8. Mask any specific request-context credentials passed (e.g. current API key, Bearer token, refresh token, request password)
   if (Array.isArray(contextCredentials) && contextCredentials.length > 0) {
     const validContextCreds = contextCredentials
       .filter(c => typeof c === 'string' && c.trim().length >= 6)

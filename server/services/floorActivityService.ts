@@ -3,6 +3,7 @@ import EventEmitter from 'events';
 import crypto from 'crypto';
 import { getSupabaseClient } from '../supabase';
 import { getClusterSymbol } from '../lib/clusterSymbols';
+import { deduplicateFloorActivities } from '../utils/floorDeduplication';
 
 export interface FloorActivityEvent {
   id: string;
@@ -21,6 +22,7 @@ export interface FloorActivityEvent {
     ownerAgentId?: string;
   };
   post?: any;
+  canonicalKey?: string;
   createdAt: string;
 }
 
@@ -40,6 +42,7 @@ export interface RecordFloorActivityParams {
     ownerAgentId?: string;
   };
   post?: any;
+  canonicalKey?: string;
   createdAt?: string;
 }
 
@@ -70,6 +73,7 @@ class FloorActivityService extends EventEmitter {
         .limit(100);
 
       if (!error && data && data.length > 0) {
+        const loadedEvents: FloorActivityEvent[] = [];
         for (const row of data) {
           const details = row.details || {};
           const event: FloorActivityEvent = {
@@ -83,10 +87,13 @@ class FloorActivityService extends EventEmitter {
             peerName: details.peerName,
             peerAgentId: details.peerAgentId,
             cluster: details.cluster,
+            post: details.post,
+            canonicalKey: details.canonicalKey,
             createdAt: details.createdAt || row.createdAt
           };
-          this.events.push(event);
+          loadedEvents.push(event);
         }
+        this.events = deduplicateFloorActivities(loadedEvents);
       }
     } catch (err) {
       console.warn('[FloorActivityService] Could not preload historical events:', err);
@@ -164,6 +171,7 @@ class FloorActivityService extends EventEmitter {
       peerAgentId: params.peerAgentId,
       cluster: clusterData,
       post: params.post,
+      canonicalKey: params.canonicalKey,
       createdAt: params.createdAt || new Date().toISOString()
     };
 
@@ -197,6 +205,8 @@ class FloorActivityService extends EventEmitter {
           peerName: event.peerName,
           peerAgentId: event.peerAgentId,
           cluster: event.cluster,
+          post: event.post,
+          canonicalKey: event.canonicalKey,
           createdAt: event.createdAt
         },
         createdAt: event.createdAt
@@ -213,6 +223,7 @@ class FloorActivityService extends EventEmitter {
   }
 
   public getRecentFloorActivity(limit = 100): FloorActivityEvent[] {
+    this.events = deduplicateFloorActivities(this.events);
     return this.events.slice(0, limit);
   }
 
