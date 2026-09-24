@@ -1149,6 +1149,81 @@ export async function runE2EEHardeningTests() {
     } catch {}
     recordResult('messaging_test33_legacy_plaintext_isolation_on_private_channel', test33Success, 'Legacy plaintext properties on private messages are completely isolated and never rendered.');
 
+    // --- MESSAGING TEST 34: Real deterministic round-trip with full serialization path ---
+    let test34Success = false;
+    try {
+      const { runE2EEUnitTest } = await import('../../src/lib/test-e2ee');
+      test34Success = await runE2EEUnitTest();
+    } catch (e) {
+      console.error('Test 34 failed:', e);
+    }
+    recordResult('messaging_test34_deterministic_e2ee_round_trip_and_serialization', test34Success, 'Deterministic ECDH + HKDF + AES-256-GCM round-trip succeeds across simulated production DB serialization.');
+
+    // --- MESSAGING TEST 35: Cryptographic Tamper Resistance & AAD Channel Binding ---
+    let test35Success = false;
+    try {
+      const { encryptMessage, decryptMessage, generateAgentCryptoIdentity } = await import('../../src/lib/e2ee');
+      const idAlice = await generateAgentCryptoIdentity('AMR_ALICE_T35');
+      const idBob = await generateAgentCryptoIdentity('AMR_BOB_T35');
+      const connId = 'conn_test_35_secure';
+      
+      const payload = await encryptMessage('Tamper verification message', idAlice.e2eePrivateKey, idBob.e2eePublicKey, connId, 'AMR_ALICE_T35', 1);
+      
+      // Tamper connection ID in AAD: Must throw error
+      let connTamperCaught = false;
+      try {
+        await decryptMessage(payload, idBob.e2eePrivateKey, idAlice.e2eePublicKey, 'conn_hijacked_id', 'AMR_ALICE_T35');
+      } catch {
+        connTamperCaught = true;
+      }
+
+      // Tamper sender in AAD: Must throw error
+      let senderTamperCaught = false;
+      try {
+        await decryptMessage(payload, idBob.e2eePrivateKey, idAlice.e2eePublicKey, connId, 'AMR_IMPOSTOR');
+      } catch {
+        senderTamperCaught = true;
+      }
+
+      if (connTamperCaught && senderTamperCaught) {
+        test35Success = true;
+      }
+    } catch (e) {
+      console.error('Test 35 failed:', e);
+    }
+    recordResult('messaging_test35_tamper_resistance_and_aad_channel_binding', test35Success, 'AES-256-GCM authentication strictly rejects channel ID and sender identity tampering via AAD.');
+
+    // --- MESSAGING TEST 36: Internal Error Classification on Decryption Failures ---
+    let test36Success = false;
+    try {
+      const { decryptMessage, generateAgentCryptoIdentity, E2EEDecryptionError } = await import('../../src/lib/e2ee');
+      const idBob = await generateAgentCryptoIdentity('AMR_BOB_T36');
+      const idAlice = await generateAgentCryptoIdentity('AMR_ALICE_T36');
+
+      // Test invalid nonce classification
+      let invalidNonceCode: string | null = null;
+      try {
+        await decryptMessage({ ciphertext: 'AQID', nonce: 'short', version: 1, keyEpoch: 1 }, idBob.e2eePrivateKey, idAlice.e2eePublicKey, 'conn_1', 'AMR_ALICE_T36');
+      } catch (err: any) {
+        invalidNonceCode = err?.code;
+      }
+
+      // Test missing recipient key classification
+      let missingPrivKeyCode: string | null = null;
+      try {
+        await decryptMessage({ ciphertext: 'AQID', nonce: Buffer.alloc(12).toString('base64'), version: 1, keyEpoch: 1 }, null as any, idAlice.e2eePublicKey, 'conn_1', 'AMR_ALICE_T36');
+      } catch (err: any) {
+        missingPrivKeyCode = err?.code;
+      }
+
+      if (invalidNonceCode === 'INVALID_NONCE' && missingPrivKeyCode === 'MISSING_RECIPIENT_PRIVATE_KEY') {
+        test36Success = true;
+      }
+    } catch (e) {
+      console.error('Test 36 failed:', e);
+    }
+    recordResult('messaging_test36_internal_error_classification', test36Success, 'Decryption failures are accurately categorized into internal diagnostic error classifications.');
+
   } catch (err: any) {
     console.error('Test Suite Fatal Error:', err);
     recordResult('test_suite_execution', false, err?.message || String(err));

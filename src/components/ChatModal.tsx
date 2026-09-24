@@ -8,6 +8,7 @@ import {
   decryptMessage, 
   getLocalKeyPair, 
   resolveSenderPublicKey,
+  normalizeAgentId,
   StoredAgentKeyEntry
 } from '../lib/e2ee';
 import { 
@@ -183,36 +184,60 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             let resolvedPlaintext: string | null = null;
 
             // Encrypted private E2EE message: attempt WebCrypto AES-256-GCM + ECDH local decryption
-            if (ciphertext && nonce && currentLocalKeys) {
-              try {
-                let decKey = currentLocalKeys.privateKey;
-                if (currentLocalKeys.keyEpoch !== msgEpoch) {
-                  const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, userPassword || undefined);
-                  if (historicalEntry?.privateKey) {
-                    decKey = historicalEntry.privateKey;
+            if (ciphertext && nonce) {
+              if (!currentLocalKeys) {
+                if (process.env.NODE_ENV !== 'production') {
+                  console.debug(`[E2EE Decrypt Diagnostic] Failure [MISSING_RECIPIENT_PRIVATE_KEY] on msg ${m.id}`);
+                }
+              } else {
+                try {
+                  let decKey = currentLocalKeys.privateKey;
+                  if (currentLocalKeys.keyEpoch !== msgEpoch) {
+                    const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, userPassword || undefined);
+                    if (historicalEntry?.privateKey) {
+                      decKey = historicalEntry.privateKey;
+                    } else {
+                      if (process.env.NODE_ENV !== 'production') {
+                        console.debug(`[E2EE Decrypt Diagnostic] Warning [KEY_EPOCH_NOT_FOUND] for epoch ${msgEpoch}`);
+                      }
+                    }
                   }
-                }
 
-                const targetPeer = m.senderAgentId === user.agentId ? (currentPeerId || 'peer') : m.senderAgentId;
-                const senderPubKey = await resolveSenderPublicKey(
-                  targetPeer,
-                  msgEpoch,
-                  currentPeerEpochKeys,
-                  currentPeerKey
-                );
-
-                if (senderPubKey && decKey) {
-                  resolvedPlaintext = await decryptMessage(
-                    { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
-                    decKey,
-                    senderPubKey,
-                    connectionId,
-                    sender
+                  const isMyMessage = normalizeAgentId(m.senderAgentId) === normalizeAgentId(user.agentId);
+                  const targetPeer = isMyMessage ? (currentPeerId || peerAgentId || 'peer') : m.senderAgentId;
+                  
+                  const senderPubKey = await resolveSenderPublicKey(
+                    targetPeer,
+                    msgEpoch,
+                    currentPeerEpochKeys,
+                    currentPeerKey
                   );
+
+                  if (!senderPubKey) {
+                    if (process.env.NODE_ENV !== 'production') {
+                      console.debug(`[E2EE Decrypt Diagnostic] Failure [MISSING_SENDER_PUBLIC_KEY] on msg ${m.id} for peer ${targetPeer}`);
+                    }
+                  } else if (!decKey) {
+                    if (process.env.NODE_ENV !== 'production') {
+                      console.debug(`[E2EE Decrypt Diagnostic] Failure [MISSING_RECIPIENT_PRIVATE_KEY] on msg ${m.id}`);
+                    }
+                  } else {
+                    resolvedPlaintext = await decryptMessage(
+                      { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
+                      decKey,
+                      senderPubKey,
+                      connectionId,
+                      sender
+                    );
+                  }
+                } catch (decErr: any) {
+                  // AES-GCM authentication/decryption failure: fail closed, do not expose plaintext
+                  if (process.env.NODE_ENV !== 'production') {
+                    const errCode = decErr?.code || 'AUTHENTICATION_TAG_FAILED';
+                    console.debug(`[E2EE Decrypt Diagnostic] Failure [${errCode}] on msg ${m.id}:`, decErr?.message);
+                  }
+                  resolvedPlaintext = null;
                 }
-              } catch (decErr) {
-                // AES-GCM authentication/decryption failure: fail closed, do not expose plaintext
-                resolvedPlaintext = null;
               }
             }
 

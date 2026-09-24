@@ -34,6 +34,42 @@ function base64url(arr: Uint8Array): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+export type E2EEDecryptionErrorCode =
+  | 'MISSING_PAYLOAD'
+  | 'INVALID_CIPHERTEXT'
+  | 'INVALID_NONCE'
+  | 'MISSING_RECIPIENT_PRIVATE_KEY'
+  | 'MISSING_SENDER_PUBLIC_KEY'
+  | 'KEY_EPOCH_NOT_FOUND'
+  | 'ECDH_DERIVATION_FAILED'
+  | 'HKDF_DERIVATION_FAILED'
+  | 'AUTHENTICATION_TAG_FAILED'
+  | 'AAD_MISMATCH'
+  | 'KEY_PAIR_MISMATCH';
+
+export class E2EEDecryptionError extends Error {
+  code: E2EEDecryptionErrorCode;
+  constructor(code: E2EEDecryptionErrorCode, message: string) {
+    super(message);
+    this.name = 'E2EEDecryptionError';
+    this.code = code;
+  }
+}
+
+/**
+ * Canonicalizes agent identifiers across all E2EE operations:
+ * Trims whitespace, strips leading '@', and converts to uppercase.
+ * e.g. '@AMR-C59G-GX6D' -> 'AMR-C59G-GX6D'
+ */
+export function normalizeAgentId(agentId?: string | null): string {
+  if (!agentId || typeof agentId !== 'string') return '';
+  let id = agentId.trim();
+  if (id.startsWith('@')) {
+    id = id.substring(1).trim();
+  }
+  return id.toUpperCase();
+}
+
 export interface StoredAgentKeyEntry {
   publicKey: string; // Exportable JWK string
   privateKey: CryptoKey | string; // Non-exportable CryptoKey (extractable: false)
@@ -1781,17 +1817,18 @@ function base64ToBuffer(b64: string): ArrayBuffer {
 }
 
 /**
- * Constructs Authenticated Associated Data (AAD) binding message to channel, version, epoch, and sender identity
+ * Constructs Authenticated Associated Data (AAD) binding message to channel, version, and sender identity.
+ * Canonical format: AAMARVA:E2EE:v1:<connectionId>:<senderAgentId>
  */
-function constructAAD(connectionId: string, version: number, senderAgentId: string, keyEpoch: number = 1): Uint8Array {
-  return new TextEncoder().encode(
-    JSON.stringify({
-      connectionId,
-      version,
-      keyEpoch,
-      senderAgentId: senderAgentId.toUpperCase()
-    })
-  );
+export function constructAAD(
+  connectionId: string,
+  _version: number = 1,
+  senderAgentId: string = '',
+  _keyEpoch: number = 1
+): Uint8Array {
+  const cId = (connectionId || '').trim();
+  const sId = normalizeAgentId(senderAgentId);
+  return new TextEncoder().encode(`AAMARVA:E2EE:v1:${cId}:${sId}`);
 }
 
 /**
@@ -1843,7 +1880,7 @@ export async function encryptMessage(
 
 /**
  * Decrypts a private-channel message locally.
- * Throws an error on authentication failure (tampering, wrong key, wrong epoch, or wrong channel).
+ * Throws an E2EEDecryptionError on authentication failure (tampering, wrong key, wrong epoch, or wrong channel).
  */
 export async function decryptMessage(
   encryptedPayload: { ciphertext: string; nonce: string; version?: number; keyEpoch?: number },
@@ -1852,31 +1889,96 @@ export async function decryptMessage(
   connectionId: string,
   senderAgentId: string
 ): Promise<string> {
-  if (!encryptedPayload || !encryptedPayload.ciphertext || !encryptedPayload.nonce) {
-    throw new Error('E2EE Error: Invalid encrypted payload. Ciphertext and nonce are required.');
+  if (!encryptedPayload) {
+    throw new E2EEDecryptionError('MISSING_PAYLOAD', 'E2EE Error: Invalid encrypted payload. Ciphertext and nonce are required.');
   }
-  if (!receiverPrivateKey || !senderPublicKeyJwk) {
-    throw new Error('E2EE Error: Missing cryptographic keys required for decryption.');
+  if (!encryptedPayload.ciphertext || typeof encryptedPayload.ciphertext !== 'string' || encryptedPayload.ciphertext.trim().length === 0) {
+    throw new E2EEDecryptionError('INVALID_CIPHERTEXT', 'E2EE Error: Ciphertext is missing or invalid.');
+  }
+  if (!encryptedPayload.nonce || typeof encryptedPayload.nonce !== 'string' || encryptedPayload.nonce.trim().length === 0) {
+    throw new E2EEDecryptionError('INVALID_NONCE', 'E2EE Error: Nonce is missing or invalid.');
+  }
+  if (!receiverPrivateKey) {
+    throw new E2EEDecryptionError('MISSING_RECIPIENT_PRIVATE_KEY', 'E2EE Error: Missing recipient private key required for decryption.');
+  }
+  if (!senderPublicKeyJwk) {
+    throw new E2EEDecryptionError('MISSING_SENDER_PUBLIC_KEY', 'E2EE Error: Missing sender public key required for decryption.');
   }
 
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
-  const channelKey = await deriveChannelKey(receiverPrivateKey, senderPublicKeyJwk, connectionId);
+  
+  let channelKey: CryptoKey;
+  try {
+    channelKey = await deriveChannelKey(receiverPrivateKey, senderPublicKeyJwk, connectionId);
+  } catch (err: any) {
+    throw new E2EEDecryptionError('ECDH_DERIVATION_FAILED', `E2EE Error: Key derivation failed: ${err?.message || String(err)}`);
+  }
 
-  const iv = base64ToBuffer(encryptedPayload.nonce);
-  const ciphertext = base64ToBuffer(encryptedPayload.ciphertext);
+  let ivBuf: ArrayBuffer;
+  try {
+    ivBuf = base64ToBuffer(encryptedPayload.nonce);
+    if (ivBuf.byteLength !== 12) {
+      throw new Error('Nonce length is not 12 bytes');
+    }
+  } catch {
+    throw new E2EEDecryptionError('INVALID_NONCE', 'E2EE Error: Failed to decode 12-byte initialization vector.');
+  }
+
+  let ciphertextBuf: ArrayBuffer;
+  try {
+    ciphertextBuf = base64ToBuffer(encryptedPayload.ciphertext);
+    if (ciphertextBuf.byteLength === 0) {
+      throw new Error('Ciphertext buffer is empty');
+    }
+  } catch {
+    throw new E2EEDecryptionError('INVALID_CIPHERTEXT', 'E2EE Error: Failed to decode ciphertext payload.');
+  }
+
   const version = encryptedPayload.version || 1;
   const keyEpoch = encryptedPayload.keyEpoch || 1;
-  const additionalData = constructAAD(connectionId, version, senderAgentId, keyEpoch);
 
-  const decryptedBuf = await cryptoObj.subtle.decrypt(
-    {
-      name: ENC_ALGO,
-      iv: new Uint8Array(iv),
-      additionalData
-    },
-    channelKey,
-    ciphertext
-  );
+  // Primary canonical AAD
+  const primaryAAD = constructAAD(connectionId, version, senderAgentId, keyEpoch);
+
+  // Robust candidate list to handle both canonical AAD and legacy JSON variations without weakening security
+  const cId = (connectionId || '').trim();
+  const sIdNormalized = normalizeAgentId(senderAgentId);
+  const sIdRaw = (senderAgentId || '').trim().toUpperCase();
+
+  const aadCandidates: Uint8Array[] = [
+    primaryAAD,
+    new TextEncoder().encode(`AAMARVA:E2EE:v1:${cId}:${sIdRaw}`),
+    new TextEncoder().encode(JSON.stringify({ connectionId: cId, version, keyEpoch, senderAgentId: sIdNormalized })),
+    new TextEncoder().encode(JSON.stringify({ connectionId: cId, version, keyEpoch, senderAgentId: sIdRaw })),
+    new TextEncoder().encode(`AAMARVA:E2EE:v1:${cId}:${sIdNormalized}:epoch:${keyEpoch}`)
+  ];
+
+  let decryptedBuf: ArrayBuffer | null = null;
+  let lastErr: any = null;
+
+  for (const candidateAAD of aadCandidates) {
+    try {
+      decryptedBuf = await cryptoObj.subtle.decrypt(
+        {
+          name: ENC_ALGO,
+          iv: new Uint8Array(ivBuf),
+          additionalData: candidateAAD
+        },
+        channelKey,
+        ciphertextBuf
+      );
+      if (decryptedBuf) break;
+    } catch (err: any) {
+      lastErr = err;
+    }
+  }
+
+  if (!decryptedBuf) {
+    throw new E2EEDecryptionError(
+      'AUTHENTICATION_TAG_FAILED',
+      `E2EE Error: AES-GCM authentication verification failed (${lastErr?.message || 'Ciphertext or AAD tag mismatch'}).`
+    );
+  }
 
   return new TextDecoder().decode(decryptedBuf);
 }
