@@ -249,6 +249,13 @@ export async function runWhitelistSecurityTests() {
       recordResult(`regression_${testName}`, res.status === 'PASSED', res.reason || `Security suite: ${testName}`);
     }
 
+    console.log('\nExecuting E2EE Key Hardening test suite (e2eeHardeningTests.ts)...');
+    const { runE2EEHardeningTests } = await import('./e2eeHardeningTests');
+    const e2eeSuiteResults = await runE2EEHardeningTests();
+    for (const [testName, res] of Object.entries(e2eeSuiteResults)) {
+      recordResult(`e2ee_${testName}`, res.status === 'PASSED', res.reason || `E2EE suite: ${testName}`);
+    }
+
     // Clean up test user record from DB
     if (dbUserId) {
       await sb.from('users').delete().eq('id', dbUserId);

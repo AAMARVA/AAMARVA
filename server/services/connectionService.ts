@@ -306,11 +306,22 @@ export const MAX_MESSAGE_CONTENT_LENGTH = 100000;
 
 export interface MessagePayload {
   content?: string;
+  message?: string;
   ciphertext?: string;
   nonce?: string;
   signature?: string;
   version?: number;
   keyEpoch?: number;
+}
+
+// Helper: strict Base64 validation
+function isValidBase64(str: string): boolean {
+  if (!str || typeof str !== 'string') return false;
+  const trimmed = str.trim();
+  if (trimmed.length === 0) return false;
+  const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+  const urlSafeRegex = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}==|[A-Za-z0-9_-]{3}=)?$/;
+  return base64Regex.test(trimmed) || urlSafeRegex.test(trimmed);
 }
 
 export async function sendMessage(
@@ -319,27 +330,115 @@ export async function sendMessage(
   payload: MessagePayload,
   contextCredentials?: string[]
 ) {
-  let { content, ciphertext, nonce, version, keyEpoch } = payload || {};
+  let { content, message, ciphertext, nonce, version, keyEpoch } = payload || {};
 
-  if (content !== undefined && content !== null) {
+  if ((content !== undefined && content !== null) || (message !== undefined && message !== null)) {
     throw new ConnectionError(
-      'Plaintext content is not allowed for private messages. Please provide E2EE ciphertext envelope.',
+      'Plaintext content is strictly forbidden for private messages. AAMARVA is zero-knowledge; encryption must be performed agent-side. Remove "content" or "message" fields and provide E2EE ciphertext envelope.',
       400,
       'PLAINTEXT_REJECTED'
     );
   }
 
-  if (!ciphertext || !nonce) {
+  if (ciphertext === undefined || ciphertext === null || typeof ciphertext !== 'string') {
     throw new ConnectionError(
-      'Private messages must include encrypted payload (ciphertext, nonce).',
+      'Private messages must include a valid E2EE encrypted envelope: { "ciphertext": "...", "nonce": "...", "version": 1, "keyEpoch": 1 }.',
       400,
-      'MESSAGE_PAYLOAD_REQUIRED'
+      'MISSING_CIPHERTEXT'
     );
   }
 
   ciphertext = ciphertext.trim();
+  if (ciphertext.length === 0) {
+    throw new ConnectionError(
+      'Ciphertext cannot be empty.',
+      400,
+      'EMPTY_CIPHERTEXT'
+    );
+  }
+
+  if (!isValidBase64(ciphertext)) {
+    throw new ConnectionError(
+      'Invalid ciphertext transport encoding. Base64-encoded ciphertext required.',
+      400,
+      'INVALID_CIPHERTEXT_ENCODING'
+    );
+  }
+
+  try {
+    const cipherBuf = Buffer.from(ciphertext, 'base64');
+    if (cipherBuf.length === 0) {
+      throw new ConnectionError(
+        'Decoded ciphertext bytes cannot be empty.',
+        400,
+        'EMPTY_CIPHERTEXT'
+      );
+    }
+  } catch (e: any) {
+    if (e instanceof ConnectionError) throw e;
+    throw new ConnectionError(
+      'Invalid ciphertext transport encoding. Base64-encoded ciphertext required.',
+      400,
+      'INVALID_CIPHERTEXT_ENCODING'
+    );
+  }
+
+  if (nonce === undefined || nonce === null || typeof nonce !== 'string') {
+    throw new ConnectionError(
+      'Private messages must include a valid Base64-encoded nonce.',
+      400,
+      'INVALID_NONCE'
+    );
+  }
+
   nonce = nonce.trim();
-  version = typeof version === 'number' && Number.isInteger(version) && version >= 1 ? version : 1;
+  if (nonce.length === 0 || !isValidBase64(nonce)) {
+    throw new ConnectionError(
+      'Invalid nonce encoding. Base64-encoded initialization vector required.',
+      400,
+      'INVALID_NONCE'
+    );
+  }
+
+  try {
+    const nonceBuf = Buffer.from(nonce, 'base64');
+    if (nonceBuf.length !== 12) {
+      throw new ConnectionError(
+        'Invalid nonce. AES-256-GCM requires a valid 96-bit (12-byte) initialization vector.',
+        400,
+        'INVALID_NONCE'
+      );
+    }
+  } catch (e: any) {
+    if (e instanceof ConnectionError) throw e;
+    throw new ConnectionError(
+      'Invalid nonce encoding. Base64-encoded initialization vector required.',
+      400,
+      'INVALID_NONCE'
+    );
+  }
+
+  if (payload.version !== undefined && payload.version !== null) {
+    if (typeof payload.version !== 'number' || !Number.isFinite(payload.version) || !Number.isInteger(payload.version) || payload.version !== 1) {
+      throw new ConnectionError(
+        'Unsupported E2EE protocol version. Only version 1 is supported.',
+        400,
+        'UNSUPPORTED_VERSION'
+      );
+    }
+  }
+
+  if (payload.keyEpoch !== undefined && payload.keyEpoch !== null) {
+    if (typeof payload.keyEpoch !== 'number' || !Number.isFinite(payload.keyEpoch) || !Number.isInteger(payload.keyEpoch) || payload.keyEpoch < 1) {
+      throw new ConnectionError(
+        'Invalid keyEpoch. When supplied, keyEpoch must be a positive integer (>= 1). Malformed, non-numeric, decimal, or negative values are rejected.',
+        400,
+        'INVALID_KEY_EPOCH'
+      );
+    }
+  }
+
+  version = 1;
   keyEpoch = typeof keyEpoch === 'number' && Number.isInteger(keyEpoch) && keyEpoch >= 1 ? keyEpoch : 1;
 
   if (ciphertext.length > MAX_MESSAGE_CONTENT_LENGTH) {

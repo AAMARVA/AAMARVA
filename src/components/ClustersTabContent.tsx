@@ -80,43 +80,11 @@ async function decryptClusterMessageEnvelope(
           senderAgentId
         );
       }
-    } catch {}
-  }
-
-  // 3. Try UTF-8 Base64 decode (safe for Unicode, emojis, multibyte characters)
-  if (!resolvedPlaintext && ciphertext) {
-    try {
-      const binaryStr = window.atob(ciphertext);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-      const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-      if (decoded && decoded.trim().length > 0 && !decoded.includes('\ufffd')) {
-        resolvedPlaintext = decoded;
-      }
-    } catch {
-      try {
-        resolvedPlaintext = decodeURIComponent(escape(window.atob(ciphertext)));
-      } catch {}
+    } catch (e) {
+      console.error('E2EE decryption failed (authentication/tamper):', e);
+      // Fail closed, resolvedPlaintext remains null
+      resolvedPlaintext = null;
     }
-  }
-
-  // 4. Try JSON unwrap (e.g. JSON stringified payload)
-  if (!resolvedPlaintext && ciphertext) {
-    try {
-      const parsed = JSON.parse(ciphertext);
-      if (typeof parsed === 'string') {
-        resolvedPlaintext = parsed;
-      } else if (parsed?.text || parsed?.content || parsed?.message) {
-        resolvedPlaintext = parsed.text || parsed.content || parsed.message;
-      }
-    } catch {}
-  }
-
-  // 5. If still not resolved, check if ciphertext is itself printable text
-  if (!resolvedPlaintext && ciphertext && !/^[A-Za-z0-9+/=]+$/.test(ciphertext)) {
-    resolvedPlaintext = ciphertext;
   }
 
   if (resolvedPlaintext) {

@@ -17,23 +17,29 @@ async function safeJson(res: Response) {
   }
 }
 
-async function runE2EETestMatrix() {
+export async function runE2EETestMatrix() {
   console.log('====================================================');
   console.log('         E2EE INTEGRATION TEST MATRIX RUNNER        ');
   console.log('====================================================\n');
 
   try {
-    // 1. Setup Test Accounts A and B with distinct Human Session & Agent Token credentials
+    // -------------------------------------------------------------
+    // 1. SETUP: Distinct Human Sessions & Agent Tokens
+    // -------------------------------------------------------------
     const timestamp = Date.now();
-    const emailA = `e2ee_test_a_${timestamp}@aamarva.test`;
+    const emailA = `e2ee_agent_a_${timestamp}@aamarva.test`;
     const passwordA = 'TestPassword123!';
     const nameA = `Agent A ${timestamp}`;
 
-    const emailB = `e2ee_test_b_${timestamp}@aamarva.test`;
+    const emailB = `e2ee_agent_b_${timestamp}@aamarva.test`;
     const passwordB = 'TestPassword123!';
     const nameB = `Agent B ${timestamp}`;
 
-    // Register User A & User B
+    const emailC = `e2ee_agent_c_${timestamp}@aamarva.test`;
+    const passwordC = 'TestPassword123!';
+    const nameC = `Agent C (Unauthorized) ${timestamp}`;
+
+    // Register User A, User B, User C
     const regResA = await registerUser({ email: emailA, password: passwordA, agentName: nameA });
     const agentIdA = regResA.user.agentId;
     const apiKeyA = regResA.apiKey;
@@ -44,11 +50,15 @@ async function runE2EETestMatrix() {
     const apiKeyB = regResB.apiKey;
     const userIdB = regResB.user.id;
 
-    // Human Session Credentials (Session Token)
+    const regResC = await registerUser({ email: emailC, password: passwordC, agentName: nameC });
+    const agentIdC = regResC.user.agentId;
+    const apiKeyC = regResC.apiKey;
+
+    // Human Session Credentials (Session Tokens)
     const humanSessionA = await createHumanSession(userIdA);
     const humanSessionB = await createHumanSession(userIdB);
 
-    // Agent Access Tokens (Bearer Token)
+    // Agent Access Tokens (Bearer Tokens)
     const loginAgentA = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -65,21 +75,33 @@ async function runE2EETestMatrix() {
     const loginAgentBJson = await safeJson(loginAgentB);
     const agentTokenB = loginAgentBJson.data?.tokens?.accessToken;
 
+    const loginAgentC = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId: agentIdC, apiKey: apiKeyC })
+    });
+    const loginAgentCJson = await safeJson(loginAgentC);
+    const agentTokenC = loginAgentCJson.data?.tokens?.accessToken;
+
     console.log(`[AUTH CHECK] Human A Session: ${humanSessionA ? 'OK' : 'FAIL'}`);
     console.log(`[AUTH CHECK] Agent A Token:   ${agentTokenA ? 'OK' : 'FAIL'}`);
     console.log(`[AUTH CHECK] Human B Session: ${humanSessionB ? 'OK' : 'FAIL'}`);
-    console.log(`[AUTH CHECK] Agent B Token:   ${agentTokenB ? 'OK' : 'FAIL'}\n`);
+    console.log(`[AUTH CHECK] Agent B Token:   ${agentTokenB ? 'OK' : 'FAIL'}`);
+    console.log(`[AUTH CHECK] Agent C Token:   ${agentTokenC ? 'OK' : 'FAIL'}\n`);
 
-    // 2. Initialize and Synchronize Keys for Agent A and Agent B
+    // -------------------------------------------------------------
+    // 2. CRYPTO IDENTITIES & PUBLIC KEY REGISTRATION
+    // -------------------------------------------------------------
     const keysA = await deriveAgentCryptoIdentity(agentIdA, passwordA);
     const keysB = await deriveAgentCryptoIdentity(agentIdB, passwordB);
+    const keysC = await deriveAgentCryptoIdentity(agentIdC, passwordC);
 
-    // Register Key A via Human Session
+    // Register Key A via Agent Token
     const regKeyARes = await fetch(`${BASE_URL}/api/agents/me/e2ee`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${humanSessionA}`
+        'Authorization': `Bearer ${agentTokenA}`
       },
       body: JSON.stringify({
         publicKey: keysA.e2eePublicKey,
@@ -110,9 +132,9 @@ async function runE2EETestMatrix() {
     });
     if (!regKeyBRes.ok) throw new Error(`Key B registration failed: ${await regKeyBRes.text()}`);
 
-    // Fetch registered keys from server to verify invariant
+    // Verify key registration invariant
     const getE2eeARes = await fetch(`${BASE_URL}/api/agents/me/e2ee`, {
-      headers: { 'Authorization': `Bearer ${humanSessionA}` }
+      headers: { 'Authorization': `Bearer ${agentTokenA}` }
     });
     const getE2eeAJson = await safeJson(getE2eeARes);
     const serverFpA = getE2eeAJson.data?.fingerprint;
@@ -123,34 +145,22 @@ async function runE2EETestMatrix() {
     const getE2eeBJson = await safeJson(getE2eeBRes);
     const serverFpB = getE2eeBJson.data?.fingerprint;
 
-    // Output Section 10 Diagnostics
-    console.log('--- SECTION 10: E2EE KEY SYNCHRONIZATION DIAGNOSTIC REPORT ---');
-    console.log(`Agent ID:                                   ${agentIdA}`);
-    console.log(`Local Derived Public-Key Fingerprint (A):  ${keysA.fingerprint}`);
-    console.log(`Server Registered Public-Key Fingerprint (A): ${serverFpA}`);
-    console.log(`Key Epoch (A):                              1`);
-    console.log(`MATCH STATUS (A):                           ${keysA.fingerprint === serverFpA ? 'MATCH' : 'MISMATCH'}`);
-    console.log('');
-    console.log(`Agent ID:                                   ${agentIdB}`);
-    console.log(`Local Derived Public-Key Fingerprint (B):  ${keysB.fingerprint}`);
-    console.log(`Server Registered Public-Key Fingerprint (B): ${serverFpB}`);
-    console.log(`Key Epoch (B):                              1`);
-    console.log(`MATCH STATUS (B):                           ${keysB.fingerprint === serverFpB ? 'MATCH' : 'MISMATCH'}`);
-    console.log('-------------------------------------------------------------\n');
-
     if (keysA.fingerprint !== serverFpA || keysB.fingerprint !== serverFpB) {
-      throw new Error('E2EE Key invariant check failed!');
+      throw new Error(`E2EE Key invariant check failed: A(${keysA.fingerprint} vs ${serverFpA}), B(${keysB.fingerprint} vs ${serverFpB})`);
     }
+    console.log('[KEY INVARIANT] Public keys verified on server for Agent A and Agent B.\n');
 
-    // 3. Establish Connection between Agent A and Agent B
-    // Create post by A
+    // -------------------------------------------------------------
+    // 3. ESTABLISH CONNECTION (Agent A <-> Agent B)
+    // -------------------------------------------------------------
+    // Post by A
     const postRes = await fetch(`${BASE_URL}/api/posts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${agentTokenA}`
       },
-      body: JSON.stringify({ content: 'Test post for E2EE messaging channel' })
+      body: JSON.stringify({ content: 'Public post to establish secure channel' })
     });
     const postJson = await safeJson(postRes);
     const postId = postJson.data?.id || postJson.data?.postId;
@@ -162,12 +172,12 @@ async function runE2EETestMatrix() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${agentTokenB}`
       },
-      body: JSON.stringify({ content: 'Test reply for E2EE connection' })
+      body: JSON.stringify({ content: 'Public reply accepting connection request' })
     });
     const replyJson = await safeJson(replyRes);
     const replyId = replyJson.data?.id || replyJson.data?.replyId;
 
-    // Connection established by A
+    // Connection accepted by A
     const connRes = await fetch(`${BASE_URL}/api/connections`, {
       method: 'POST',
       headers: {
@@ -180,209 +190,557 @@ async function runE2EETestMatrix() {
     const connectionId = connJson.data?.id || connJson.data?.connectionId;
 
     console.log(`Established Connection ID: ${connectionId}\n`);
-
     const supabase = getSupabaseClient();
 
-    // -------------------------------------------------------------
-    // TEST 1: Human A -> Human B
-    // -------------------------------------------------------------
-    console.log('Running TEST 1: Human A -> Human B...');
-    const plaintext1 = 'Test 1: Confidential transmission from Human A to Human B';
-    const enc1 = await encryptMessage(plaintext1, keysA.e2eePrivateKey, keysB.e2eePublicKey, connectionId, agentIdA, 1);
+    // =============================================================
+    // CATEGORY 1: VALID SCENARIOS
+    // =============================================================
+    console.log('--- CATEGORY 1: VALID SCENARIOS ---');
 
-    const sendRes1 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${humanSessionA}`
-      },
-      body: JSON.stringify({
-        ciphertext: enc1.ciphertext,
-        nonce: enc1.nonce,
-        version: enc1.version,
-        keyEpoch: enc1.keyEpoch
-      })
-    });
-    const sendJson1 = await safeJson(sendRes1);
-    if (!sendRes1.ok || !sendJson1.success) throw new Error(`TEST 1 send failed: ${JSON.stringify(sendJson1)}`);
-    const msgId1 = sendJson1.data?.id || sendJson1.data?.messageId;
-
-    // Verify DB storage for msgId1: content must be null, ciphertext non-empty
-    const { data: dbMsg1 } = await supabase.from('messages').select('*').eq('id', msgId1).single();
-    if (dbMsg1.content !== null) throw new Error(`TEST 1 DB storage violation! content was not null: ${dbMsg1.content}`);
-    if (!dbMsg1.ciphertext || !dbMsg1.nonce) throw new Error('TEST 1 DB storage violation! missing ciphertext or nonce');
-
-    // Human B fetches and decrypts
-    const fetchRes1 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
-      headers: { 'Authorization': `Bearer ${humanSessionB}` }
-    });
-    const fetchJson1 = await safeJson(fetchRes1);
-    const fetchedMsg1 = (fetchJson1.data || []).find((m: any) => m.id === msgId1);
-    
-    const dec1 = await decryptMessage(
-      { ciphertext: fetchedMsg1.ciphertext, nonce: fetchedMsg1.nonce, version: fetchedMsg1.version, keyEpoch: fetchedMsg1.keyEpoch },
-      keysB.e2eePrivateKey,
-      keysA.e2eePublicKey,
-      connectionId,
-      agentIdA
+    // TEST 1.1: Agent A -> Agent B (Valid E2EE Ciphertext Envelope) -> ACCEPT
+    console.log('TEST 1.1: Agent A -> Agent B (Valid E2EE Ciphertext Envelope)...');
+    const validPlaintext = 'AAMARVA Autonomous Agent Transmission: High priority consensus data.';
+    const validEnc = await encryptMessage(
+      validPlaintext, 
+      keysA.e2eePrivateKey, 
+      keysB.e2eePublicKey, 
+      connectionId, 
+      agentIdA, 
+      1
     );
-    if (dec1 !== plaintext1) throw new Error(`TEST 1 Decryption mismatch! Got: ${dec1}`);
-    console.log('✓ TEST 1 PASSED: Human A -> Human B (Verified DB content=null & E2EE decryption)\n');
 
-    // -------------------------------------------------------------
-    // TEST 2: Agent A -> Agent B
-    // -------------------------------------------------------------
-    console.log('Running TEST 2: Agent A -> Agent B...');
-    const plaintext2 = 'Test 2: Confidential transmission from Agent A to Agent B';
-    const enc2 = await encryptMessage(plaintext2, keysA.e2eePrivateKey, keysB.e2eePublicKey, connectionId, agentIdA, 1);
-
-    const sendRes2 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+    const validSendRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${agentTokenA}`
       },
       body: JSON.stringify({
-        ciphertext: enc2.ciphertext,
-        nonce: enc2.nonce,
-        version: enc2.version,
-        keyEpoch: enc2.keyEpoch
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: validEnc.version,
+        keyEpoch: validEnc.keyEpoch
       })
     });
-    const sendJson2 = await safeJson(sendRes2);
-    if (!sendRes2.ok || !sendJson2.success) throw new Error(`TEST 2 send failed: ${JSON.stringify(sendJson2)}`);
-    const msgId2 = sendJson2.data?.id || sendJson2.data?.messageId;
+    const validSendJson = await safeJson(validSendRes);
+    if (!validSendRes.ok || !validSendJson.success) {
+      throw new Error(`TEST 1.1 Failed: Valid agent message rejected! ${JSON.stringify(validSendJson)}`);
+    }
+    const messageId = validSendJson.data?.id || validSendJson.data?.messageId;
 
-    // Verify DB storage for msgId2
-    const { data: dbMsg2 } = await supabase.from('messages').select('*').eq('id', msgId2).single();
-    if (dbMsg2.content !== null) throw new Error(`TEST 2 DB storage violation! content was not null`);
+    // Verify DB storage invariant: content MUST be null on server, ciphertext present
+    const { data: dbMsg } = await supabase.from('messages').select('*').eq('id', messageId).single();
+    if (dbMsg.content !== null) {
+      throw new Error(`TEST 1.1 Invariant Violated: Server stored plaintext in DB! content="${dbMsg.content}"`);
+    }
+    if (!dbMsg.ciphertext || !dbMsg.nonce) {
+      throw new Error('TEST 1.1 Invariant Violated: Missing ciphertext or nonce in DB record.');
+    }
 
-    // Agent B fetches and decrypts
-    const fetchRes2 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+    // Recipient Agent B fetches and decrypts locally using AES-256-GCM + ECDH
+    const fetchResB = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
       headers: { 'Authorization': `Bearer ${agentTokenB}` }
     });
-    const fetchJson2 = await safeJson(fetchRes2);
-    const fetchedMsg2 = (fetchJson2.data || []).find((m: any) => m.id === msgId2);
+    const fetchJsonB = await safeJson(fetchResB);
+    const fetchedMsgB = (fetchJsonB.data || []).find((m: any) => m.id === messageId);
+    if (!fetchedMsgB) throw new Error('TEST 1.1: Message not returned to recipient agent.');
 
-    const dec2 = await decryptMessage(
-      { ciphertext: fetchedMsg2.ciphertext, nonce: fetchedMsg2.nonce, version: fetchedMsg2.version, keyEpoch: fetchedMsg2.keyEpoch },
+    const decryptedB = await decryptMessage(
+      { ciphertext: fetchedMsgB.ciphertext, nonce: fetchedMsgB.nonce, version: fetchedMsgB.version, keyEpoch: fetchedMsgB.keyEpoch },
       keysB.e2eePrivateKey,
       keysA.e2eePublicKey,
       connectionId,
       agentIdA
     );
-    if (dec2 !== plaintext2) throw new Error(`TEST 2 Decryption mismatch!`);
-    console.log('✓ TEST 2 PASSED: Agent A -> Agent B (Verified DB content=null & E2EE decryption)\n');
+    if (decryptedB !== validPlaintext) {
+      throw new Error(`TEST 1.1 Decryption mismatch! Got: "${decryptedB}", Expected: "${validPlaintext}"`);
+    }
+    console.log('✓ TEST 1.1 PASSED: Agent A -> Agent B with valid E2EE envelope ACCEPTED & decrypted locally.\n');
 
-    // -------------------------------------------------------------
-    // TEST 3: Agent A -> Human B
-    // -------------------------------------------------------------
-    console.log('Running TEST 3: Agent A -> Human B...');
-    const plaintext3 = 'Test 3: Confidential transmission from Agent A to Human B';
-    const enc3 = await encryptMessage(plaintext3, keysA.e2eePrivateKey, keysB.e2eePublicKey, connectionId, agentIdA, 1);
-
-    const sendRes3 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${agentTokenA}`
-      },
-      body: JSON.stringify({
-        ciphertext: enc3.ciphertext,
-        nonce: enc3.nonce,
-        version: enc3.version,
-        keyEpoch: enc3.keyEpoch
-      })
-    });
-    const sendJson3 = await safeJson(sendRes3);
-    const msgId3 = sendJson3.data?.id || sendJson3.data?.messageId;
-
-    // Verify DB storage for msgId3
-    const { data: dbMsg3 } = await supabase.from('messages').select('*').eq('id', msgId3).single();
-    if (dbMsg3.content !== null) throw new Error(`TEST 3 DB storage violation! content was not null`);
-
-    // Human B fetches and decrypts
-    const fetchRes3 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+    // TEST 1.2: Human B views and decrypts associated Agent B's messages locally -> ACCEPT
+    console.log('TEST 1.2: Human B views and decrypts associated Agent B messages locally...');
+    const fetchResHumanB = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
       headers: { 'Authorization': `Bearer ${humanSessionB}` }
     });
-    const fetchJson3 = await safeJson(fetchRes3);
-    const fetchedMsg3 = (fetchJson3.data || []).find((m: any) => m.id === msgId3);
+    const fetchJsonHumanB = await safeJson(fetchResHumanB);
+    const fetchedMsgHumanB = (fetchJsonHumanB.data || []).find((m: any) => m.id === messageId);
+    if (!fetchedMsgHumanB) throw new Error('TEST 1.2: Message not returned to associated human account.');
 
-    const dec3 = await decryptMessage(
-      { ciphertext: fetchedMsg3.ciphertext, nonce: fetchedMsg3.nonce, version: fetchedMsg3.version, keyEpoch: fetchedMsg3.keyEpoch },
+    // Local decryption by human account's client using agent's private key
+    const decryptedHumanB = await decryptMessage(
+      { ciphertext: fetchedMsgHumanB.ciphertext, nonce: fetchedMsgHumanB.nonce, version: fetchedMsgHumanB.version, keyEpoch: fetchedMsgHumanB.keyEpoch },
       keysB.e2eePrivateKey,
       keysA.e2eePublicKey,
       connectionId,
       agentIdA
     );
-    if (dec3 !== plaintext3) throw new Error(`TEST 3 Decryption mismatch!`);
-    console.log('✓ TEST 3 PASSED: Agent A -> Human B (Verified DB content=null & E2EE decryption)\n');
+    if (decryptedHumanB !== validPlaintext) {
+      throw new Error(`TEST 1.2 Human local decryption mismatch!`);
+    }
+    console.log('✓ TEST 1.2 PASSED: Associated Human B successfully fetched ciphertext & decrypted locally.\n');
 
-    // -------------------------------------------------------------
-    // TEST 4: Human A -> Agent B
-    // -------------------------------------------------------------
-    console.log('Running TEST 4: Human A -> Agent B...');
-    const plaintext4 = 'Test 4: Confidential transmission from Human A to Agent B';
-    const enc4 = await encryptMessage(plaintext4, keysA.e2eePrivateKey, keysB.e2eePublicKey, connectionId, agentIdA, 1);
+    // =============================================================
+    // CATEGORY 2: INVALID SENDER SCENARIOS (STRICTLY AGENT-ONLY)
+    // =============================================================
+    console.log('--- CATEGORY 2: INVALID SENDER SCENARIOS (MUST REJECT) ---');
 
-    const sendRes4 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+    // TEST 2.1: Human A -> Agent B -> REJECT
+    console.log('TEST 2.1: Human A -> Agent B (Private message POST via Human Session)...');
+    const humanASendRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${humanSessionA}`
       },
       body: JSON.stringify({
-        ciphertext: enc4.ciphertext,
-        nonce: enc4.nonce,
-        version: enc4.version,
-        keyEpoch: enc4.keyEpoch
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: validEnc.version,
+        keyEpoch: validEnc.keyEpoch
       })
     });
-    const sendJson4 = await safeJson(sendRes4);
-    const msgId4 = sendJson4.data?.id || sendJson4.data?.messageId;
+    if (humanASendRes.status !== 401 && humanASendRes.status !== 403) {
+      throw new Error(`TEST 2.1 FAILED: Human session was NOT rejected! Status: ${humanASendRes.status}`);
+    }
+    console.log(`✓ TEST 2.1 PASSED: Human A -> Agent B rejected with HTTP ${humanASendRes.status}.\n`);
 
-    // Verify DB storage for msgId4
-    const { data: dbMsg4 } = await supabase.from('messages').select('*').eq('id', msgId4).single();
-    if (dbMsg4.content !== null) throw new Error(`TEST 4 DB storage violation! content was not null`);
-
-    // Agent B fetches and decrypts
-    const fetchRes4 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
-      headers: { 'Authorization': `Bearer ${agentTokenB}` }
+    // TEST 2.2: Human A -> Human B -> REJECT
+    console.log('TEST 2.2: Human A -> Human B (Private message POST with Human Session & Cookie)...');
+    const humanAtoBRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${humanSessionA}`,
+        'Cookie': `aamarva_human_session=${humanSessionA}`
+      },
+      body: JSON.stringify({
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: validEnc.version,
+        keyEpoch: validEnc.keyEpoch
+      })
     });
-    const fetchJson4 = await safeJson(fetchRes4);
-    const fetchedMsg4 = (fetchJson4.data || []).find((m: any) => m.id === msgId4);
+    if (humanAtoBRes.status !== 401 && humanAtoBRes.status !== 403) {
+      throw new Error(`TEST 2.2 FAILED: Human-to-human private message was NOT rejected! Status: ${humanAtoBRes.status}`);
+    }
+    console.log(`✓ TEST 2.2 PASSED: Human A -> Human B rejected with HTTP ${humanAtoBRes.status}.\n`);
 
-    const dec4 = await decryptMessage(
-      { ciphertext: fetchedMsg4.ciphertext, nonce: fetchedMsg4.nonce, version: fetchedMsg4.version, keyEpoch: fetchedMsg4.keyEpoch },
-      keysB.e2eePrivateKey,
-      keysA.e2eePublicKey,
-      connectionId,
-      agentIdA
-    );
-    if (dec4 !== plaintext4) throw new Error(`TEST 4 Decryption mismatch!`);
-    console.log('✓ TEST 4 PASSED: Human A -> Agent B (Verified DB content=null & E2EE decryption)\n');
+    // TEST 2.3: Agent C -> Connection(A, B) (Unauthorized Agent) -> REJECT
+    console.log('TEST 2.3: Agent C -> Connection(A, B) (Non-participant agent)...');
+    const unauthorizedAgentRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenC}`
+      },
+      body: JSON.stringify({
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: validEnc.version,
+        keyEpoch: validEnc.keyEpoch
+      })
+    });
+    if (unauthorizedAgentRes.status !== 403) {
+      throw new Error(`TEST 2.3 FAILED: Non-participant agent was NOT forbidden! Status: ${unauthorizedAgentRes.status}`);
+    }
+    console.log(`✓ TEST 2.3 PASSED: Agent C -> Connection(A, B) rejected with HTTP ${unauthorizedAgentRes.status}.\n`);
 
-    // -------------------------------------------------------------
-    // TEST 5: Verify Fail-Closed Decryption Security
-    // -------------------------------------------------------------
-    console.log('Running TEST 5: Verify Fail-Closed Decryption Security...');
-    const fakeKeys = await deriveAgentCryptoIdentity('FAKE_AGENT', 'WrongPassword!');
+    // =============================================================
+    // CATEGORY 3: INVALID MESSAGE SCENARIOS
+    // =============================================================
+    console.log('--- CATEGORY 3: INVALID MESSAGE SCENARIOS (MUST REJECT) ---');
+
+    // TEST 3.1: Agent A -> Agent B with Plaintext `content` -> REJECT
+    console.log('TEST 3.1: Agent A -> Agent B with plaintext "content" field...');
+    const plaintextRes1 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        content: 'Unencrypted plaintext private message content'
+      })
+    });
+    const plaintextJson1 = await safeJson(plaintextRes1);
+    if (plaintextRes1.status !== 400 || plaintextJson1.error?.code !== 'PLAINTEXT_REJECTED') {
+      throw new Error(`TEST 3.1 FAILED: Plaintext content was not rejected with PLAINTEXT_REJECTED! Status: ${plaintextRes1.status}`);
+    }
+    console.log(`✓ TEST 3.1 PASSED: Plaintext content rejected with HTTP 400 PLAINTEXT_REJECTED.\n`);
+
+    // TEST 3.2: Agent A -> Agent B with Plaintext `message` -> REJECT
+    console.log('TEST 3.2: Agent A -> Agent B with plaintext "message" field...');
+    const plaintextRes2 = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        message: 'Unencrypted message field'
+      })
+    });
+    const plaintextJson2 = await safeJson(plaintextRes2);
+    if (plaintextRes2.status !== 400 || plaintextJson2.error?.code !== 'PLAINTEXT_REJECTED') {
+      throw new Error(`TEST 3.2 FAILED: Plaintext message was not rejected with PLAINTEXT_REJECTED! Status: ${plaintextRes2.status}`);
+    }
+    console.log(`✓ TEST 3.2 PASSED: Plaintext message rejected with HTTP 400 PLAINTEXT_REJECTED.\n`);
+
+    // TEST 3.3: Agent A -> Agent B with Malformed Envelope (empty body) -> REJECT
+    console.log('TEST 3.3: Agent A -> Agent B with malformed empty envelope...');
+    const malformedRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({})
+    });
+    if (malformedRes.status !== 400) {
+      throw new Error(`TEST 3.3 FAILED: Empty payload was not rejected! Status: ${malformedRes.status}`);
+    }
+    console.log(`✓ TEST 3.3 PASSED: Empty payload rejected with HTTP ${malformedRes.status}.\n`);
+
+    // TEST 3.4: Agent A -> Agent B with Missing Ciphertext -> REJECT
+    console.log('TEST 3.4: Agent A -> Agent B with missing ciphertext...');
+    const missingCipherRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        nonce: validEnc.nonce,
+        version: 1,
+        keyEpoch: 1
+      })
+    });
+    if (missingCipherRes.status !== 400) {
+      throw new Error(`TEST 3.4 FAILED: Missing ciphertext was not rejected! Status: ${missingCipherRes.status}`);
+    }
+    console.log(`✓ TEST 3.4 PASSED: Missing ciphertext rejected with HTTP ${missingCipherRes.status}.\n`);
+
+    // TEST 3.5: Agent A -> Agent B with Invalid Nonce (bad length) -> REJECT
+    console.log('TEST 3.5: Agent A -> Agent B with invalid nonce length...');
+    const invalidNonceRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        ciphertext: validEnc.ciphertext,
+        nonce: 'QUFB', // 3 bytes instead of 12
+        version: 1,
+        keyEpoch: 1
+      })
+    });
+    if (invalidNonceRes.status !== 400) {
+      throw new Error(`TEST 3.5 FAILED: Invalid nonce was not rejected! Status: ${invalidNonceRes.status}`);
+    }
+    console.log(`✓ TEST 3.5 PASSED: Invalid nonce rejected with HTTP ${invalidNonceRes.status}.\n`);
+
+    // TEST 3.6: Agent A -> Agent B with Unsupported Version -> REJECT
+    console.log('TEST 3.6: Agent A -> Agent B with unsupported version (version: 99)...');
+    const badVersionRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: 99,
+        keyEpoch: 1
+      })
+    });
+    if (badVersionRes.status !== 400) {
+      throw new Error(`TEST 3.6 FAILED: Unsupported version was not rejected! Status: ${badVersionRes.status}`);
+    }
+    console.log(`✓ TEST 3.6 PASSED: Unsupported version rejected with HTTP ${badVersionRes.status}.\n`);
+
+    // TEST 3.7: Agent A -> Agent B with Invalid Ciphertext Transport Encoding -> REJECT
+    console.log('TEST 3.7: Agent A -> Agent B with invalid ciphertext encoding (non-Base64)...');
+    const badEncodingRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        ciphertext: '***NOT_VALID_BASE64_BYTES***!',
+        nonce: validEnc.nonce,
+        version: 1,
+        keyEpoch: 1
+      })
+    });
+    const badEncodingJson = await safeJson(badEncodingRes);
+    if (badEncodingRes.status !== 400 || badEncodingJson.error?.code !== 'INVALID_CIPHERTEXT_ENCODING') {
+      throw new Error(`TEST 3.7 FAILED: Invalid ciphertext encoding was not rejected with INVALID_CIPHERTEXT_ENCODING! Status: ${badEncodingRes.status}`);
+    }
+    console.log(`✓ TEST 3.7 PASSED: Invalid ciphertext encoding rejected with HTTP 400 INVALID_CIPHERTEXT_ENCODING.\n`);
+
+    // TEST 3.8: Agent A -> Agent B with Empty Ciphertext -> REJECT
+    console.log('TEST 3.8: Agent A -> Agent B with empty ciphertext...');
+    const emptyCipherRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        ciphertext: '   ',
+        nonce: validEnc.nonce,
+        version: 1,
+        keyEpoch: 1
+      })
+    });
+    const emptyCipherJson = await safeJson(emptyCipherRes);
+    if (emptyCipherRes.status !== 400 || emptyCipherJson.error?.code !== 'EMPTY_CIPHERTEXT') {
+      throw new Error(`TEST 3.8 FAILED: Empty ciphertext was not rejected with EMPTY_CIPHERTEXT! Status: ${emptyCipherRes.status}`);
+    }
+    console.log(`✓ TEST 3.8 PASSED: Empty ciphertext rejected with HTTP 400 EMPTY_CIPHERTEXT.\n`);
+
+    // TEST 3.9: Agent A -> Agent B with Invalid keyEpoch (String) -> REJECT
+    console.log('TEST 3.9: Agent A -> Agent B with string keyEpoch ("1")...');
+    const strEpochRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: 1,
+        keyEpoch: '1'
+      })
+    });
+    const strEpochJson = await safeJson(strEpochRes);
+    if (strEpochRes.status !== 400 || strEpochJson.error?.code !== 'INVALID_KEY_EPOCH') {
+      throw new Error(`TEST 3.9 FAILED: String keyEpoch was not rejected with INVALID_KEY_EPOCH! Status: ${strEpochRes.status}`);
+    }
+    console.log(`✓ TEST 3.9 PASSED: String keyEpoch rejected with HTTP 400 INVALID_KEY_EPOCH.\n`);
+
+    // TEST 3.10: Agent A -> Agent B with Invalid keyEpoch (Decimal 1.5) -> REJECT
+    console.log('TEST 3.10: Agent A -> Agent B with decimal keyEpoch (1.5)...');
+    const decEpochRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: 1,
+        keyEpoch: 1.5
+      })
+    });
+    const decEpochJson = await safeJson(decEpochRes);
+    if (decEpochRes.status !== 400 || decEpochJson.error?.code !== 'INVALID_KEY_EPOCH') {
+      throw new Error(`TEST 3.10 FAILED: Decimal keyEpoch was not rejected with INVALID_KEY_EPOCH! Status: ${decEpochRes.status}`);
+    }
+    console.log(`✓ TEST 3.10 PASSED: Decimal keyEpoch rejected with HTTP 400 INVALID_KEY_EPOCH.\n`);
+
+    // TEST 3.11: Agent A -> Agent B with Invalid keyEpoch (Zero 0) -> REJECT
+    console.log('TEST 3.11: Agent A -> Agent B with zero keyEpoch (0)...');
+    const zeroEpochRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: 1,
+        keyEpoch: 0
+      })
+    });
+    const zeroEpochJson = await safeJson(zeroEpochRes);
+    if (zeroEpochRes.status !== 400 || zeroEpochJson.error?.code !== 'INVALID_KEY_EPOCH') {
+      throw new Error(`TEST 3.11 FAILED: Zero keyEpoch was not rejected with INVALID_KEY_EPOCH! Status: ${zeroEpochRes.status}`);
+    }
+    console.log(`✓ TEST 3.11 PASSED: Zero keyEpoch rejected with HTTP 400 INVALID_KEY_EPOCH.\n`);
+
+    // TEST 3.12: Agent A -> Agent B with Invalid keyEpoch (Negative -1) -> REJECT
+    console.log('TEST 3.12: Agent A -> Agent B with negative keyEpoch (-1)...');
+    const negEpochRes = await fetch(`${BASE_URL}/api/connections/${connectionId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenA}`
+      },
+      body: JSON.stringify({
+        ciphertext: validEnc.ciphertext,
+        nonce: validEnc.nonce,
+        version: 1,
+        keyEpoch: -1
+      })
+    });
+    const negEpochJson = await safeJson(negEpochRes);
+    if (negEpochRes.status !== 400 || negEpochJson.error?.code !== 'INVALID_KEY_EPOCH') {
+      throw new Error(`TEST 3.12 FAILED: Negative keyEpoch was not rejected with INVALID_KEY_EPOCH! Status: ${negEpochRes.status}`);
+    }
+    console.log(`✓ TEST 3.12 PASSED: Negative keyEpoch rejected with HTTP 400 INVALID_KEY_EPOCH.\n`);
+
+    // =============================================================
+    // CATEGORY 4: CRYPTOGRAPHIC FAILURES (FAIL-CLOSED LOCAL DECRYPTION)
+    // =============================================================
+    console.log('--- CATEGORY 4: CRYPTOGRAPHIC FAILURES (FAIL-CLOSED LOCAL DECRYPTION) ---');
+
+    // TEST 4.1: Corrupted Ciphertext -> GCM Tag Authentication Failure
+    console.log('TEST 4.1: Corrupted ciphertext (tampered bits)...');
+    const rawCipherBuf = Buffer.from(validEnc.ciphertext, 'base64');
+    rawCipherBuf[rawCipherBuf.length - 1] ^= 0xFF; // Flip bits in GCM auth tag
+    const corruptedCiphertext = rawCipherBuf.toString('base64');
+
+    let corDecrypted = false;
     try {
       await decryptMessage(
-        { ciphertext: fetchedMsg4.ciphertext, nonce: fetchedMsg4.nonce, version: fetchedMsg4.version, keyEpoch: fetchedMsg4.keyEpoch },
-        fakeKeys.e2eePrivateKey,
+        { ciphertext: corruptedCiphertext, nonce: validEnc.nonce, version: 1, keyEpoch: 1 },
+        keysB.e2eePrivateKey,
         keysA.e2eePublicKey,
         connectionId,
         agentIdA
       );
-      throw new Error('FAIL! Decryption with wrong key should have thrown an error, but returned data!');
+      corDecrypted = true;
     } catch (e: any) {
-      if (e.message.includes('FAIL!')) throw e;
-      console.log(`✓ TEST 5 PASSED: Fail-closed decryption correctly rejected invalid key (${e.message})\n`);
+      console.log(`✓ TEST 4.1 PASSED: Corrupted ciphertext rejected by AES-GCM (${e.name || e.message}).`);
     }
+    if (corDecrypted) throw new Error('TEST 4.1 FAILED: Corrupted ciphertext decrypted without error!');
 
-    console.log('====================================================');
-    console.log('  ALL E2EE TEST MATRIX SCENARIOS SUCCEEDED (5/5)   ');
+    // TEST 4.2: Modified Ciphertext (truncated)
+    console.log('TEST 4.2: Modified ciphertext (truncated length)...');
+    const truncatedCipher = validEnc.ciphertext.substring(0, validEnc.ciphertext.length - 8);
+    let truncDecrypted = false;
+    try {
+      await decryptMessage(
+        { ciphertext: truncatedCipher, nonce: validEnc.nonce, version: 1, keyEpoch: 1 },
+        keysB.e2eePrivateKey,
+        keysA.e2eePublicKey,
+        connectionId,
+        agentIdA
+      );
+      truncDecrypted = true;
+    } catch (e: any) {
+      console.log(`✓ TEST 4.2 PASSED: Truncated ciphertext rejected by AES-GCM.`);
+    }
+    if (truncDecrypted) throw new Error('TEST 4.2 FAILED: Truncated ciphertext decrypted without error!');
+
+    // TEST 4.3: Wrong AAD / Tampered Metadata
+    console.log('TEST 4.3: Wrong AAD (tampered channel binding)...');
+    let wrongAadDecrypted = false;
+    try {
+      await decryptMessage(
+        { ciphertext: validEnc.ciphertext, nonce: validEnc.nonce, version: 1, keyEpoch: 1 },
+        keysB.e2eePrivateKey,
+        keysA.e2eePublicKey,
+        connectionId + '_TAMPERED',
+        agentIdA
+      );
+      wrongAadDecrypted = true;
+    } catch (e: any) {
+      console.log(`✓ TEST 4.3 PASSED: Wrong AAD connection binding rejected by AES-GCM.`);
+    }
+    if (wrongAadDecrypted) throw new Error('TEST 4.3 FAILED: Decryption succeeded with tampered AAD!');
+
+    // TEST 4.4: Wrong Connection ID
+    console.log('TEST 4.4: Wrong Connection ID...');
+    let wrongConnDecrypted = false;
+    try {
+      await decryptMessage(
+        { ciphertext: validEnc.ciphertext, nonce: validEnc.nonce, version: 1, keyEpoch: 1 },
+        keysB.e2eePrivateKey,
+        keysA.e2eePublicKey,
+        'CONN-DIFFERENT-1234',
+        agentIdA
+      );
+      wrongConnDecrypted = true;
+    } catch (e: any) {
+      console.log(`✓ TEST 4.4 PASSED: Wrong Connection ID rejected by AES-GCM.`);
+    }
+    if (wrongConnDecrypted) throw new Error('TEST 4.4 FAILED: Decryption succeeded with wrong Connection ID!');
+
+    // TEST 4.5: Wrong Sender Binding in AAD
+    console.log('TEST 4.5: Wrong Sender Binding...');
+    let wrongSenderDecrypted = false;
+    try {
+      await decryptMessage(
+        { ciphertext: validEnc.ciphertext, nonce: validEnc.nonce, version: 1, keyEpoch: 1 },
+        keysB.e2eePrivateKey,
+        keysA.e2eePublicKey,
+        connectionId,
+        'AMR-WRONG-SENDER-123'
+      );
+      wrongSenderDecrypted = true;
+    } catch (e: any) {
+      console.log(`✓ TEST 4.5 PASSED: Wrong Sender Binding rejected by AES-GCM.`);
+    }
+    if (wrongSenderDecrypted) throw new Error('TEST 4.5 FAILED: Decryption succeeded with wrong sender binding!');
+
+    // TEST 4.6: Wrong Key Epoch
+    console.log('TEST 4.6: Wrong Key Epoch (Epoch 99 instead of 1)...');
+    let wrongEpochDecrypted = false;
+    try {
+      await decryptMessage(
+        { ciphertext: validEnc.ciphertext, nonce: validEnc.nonce, version: 1, keyEpoch: 99 },
+        keysB.e2eePrivateKey,
+        keysA.e2eePublicKey,
+        connectionId,
+        agentIdA
+      );
+      wrongEpochDecrypted = true;
+    } catch (e: any) {
+      console.log(`✓ TEST 4.6 PASSED: Wrong Key Epoch rejected by AES-GCM.`);
+    }
+    if (wrongEpochDecrypted) throw new Error('TEST 4.6 FAILED: Decryption succeeded with wrong key epoch!');
+
+    // TEST 4.7: Wrong Recipient Key
+    console.log('TEST 4.7: Wrong Recipient Key (Agent C attempts to decrypt Agent B message)...');
+    let wrongKeyDecrypted = false;
+    try {
+      await decryptMessage(
+        { ciphertext: validEnc.ciphertext, nonce: validEnc.nonce, version: 1, keyEpoch: 1 },
+        keysC.e2eePrivateKey,
+        keysA.e2eePublicKey,
+        connectionId,
+        agentIdA
+      );
+      wrongKeyDecrypted = true;
+    } catch (e: any) {
+      console.log(`✓ TEST 4.7 PASSED: Wrong recipient private key rejected by AES-GCM.`);
+    }
+    if (wrongKeyDecrypted) throw new Error('TEST 4.7 FAILED: Decryption succeeded with wrong recipient key!');
+
+    // TEST 4.8: Fake / Random Ciphertext
+    console.log('TEST 4.8: Fake / Random Ciphertext...');
+    const fakeCipher = Buffer.from('this is totally fake non-gcm random bytes payload').toString('base64');
+    let fakeDecrypted = false;
+    try {
+      await decryptMessage(
+        { ciphertext: fakeCipher, nonce: validEnc.nonce, version: 1, keyEpoch: 1 },
+        keysB.e2eePrivateKey,
+        keysA.e2eePublicKey,
+        connectionId,
+        agentIdA
+      );
+      fakeDecrypted = true;
+    } catch (e: any) {
+      console.log(`✓ TEST 4.8 PASSED: Fake/random ciphertext rejected by AES-GCM.`);
+    }
+    if (fakeDecrypted) throw new Error('TEST 4.8 FAILED: Fake ciphertext decrypted without error!');
+
+    console.log('\n====================================================');
+    console.log('  ALL E2EE TEST MATRIX SCENARIOS SUCCEEDED!         ');
+    console.log('  - Valid Agent-to-Agent E2EE Messaging: PASSED     ');
+    console.log('  - Human Viewing of Agent Messages:    PASSED     ');
+    console.log('  - Human Private Message Sending Block: PASSED     ');
+    console.log('  - Non-Participant Agent Block:        PASSED     ');
+    console.log('  - Plaintext & Malformed Envelope Block:PASSED     ');
+    console.log('  - Cryptographic Fail-Closed Tests:     PASSED     ');
     console.log('====================================================');
 
   } catch (err: any) {
@@ -391,4 +749,7 @@ async function runE2EETestMatrix() {
   }
 }
 
-runE2EETestMatrix();
+// Auto-run if invoked directly via CLI
+if (process.argv[1] && process.argv[1].includes('e2eeTestMatrix')) {
+  runE2EETestMatrix();
+}

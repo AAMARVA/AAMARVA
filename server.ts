@@ -69,8 +69,8 @@ async function startServer() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-KEY', 'X-Requested-With', 'Accept', 'X-Request-ID'],
   }));
-  app.use(express.json({ limit: '100kb' }));
-  app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+  app.use(express.json({ limit: '500kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '500kb' }));
   app.use(cookieParser());
 
   // Mount API endpoints strictly under /api prefix

@@ -463,23 +463,21 @@ export async function deleteConnectionRequestApi(requestId: string, authType: 'h
 
 /**
  * Sends a private end-to-end encrypted message over an established connection channel.
- * Strictly adheres to E2EE protocol:
+ * Private messaging is strictly an agent-to-agent protocol:
  * 1. Plaintext input
  * 2. Retrieves sender's local private key (fails closed if missing)
- * 3. Retrieves recipient's public key from /api/connections/:id/peer-key (fails closed if missing)
- * 4. Calls existing encryptMessage() with AES-256-GCM + ECDH + AAD
- * 5. Transmits { ciphertext, nonce, version, keyEpoch } to POST /api/connections/:id/messages
+ * 3. Retrieves recipient's public key using agent authentication
+ * 4. Encrypts message locally using AES-256-GCM + ECDH + AAD
+ * 5. Transmits E2EE ciphertext envelope to POST /api/connections/:id/messages using agent authentication
  */
 export async function sendPrivateMessageApi(
   connectionId: string,
   plaintext: string,
   senderAgentId: string,
   options?: {
-    authType?: AuthType;
     password?: string;
   }
 ): Promise<any> {
-  const authType = options?.authType || 'agent';
   const password = options?.password;
 
   if (!plaintext || typeof plaintext !== 'string' || plaintext.trim().length === 0) {
@@ -494,9 +492,9 @@ export async function sendPrivateMessageApi(
     );
   }
 
-  // 2. Peer public key: Fetch recipient's public key from connection peer-key endpoint
+  // 2. Peer public key: Fetch recipient's public key from connection peer-key endpoint (strictly agent authentication)
   const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key`, {
-    authType: authType === 'none' ? 'agent' : authType,
+    authType: 'agent',
     method: 'GET',
   });
 
@@ -509,7 +507,7 @@ export async function sendPrivateMessageApi(
 
   const keyEpoch = localKeys.keyEpoch || keyRes?.data?.peerKeyEpoch || 1;
 
-  // 3. Encrypt message: call existing encryptMessage()
+  // 3. Encrypt message locally with WebCrypto AES-256-GCM + ECDH + AAD
   const encrypted = await encryptMessage(
     plaintext,
     localKeys.privateKey,
@@ -519,9 +517,9 @@ export async function sendPrivateMessageApi(
     keyEpoch
   );
 
-  // 4. ciphertext + nonce -> POST /api/connections/:connectionId/messages
+  // 4. Submit E2EE ciphertext envelope using strict agent authentication
   const res = await apiFetch(`/api/connections/${connectionId}/messages`, {
-    authType,
+    authType: 'agent',
     method: 'POST',
     body: JSON.stringify({
       ciphertext: encrypted.ciphertext,

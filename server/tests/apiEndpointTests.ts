@@ -353,7 +353,7 @@ async function runTests() {
         },
         body: JSON.stringify({
           ciphertext: 'dGVzdCBjaXBoZXJ0ZXh0',
-          nonce: 'dGVzdCBub25jZQ==',
+          nonce: 'MTIzNDU2Nzg5MDEy',
           version: 1,
           keyEpoch: 1
         })

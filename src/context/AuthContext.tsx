@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { WebAuthnEnableModal } from '../components/WebAuthnEnableModal';
 import { WebAuthnVerifyModal } from '../components/WebAuthnVerifyModal';
 import {
@@ -19,27 +19,32 @@ import {
   deriveAgentCryptoIdentity, 
   rotateAgentCryptoIdentity, 
   getLocalKeyPair, 
-  saveLocalKeyPair 
+  saveLocalKeyPair,
+  createEncryptedRecoveryVault,
+  restoreFromEncryptedRecoveryVault,
+  clearTransientJwkKeys,
+  StoredAgentKeyEntry
 } from '../lib/e2ee';
+
+export type E2EEStatus = 'initializing' | 'ready' | 'recovery_required' | 'recovery_in_progress' | 'failed';
 
 interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  e2eeStatus: E2EEStatus;
+  isE2EEReady: boolean;
+  ensureE2EEKeys: (agentId: string, forceRotate?: boolean, credential?: string) => Promise<boolean>;
   userPassword?: string | null;
-  e2eeStatus?: 'E2EE_READY' | 'E2EE_KEY_DESYNC' | 'E2EE_UNINITIALIZED' | 'E2EE_ERROR';
-  localFingerprint?: string | null;
-  serverFingerprint?: string | null;
   updatePassword?: (pwd: string) => void;
   login: (agentId: string, credential: string) => Promise<void>;
   loginAgent: (agentId: string, apiKey: string) => Promise<void>;
-  register: (email: string, password: string, agentName?: string, bio?: string) => Promise<{ agentId: string; apiKey: string }>;
+  register: (email: string, password: string, agentName?: string, bio?: string, customAgentId?: string) => Promise<{ agentId: string; apiKey: string; user?: any }>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
-  rotateE2EEKeys?: () => Promise<void>;
-  ensureE2EEKeys?: (agentId: string, forceRotate?: boolean, credential?: string, authType?: 'human' | 'agent') => Promise<void>;
+  rotateE2EEKeys?: (credential?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -60,10 +65,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   });
   const [userPassword, setUserPassword] = useState<string | null>(null);
-  const [e2eeStatus, setE2eeStatus] = useState<'E2EE_READY' | 'E2EE_KEY_DESYNC' | 'E2EE_UNINITIALIZED' | 'E2EE_ERROR'>('E2EE_UNINITIALIZED');
-  const [localFingerprint, setLocalFingerprint] = useState<string | null>(null);
-  const [serverFingerprint, setServerFingerprint] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [e2eeStatus, setE2EEStatus] = useState<E2EEStatus>('initializing');
+  const inFlightE2EERef = useRef<Map<string, Promise<boolean>>>(new Map());
+
   const [webAuthnPrompt, setWebAuthnPrompt] = useState<{
     pendingToken: string;
     options: any;
@@ -79,236 +84,268 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     reject: (reason?: any) => void;
   } | null>(null);
 
-  
-  const ensureE2EEKeys = async (
-    agentId: string, 
-    forceRotate: boolean = false, 
-    credential?: string,
-    authType: 'human' | 'agent' = 'human'
-  ) => {
-    if (typeof window === 'undefined' || !agentId) return;
-    try {
-      const activeCredential = credential || userPassword || user?.apiKey;
-      
-      // 1. Retrieve or derive local key pair
-      let keys = await getLocalKeyPair(agentId, undefined, activeCredential || undefined);
-      let isCompleteKey = !!(keys && keys.publicKey && keys.privateKey && keys.identityPublicKey && keys.signature);
+  const ensureE2EEKeys = useCallback(async (agentId: string, forceRotate: boolean = false, credential?: string): Promise<boolean> => {
+    if (typeof window === 'undefined' || !agentId) {
+      setE2EEStatus('failed');
+      return false;
+    }
 
-      if (!isCompleteKey && !forceRotate) {
-        console.log('Establishing cryptographic identity for agent:', agentId);
-        const identity = activeCredential 
-          ? await deriveAgentCryptoIdentity(agentId, activeCredential)
-          : await generateAgentCryptoIdentity(agentId);
+    const normalizedAgentId = agentId.trim().toUpperCase();
+    const activeCredential = credential || userPassword;
+    const flightKey = `${normalizedAgentId}:${forceRotate}:${activeCredential ? 'with-cred' : 'no-cred'}`;
 
-        await saveLocalKeyPair(
-          agentId,
-          identity.e2eePublicKey,
-          identity.e2eePrivateKey,
-          identity.fingerprint,
-          identity.identityPublicKey,
-          identity.identityPrivateKey,
-          identity.signature,
-          identity.keyEpoch || 1
-        );
-        keys = {
-          publicKey: identity.e2eePublicKey,
-          privateKey: identity.e2eePrivateKey,
-          fingerprint: identity.fingerprint,
-          identityPublicKey: identity.identityPublicKey,
-          identityPrivateKey: identity.identityPrivateKey,
-          signature: identity.signature,
-          keyEpoch: identity.keyEpoch || 1
-        };
-      } else if (forceRotate) {
-        console.log('Performing authorized key rotation for agent:', agentId);
-        const rotated = await rotateAgentCryptoIdentity(agentId, keys?.keyEpoch);
-        keys = {
-          publicKey: rotated.e2eePublicKey,
-          privateKey: rotated.e2eePrivateKey,
-          fingerprint: rotated.fingerprint,
-          identityPublicKey: rotated.identityPublicKey,
-          identityPrivateKey: rotated.identityPrivateKey,
-          signature: rotated.signature,
-          keyEpoch: rotated.keyEpoch
-        };
-      }
+    const existingPromise = inFlightE2EERef.current.get(flightKey);
+    if (existingPromise) {
+      return existingPromise;
+    }
 
-      if (!keys) {
-        setE2eeStatus('E2EE_ERROR');
-        return;
-      }
-
-      const calculatedLocalFingerprint = keys.fingerprint;
-      setLocalFingerprint(calculatedLocalFingerprint);
-
-      // 2. Fetch current registered server E2EE metadata
-      let serverPubKeyData: any = null;
+    const runInitialization = async (): Promise<boolean> => {
+      setE2EEStatus('initializing');
       try {
-        const res = await apiFetch('/api/agents/me/e2ee', { method: 'GET', authType });
-        serverPubKeyData = res?.data || null;
-      } catch (e) {
-        try {
-          const profileRes = await apiFetch('/api/agents/me', { authType });
-          if (profileRes?.e2eePublicKeyFingerprint) {
-            serverPubKeyData = {
-              fingerprint: profileRes.e2eePublicKeyFingerprint,
-              identityKey: profileRes.e2eeIdentityKey
-            };
+        let keys = await getLocalKeyPair(normalizedAgentId);
+        const isCompleteKey = !!(keys && keys.publicKey && keys.privateKey && keys.identityPublicKey && keys.signature);
+
+        if (!isCompleteKey && !forceRotate) {
+          if (!activeCredential) {
+            // Genuinely missing local key and no credential available in memory to reconstruct or recover identity.
+            // Mark state as recovery_required so UI can prompt for recovery credential without breaking other features.
+            console.warn('E2EE identity missing in local keystore and no credential in memory to recover.');
+            setE2EEStatus('recovery_required');
+            return false;
           }
-        } catch {}
-      }
 
-      const serverFp = serverPubKeyData?.fingerprint || null;
-      setServerFingerprint(serverFp);
+          setE2EEStatus('recovery_in_progress');
 
-      // 3. Strict Invariant Check: derivePublicKey(localPrivateKey) == serverRegisteredPublicKey
-      if (!serverFp) {
-        // First-time registration on server
-        await apiFetch('/api/agents/me/e2ee', {
-          method: 'PUT',
-          authType,
-          body: JSON.stringify({ 
-            publicKey: keys.publicKey,
-            fingerprint: keys.fingerprint,
-            identityKey: keys.identityPublicKey,
-            signature: keys.signature,
-            keyEpoch: keys.keyEpoch || 1,
-            allowRotation: false
-          })
-        });
-        setServerFingerprint(keys.fingerprint);
-        setE2eeStatus('E2EE_READY');
-      } else {
-        // Server already has a key registered! Compare fingerprints.
-        if (calculatedLocalFingerprint === serverFp) {
-          // Key synchronization verified!
-          setE2eeStatus('E2EE_READY');
-        } else {
-          // Local key fingerprint != server key fingerprint
-          if (forceRotate) {
-            // Authorized rotation was explicitly requested
+          // Query the server for an existing recovery vault
+          let recoveryRes: any = null;
+          try {
+            recoveryRes = await apiFetch('/api/agents/me/e2ee/recovery', { authType: 'human' });
+          } catch (recFetchErr) {
+            console.error('E2EE recovery vault fetch failed (network or server error):', recFetchErr);
+            // FAIL-CLOSED (Requirement 3): Network or download failure when querying recovery vault.
+            // We MUST NOT assume "no vault exists" and MUST NOT create replacement keys.
+            setE2EEStatus('recovery_required');
+            return false;
+          }
+
+          if (!recoveryRes || recoveryRes.success === false) {
+            console.error('E2EE recovery query unsuccessful:', recoveryRes);
+            // FAIL-CLOSED: Server returned unsuccessful response. Never generate replacement keys.
+            setE2EEStatus('recovery_required');
+            return false;
+          }
+
+          const rawVault = recoveryRes?.data?.recoveryVault;
+          const hasRecoveryVault = rawVault !== null && rawVault !== undefined;
+
+          if (hasRecoveryVault) {
+            // State B or State C: An encrypted recovery vault exists on the server.
+            // Failure to recover this vault must NEVER fall through to first-time key generation or identity replacement.
+            if (typeof rawVault !== 'object' || !rawVault.ciphertext || !rawVault.nonce) {
+              console.error('E2EE recovery vault exists on server but structure is corrupted or missing ciphertext/nonce.');
+              // FAIL-CLOSED: Malformed or corrupted vault artifact.
+              setE2EEStatus('recovery_required');
+              return false;
+            }
+
+            try {
+              console.log('Restoring existing E2EE identity from encrypted zero-knowledge recovery vault for agent:', normalizedAgentId);
+              const restored = await restoreFromEncryptedRecoveryVault(
+                normalizedAgentId,
+                activeCredential,
+                rawVault
+              );
+
+              if (restored?.activeKey && restored.activeKey.privateKey && restored.activeKey.publicKey) {
+                keys = restored.activeKey;
+                setE2EEStatus('ready');
+                return true;
+              } else {
+                throw new Error('RECOVERY_RESTORE_INCOMPLETE: Vault restoration did not produce valid operational keys.');
+              }
+            } catch (restoreErr: any) {
+              console.error('E2EE recovery vault decryption/restoration failed:', restoreErr?.message || restoreErr);
+              // FAIL-CLOSED (Requirements 1, 2, 3, 4, 9):
+              // Recovery failed (wrong credential, corrupted ciphertext, tamper, decryption error).
+              // DO NOT fall through to key derivation.
+              // DO NOT generate replacement keys.
+              // DO NOT overwrite recovery vault.
+              // DO NOT replace server-side public E2EE identity.
+              setE2EEStatus('recovery_required');
+              return false;
+            }
+          }
+
+          // State A: Server confirms that NO recovery vault exists (first-time setup or legacy account that never had a vault)
+          console.log('Establishing initial cryptographic identity for agent (first-time setup):', normalizedAgentId);
+          const identity = await deriveAgentCryptoIdentity(normalizedAgentId, activeCredential);
+
+          await saveLocalKeyPair(
+            normalizedAgentId,
+            identity.e2eePublicKey,
+            identity.e2eePrivateKey,
+            identity.fingerprint,
+            identity.identityPublicKey,
+            identity.identityPrivateKey,
+            identity.signature,
+            identity.keyEpoch || 1,
+            identity.transientPrivateKeyJwk,
+            identity.transientIdentityPrivateKeyJwk
+          );
+          keys = {
+            publicKey: identity.e2eePublicKey,
+            privateKey: identity.e2eePrivateKey,
+            fingerprint: identity.fingerprint,
+            identityPublicKey: identity.identityPublicKey,
+            identityPrivateKey: identity.identityPrivateKey,
+            signature: identity.signature,
+            keyEpoch: identity.keyEpoch || 1
+          };
+
+          // Publish public key and identity binding to server
+          try {
             await apiFetch('/api/agents/me/e2ee', {
               method: 'PUT',
-              authType,
+              authType: 'human',
               body: JSON.stringify({ 
                 publicKey: keys.publicKey,
                 fingerprint: keys.fingerprint,
                 identityKey: keys.identityPublicKey,
                 signature: keys.signature,
                 keyEpoch: keys.keyEpoch || 1,
-                allowRotation: true
+                allowRotation: false
               })
             });
-            setServerFingerprint(keys.fingerprint);
-            setE2eeStatus('E2EE_READY');
-          } else {
-            // Check if activeCredential derives the server key epoch or current identity
-            let resolvedServerMatch = false;
-            if (activeCredential) {
-              try {
-                const derivedCurrent = await deriveAgentCryptoIdentity(agentId, activeCredential, serverPubKeyData?.keyEpoch || 1);
-                if (derivedCurrent.fingerprint === serverFp) {
-                  // Local IndexedDB was outdated, but activeCredential derives the exact server key!
-                  await saveLocalKeyPair(
-                    agentId,
-                    derivedCurrent.e2eePublicKey,
-                    derivedCurrent.e2eePrivateKey,
-                    derivedCurrent.fingerprint,
-                    derivedCurrent.identityPublicKey,
-                    derivedCurrent.identityPrivateKey,
-                    derivedCurrent.signature,
-                    derivedCurrent.keyEpoch
-                  );
-                  setLocalFingerprint(derivedCurrent.fingerprint);
-                  setE2eeStatus('E2EE_READY');
-                  resolvedServerMatch = true;
-                } else {
-                  // Active credential produces valid current key: sync server & local keystore
-                  await apiFetch('/api/agents/me/e2ee', {
-                    method: 'PUT',
-                    authType,
-                    body: JSON.stringify({ 
-                      publicKey: derivedCurrent.e2eePublicKey,
-                      fingerprint: derivedCurrent.fingerprint,
-                      identityKey: derivedCurrent.identityPublicKey,
-                      signature: derivedCurrent.signature,
-                      keyEpoch: derivedCurrent.keyEpoch || 1,
-                      allowRotation: true
-                    })
-                  });
-                  await saveLocalKeyPair(
-                    agentId,
-                    derivedCurrent.e2eePublicKey,
-                    derivedCurrent.e2eePrivateKey,
-                    derivedCurrent.fingerprint,
-                    derivedCurrent.identityPublicKey,
-                    derivedCurrent.identityPrivateKey,
-                    derivedCurrent.signature,
-                    derivedCurrent.keyEpoch
-                  );
-                  setLocalFingerprint(derivedCurrent.fingerprint);
-                  setServerFingerprint(derivedCurrent.fingerprint);
-                  setE2eeStatus('E2EE_READY');
-                  resolvedServerMatch = true;
-                }
-              } catch (reSyncErr) {
-                console.warn('E2EE Auto-Resync note:', reSyncErr);
-              }
-            }
+          } catch (pubErr: any) {
+            console.warn('E2EE key publication note:', pubErr?.message || pubErr);
+          }
 
-            if (!resolvedServerMatch) {
+          // Create and store encrypted recovery vault on server for future multi-device sync
+          try {
+            const vault = await createEncryptedRecoveryVault(normalizedAgentId, activeCredential);
+            await apiFetch('/api/agents/me/e2ee/recovery', {
+              method: 'PUT',
+              authType: 'human',
+              body: JSON.stringify({ recoveryVault: vault })
+            });
+            // Explicitly clear transient JWKs ONLY after successful recovery-vault upload
+            clearTransientJwkKeys(normalizedAgentId);
+          } catch (vaultErr: any) {
+            console.warn('E2EE recovery vault preservation note:', vaultErr?.message || vaultErr);
+          }
+        } else if (forceRotate) {
+          console.log('Performing authorized key rotation for agent:', normalizedAgentId);
+          const rotated = await rotateAgentCryptoIdentity(normalizedAgentId, keys?.keyEpoch);
+          keys = {
+            publicKey: rotated.e2eePublicKey,
+            privateKey: rotated.e2eePrivateKey,
+            fingerprint: rotated.fingerprint,
+            identityPublicKey: rotated.identityPublicKey,
+            identityPrivateKey: rotated.identityPrivateKey,
+            signature: rotated.signature,
+            keyEpoch: rotated.keyEpoch
+          };
+
+          await apiFetch('/api/agents/me/e2ee', {
+            method: 'PUT',
+            authType: 'human',
+            body: JSON.stringify({ 
+              publicKey: keys.publicKey,
+              fingerprint: keys.fingerprint,
+              identityKey: keys.identityPublicKey,
+              signature: keys.signature,
+              keyEpoch: keys.keyEpoch || 1,
+              allowRotation: true
+            })
+          });
+
+          if (activeCredential) {
+            try {
+              let existingVault: any = undefined;
               try {
-                // Perform authorized key sync to align server fingerprint with active client identity
-                await apiFetch('/api/agents/me/e2ee', {
-                  method: 'PUT',
-                  authType,
-                  body: JSON.stringify({ 
-                    publicKey: keys.publicKey,
-                    fingerprint: keys.fingerprint,
-                    identityKey: keys.identityPublicKey,
-                    signature: keys.signature,
-                    keyEpoch: keys.keyEpoch || 1,
-                    allowRotation: true
-                  })
-                });
-                setServerFingerprint(keys.fingerprint);
-                setE2eeStatus('E2EE_READY');
-                resolvedServerMatch = true;
-              } catch (syncErr) {
-                console.warn(`E2EE_KEY_DESYNC for agent [${agentId}]: Local fingerprint (${calculatedLocalFingerprint}) != Server fingerprint (${serverFp})`, syncErr);
-                setE2eeStatus('E2EE_KEY_DESYNC');
+                const recoveryRes = await apiFetch('/api/agents/me/e2ee/recovery', { authType: 'human' });
+                if (recoveryRes?.data?.recoveryVault?.ciphertext) {
+                  existingVault = recoveryRes.data.recoveryVault;
+                }
+              } catch (fetchErr) {
+                console.warn('E2EE recovery vault fetch during rotation note:', fetchErr);
               }
+
+              const vault = await createEncryptedRecoveryVault(normalizedAgentId, activeCredential, undefined, existingVault);
+              await apiFetch('/api/agents/me/e2ee/recovery', {
+                method: 'PUT',
+                authType: 'human',
+                body: JSON.stringify({ recoveryVault: vault })
+              });
+              // Explicitly clear transient JWKs ONLY after successful recovery-vault upload
+              clearTransientJwkKeys(normalizedAgentId);
+            } catch (vaultErr: any) {
+              console.warn('E2EE recovery vault rotation update note:', vaultErr?.message || vaultErr);
             }
           }
+        } else if (isCompleteKey && activeCredential) {
+          // Opportunistically ensure encrypted recovery vault is backed up if not present
+          try {
+            const recoveryRes = await apiFetch('/api/agents/me/e2ee/recovery', { authType: 'human' });
+            if (!recoveryRes?.data?.recoveryVault?.ciphertext) {
+              const vault = await createEncryptedRecoveryVault(normalizedAgentId, activeCredential);
+              await apiFetch('/api/agents/me/e2ee/recovery', {
+                method: 'PUT',
+                authType: 'human',
+                body: JSON.stringify({ recoveryVault: vault })
+              });
+              // Explicitly clear transient JWKs ONLY after successful recovery-vault upload
+              clearTransientJwkKeys(normalizedAgentId);
+            }
+          } catch (recCheckErr) {
+            // Non-fatal
+          }
         }
-      }
-    } catch (e: any) {
-      console.error('E2EE Key synchronization failure:', e?.message || e);
-      setE2eeStatus('E2EE_KEY_DESYNC');
-    }
-  };
 
-  const rotateE2EEKeys = async () => {
+        if (keys && keys.privateKey && keys.publicKey) {
+          setE2EEStatus('ready');
+          return true;
+        } else {
+          setE2EEStatus('failed');
+          return false;
+        }
+      } catch (e: any) {
+        console.warn('E2EE Key initialization notice:', e?.message || e);
+        setE2EEStatus('failed');
+        return false;
+      } finally {
+        inFlightE2EERef.current.delete(flightKey);
+      }
+    };
+
+    const promise = runInitialization();
+    inFlightE2EERef.current.set(flightKey, promise);
+    return promise;
+  }, [userPassword]);
+
+  const rotateE2EEKeys = async (credential?: string) => {
     if (!user?.agentId) throw new Error('No authenticated agent.');
-    const currentAuthType = getAccessToken() ? 'agent' : 'human';
-    await ensureE2EEKeys(user.agentId, true, undefined, currentAuthType);
+    const activeCredential = credential || userPassword || undefined;
+    await ensureE2EEKeys(user.agentId, true, activeCredential);
     await refreshProfile();
   };
 
   const refreshProfile = async () => {
     try {
-      const currentAuthType = getAccessToken() ? 'agent' : 'human';
-      const profile = await fetchCurrentProfileApi(currentAuthType);
+      const profile = await fetchCurrentProfileApi();
       if (profile) {
         setUser(profile);
-        ensureE2EEKeys(profile.agentId, false, undefined, currentAuthType);
         if (typeof window !== 'undefined') {
           localStorage.setItem('aamarva_user', JSON.stringify(profile));
         }
+        await ensureE2EEKeys(profile.agentId, false, userPassword || undefined);
+      } else {
+        setE2EEStatus('failed');
       }
     } catch (err: any) {
       // If unauthorized, the auth-unauthorized event will handle logout
       console.warn('Profile sync failed:', err?.message || err);
+      setE2EEStatus('failed');
     }
   };
 
@@ -317,6 +354,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Unauthorized token or deleted user detected. Logging out.');
       setUser(null);
       setUserPassword(null);
+      setE2EEStatus('failed');
       if (typeof window !== 'undefined') {
         localStorage.removeItem('aamarva_user');
       }
@@ -336,6 +374,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } else {
           setUser(null);
+          setE2EEStatus('failed');
         }
       }
     };
@@ -392,13 +431,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setUser(userToSave || null);
     if (credential) setUserPassword(credential);
-    if (userToSave) ensureE2EEKeys(userToSave.agentId, false, credential, 'human');
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
       } else {
         localStorage.removeItem('aamarva_user');
       }
+    }
+    if (userToSave) {
+      await ensureE2EEKeys(userToSave.agentId, false, credential);
     }
   };
 
@@ -407,13 +448,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userToSave = result.user || result.data?.user || result;
     setUser(userToSave || null);
     if (apiKey) setUserPassword(apiKey);
-    if (userToSave) ensureE2EEKeys(userToSave.agentId, false, apiKey, 'agent');
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
       } else {
         localStorage.removeItem('aamarva_user');
       }
+    }
+    if (userToSave) {
+      await ensureE2EEKeys(userToSave.agentId, false, apiKey);
     }
   };
 
@@ -433,10 +476,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (userToSave) {
       setUser(userToSave);
-      ensureE2EEKeys(userToSave.agentId, false, password, 'human');
       if (typeof window !== 'undefined') {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
       }
+      await ensureE2EEKeys(userToSave.agentId, false, password);
     } else {
       const returnedAgentId = resData.agentId || resData.user?.agentId || '';
       if (returnedAgentId && password) {
@@ -463,6 +506,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setUser(null);
     setUserPassword(null);
+    setE2EEStatus('failed');
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
     }
@@ -472,13 +516,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteAccountApi();
     setUser(null);
     setUserPassword(null);
+    setE2EEStatus('failed');
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
     }
   };
 
-  const updatePassword = (_pwd: string) => {
-    // Password is not saved in localStorage
+  const updatePassword = (pwd: string) => {
+    if (pwd) setUserPassword(pwd);
   };
 
   const updateProfile = async (updates: Partial<UserProfile>) => {
@@ -500,10 +545,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isAuthenticated: !!user,
         isLoading,
-        userPassword,
         e2eeStatus,
-        localFingerprint,
-        serverFingerprint,
+        isE2EEReady: e2eeStatus === 'ready',
+        ensureE2EEKeys,
+        userPassword,
         updatePassword,
         login,
         loginAgent,
@@ -513,7 +558,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         refreshProfile,
         updateProfile,
         rotateE2EEKeys,
-        ensureE2EEKeys,
       }}
     >
       {children}

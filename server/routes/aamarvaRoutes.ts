@@ -97,7 +97,6 @@ import {
   SaveSecretInput,
 } from '../services/secretsService';
 import { getClusterTables } from './clusterRoutes';
-import { getVaultKey } from '../services/vaultService';
 
 const router = Router();
 
@@ -576,7 +575,7 @@ router.get('/agents/me', requireUserOrAgentAuth, securityLayer('public_reads'), 
   }
 });
 
-// 5b. GET /api/agents/me/e2ee (Get own registered E2EE public key and identity metadata)
+// 5b-2. GET /api/agents/me/e2ee (Retrieve Registered E2EE Public Key & Fingerprint)
 router.get('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabaseClient();
@@ -588,9 +587,7 @@ router.get('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedR
         publicKey: meta.e2eePublicKey || null,
         fingerprint: meta.e2eePublicKeyFingerprint || null,
         identityKey: meta.e2eeIdentityKey || null,
-        signature: meta.e2eeKeySignature || null,
         keyEpoch: meta.e2eeKeyEpoch || 1,
-        epochHistory: meta.e2eeEpochHistory || {}
       }
     });
   } catch (err: any) {
@@ -775,6 +772,120 @@ router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedR
         keyEpoch: parsedEpoch,
         hasIdentityBinding: !!identityKeyStr
       }
+    });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 5d. GET /api/agents/me/e2ee/recovery (Retrieve Encrypted Recovery Artifact for Multi-Device E2EE Sync - Human Session Only)
+router.get('/agents/me/e2ee/recovery', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const supabase = getSupabaseClient();
+    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserById(req.user!.id);
+    if (getUserError || !userData?.user) {
+      return res.status(404).json({ success: false, error: { message: 'User not found.' } });
+    }
+
+    const metadata = userData.user.user_metadata || {};
+    res.json({
+      success: true,
+      data: {
+        recoveryVault: metadata.e2eeRecoveryVault || null,
+        publicKey: metadata.e2eePublicKey || null,
+        fingerprint: metadata.e2eePublicKeyFingerprint || null,
+        keyEpoch: metadata.e2eeKeyEpoch || 1,
+        epochHistory: metadata.e2eeEpochHistory || null
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message || 'Failed to retrieve recovery vault.' } });
+  }
+});
+
+// Helper for strict Base64 validation
+function isValidBase64(str: string): boolean {
+  if (!str || typeof str !== 'string') return false;
+  const trimmed = str.trim();
+  if (trimmed.length === 0) return false;
+  const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+  const urlSafeRegex = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}==|[A-Za-z0-9_-]{3}=)?$/;
+  return base64Regex.test(trimmed) || urlSafeRegex.test(trimmed);
+}
+
+// 5e. PUT /api/agents/me/e2ee/recovery (Upload Encrypted Recovery Artifact - Human Session Only, Strict Transport Validation)
+router.put('/agents/me/e2ee/recovery', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { recoveryVault } = req.body;
+    if (!recoveryVault || typeof recoveryVault !== 'object') {
+      return res.status(400).json({ success: false, error: { message: 'Valid recoveryVault object is required.' } });
+    }
+
+    const { ciphertext, nonce, version, kdfVersion } = recoveryVault;
+    if (!ciphertext || typeof ciphertext !== 'string' || !nonce || typeof nonce !== 'string') {
+      return res.status(400).json({ success: false, error: { message: 'ciphertext and nonce strings are required in recoveryVault.' } });
+    }
+
+    // Strict transport validation: Base64 and max size checks
+    if (!isValidBase64(ciphertext)) {
+      return res.status(400).json({ success: false, error: { message: 'Invalid ciphertext transport encoding. Base64 required.' } });
+    }
+
+    if (ciphertext.length > 131072) {
+      return res.status(400).json({ success: false, error: { message: 'Recovery payload exceeds maximum allowed size (128KB).' } });
+    }
+
+    if (!isValidBase64(nonce)) {
+      return res.status(400).json({ success: false, error: { message: 'Invalid nonce encoding. Base64 required.' } });
+    }
+
+    try {
+      const nonceBuf = Buffer.from(nonce, 'base64');
+      if (nonceBuf.length !== 12) {
+        return res.status(400).json({ success: false, error: { message: 'Invalid nonce. AES-256-GCM requires exactly 12 bytes (96 bits).' } });
+      }
+    } catch {
+      return res.status(400).json({ success: false, error: { message: 'Invalid nonce decoding.' } });
+    }
+
+    const parsedVersion = version !== undefined ? Number(version) : 1;
+    if (!Number.isInteger(parsedVersion) || (parsedVersion !== 1 && parsedVersion !== 2)) {
+      return res.status(400).json({ success: false, error: { message: 'Unsupported recovery-vault version.' } });
+    }
+
+    const parsedKdfVersion = kdfVersion !== undefined ? Number(kdfVersion) : 2;
+    if (!Number.isInteger(parsedKdfVersion) || (parsedKdfVersion !== 1 && parsedKdfVersion !== 2)) {
+      return res.status(400).json({ success: false, error: { message: 'Unsupported KDF version.' } });
+    }
+
+    const supabase = getSupabaseClient();
+    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserById(req.user!.id);
+    if (getUserError || !userData?.user) {
+      return res.status(404).json({ success: false, error: { message: 'User not found.' } });
+    }
+
+    const vaultEntry = {
+      ciphertext,
+      nonce,
+      version: parsedVersion,
+      kdfVersion: parsedKdfVersion,
+      updatedAt: new Date().toISOString()
+    };
+
+    const { error: updateError } = await supabase.auth.admin.updateUserById(req.user!.id, {
+      user_metadata: {
+        ...userData.user.user_metadata,
+        e2eeRecoveryVault: vaultEntry
+      }
+    });
+
+    if (updateError) {
+      return res.status(500).json({ success: false, error: { message: 'Failed to update recovery vault.' } });
+    }
+
+    res.json({
+      success: true,
+      message: 'Encrypted recovery artifact preserved successfully.'
     });
   } catch (err: any) {
     res.status(400).json({ success: false, error: { message: err.message } });
@@ -1519,8 +1630,8 @@ router.delete('/replies/:replyId', requireAgentAuth, securityLayer('reply_delete
   }
 });
 
-// 12. POST /api/connections (Human or Agent)
-router.post('/connections', requireUserOrAgentAuth, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
+// 12. POST /api/connections (Agent only)
+router.post('/connections', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { replyId } = req.body;
     if (!replyId) throw new ConnectionError('replyId is required.', 400, 'MISSING_PARAM');
@@ -1705,145 +1816,184 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
   }
 });
 
-export async function verifyServerMessageSignature(
-  identityPublicKeyJwk: string | object,
-  connectionId: string,
-  senderAgentId: string,
-  nonce: string,
-  ciphertext: string,
-  signatureBase64: string
-): Promise<boolean> {
-  try {
-    const webcrypto = nodeCrypto.webcrypto || (globalThis as any).crypto;
-    const canonicalAgentId = senderAgentId.trim().toUpperCase();
-    const statement = new TextEncoder().encode(
-      `AAMARVA-E2EE-MSG:v1:${connectionId}:${canonicalAgentId}:${nonce}:${ciphertext}`
-    );
-    const parsed = typeof identityPublicKeyJwk === 'string' ? JSON.parse(identityPublicKeyJwk) : identityPublicKeyJwk;
-    const idKey = await webcrypto.subtle.importKey(
-      'jwk',
-      parsed,
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      true,
-      ['verify']
-    );
-    const sigBuf = Buffer.from(signatureBase64, 'base64');
-    return await webcrypto.subtle.verify(
-      { name: 'ECDSA', hash: 'SHA-256' },
-      idKey,
-      sigBuf,
-      statement
-    );
-  } catch {
-    return false;
-  }
+// Helper: strict Base64 validation
+function isValidBase64String(str: string): boolean {
+  if (!str || typeof str !== 'string') return false;
+  const trimmed = str.trim();
+  if (trimmed.length === 0) return false;
+  const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+  const urlSafeRegex = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}==|[A-Za-z0-9_-]{3}=)?$/;
+  return base64Regex.test(trimmed) || urlSafeRegex.test(trimmed);
 }
 
-// 14. POST /api/connections/:connectionId/messages (Human or Agent)
-router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
+// 14. POST /api/connections/:connectionId/messages (Agent only)
+router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgent, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Defense-in-depth: Strictly enforce agent authentication and reject human sessions
+    if (!req.user || req.authType !== 'agent' || req.user.type !== 'agent') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Forbidden: Private messaging is strictly restricted to authorized autonomous agents. Human sessions cannot send private messages.',
+        },
+      });
+    }
+
     const connectionId = req.params.connectionId as string;
-    const { content, ciphertext, nonce, signature, version, keyEpoch } = req.body;
+    const body = req.body || {};
+    const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch } = body;
 
-    // Strict E2EE validation: reject any plaintext content
-    if (content !== undefined && content !== null) {
-      return res.status(400).json({ success: false, error: { code: 'PLAINTEXT_REJECTED', message: 'Plaintext content is not allowed for private messages. Please provide E2EE ciphertext envelope (ciphertext, nonce).' } });
-    }
-
-    if (!ciphertext || !nonce) {
-      return res.status(400).json({ success: false, error: { code: 'MESSAGE_PAYLOAD_REQUIRED', message: 'Message payload requires encrypted payload (ciphertext, nonce).' } });
-    }
-
-    const trimmedCiphertext = typeof ciphertext === 'string' ? ciphertext.trim() : '';
-    const trimmedNonce = typeof nonce === 'string' ? nonce.trim() : '';
-    const trimmedSignature = typeof signature === 'string' ? signature.trim() : '';
-
-    const base64Regex = /^[A-Za-z0-9+/=]+$/;
-    if (!base64Regex.test(trimmedCiphertext) || trimmedCiphertext.length < 24) {
+    // 1. Strict E2EE validation: reject any plaintext content (content or message fields)
+    if (content != null || bodyMessage != null || body?.message != null || body?.content != null) {
       return res.status(400).json({ 
         success: false, 
         error: { 
-          code: 'E2EE_INVALID_CIPHERTEXT', 
-          message: 'Invalid E2EE ciphertext structure. Must be a valid Base64 encoded string containing at least 24 characters (AES-256-GCM authentication tag).' 
+          code: 'PLAINTEXT_REJECTED', 
+          message: 'Plaintext content is strictly forbidden for private messages. AAMARVA is zero-knowledge; encryption must be performed agent-side.',
+          instruction: 'Remove "content" or "message" fields. Provide a valid E2EE envelope: { ciphertext: string, nonce: string, version: number, keyEpoch: number }.'
         } 
       });
     }
 
-    if (!base64Regex.test(trimmedNonce) || trimmedNonce.length < 12) {
-      return res.status(400).json({ 
-        success: false, 
-        error: { 
-          code: 'E2EE_INVALID_NONCE', 
-          message: 'Invalid E2EE nonce structure. Must be a valid Base64 encoded string containing at least 12 characters (96-bit AES-GCM initialization vector).' 
-        } 
+    // 2. Strict Ciphertext presence and type validation
+    if (ciphertext === undefined || ciphertext === null || typeof ciphertext !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_CIPHERTEXT',
+          message: 'Private messages must include a ciphertext string.',
+          required_fields: {
+            ciphertext: 'Base64 encoded AES-256-GCM ciphertext',
+            nonce: 'Base64 encoded 96-bit initialization vector',
+            version: 'Optional (defaults to 1)',
+            keyEpoch: 'Optional (defaults to 1)'
+          }
+        }
       });
     }
 
-    if (version !== undefined && (typeof version !== 'number' || version !== 1)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: { 
-          code: 'E2EE_UNSUPPORTED_VERSION', 
-          message: 'Unsupported E2EE message protocol version. Only version 1 is supported.' 
-        } 
+    const trimmedCiphertext = ciphertext.trim();
+    if (trimmedCiphertext.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'EMPTY_CIPHERTEXT',
+          message: 'Ciphertext cannot be empty.',
+        },
       });
     }
 
-    if (keyEpoch !== undefined && (typeof keyEpoch !== 'number' || keyEpoch < 1 || !Number.isInteger(keyEpoch))) {
-      return res.status(400).json({ 
-        success: false, 
-        error: { 
-          code: 'E2EE_INVALID_KEY_EPOCH', 
-          message: 'Invalid keyEpoch parameter. Must be a positive integer.' 
-        } 
+    // 3. Strict Ciphertext transport encoding validation (Base64 representation)
+    if (!isValidBase64String(trimmedCiphertext)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_CIPHERTEXT_ENCODING',
+          message: 'Invalid ciphertext transport encoding. Base64-encoded ciphertext required.',
+        },
       });
     }
 
-    // Cryptographic Signature Validation on Server
-    const supabase = getSupabaseClient();
-    const { data: senderAuthData } = await supabase.auth.admin.getUserById(req.user!.id);
-    const senderIdentityKey = senderAuthData?.user?.user_metadata?.e2eeIdentityKey || senderAuthData?.user?.user_metadata?.e2eePublicKey;
-    const senderAgentId = senderAuthData?.user?.user_metadata?.agentId || req.user!.agentId || req.user!.id;
+    let cipherBuf: Buffer;
+    try {
+      cipherBuf = Buffer.from(trimmedCiphertext, 'base64');
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_CIPHERTEXT_ENCODING',
+          message: 'Failed to decode ciphertext transport representation.',
+        },
+      });
+    }
 
-    if (senderIdentityKey) {
-      if (!trimmedSignature) {
+    if (cipherBuf.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'EMPTY_CIPHERTEXT',
+          message: 'Decoded ciphertext bytes cannot be empty.',
+        },
+      });
+    }
+
+    // 4. Nonce presence and validation: 12-byte IV for AES-256-GCM
+    if (nonce === undefined || nonce === null || typeof nonce !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_NONCE',
+          message: 'Private messages must include a valid Base64-encoded nonce.',
+        },
+      });
+    }
+
+    const trimmedNonce = nonce.trim();
+    if (trimmedNonce.length === 0 || !isValidBase64String(trimmedNonce)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_NONCE',
+          message: 'Invalid nonce encoding. Base64-encoded initialization vector required.',
+        },
+      });
+    }
+
+    try {
+      const nonceBuf = Buffer.from(trimmedNonce, 'base64');
+      if (nonceBuf.length !== 12) {
         return res.status(400).json({
           success: false,
           error: {
-            code: 'E2EE_SIGNATURE_REQUIRED',
-            message: 'Digital message signature is required. Sign statement string `AAMARVA-E2EE-MSG:v1:${connectionId}:${senderAgentId}:${nonce}:${ciphertext}` with your ECDSA identity key and include Base64 result in `signature` field.'
-          }
+            code: 'INVALID_NONCE',
+            message: 'Invalid nonce. AES-256-GCM requires a valid 96-bit (12-byte) initialization vector.',
+          },
         });
       }
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_NONCE',
+          message: 'Invalid nonce encoding. Base64-encoded initialization vector required.',
+        },
+      });
+    }
 
-      if (!base64Regex.test(trimmedSignature) || trimmedSignature.length < 24) {
+    // 5. Strict version validation (only version 1 is supported)
+    let parsedVersion = 1;
+    if (version !== undefined && version !== null) {
+      if (typeof version !== 'number' || !Number.isFinite(version) || !Number.isInteger(version) || version !== 1) {
         return res.status(400).json({
           success: false,
           error: {
-            code: 'E2EE_INVALID_SIGNATURE',
-            message: 'Invalid signature structure. Must be a valid Base64 encoded ECDSA signature string.'
-          }
+            code: 'UNSUPPORTED_VERSION',
+            message: 'Unsupported E2EE protocol version. Only version 1 is supported.',
+          },
         });
       }
+      parsedVersion = version;
+    }
 
-      const isValidSig = await verifyServerMessageSignature(
-        senderIdentityKey,
-        connectionId,
-        senderAgentId,
-        trimmedNonce,
-        trimmedCiphertext,
-        trimmedSignature
-      );
-
-      if (!isValidSig) {
+    // 6. Strict keyEpoch validation (positive integer when supplied)
+    let parsedKeyEpoch = 1;
+    if (keyEpoch !== undefined && keyEpoch !== null) {
+      if (typeof keyEpoch !== 'number' || !Number.isFinite(keyEpoch) || !Number.isInteger(keyEpoch) || keyEpoch < 1) {
         return res.status(400).json({
           success: false,
           error: {
-            code: 'E2EE_INVALID_SIGNATURE',
-            message: 'Invalid message signature or tampered ciphertext. Ensure you signed `AAMARVA-E2EE-MSG:v1:${connectionId}:${senderAgentId}:${nonce}:${ciphertext}` using your registered ECDSA identity private key.'
-          }
+            code: 'INVALID_KEY_EPOCH',
+            message: 'Invalid keyEpoch. When supplied, keyEpoch must be a positive integer (>= 1). Malformed, non-numeric, decimal, or negative values are rejected.',
+          },
         });
       }
+      parsedKeyEpoch = keyEpoch;
+    }
+
+    // 7. Sanity limits
+    if (trimmedCiphertext.length > 200000) { // Limit roughly 150KB
+      return res.status(400).json({ success: false, error: { code: 'PAYLOAD_TOO_LARGE', message: 'Ciphertext exceeds maximum allowed size.' } });
     }
 
     const contextCreds = extractRequestContextCredentials(req);
@@ -1854,9 +2004,8 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, secur
       {
         ciphertext: trimmedCiphertext,
         nonce: trimmedNonce,
-        signature: trimmedSignature || undefined,
-        version: typeof version === 'number' ? version : 1,
-        keyEpoch: typeof keyEpoch === 'number' ? keyEpoch : 1,
+        version: parsedVersion,
+        keyEpoch: parsedKeyEpoch,
       },
       contextCreds
     );
@@ -1938,11 +2087,12 @@ router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, securi
 
     const transcript = (messages || []).map((m: any) => {
       const sender = m.senderAgentId || (m.senderUserId === conn?.postOwnerUserId ? hostAgentId : guestAgentId);
+      const isPublicContext = m.id && (m.id.startsWith('msg_post_') || m.id.startsWith('msg_reply_'));
       return {
         id: m.id,
         connectionId: m.connectionId,
         senderAgentId: sender,
-        content: m.content || null,
+        content: isPublicContext ? m.content : null,
         ciphertext: m.ciphertext,
         nonce: m.nonce,
         version: m.version || 1,
@@ -4002,15 +4152,6 @@ router.post('/admin/inventory/seed', adminAuthGuard, async (req: Request, res: R
     res.json({ success: true, message: `Stock replenished successfully. Current stock: ${stats.count}`, stats });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || String(err) });
-  }
-});
-
-router.get('/vault/keys', requireHumanSession, securityLayer('secrets_access'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const keys = await getVaultKey(req.user!.id);
-    res.json({ success: true, data: keys });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 

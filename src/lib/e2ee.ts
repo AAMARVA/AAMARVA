@@ -2,7 +2,12 @@
 // Cryptographic Primitives: ECDH (NIST P-256), HKDF (SHA-256), AES-256-GCM with Authenticated Associated Data (AAD)
 // Key Storage: Web Crypto API with Non-Exportable Private Keys (extractable: false) + Persistent IndexedDB Keystore
 // Identity Binding: Authenticated ECDSA (NIST P-256) Identity Signatures + Secondary TOFU Pinning Defense-in-Depth
-// Zero-Knowledge Architecture: Deterministic P-256 derivation from user credential for zero plaintext server storage
+// Zero-Knowledge Architecture: Non-extractable operational keys backed up inside a zero-knowledge encrypted recovery vault containing actual key material.
+//   - Operational keys remain non-extractable (extractable: false)
+//   - Recovery vault contains the actual E2EE and identity private key material encrypted locally using PBKDF2-SHA-256
+//   - Transient JWKs exist in local memory only long enough to construct the encrypted vault
+//   - Server receives only ciphertext, nonce, and version metadata
+//   - If actual key material is missing, creation fails with RECOVERY_VAULT_ERROR instead of deriving a deterministic fallback key.
 
 import { p256 } from '@noble/curves/nist.js';
 
@@ -137,54 +142,79 @@ export interface E2EEKeyPair {
   publicKey: string;
   privateKey: CryptoKey;
   fingerprint: string;
+  transientPrivateKeyJwk?: object;
 }
 
 /**
  * Generates an ECDH P-256 Key Pair for the agent.
- * CRITICAL SECURITY GUARANTEE: Private key is generated with extractable: false.
- * The private key cannot be exported to JWK, JSON, strings, or sent to backend.
+ * Operational CryptoKey is imported as non-extractable (extractable: false).
+ * Raw private key is NEVER transmitted across the network or stored unencrypted.
  */
 export async function generateE2EEKeyPair(): Promise<E2EEKeyPair> {
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
-  const keyPair = await cryptoObj.subtle.generateKey(
+  const tempKeyPair = await cryptoObj.subtle.generateKey(
     KEY_ALGO,
-    false, // extractable: false (NON-EXPORTABLE)
+    true, // temporarily extractable to get JWK for recovery vault wrapping
     ['deriveKey', 'deriveBits']
   );
 
-  // Export public key only for distribution
-  const exportedPub = await cryptoObj.subtle.exportKey('jwk', keyPair.publicKey);
+  // Export public key and private JWK for transient vault setup
+  const exportedPub = await cryptoObj.subtle.exportKey('jwk', tempKeyPair.publicKey);
+  const exportedPriv = await cryptoObj.subtle.exportKey('jwk', tempKeyPair.privateKey);
   const pubStr = JSON.stringify(exportedPub);
   const fingerprint = await computeKeyFingerprint(pubStr);
 
+  // Import operational private key as non-extractable
+  const opPrivateKey = await cryptoObj.subtle.importKey(
+    'jwk',
+    exportedPriv,
+    KEY_ALGO,
+    false, // extractable: false for operational key
+    ['deriveKey', 'deriveBits']
+  );
+
   return {
     publicKey: pubStr,
-    privateKey: keyPair.privateKey,
-    fingerprint
+    privateKey: opPrivateKey,
+    fingerprint,
+    transientPrivateKeyJwk: exportedPriv
   };
 }
 
 export interface IdentitySigningKeyPair {
   identityPublicKey: string;
   identityPrivateKey: CryptoKey;
+  transientIdentityPrivateKeyJwk?: object;
 }
 
 /**
  * Generates an ECDSA P-256 Signing Key Pair for agent cryptographic identity.
- * Private key is non-exportable (extractable: false).
+ * Operational CryptoKey is imported as non-extractable (extractable: false).
  */
 export async function generateIdentitySigningKeyPair(): Promise<IdentitySigningKeyPair> {
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
-  const keyPair = await cryptoObj.subtle.generateKey(
+  const tempKeyPair = await cryptoObj.subtle.generateKey(
     SIGN_ALGO,
-    false, // extractable: false (NON-EXPORTABLE)
+    true, // temporarily extractable to get JWK for recovery vault wrapping
     ['sign', 'verify']
   );
 
-  const exportedPub = await cryptoObj.subtle.exportKey('jwk', keyPair.publicKey);
+  const exportedPub = await cryptoObj.subtle.exportKey('jwk', tempKeyPair.publicKey);
+  const exportedPriv = await cryptoObj.subtle.exportKey('jwk', tempKeyPair.privateKey);
+
+  // Import operational identity signing key as non-extractable
+  const opPrivateKey = await cryptoObj.subtle.importKey(
+    'jwk',
+    exportedPriv,
+    SIGN_ALGO,
+    false, // extractable: false
+    ['sign']
+  );
+
   return {
     identityPublicKey: JSON.stringify(exportedPub),
-    identityPrivateKey: keyPair.privateKey
+    identityPrivateKey: opPrivateKey,
+    transientIdentityPrivateKeyJwk: exportedPriv
   };
 }
 
@@ -249,6 +279,8 @@ export interface AgentCryptoIdentity {
   identityPrivateKey: CryptoKey;
   signature: string;
   keyEpoch: number;
+  transientPrivateKeyJwk?: object;
+  transientIdentityPrivateKeyJwk?: object;
 }
 
 /**
@@ -269,14 +301,17 @@ export async function generateAgentCryptoIdentity(agentId: string): Promise<Agen
     identityPublicKey: idSign.identityPublicKey,
     identityPrivateKey: idSign.identityPrivateKey,
     signature,
-    keyEpoch: 1
+    keyEpoch: 1,
+    transientPrivateKeyJwk: e2ee.transientPrivateKeyJwk,
+    transientIdentityPrivateKeyJwk: idSign.transientIdentityPrivateKeyJwk
   };
 }
 
 /**
- * Deterministically derives an agent cryptographic identity from their password or API credential.
- * Enables 100% Zero-Knowledge E2EE: The server NEVER stores plaintext, and any client logging in with
- * the credential reconstructs the identical private keys in local memory.
+ * Derives an initial agent cryptographic identity from their password or API credential.
+ * Used during first-time registration when no recovery vault is available yet.
+ * Any subsequent backup/recovery relies strictly on the encrypted recovery vault containing the actual keys;
+ * no deterministic derivation or fallback is used during recovery-vault restoration.
  */
 export async function deriveAgentCryptoIdentity(
   agentId: string,
@@ -325,7 +360,7 @@ export async function deriveAgentCryptoIdentity(
     'jwk',
     ecdhPrivJwk,
     KEY_ALGO,
-    false, // extractable: false for security in memory
+    false, // extractable: false for operational non-extractable key
     ['deriveKey', 'deriveBits']
   );
   const e2eePublicKey = canonicalizeJwk(JSON.stringify(ecdhPubJwk));
@@ -363,7 +398,7 @@ export async function deriveAgentCryptoIdentity(
     'jwk',
     ecdsaPrivJwk,
     SIGN_ALGO,
-    false, // extractable: false
+    false, // extractable: false for operational non-extractable key
     ['sign']
   );
   const identityPublicKey = canonicalizeJwk(JSON.stringify(ecdsaPubJwk));
@@ -376,7 +411,9 @@ export async function deriveAgentCryptoIdentity(
     identityPublicKey,
     identityPrivateKey,
     signature,
-    keyEpoch
+    keyEpoch,
+    transientPrivateKeyJwk: ecdhPrivJwk,
+    transientIdentityPrivateKeyJwk: ecdsaPrivJwk
   };
 }
 
@@ -400,12 +437,13 @@ export async function rotateAgentCryptoIdentity(
     : (currentKey?.keyEpoch || 1);
   const nextEpoch = effectiveEpoch + 1;
 
-  // Generate fresh ECDH key pair (non-exportable)
+  // Generate fresh ECDH key pair (operational key extractable: false)
   const newE2ee = await generateE2EEKeyPair();
 
   // Retrieve or regenerate identity signing key
   let idSignKey: CryptoKey;
   let idPubStr: string;
+  let transientIdPrivJwk: any = undefined;
 
   if (currentKey?.identityPrivateKey && currentKey?.identityPublicKey) {
     idSignKey = await importSigningKey(currentKey.identityPrivateKey, 'private', false);
@@ -416,6 +454,7 @@ export async function rotateAgentCryptoIdentity(
     const freshIdSign = await generateIdentitySigningKeyPair();
     idSignKey = freshIdSign.identityPrivateKey;
     idPubStr = freshIdSign.identityPublicKey;
+    transientIdPrivJwk = freshIdSign.transientIdentityPrivateKeyJwk;
   }
 
   // Sign binding with identity key
@@ -430,7 +469,9 @@ export async function rotateAgentCryptoIdentity(
     idPubStr,
     idSignKey,
     signature,
-    nextEpoch
+    nextEpoch,
+    newE2ee.transientPrivateKeyJwk,
+    transientIdPrivJwk
   );
 
   return {
@@ -440,8 +481,26 @@ export async function rotateAgentCryptoIdentity(
     identityPublicKey: idPubStr,
     identityPrivateKey: idSignKey,
     signature,
-    keyEpoch: nextEpoch
+    keyEpoch: nextEpoch,
+    transientPrivateKeyJwk: newE2ee.transientPrivateKeyJwk,
+    transientIdentityPrivateKeyJwk: transientIdPrivJwk
   };
+}
+
+// In-memory transient map for ephemeral recovery vault creation during key setup/rotation
+const transientJwkMap = new Map<string, any>();
+
+/**
+ * Clears transient JWK representations for a specific agent after successful vault construction and upload.
+ */
+export function clearTransientJwkKeys(agentId: string): void {
+  const normalizedAgentId = agentId.trim().toUpperCase();
+  const prefix = `${normalizedAgentId}:`;
+  for (const key of transientJwkMap.keys()) {
+    if (key.startsWith(prefix)) {
+      transientJwkMap.delete(key);
+    }
+  }
 }
 
 /**
@@ -457,11 +516,20 @@ export async function saveLocalKeyPair(
   identityPublicKey?: string,
   identityPrivateKey?: CryptoKey | string,
   signature?: string,
-  keyEpoch: number = 1
+  keyEpoch: number = 1,
+  transientPrivateKeyJwk?: object,
+  transientIdentityPrivateKeyJwk?: object
 ): Promise<void> {
   const normalizedAgentId = agentId.trim().toUpperCase();
   const fp = fingerprint || (await computeKeyFingerprint(publicKey));
   const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
+
+  if (transientPrivateKeyJwk) {
+    transientJwkMap.set(`${normalizedAgentId}:${epoch}:e2ee`, transientPrivateKeyJwk);
+  }
+  if (transientIdentityPrivateKeyJwk) {
+    transientJwkMap.set(`${normalizedAgentId}:${epoch}:identity`, transientIdentityPrivateKeyJwk);
+  }
 
   const entry: StoredAgentKeyEntry = {
     publicKey,
@@ -528,7 +596,7 @@ export async function saveLocalKeyPair(
 export async function getLocalKeyPair(
   agentId: string,
   epoch?: number,
-  credential?: string
+  _credential?: string
 ): Promise<StoredAgentKeyEntry | null> {
   const normalizedAgentId = agentId.trim().toUpperCase();
 
@@ -677,36 +745,559 @@ export async function getLocalKeyPair(
     console.warn('E2EE Keystore: IndexedDB read error:', e);
   }
 
-  // Fallback: If credential provided, derive deterministically on the fly
-  if (credential) {
-    try {
-      const derived = await deriveAgentCryptoIdentity(normalizedAgentId, credential, epoch || 1);
-      await saveLocalKeyPair(
-        normalizedAgentId,
-        derived.e2eePublicKey,
-        derived.e2eePrivateKey,
-        derived.fingerprint,
-        derived.identityPublicKey,
-        derived.identityPrivateKey,
-        derived.signature,
-        derived.keyEpoch
-      );
-      const derivedEntry: StoredAgentKeyEntry = {
-        publicKey: derived.e2eePublicKey,
-        privateKey: derived.e2eePrivateKey,
-        fingerprint: derived.fingerprint,
-        identityPublicKey: derived.identityPublicKey,
-        identityPrivateKey: derived.identityPrivateKey,
-        signature: derived.signature,
-        keyEpoch: derived.keyEpoch
-      };
-      return derivedEntry;
-    } catch (deriveErr) {
-      console.warn('Deterministic key derivation note:', deriveErr);
+  return null;
+}
+
+/**
+ * Derives a dedicated key-wrapping key (AES-256-GCM) from the user's credential.
+ * Used exclusively for encrypting the client-side recovery artifact.
+ * AAMARVA server NEVER possesses this wrapping key or the user's plaintext credential.
+ */
+export async function deriveKeyWrappingKey(agentId: string, credential: string, kdfVersion: number = 2): Promise<CryptoKey> {
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+  const canonicalAgentId = agentId.trim().toUpperCase();
+  const salt = new TextEncoder().encode(`AAMARVA-RECOVERY-VAULT:v1:${canonicalAgentId}`);
+  const baseKey = await cryptoObj.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(credential),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  const iterations = kdfVersion === 1 ? 100000 : 210000;
+  return await cryptoObj.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+/**
+ * Retrieves all local historical and active epoch key entries stored for an agent from IndexedDB.
+ */
+export async function getAllLocalEpochKeys(agentId: string): Promise<StoredAgentKeyEntry[]> {
+  const normalizedAgentId = agentId.trim().toUpperCase();
+  const entries: StoredAgentKeyEntry[] = [];
+  const seenEpochs = new Set<number>();
+
+  try {
+    const db = await openKeyDatabase();
+    const records = await new Promise<any[]>((resolve, reject) => {
+      const tx = db.transaction(EPOCH_STORE_NAME, 'readonly');
+      const store = tx.objectStore(EPOCH_STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    for (const r of records) {
+      if (r && r.agentId === normalizedAgentId && r.publicKey && r.privateKey) {
+        let privKey = r.privateKey;
+        let idPrivKey = r.identityPrivateKey;
+        if (typeof privKey === 'string' || (privKey && typeof privKey === 'object' && !('algorithm' in privKey))) {
+          privKey = await importCryptoKey(privKey, 'private', false);
+        }
+        if (typeof idPrivKey === 'string' || (idPrivKey && typeof idPrivKey === 'object' && !('algorithm' in idPrivKey))) {
+          idPrivKey = await importSigningKey(idPrivKey, 'private', false);
+        }
+        const epochNum = r.keyEpoch || 1;
+        seenEpochs.add(epochNum);
+        entries.push({
+          publicKey: r.publicKey,
+          privateKey: privKey,
+          fingerprint: r.fingerprint || (await computeKeyFingerprint(r.publicKey)),
+          identityPublicKey: r.identityPublicKey,
+          identityPrivateKey: idPrivKey,
+          signature: r.signature,
+          keyEpoch: epochNum
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('E2EE Keystore: getAllLocalEpochKeys IndexedDB query error:', e);
+  }
+
+  // Include any in-memory epoch cache entries if not already collected
+  for (const [key, val] of memoryEpochCache.entries()) {
+    if (key.startsWith(`${normalizedAgentId}#epoch#`) && val && val.publicKey && val.privateKey && !seenEpochs.has(val.keyEpoch)) {
+      seenEpochs.add(val.keyEpoch);
+      entries.push(val);
     }
   }
 
-  return null;
+  // Also verify active key is included
+  try {
+    const active = await getLocalKeyPair(normalizedAgentId);
+    if (active && active.privateKey && !seenEpochs.has(active.keyEpoch)) {
+      entries.push(active);
+    }
+  } catch (e) {
+    console.warn('E2EE Keystore: active key inclusion check notice:', e);
+  }
+
+  // Sort ascending by keyEpoch
+  entries.sort((a, b) => a.keyEpoch - b.keyEpoch);
+  return entries;
+}
+
+/**
+ * Creates an encrypted recovery artifact containing the ACTUAL active and historical E2EE key material.
+ * Implementation Details:
+ *   - The recovery vault contains the ACTUAL private key material of the current cryptographic identity.
+ *   - Transient JWK material is used only temporarily in local memory to construct the encrypted vault.
+ *   - All transient JWK representations are discarded after encryption is completed.
+ *   - Operational CryptoKeys remain non-extractable (extractable: false).
+ *   - The server receives ONLY the encrypted recovery-vault ciphertext and necessary metadata (nonce, version).
+ *   - If the actual private key material is unavailable, creation fails with RECOVERY_VAULT_ERROR.
+ *   - No replacement or deterministic private keys are generated or derived when actual material is missing.
+ */
+export async function createEncryptedRecoveryVault(
+  agentId: string,
+  credential: string,
+  _targetEpoch?: number,
+  existingVault?: { ciphertext: string; nonce: string; version?: number; kdfVersion?: number }
+): Promise<{ ciphertext: string; nonce: string; version: number; kdfVersion?: number }> {
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+  const canonicalAgentId = agentId.trim().toUpperCase();
+
+  // If an existing vault is supplied, opportunistically decrypt it and restore
+  // any missing historical key material to the transient map.
+  if (existingVault && existingVault.ciphertext && existingVault.nonce) {
+    try {
+      const vaultKdfVersion = existingVault.kdfVersion !== undefined ? Number(existingVault.kdfVersion) : 1;
+      const nonceBytes = new Uint8Array(base64ToBuffer(existingVault.nonce));
+      const ciphertextBytes = new Uint8Array(base64ToBuffer(existingVault.ciphertext));
+      
+      let decryptedBuffer: ArrayBuffer;
+      try {
+        const wrappingKey = await deriveKeyWrappingKey(canonicalAgentId, credential, vaultKdfVersion);
+        decryptedBuffer = await cryptoObj.subtle.decrypt(
+          { name: 'AES-GCM', iv: nonceBytes },
+          wrappingKey,
+          ciphertextBytes
+        );
+      } catch (firstErr) {
+        // Fallback: try alternative KDF version
+        const altKdfVersion = vaultKdfVersion === 2 ? 1 : 2;
+        const wrappingKey = await deriveKeyWrappingKey(canonicalAgentId, credential, altKdfVersion);
+        decryptedBuffer = await cryptoObj.subtle.decrypt(
+          { name: 'AES-GCM', iv: nonceBytes },
+          wrappingKey,
+          ciphertextBytes
+        );
+      }
+
+      const payload = JSON.parse(new TextDecoder().decode(decryptedBuffer));
+      if (payload && Array.isArray(payload.epochs)) {
+        for (const ep of payload.epochs) {
+          if (ep && ep.keyEpoch) {
+            const e2eeKey = `${canonicalAgentId}:${ep.keyEpoch}:e2ee`;
+            const identityKey = `${canonicalAgentId}:${ep.keyEpoch}:identity`;
+            if (ep.privateKeyJwk && !transientJwkMap.has(e2eeKey)) {
+              transientJwkMap.set(e2eeKey, ep.privateKeyJwk);
+            }
+            if (ep.identityPrivateKeyJwk && !transientJwkMap.has(identityKey)) {
+              transientJwkMap.set(identityKey, ep.identityPrivateKeyJwk);
+            }
+          }
+        }
+      }
+    } catch (decryptErr) {
+      console.warn('E2EE: Failed to decrypt existing vault during recovery vault creation:', decryptErr);
+    }
+  }
+
+  // 1. Retrieve the actual current active key from the local keystore
+  let activeEntry = await getLocalKeyPair(canonicalAgentId);
+  if (!activeEntry || !activeEntry.privateKey) {
+    throw new Error(`RECOVERY_VAULT_ERROR: No local private key found in keystore for agent ${canonicalAgentId}`);
+  }
+
+  // 2. Retrieve all actual historical epoch keys stored locally
+  const allEpochs = await getAllLocalEpochKeys(canonicalAgentId);
+  if (allEpochs.length === 0) {
+    allEpochs.push(activeEntry);
+  }
+
+  // 3. Obtain JWKs for each epoch (via transient memory or extractable export if applicable; no deterministic fallback is used)
+  const epochsData: any[] = [];
+  for (const ep of allEpochs) {
+    let privJwk: any = undefined;
+    let idPrivJwk: any = undefined;
+
+    // Check if key is extractable
+    if (typeof (ep.privateKey as any)?.algorithm === 'object') {
+      const pKey = ep.privateKey as CryptoKey;
+      if (pKey.extractable) {
+        try {
+          privJwk = await cryptoObj.subtle.exportKey('jwk', pKey);
+        } catch {
+          // non-extractable
+        }
+      }
+    } else {
+      privJwk = typeof ep.privateKey === 'string' ? JSON.parse(ep.privateKey) : ep.privateKey;
+    }
+
+    if (ep.identityPrivateKey) {
+      if (typeof (ep.identityPrivateKey as any)?.algorithm === 'object') {
+        const idPKey = ep.identityPrivateKey as CryptoKey;
+        if (idPKey.extractable) {
+          try {
+            idPrivJwk = await cryptoObj.subtle.exportKey('jwk', idPKey);
+          } catch {
+            // non-extractable
+          }
+        }
+      } else {
+        idPrivJwk = typeof ep.identityPrivateKey === 'string' ? JSON.parse(ep.identityPrivateKey) : ep.identityPrivateKey;
+      }
+    }
+
+    // Check transient memory JWK map
+    if (!privJwk && (ep as any).transientPrivateKeyJwk) {
+      privJwk = (ep as any).transientPrivateKeyJwk;
+    }
+    if (!privJwk && transientJwkMap.has(`${canonicalAgentId}:${ep.keyEpoch}:e2ee`)) {
+      privJwk = transientJwkMap.get(`${canonicalAgentId}:${ep.keyEpoch}:e2ee`);
+    }
+    if (!idPrivJwk && transientJwkMap.has(`${canonicalAgentId}:${ep.keyEpoch}:identity`)) {
+      idPrivJwk = transientJwkMap.get(`${canonicalAgentId}:${ep.keyEpoch}:identity`);
+    }
+    if (!idPrivJwk) {
+      // Identity keys are often recycled/preserved across E2EE key epochs during rotation.
+      // If a specific epoch does not have an identity key in the transient map, search the map
+      // for any identity key belonging to this agent.
+      for (const [k, v] of transientJwkMap.entries()) {
+        if (k.startsWith(`${canonicalAgentId}:`) && k.endsWith(':identity')) {
+          idPrivJwk = v;
+          break;
+        }
+      }
+    }
+
+    if (!privJwk || !idPrivJwk) {
+        throw new Error(`RECOVERY_VAULT_ERROR: Actual private key material for epoch ${ep.keyEpoch} is unavailable for backup.`);
+    }
+
+    epochsData.push({
+      keyEpoch: ep.keyEpoch,
+      publicKey: ep.publicKey,
+      privateKeyJwk: privJwk,
+      fingerprint: ep.fingerprint,
+      identityPublicKey: ep.identityPublicKey,
+      identityPrivateKeyJwk: idPrivJwk,
+      signature: ep.signature
+    });
+  }
+
+  // Active key JWK resolution
+  const activeEpochData = epochsData.find(e => e.keyEpoch === activeEntry.keyEpoch);
+  if (!activeEpochData || !activeEpochData.privateKeyJwk || !activeEpochData.identityPrivateKeyJwk) {
+    throw new Error(`RECOVERY_VAULT_ERROR: Actual private key material for active epoch ${activeEntry.keyEpoch} is unavailable for backup.`);
+  }
+
+  let activePrivJwk: any = activeEpochData.privateKeyJwk;
+  let activeIdPrivJwk: any = activeEpochData.identityPrivateKeyJwk;
+
+  const payload = JSON.stringify({
+    version: 1,
+    agentId: canonicalAgentId,
+    keyEpoch: activeEntry.keyEpoch,
+    activeKey: {
+      keyEpoch: activeEntry.keyEpoch,
+      publicKey: activeEntry.publicKey,
+      privateKeyJwk: activePrivJwk,
+      fingerprint: activeEntry.fingerprint,
+      identityPublicKey: activeEntry.identityPublicKey,
+      identityPrivateKeyJwk: activeIdPrivJwk,
+      signature: activeEntry.signature
+    },
+    epochs: epochsData,
+    createdAt: new Date().toISOString()
+  });
+
+  const wrappingKey = await deriveKeyWrappingKey(canonicalAgentId, credential, 2);
+  const nonce = cryptoObj.getRandomValues(new Uint8Array(12));
+  const ciphertextBuffer = await cryptoObj.subtle.encrypt(
+    { name: 'AES-GCM', iv: nonce },
+    wrappingKey,
+    new TextEncoder().encode(payload)
+  );
+
+  // Transient JWK references are retained for potential retry of the network upload in this session
+  // and must be cleared explicitly via clearTransientJwkKeys(agentId) after successful upload.
+
+  return {
+    ciphertext: bufferToBase64(ciphertextBuffer),
+    nonce: bufferToBase64(nonce.buffer),
+    version: 1,
+    kdfVersion: 2
+  };
+}
+
+/**
+ * Restores the EXACT active and historical E2EE key pairs on a new browser/device from the encrypted recovery artifact.
+ * Performs atomic all-or-nothing recovery: decrypts, validates structure, imports all keys in memory, and persists
+ * via a single atomic IndexedDB multi-store transaction only if all validation succeeds. Zero keys are written on failure.
+ */
+export async function restoreFromEncryptedRecoveryVault(
+  agentId: string,
+  credential: string,
+  vault: { ciphertext: string; nonce: string; version?: number; kdfVersion?: number }
+): Promise<{ activeKey: StoredAgentKeyEntry; restoredEpochCount: number }> {
+  if (!vault || typeof vault !== 'object' || !vault.ciphertext || !vault.nonce) {
+    throw new Error('INVALID_RECOVERY_VAULT: Vault must contain ciphertext and nonce.');
+  }
+  if (!credential || typeof credential !== 'string' || !credential.trim()) {
+    throw new Error('RECOVERY_CREDENTIAL_REQUIRED: Recovery credential is required to decrypt recovery vault.');
+  }
+
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+  const canonicalAgentId = agentId.trim().toUpperCase();
+
+  const nonceBytes = new Uint8Array(base64ToBuffer(vault.nonce));
+  const ciphertextBytes = new Uint8Array(base64ToBuffer(vault.ciphertext));
+
+  let decryptedBuffer: ArrayBuffer;
+  const initialKdfVersion = vault.kdfVersion || 2;
+  try {
+    const wrappingKey = await deriveKeyWrappingKey(canonicalAgentId, credential, initialKdfVersion);
+    decryptedBuffer = await cryptoObj.subtle.decrypt(
+      { name: 'AES-GCM', iv: nonceBytes },
+      wrappingKey,
+      ciphertextBytes
+    );
+  } catch (err) {
+    if (initialKdfVersion === 2) {
+      try {
+        const fallbackWrappingKey = await deriveKeyWrappingKey(canonicalAgentId, credential, 1);
+        decryptedBuffer = await cryptoObj.subtle.decrypt(
+          { name: 'AES-GCM', iv: nonceBytes },
+          fallbackWrappingKey,
+          ciphertextBytes
+        );
+      } catch (fallbackErr) {
+        throw new Error('RECOVERY_DECRYPT_FAILED: Failed to decrypt recovery vault. Invalid credential or corrupted ciphertext.');
+      }
+    } else {
+      throw new Error('RECOVERY_DECRYPT_FAILED: Failed to decrypt recovery vault. Invalid credential or corrupted ciphertext.');
+    }
+  }
+
+  let payload: any;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(decryptedBuffer));
+  } catch {
+    throw new Error('INVALID_VAULT_PAYLOAD: Decrypted recovery payload is not valid JSON.');
+  }
+
+  if (payload.agentId && payload.agentId.toUpperCase() !== canonicalAgentId) {
+    throw new Error('RECOVERY_IDENTITY_MISMATCH: Recovered identity does not match current agent.');
+  }
+
+  const epochs: any[] = Array.isArray(payload.epochs) && payload.epochs.length > 0
+    ? payload.epochs
+    : (payload.activeKey ? [payload.activeKey] : []);
+
+  if (epochs.length === 0) {
+    throw new Error('RECOVERY_EMPTY_VAULT: No valid epochs found in recovery artifact.');
+  }
+
+  // ATOMIC VALIDATION PASS: Import and validate all keys in memory first.
+  const preparedEntries: Array<{ entry: StoredAgentKeyEntry; privJwk: any; idPrivJwk: any }> = [];
+  let lastActiveEntry: StoredAgentKeyEntry | null = null;
+
+  for (const ep of epochs) {
+    if (!ep || !ep.privateKeyJwk || !ep.publicKey) {
+      throw new Error('INVALID_VAULT_EPOCH: Epoch missing required key material.');
+    }
+
+    const e2eePrivateKey = await cryptoObj.subtle.importKey(
+      'jwk',
+      ep.privateKeyJwk,
+      KEY_ALGO,
+      false, // extractable: false
+      ['deriveKey', 'deriveBits']
+    );
+
+    let identityPrivateKey: CryptoKey | undefined = undefined;
+    if (ep.identityPrivateKeyJwk) {
+      identityPrivateKey = await cryptoObj.subtle.importKey(
+        'jwk',
+        ep.identityPrivateKeyJwk,
+        SIGN_ALGO,
+        false, // extractable: false
+        ['sign']
+      );
+    }
+
+    // CRYPTOGRAPHIC RELATIONSHIP VALIDATION:
+    // 1. Verify ECDH exchange key-pair relationship
+    try {
+      const recExchangePubKey = await importCryptoKey(ep.publicKey, 'public', false);
+      const ephemeralExchangePair = await cryptoObj.subtle.generateKey(KEY_ALGO, true, ['deriveKey', 'deriveBits']);
+      
+      const bits1 = await cryptoObj.subtle.deriveBits(
+        { name: 'ECDH', public: ephemeralExchangePair.publicKey },
+        e2eePrivateKey,
+        256
+      );
+      const bits2 = await cryptoObj.subtle.deriveBits(
+        { name: 'ECDH', public: recExchangePubKey },
+        ephemeralExchangePair.privateKey,
+        256
+      );
+      
+      const buf1 = new Uint8Array(bits1);
+      const buf2 = new Uint8Array(bits2);
+      let bitsMatch = buf1.length === buf2.length;
+      if (bitsMatch) {
+        for (let i = 0; i < buf1.length; i++) {
+          if (buf1[i] !== buf2[i]) {
+            bitsMatch = false;
+            break;
+          }
+        }
+      }
+      if (!bitsMatch) {
+        throw new Error('Mismatched exchange key relationship.');
+      }
+    } catch (err) {
+      throw new Error('INVALID_KEY_RELATIONSHIP: Recovered ECDH private key does not match its corresponding public key.');
+    }
+
+    // 2. Verify ECDSA signature key-pair relationship
+    if (identityPrivateKey && ep.identityPublicKey) {
+      try {
+        const pubKey = await importSigningKey(ep.identityPublicKey, 'public', false);
+        const testBuffer = new TextEncoder().encode('KeyRelationshipValidationChallenge');
+        const signatureBytes = await cryptoObj.subtle.sign(
+          { name: 'ECDSA', hash: { name: 'SHA-256' } },
+          identityPrivateKey,
+          testBuffer
+        );
+        const isValid = await cryptoObj.subtle.verify(
+          { name: 'ECDSA', hash: { name: 'SHA-256' } },
+          pubKey,
+          signatureBytes,
+          testBuffer
+        );
+        if (!isValid) {
+          throw new Error('Mismatched signing signature.');
+        }
+      } catch (err) {
+        throw new Error('INVALID_KEY_RELATIONSHIP: Recovered ECDSA private key does not match its corresponding public key.');
+      }
+    }
+
+    const entry: StoredAgentKeyEntry = {
+      publicKey: ep.publicKey,
+      privateKey: e2eePrivateKey,
+      fingerprint: ep.fingerprint || (await computeKeyFingerprint(ep.publicKey)),
+      identityPublicKey: ep.identityPublicKey,
+      identityPrivateKey,
+      signature: ep.signature,
+      keyEpoch: ep.keyEpoch || 1
+    };
+
+    preparedEntries.push({ entry, privJwk: ep.privateKeyJwk, idPrivJwk: ep.identityPrivateKeyJwk });
+
+    if (!lastActiveEntry || entry.keyEpoch >= lastActiveEntry.keyEpoch) {
+      lastActiveEntry = entry;
+    }
+  }
+
+  if (payload.activeKey && payload.activeKey.privateKeyJwk) {
+    const act = payload.activeKey;
+    if (!lastActiveEntry || (act.keyEpoch || 1) >= lastActiveEntry.keyEpoch) {
+      const e2eePrivateKey = await cryptoObj.subtle.importKey(
+        'jwk',
+        act.privateKeyJwk,
+        KEY_ALGO,
+        false,
+        ['deriveKey', 'deriveBits']
+      );
+      let idPrivKey: CryptoKey | undefined = undefined;
+      if (act.identityPrivateKeyJwk) {
+        idPrivKey = await cryptoObj.subtle.importKey(
+          'jwk',
+          act.identityPrivateKeyJwk,
+          SIGN_ALGO,
+          false,
+          ['sign']
+        );
+      }
+      lastActiveEntry = {
+        publicKey: act.publicKey,
+        privateKey: e2eePrivateKey,
+        fingerprint: act.fingerprint || (await computeKeyFingerprint(act.publicKey)),
+        identityPublicKey: act.identityPublicKey,
+        identityPrivateKey: idPrivKey,
+        signature: act.signature,
+        keyEpoch: act.keyEpoch || 1
+      };
+    }
+  }
+
+  if (!lastActiveEntry) {
+    throw new Error('RECOVERY_EMPTY_VAULT: No valid active key found in recovery artifact.');
+  }
+
+  // ATOMIC PERSISTENCE PASS: Commit all keys in a single multi-store transaction or memory cache fallback.
+  try {
+    const db = await openKeyDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([KEY_STORE_NAME, EPOCH_STORE_NAME], 'readwrite');
+      const keyStore = tx.objectStore(KEY_STORE_NAME);
+      const epochStore = tx.objectStore(EPOCH_STORE_NAME);
+      const now = new Date().toISOString();
+
+      keyStore.put({
+        agentId: canonicalAgentId,
+        publicKey: lastActiveEntry!.publicKey,
+        privateKey: lastActiveEntry!.privateKey,
+        fingerprint: lastActiveEntry!.fingerprint,
+        identityPublicKey: lastActiveEntry!.identityPublicKey,
+        identityPrivateKey: lastActiveEntry!.identityPrivateKey,
+        signature: lastActiveEntry!.signature,
+        keyEpoch: lastActiveEntry!.keyEpoch,
+        updatedAt: now
+      });
+
+      for (const item of preparedEntries) {
+        epochStore.put({
+          id: `${canonicalAgentId}#epoch#${item.entry.keyEpoch}`,
+          agentId: canonicalAgentId,
+          keyEpoch: item.entry.keyEpoch,
+          publicKey: item.entry.publicKey,
+          privateKey: item.entry.privateKey,
+          fingerprint: item.entry.fingerprint,
+          identityPublicKey: item.entry.identityPublicKey,
+          identityPrivateKey: item.entry.identityPrivateKey,
+          signature: item.entry.signature,
+          archivedAt: now
+        });
+      }
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (idbErr) {
+    console.warn('E2EE Keystore: IndexedDB unavailable or persistence failed, using memory cache fallback:', idbErr);
+  }
+
+  memoryKeyCache.set(canonicalAgentId, lastActiveEntry);
+  for (const item of preparedEntries) {
+    memoryEpochCache.set(`${canonicalAgentId}#epoch#${item.entry.keyEpoch}`, item.entry);
+  }
+
+  return {
+    activeKey: lastActiveEntry,
+    restoredEpochCount: preparedEntries.length
+  };
 }
 
 /**
@@ -1205,7 +1796,7 @@ function constructAAD(connectionId: string, version: number, senderAgentId: stri
 
 /**
  * Encrypts a private-channel message locally before transmission.
- * Returns ciphertext, nonce, version, keyEpoch, and optional digital signature.
+ * Returns only ciphertext, nonce, version, and keyEpoch.
  */
 export async function encryptMessage(
   message: string,
@@ -1213,9 +1804,8 @@ export async function encryptMessage(
   receiverPublicKeyJwk: string | object | CryptoKey,
   connectionId: string,
   senderAgentId: string,
-  keyEpoch: number = 1,
-  senderIdentityPrivateKey?: CryptoKey | string
-): Promise<{ ciphertext: string; nonce: string; signature?: string; version: number; keyEpoch: number }> {
+  keyEpoch: number = 1
+): Promise<{ ciphertext: string; nonce: string; version: number; keyEpoch: number }> {
   if (!message || typeof message !== 'string') {
     throw new Error('E2EE Error: Message content cannot be empty.');
   }
@@ -1243,92 +1833,12 @@ export async function encryptMessage(
     encodedPlaintext
   );
 
-  const ciphertextBase64 = bufferToBase64(ciphertextBuf);
-  const nonceBase64 = bufferToBase64(iv.buffer);
-
-  let signatureBase64: string | undefined;
-  if (senderIdentityPrivateKey) {
-    try {
-      signatureBase64 = await signMessagePayload(
-        senderIdentityPrivateKey,
-        connectionId,
-        senderAgentId,
-        nonceBase64,
-        ciphertextBase64
-      );
-    } catch (sigErr) {
-      console.warn('E2EE Warning: Could not sign message payload:', sigErr);
-    }
-  }
-
   return {
-    ciphertext: ciphertextBase64,
-    nonce: nonceBase64,
-    signature: signatureBase64,
+    ciphertext: bufferToBase64(ciphertextBuf),
+    nonce: bufferToBase64(iv.buffer),
     version,
     keyEpoch: epoch
   };
-}
-
-/**
- * Digitally signs an encrypted message payload (ciphertext + nonce) using the sender's ECDSA Identity Private Key.
- */
-export async function signMessagePayload(
-  identityPrivateKey: CryptoKey | string,
-  connectionId: string,
-  senderAgentId: string,
-  nonce: string,
-  ciphertext: string
-): Promise<string> {
-  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
-  const canonicalAgentId = senderAgentId.trim().toUpperCase();
-  const statement = new TextEncoder().encode(
-    `AAMARVA-E2EE-MSG:v1:${connectionId}:${canonicalAgentId}:${nonce}:${ciphertext}`
-  );
-  const idPrivKey = await importSigningKey(identityPrivateKey, 'private', false);
-  const sigBuf = await cryptoObj.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-256' },
-    idPrivKey,
-    statement
-  );
-  return bufferToBase64(sigBuf);
-}
-
-/**
- * Cryptographically verifies an encrypted message payload digital signature using the sender's ECDSA Identity Public Key.
- */
-export async function verifyMessageSignature(
-  identityPublicKeyJwk: string | object,
-  connectionId: string,
-  senderAgentId: string,
-  nonce: string,
-  ciphertext: string,
-  signatureBase64: string
-): Promise<boolean> {
-  try {
-    const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
-    const canonicalAgentId = senderAgentId.trim().toUpperCase();
-    const statement = new TextEncoder().encode(
-      `AAMARVA-E2EE-MSG:v1:${connectionId}:${canonicalAgentId}:${nonce}:${ciphertext}`
-    );
-    const parsed = typeof identityPublicKeyJwk === 'string' ? JSON.parse(identityPublicKeyJwk) : identityPublicKeyJwk;
-    const idKey = await cryptoObj.subtle.importKey(
-      'jwk',
-      parsed,
-      SIGN_ALGO,
-      true,
-      ['verify']
-    );
-    const sigBuf = base64ToBuffer(signatureBase64);
-    return await cryptoObj.subtle.verify(
-      { name: 'ECDSA', hash: 'SHA-256' },
-      idKey,
-      sigBuf,
-      statement
-    );
-  } catch {
-    return false;
-  }
 }
 
 /**

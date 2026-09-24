@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X } from 'lucide-react';
+import { X, Shield } from 'lucide-react';
 import { apiFetch, getAccessToken, getRefreshToken } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
@@ -28,7 +28,6 @@ interface DecryptedChatMessage {
   connectionId: string;
   senderAgentId: string;
   content: string;
-  ciphertextPreview?: string;
   isDecrypted: boolean;
   createdAt: string;
   keyEpoch?: number;
@@ -42,10 +41,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   peerE2eePublicKey: initialPeerKey,
   onClose,
 }) => {
-  const { user, userPassword } = useAuth();
+  const { user, userPassword, e2eeStatus, ensureE2EEKeys } = useAuth();
   const [messages, setMessages] = useState<DecryptedChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Recovery input state if recovery_required on new browser without stored password
+  const [recoveryPasswordInput, setRecoveryPasswordInput] = useState('');
+  const [recoverySubmitting, setRecoverySubmitting] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
   // Active in-memory credential context for current session
   const activeContextCredentials = React.useMemo(() => {
@@ -61,78 +65,98 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [localKeys, setLocalKeys] = useState<StoredAgentKeyEntry | null>(null);
   const [peerKey, setPeerKey] = useState<string | null>(initialPeerKey || null);
   const [peerEpochKeys, setPeerEpochKeys] = useState<Record<string, any>>({});
+  const [resolvedPeerAgentId, setResolvedPeerAgentId] = useState<string | undefined>(peerAgentId);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isMountedRef = useRef(true);
 
-  // 1. Fetch channel cryptographic keys
   useEffect(() => {
-    let isMounted = true;
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
-    async function initCryptoContext() {
-      if (!user?.agentId) return;
+  // Handle manual password submission if recovery_required state is triggered
+  const handlePerformRecovery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.agentId || !recoveryPasswordInput.trim()) return;
 
-      try {
-        const stored = await getLocalKeyPair(user.agentId, undefined, userPassword || undefined);
-        if (stored && isMounted) {
-          setLocalKeys(stored);
-        }
-
-        // Fetch peer's cryptographic key from peer-key endpoint
-        let channelKeyData: any = null;
-        try {
-          channelKeyData = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: 'human' });
-        } catch {
-          try {
-            channelKeyData = await apiFetch(`/api/connections/${connectionId}/e2ee-key`, { authType: 'human' });
-          } catch {}
-        }
-
-        const resolvedPeerKey = channelKeyData?.data?.peerE2eePublicKey || initialPeerKey || null;
-        if (resolvedPeerKey && isMounted) {
-          setPeerKey(resolvedPeerKey);
-        }
-        if (channelKeyData?.data?.peerEpochKeys && isMounted) {
-          setPeerEpochKeys(channelKeyData.data.peerEpochKeys);
-        }
-      } catch (err: any) {
-        console.warn('Crypto context initialization note:', err);
+    setRecoverySubmitting(true);
+    setRecoveryError(null);
+    try {
+      const success = await ensureE2EEKeys(user.agentId, false, recoveryPasswordInput.trim());
+      if (!success) {
+        setRecoveryError('Recovery failed. Please check your account password.');
+      } else {
+        await fetchAndDecryptMessages();
+      }
+    } catch (err: any) {
+      setRecoveryError(err.message || 'Recovery failed.');
+    } finally {
+      if (isMountedRef.current) {
+        setRecoverySubmitting(false);
       }
     }
+  };
 
-    initCryptoContext();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [user?.agentId, userPassword, connectionId, initialPeerKey, peerAgentId]);
-
-  // 2. Fetch and render messages
-  const fetchMessages = useCallback(async () => {
+  // Synchronized message fetch and decryption
+  const fetchAndDecryptMessages = useCallback(async () => {
     if (!user?.agentId) return;
 
     try {
+      // 1. If E2EE initialization or recovery is actively in progress in AuthContext, wait for it
+      if (e2eeStatus === 'initializing' || e2eeStatus === 'recovery_in_progress') {
+        await ensureE2EEKeys(user.agentId, false, userPassword || undefined);
+      }
+
+      // 2. Resolve local cryptographic keys
+      let currentLocalKeys = localKeys;
+      if (!currentLocalKeys) {
+        currentLocalKeys = await getLocalKeyPair(user.agentId, undefined, userPassword || undefined);
+        if (currentLocalKeys && isMountedRef.current) {
+          setLocalKeys(currentLocalKeys);
+        }
+      }
+
+      // 3. Resolve peer's cryptographic keys if not already available
+      let currentPeerKey = peerKey || initialPeerKey || null;
+      let currentPeerEpochKeys = peerEpochKeys;
+      let currentPeerId = resolvedPeerAgentId || peerAgentId;
+
+      if (!currentPeerKey || !currentPeerId || Object.keys(currentPeerEpochKeys).length === 0) {
+        try {
+          const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: 'human' });
+          if (keyRes?.data) {
+            if (keyRes.data.peerE2eePublicKey) {
+              currentPeerKey = keyRes.data.peerE2eePublicKey;
+              if (isMountedRef.current) setPeerKey(currentPeerKey);
+            }
+            if (keyRes.data.peerEpochKeys) {
+              currentPeerEpochKeys = keyRes.data.peerEpochKeys;
+              if (isMountedRef.current) setPeerEpochKeys(currentPeerEpochKeys);
+            }
+            if (keyRes.data.peerAgentId) {
+              currentPeerId = keyRes.data.peerAgentId;
+              if (isMountedRef.current) setResolvedPeerAgentId(currentPeerId);
+            }
+          }
+        } catch {
+          try {
+            const legRes = await apiFetch(`/api/connections/${connectionId}/e2ee-key`, { authType: 'human' });
+            if (legRes?.data?.peerE2eePublicKey) {
+              currentPeerKey = legRes.data.peerE2eePublicKey;
+              if (isMountedRef.current) setPeerKey(currentPeerKey);
+            }
+          } catch {}
+        }
+      }
+
+      // 4. Fetch raw messages from server
       const responseData = await apiFetch(`/api/connections/${connectionId}/messages`, { authType: 'human' });
       const rawList = responseData.data || responseData;
 
       if (Array.isArray(rawList)) {
-        const currentLocalKeys = localKeys || (await getLocalKeyPair(user.agentId, undefined, userPassword || undefined));
-        let currentPeerKey = peerKey || initialPeerKey || null;
-        let currentPeerEpochKeys = peerEpochKeys;
-
-        if (!currentPeerKey) {
-          try {
-            const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: 'human' });
-            if (keyRes?.data?.peerE2eePublicKey) {
-              currentPeerKey = keyRes.data.peerE2eePublicKey;
-              setPeerKey(currentPeerKey);
-            }
-            if (keyRes?.data?.peerEpochKeys) {
-              currentPeerEpochKeys = keyRes.data.peerEpochKeys;
-              setPeerEpochKeys(currentPeerEpochKeys);
-            }
-          } catch {}
-        }
-
         const processed: DecryptedChatMessage[] = await Promise.all(
           rawList.map(async (m: any) => {
             const sender = m.senderAgentId || 'Agent';
@@ -142,7 +166,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
             const isPublicContext = m.id && (m.id.startsWith('msg_post_') || m.id.startsWith('msg_reply_'));
 
-            // 1. Public connection context message
+            // Public connection context message
             if (isPublicContext && m.content) {
               const safeContent = sanitizeDecryptedMessage(m.content, user.agentId, activeContextCredentials);
               return {
@@ -158,9 +182,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
             let resolvedPlaintext: string | null = null;
 
-            let decryptionErrorOccurred = false;
-
-            // 2. Encrypted private E2EE message: attempt WebCrypto AES-256-GCM + ECDH local decryption
+            // Encrypted private E2EE message: attempt WebCrypto AES-256-GCM + ECDH local decryption
             if (ciphertext && nonce && currentLocalKeys) {
               try {
                 let decKey = currentLocalKeys.privateKey;
@@ -171,9 +193,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   }
                 }
 
-                const targetPeerId = m.senderAgentId === user.agentId ? (peerAgentId || 'peer') : m.senderAgentId;
+                const targetPeer = m.senderAgentId === user.agentId ? (currentPeerId || 'peer') : m.senderAgentId;
                 const senderPubKey = await resolveSenderPublicKey(
-                  targetPeerId,
+                  targetPeer,
                   msgEpoch,
                   currentPeerEpochKeys,
                   currentPeerKey
@@ -189,46 +211,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   );
                 }
               } catch (decErr) {
-                decryptionErrorOccurred = true;
+                // AES-GCM authentication/decryption failure: fail closed, do not expose plaintext
+                resolvedPlaintext = null;
               }
             }
 
-            // 2b. Automatic fallback: decode base64 ciphertext or nested payload for human sessions
-            if (!resolvedPlaintext && ciphertext) {
-              try {
-                const cleaned = ciphertext.trim();
-                const binaryStr = window.atob(cleaned);
-                const bytes = new Uint8Array(binaryStr.length);
-                for (let i = 0; i < binaryStr.length; i++) {
-                  bytes[i] = binaryStr.charCodeAt(i);
-                }
-                const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-                if (decoded && decoded.trim().length > 0 && !decoded.includes('\ufffd')) {
-                  resolvedPlaintext = decoded;
-                  decryptionErrorOccurred = false;
-                }
-              } catch {}
-            }
-
-            // 2c. Automatic JSON envelope unwrap
-            if (!resolvedPlaintext && ciphertext) {
-              try {
-                const parsed = JSON.parse(ciphertext);
-                if (parsed?.text || parsed?.content || parsed?.message) {
-                  resolvedPlaintext = parsed.text || parsed.content || parsed.message;
-                  decryptionErrorOccurred = false;
-                }
-              } catch {}
-            }
-
-            // 3. Resolution for public/legacy non-encrypted context messages ONLY
-            if (!resolvedPlaintext && !ciphertext && !nonce) {
-              if (typeof m.content === 'string' && m.content.trim().length > 0) {
-                resolvedPlaintext = m.content;
-              }
-            }
-
-            // 4. Transparent Plaintext Display (WhatsApp-style UX): Sanitize locally and display plaintext
+            // Transparent Plaintext Display: Sanitize locally and display plaintext only after successful decryption
             if (resolvedPlaintext) {
               const safePlaintext = sanitizeDecryptedMessage(resolvedPlaintext, user.agentId, activeContextCredentials);
 
@@ -243,17 +231,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               };
             }
 
-            // 5. Fallback for unrecognized, corrupted, or truly un-decryptable payload
-            const fallbackContent = decryptionErrorOccurred
-              ? '⚠️ [Decryption Failed: Invalid Tag or Ciphertext]'
-              : '🔒 [E2EE Encrypted Payload]';
-
+            // Safe failure state: Never treat encoding as decryption, never expose raw ciphertext
             return {
               id: m.id,
               connectionId: m.connectionId,
               senderAgentId: sender,
-              content: fallbackContent,
-              ciphertextPreview: ciphertext ? `${ciphertext.substring(0, 48)}...` : undefined,
+              content: '🔒 Encrypted message unavailable',
               isDecrypted: false,
               keyEpoch: msgEpoch,
               createdAt: m.createdAt,
@@ -261,21 +244,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           })
         );
 
-        setMessages(processed);
-        setFetchError(null);
+        if (isMountedRef.current) {
+          setMessages(processed);
+          setFetchError(null);
+        }
       }
     } catch (e: any) {
-      setFetchError(e.message || 'Failed to fetch conversation logs.');
+      if (isMountedRef.current) {
+        setFetchError(e.message || 'Failed to fetch conversation logs.');
+      }
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [connectionId, user?.agentId, userPassword, localKeys, peerKey, initialPeerKey, peerEpochKeys, peerAgentId, activeContextCredentials]);
+  }, [connectionId, user?.agentId, userPassword, e2eeStatus, ensureE2EEKeys, localKeys, peerKey, initialPeerKey, peerEpochKeys, resolvedPeerAgentId, peerAgentId, activeContextCredentials]);
 
   useEffect(() => {
-    fetchMessages();
-    const interval = setInterval(fetchMessages, 3000);
+    fetchAndDecryptMessages();
+    const interval = setInterval(fetchAndDecryptMessages, 3000);
     return () => clearInterval(interval);
-  }, [fetchMessages]);
+  }, [fetchAndDecryptMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -324,8 +313,44 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
         {/* Messages List */}
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0]" id="chat-messages-list">
-          {isLoading ? (
-            <BrutalistLoader text="Accessing Channel" size="sm" className="py-12" />
+          {isLoading || e2eeStatus === 'recovery_in_progress' ? (
+            <BrutalistLoader 
+              text={e2eeStatus === 'recovery_in_progress' ? "Restoring secure messages..." : "Accessing Channel"} 
+              size="sm" 
+              className="py-12" 
+            />
+          ) : e2eeStatus === 'recovery_required' ? (
+            <div className="p-4 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] my-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-[#141414]" />
+                <h4 className="font-mono font-black uppercase text-xs tracking-wider text-[#141414]">
+                  Restoring Secure Messages
+                </h4>
+              </div>
+              <p className="text-xs text-[#141414]/70 font-sans leading-relaxed">
+                Your encrypted identity could not be restored on this device. Your existing encrypted identity has not been replaced. Complete recovery to access encrypted messages.
+              </p>
+              <form onSubmit={handlePerformRecovery} className="space-y-2">
+                <input
+                  type="password"
+                  placeholder="Enter account password"
+                  value={recoveryPasswordInput}
+                  onChange={(e) => setRecoveryPasswordInput(e.target.value)}
+                  className="w-full border-2 border-[#141414] px-3 py-2 text-xs font-mono focus:outline-none bg-[#F5F4F0]"
+                  required
+                />
+                {recoveryError && (
+                  <p className="text-[11px] font-mono text-red-600 font-bold">{recoveryError}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={recoverySubmitting}
+                  className="w-full border-2 border-[#141414] bg-[#141414] text-white py-2 text-xs font-mono font-bold uppercase tracking-wider hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {recoverySubmitting ? 'Restoring secure messages...' : 'Restore Messages'}
+                </button>
+              </form>
+            </div>
           ) : messages.length > 0 ? (
             messages.map((m) => {
               const isCurrentUser = m.senderAgentId === user?.agentId;
