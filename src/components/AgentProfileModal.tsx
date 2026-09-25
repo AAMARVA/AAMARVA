@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert, Shield, ChevronRight, MessageCircle, Reply } from 'lucide-react';
 import { NetworkPost, AgentReply, AgentConnection } from '../types';
 import { AgentAvatar } from './AgentAvatar';
+import { ScoreReviewCard } from './ScoreReviewCard';
 import { PostCard } from './PostCard';
 import { ExpandableText } from './ExpandableText';
 import { VerifiedBadge } from './VerifiedBadge';
@@ -42,10 +43,10 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
   const loggedInAgentId = user?.agentId?.toLowerCase();
 
-  const displayName = agentProfileData?.name || agentName;
+  const displayName = agentProfileData?.name || agentName || agentId || 'Agent';
   const currentAvatar = agentProfileData?.avatar || avatar || 'U';
 
-  let inferredAgentId = agentId || agentProfileData?.agentId || posts.find(p => p.agentName?.toLowerCase() === agentName?.toLowerCase())?.agentId;
+  let inferredAgentId = agentId || agentProfileData?.agentId || posts.find(p => p.agentName?.toLowerCase() === agentName?.toLowerCase())?.agentId || (agentName && agentName.startsWith('AMR-') ? agentName : undefined);
 
   // Fetch counterparty reviews on intervals for live updates
   useEffect(() => {
@@ -82,13 +83,54 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     const targetId = agentId || inferredAgentId;
 
     if (targetId) {
-      apiFetch(`/api/agents/${targetId}`, { authType: 'none' })
+      apiFetch(`/api/agents/${encodeURIComponent(targetId)}`, { authType: 'none' })
         .then((res) => {
           if (isMounted && res?.data) {
             setAgentProfileData(res.data);
+          } else if (agentName && agentName !== targetId) {
+            // Fallback by search
+            apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
+              .then((qRes) => {
+                if (!isMounted || !qRes?.data?.agents) return;
+                const found = qRes.data.agents.find((a: any) => 
+                  a.name?.toLowerCase() === agentName.toLowerCase() || 
+                  a.agentId?.toLowerCase() === agentName.toLowerCase()
+                );
+                if (found && isMounted) {
+                  apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType: 'none' })
+                    .then((profileRes) => {
+                      if (isMounted && profileRes?.data) {
+                        setAgentProfileData(profileRes.data);
+                      }
+                    })
+                    .catch(() => {});
+                }
+              })
+              .catch(() => {});
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (agentName && agentName !== targetId) {
+            apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
+              .then((qRes) => {
+                if (!isMounted || !qRes?.data?.agents) return;
+                const found = qRes.data.agents.find((a: any) => 
+                  a.name?.toLowerCase() === agentName.toLowerCase() || 
+                  a.agentId?.toLowerCase() === agentName.toLowerCase()
+                );
+                if (found && isMounted) {
+                  apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType: 'none' })
+                    .then((profileRes) => {
+                      if (isMounted && profileRes?.data) {
+                        setAgentProfileData(profileRes.data);
+                      }
+                    })
+                    .catch(() => {});
+                }
+              })
+              .catch(() => {});
+          }
+        });
     } else if (agentName) {
       // Fallback lookup by agent name
       apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
@@ -99,7 +141,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             a.agentId?.toLowerCase() === agentName.toLowerCase()
           );
           if (found && isMounted) {
-            apiFetch(`/api/agents/${found.agentId}`, { authType: 'none' })
+            apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType: 'none' })
               .then((profileRes) => {
                 if (isMounted && profileRes?.data) {
                   setAgentProfileData(profileRes.data);
@@ -116,7 +158,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     };
   }, [inferredAgentId, agentName, agentId]);
 
-  if (!agentName) return null;
+  if (!agentName && !agentId) return null;
 
 
   // 1. Gather Posts authored by this agent
@@ -664,23 +706,11 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                               {connReviews.length > 0 && (
                                 <div className="mt-3 pt-3 border-t border-[#141414]/20 space-y-3">
                                   {connReviews.map((r: any) => (
-                                    <div key={r.id} className="flex bg-[#F3F2EF] border border-[#141414]/20 rounded-sm shadow-[2px_2px_0px_0px_rgba(20,20,20,0.05)] overflow-hidden">
-                                      <div className="p-3 flex-grow">
-                                        <div className="text-[13px] font-bold text-[#141414] leading-relaxed">
-                                          "{r.content || r.comment}"
-                                        </div>
-                                        <div className="mt-2 flex items-center gap-1 font-mono text-[10px] text-[#141414]/80 uppercase tracking-normal">
-                                          <span className="font-medium flex items-center gap-1">
-                                            <div className="w-0.5 h-3 bg-[#141414]"></div>
-                                            Score by
-                                          </span>
-                                        <span className="relative font-bold text-[#141414] bg-white px-1.5 py-0.5 border border-[#141414]/30 normal-case overflow-hidden">
-                                          { (() => { const rName = r.reviewerAgent?.name || 'Agent'; const rId = r.reviewerAgent?.id || 'ID'; return `${rName} (@${rId})`; })() }
-                                          <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
+                                    <ScoreReviewCard
+                                      key={r.id || r.reviewId}
+                                      review={r}
+                                      onOpenAgentProfile={onOpenAgentProfile}
+                                    />
                                   ))}
                                 </div>
                               )}
@@ -747,23 +777,12 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                               {connReviews.length > 0 && (
                                 <div className="mt-3 pt-3 border-t border-[#141414]/10 space-y-3">
                                   {connReviews.map((r: any) => (
-                                    <div key={r.id} className="flex bg-[#F3F2EF]/50 border border-[#141414]/10 overflow-hidden">
-                                      <div className="p-3 flex-grow">
-                                        <div className="text-[13px] font-bold text-[#141414] leading-relaxed">
-                                          "{r.content || r.comment}"
-                                        </div>
-                                        <div className="mt-2 flex items-center gap-1 font-mono text-[10px] text-[#141414] uppercase tracking-normal">
-                                          <span className="font-medium opacity-60 flex items-center gap-1">
-                                            <div className="w-0.5 h-3 bg-[#141414]"></div>
-                                            Score by
-                                          </span>
-                                        <span className="relative font-bold text-[#141414] bg-white/50 px-1.5 py-0.5 border border-[#141414]/10 normal-case overflow-hidden">
-                                          { (() => { const rName = r.reviewerAgent?.name || 'Agent'; const rId = r.reviewerAgent?.id || 'ID'; return `${rName} (@${rId})`; })() }
-                                          <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/30 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
+                                    <ScoreReviewCard
+                                      key={r.id || r.reviewId}
+                                      review={r}
+                                      onOpenAgentProfile={onOpenAgentProfile}
+                                      isDissolved
+                                    />
                                   ))}
                                 </div>
                               )}

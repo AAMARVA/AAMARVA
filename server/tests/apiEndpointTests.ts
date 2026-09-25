@@ -23,9 +23,13 @@ async function runTests() {
   let refreshToken = '';
   let agentId = '';
   
-  // Second agent for connection, request, and group tests
+  // Second agent for connection, reply, and group tests
   let secondAccessToken = '';
   let secondAgentId = '';
+
+  // Third agent for connection request/accept flow (no prior connection)
+  let thirdAccessToken = '';
+  let thirdAgentId = '';
 
   let postId = '';
   let replyId = '';
@@ -41,14 +45,14 @@ async function runTests() {
     console.log(`[${status}] ${endpoint} -> ${details.slice(0, 150)}`);
   };
 
-  // 1. POST /api/auth/register (First Agent)
+  // 1. POST /api/auth/register (First Agent - Alpha)
   try {
     console.log('Testing 1. POST /api/auth/register (First Agent)...');
     const res = await fetchWithTimeout(`${BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: `test_agent_${Date.now()}@example.com`,
+        email: `test_agent_alpha_${Date.now()}@example.com`,
         name: 'Test Agent Alpha',
         password: 'Password123!',
         bio: 'Automated test agent Alpha',
@@ -68,14 +72,14 @@ async function runTests() {
     record('POST /api/auth/register (First Agent)', 'FAIL', err.message);
   }
 
-  // Register Second Agent (needed for active connections and requests)
+  // Register Second Agent (Beta)
   try {
     console.log('Registering Second Agent (Beta)...');
     const res = await fetchWithTimeout(`${BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: `test_agent_2_${Date.now()}@example.com`,
+        email: `test_agent_beta_${Date.now()}@example.com`,
         name: 'Test Agent Beta',
         password: 'Password123!',
         bio: 'Automated test agent Beta',
@@ -92,6 +96,32 @@ async function runTests() {
     }
   } catch (err: any) {
     record('Register Second Agent (Beta)', 'FAIL', err.message);
+  }
+
+  // Register Third Agent (Gamma) for testing independent request flows
+  try {
+    console.log('Registering Third Agent (Gamma)...');
+    const res = await fetchWithTimeout(`${BASE_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: `test_agent_gamma_${Date.now()}@example.com`,
+        name: 'Test Agent Gamma',
+        password: 'Password123!',
+        bio: 'Automated test agent Gamma',
+        whitelisted_networks: ['127.0.0.1/32']
+      })
+    });
+    const json: any = await res.json();
+    if (res.status === 201 && json.success && json.data.tokens?.accessToken) {
+      thirdAccessToken = json.data.tokens.accessToken;
+      thirdAgentId = json.data.agentId || json.data.user?.agentId;
+      record('Register Third Agent (Gamma)', 'PASS', `Registered Gamma (Agent ID: ${thirdAgentId})`);
+    } else {
+      record('Register Third Agent (Gamma)', 'FAIL', JSON.stringify(json));
+    }
+  } catch (err: any) {
+    record('Register Third Agent (Gamma)', 'FAIL', err.message);
   }
 
   // 2. POST /api/auth/login
@@ -183,7 +213,7 @@ async function runTests() {
 
   // 5.1. PUT /api/agents/me/e2ee (Register E2EE key for Alpha)
   try {
-    console.log('Testing 5.1. PUT /api/agents/me/e2ee...');
+    console.log('Testing 5.1. PUT /api/agents/me/e2ee (Alpha)...');
     const res = await fetchWithTimeout(`${BASE_URL}/api/agents/me/e2ee`, {
       method: 'PUT',
       headers: {
@@ -204,15 +234,46 @@ async function runTests() {
     });
     const json: any = await res.json();
     if (res.status === 200 && json.success) {
-      record('PUT /api/agents/me/e2ee', 'PASS', 'Registered E2EE public key successfully');
+      record('PUT /api/agents/me/e2ee (Alpha)', 'PASS', 'Registered Alpha E2EE public key successfully');
     } else {
-      record('PUT /api/agents/me/e2ee', 'FAIL', JSON.stringify(json));
+      record('PUT /api/agents/me/e2ee (Alpha)', 'FAIL', JSON.stringify(json));
     }
   } catch (err: any) {
-    record('PUT /api/agents/me/e2ee', 'FAIL', err.message);
+    record('PUT /api/agents/me/e2ee (Alpha)', 'FAIL', err.message);
   }
 
-  // 5.2. GET /api/agents/me/e2ee (Retrieve E2EE public key)
+  // Register E2EE key for Beta so that encrypted direct messaging from Alpha to Beta succeeds
+  try {
+    console.log('Registering E2EE key for Beta...');
+    const res = await fetchWithTimeout(`${BASE_URL}/api/agents/me/e2ee`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${secondAccessToken}`
+      },
+      body: JSON.stringify({
+        publicKey: {
+          kty: "EC",
+          crv: "P-256",
+          x: "s94JK7G4xFnT4F7Hw162gL6QO1...",
+          y: "y_ea8W6e0q2wKjEw4n..."
+        },
+        fingerprint: "SHA256:8C:B3:15:39:EF:53:91:...",
+        keyEpoch: 1,
+        allowRotation: true
+      })
+    });
+    const json: any = await res.json();
+    if (res.status === 200 && json.success) {
+      record('PUT /api/agents/me/e2ee (Beta)', 'PASS', 'Registered Beta E2EE public key successfully');
+    } else {
+      record('PUT /api/agents/me/e2ee (Beta)', 'FAIL', JSON.stringify(json));
+    }
+  } catch (err: any) {
+    record('PUT /api/agents/me/e2ee (Beta)', 'FAIL', err.message);
+  }
+
+  // 5.2. GET /api/agents/me/e2ee (Retrieve Alpha E2EE public key)
   try {
     console.log('Testing 5.2. GET /api/agents/me/e2ee...');
     const res = await fetchWithTimeout(`${BASE_URL}/api/agents/me/e2ee`, {
@@ -474,7 +535,7 @@ async function runTests() {
     record('GET /api/connections/recent', 'FAIL', err.message);
   }
 
-  // 19. POST /api/connections/:connectionId/messages
+  // 19. POST /api/connections/:connectionId/messages (Alpha sends message to Beta)
   if (connectionId) {
     try {
       console.log('Testing 19. POST /api/connections/:connectionId/messages...');
@@ -525,17 +586,17 @@ async function runTests() {
     record('GET /api/connections/:connectionId/messages', 'SKIP', 'No connectionId available');
   }
 
-  // 21. POST /api/connections/requests (Alpha requests Beta)
-  if (secondAgentId) {
+  // 21. POST /api/connections/requests (Alpha requests Gamma - no prior connection)
+  if (thirdAgentId) {
     try {
-      console.log('Testing 21. POST /api/connections/requests...');
+      console.log('Testing 21. POST /api/connections/requests (Alpha to Gamma)...');
       const res = await fetchWithTimeout(`${BASE_URL}/api/connections/requests`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`
         },
-        body: JSON.stringify({ receiverAgentId: secondAgentId })
+        body: JSON.stringify({ receiverAgentId: thirdAgentId })
       });
       const json: any = await res.json();
       if (res.status === 201 && json.success) {
@@ -548,15 +609,15 @@ async function runTests() {
       record('POST /api/connections/requests', 'FAIL', err.message);
     }
   } else {
-    record('POST /api/connections/requests', 'SKIP', 'No secondAgentId available');
+    record('POST /api/connections/requests', 'SKIP', 'No thirdAgentId available');
   }
 
-  // 22. GET /api/connections/requests (Beta reads pending requests)
-  if (secondAccessToken) {
+  // 22. GET /api/connections/requests (Gamma reads pending requests)
+  if (thirdAccessToken) {
     try {
       console.log('Testing 22. GET /api/connections/requests...');
       const res = await fetchWithTimeout(`${BASE_URL}/api/connections/requests`, {
-        headers: { Authorization: `Bearer ${secondAccessToken}` }
+        headers: { Authorization: `Bearer ${thirdAccessToken}` }
       });
       const json: any = await res.json();
       if (res.status === 200 && json.success) {
@@ -568,16 +629,16 @@ async function runTests() {
       record('GET /api/connections/requests', 'FAIL', err.message);
     }
   } else {
-    record('GET /api/connections/requests', 'SKIP', 'No secondAccessToken available');
+    record('GET /api/connections/requests', 'SKIP', 'No thirdAccessToken available');
   }
 
-  // 23. POST /api/connections/requests/:requestId/accept (Beta accepts request)
-  if (requestId && secondAccessToken) {
+  // 23. POST /api/connections/requests/:requestId/accept (Gamma accepts request)
+  if (requestId && thirdAccessToken) {
     try {
       console.log('Testing 23. POST /api/connections/requests/:requestId/accept...');
       const res = await fetchWithTimeout(`${BASE_URL}/api/connections/requests/${requestId}/accept`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${secondAccessToken}` }
+        headers: { Authorization: `Bearer ${thirdAccessToken}` }
       });
       const json: any = await res.json();
       if (res.status === 200 && json.success) {
@@ -589,7 +650,7 @@ async function runTests() {
       record('POST /api/connections/requests/:requestId/accept', 'FAIL', err.message);
     }
   } else {
-    record('POST /api/connections/requests/:requestId/accept', 'SKIP', 'No requestId or secondAccessToken available');
+    record('POST /api/connections/requests/:requestId/accept', 'SKIP', 'No requestId or thirdAccessToken available');
   }
 
   // 24. POST /api/counter-party-score (Alpha scores Beta on their connection)
@@ -862,8 +923,10 @@ async function runTests() {
           Authorization: `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          ciphertext: 'Pre-encrypted cluster message payload',
-          nonce: 'cluster-nonce-iv-1234'
+          ciphertext: 'UHJlLWVuY3J5cHRlZCBjbHVzdGVyIG1lc3NhZ2UgcGF5bG9hZA==',
+          nonce: 'MTIzNDU2Nzg5MDEy',
+          version: 1,
+          keyEpoch: 1
         })
       });
       const json: any = await res.json();

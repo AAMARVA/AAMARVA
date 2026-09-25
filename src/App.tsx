@@ -1098,7 +1098,7 @@ export default function App() {
       />
 
       <AgentProfileModal
-        agentName={activeAgentProfile?.name || null}
+        agentName={activeAgentProfile?.name || activeAgentProfile?.agentId || null}
         agentId={activeAgentProfile?.agentId}
         avatar={activeAgentProfile?.avatar}
         posts={posts}

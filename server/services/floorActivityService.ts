@@ -3,10 +3,27 @@ import EventEmitter from 'events';
 import crypto from 'crypto';
 import { getSupabaseClient } from '../supabase';
 import { getClusterSymbol } from '../lib/clusterSymbols';
-import { deduplicateFloorActivities } from '../utils/floorDeduplication';
+
+export function getClusterAction(text: string, type: string): string {
+  const t = (text || '').toLowerCase();
+  const rawType = (type || '').toLowerCase();
+  if (rawType === 'cluster_created' || t.includes('created a new cluster')) return 'create';
+  if (t.includes('updated cluster') || t.includes('configuration')) return 'update';
+  if (t.includes('invited')) return 'invite';
+  if (t.includes('revoked an invite') || t.includes('revoked invite')) return 'revoke_invite';
+  if (rawType === 'cluster_joined' || t.includes('joined cluster')) return 'join';
+  if (t.includes('left cluster')) return 'leave';
+  if (t.includes('modified') && t.includes('role')) return 'modify_role';
+  if (t.includes('removed') && t.includes('from cluster')) return 'remove_member';
+  if (t.includes('disbanded cluster') || t.includes('disbanded')) return 'disband';
+  return type || 'cluster';
+}
 
 export interface FloorActivityEvent {
   id: string;
+  activityKey?: string;
+  canonicalKey?: string;
+  entityId?: string;
   agentId: string;
   agentName: string;
   avatar: string;
@@ -22,11 +39,14 @@ export interface FloorActivityEvent {
     ownerAgentId?: string;
   };
   post?: any;
-  canonicalKey?: string;
   createdAt: string;
 }
 
 export interface RecordFloorActivityParams {
+  id?: string;
+  activityKey?: string;
+  canonicalKey?: string;
+  entityId?: string;
   agentId?: string;
   agentName?: string;
   avatar?: string;
@@ -35,6 +55,9 @@ export interface RecordFloorActivityParams {
   type?: string;
   peerName?: string;
   peerAgentId?: string;
+  replyId?: string;
+  connectionId?: string;
+  requestId?: string;
   cluster?: {
     id: string;
     name: string;
@@ -42,7 +65,6 @@ export interface RecordFloorActivityParams {
     ownerAgentId?: string;
   };
   post?: any;
-  canonicalKey?: string;
   createdAt?: string;
 }
 
@@ -73,11 +95,13 @@ class FloorActivityService extends EventEmitter {
         .limit(100);
 
       if (!error && data && data.length > 0) {
-        const loadedEvents: FloorActivityEvent[] = [];
+        const seenKeys = new Set<string>();
         for (const row of data) {
           const details = row.details || {};
           const event: FloorActivityEvent = {
             id: details.id || `fa_${row.id}`,
+            activityKey: details.activityKey,
+            entityId: details.entityId,
             agentId: row.agentId || details.agentId || 'UNKNOWN_AGENT',
             agentName: details.agentName || row.agentId || 'Agent Node',
             avatar: details.avatar || '🤖',
@@ -88,12 +112,61 @@ class FloorActivityService extends EventEmitter {
             peerAgentId: details.peerAgentId,
             cluster: details.cluster,
             post: details.post,
-            canonicalKey: details.canonicalKey,
             createdAt: details.createdAt || row.createdAt
           };
-          loadedEvents.push(event);
+
+          if (!event.activityKey) {
+            let eId = event.entityId;
+            if (!eId) {
+              if (event.type === 'reply') {
+                eId = (event as any).reply?.id ? String((event as any).reply.id) :
+                      ((event as any).replyId ? String((event as any).replyId) :
+                      (event.post?.replyId ? String(event.post.replyId) :
+                      (event.post?.reply?.id ? String(event.post.reply.id) :
+                      (event.entityId ? String(event.entityId) : undefined))));
+              } else if (event.type === 'post') {
+                eId = !event.post?.postId && event.post?.id ? String(event.post.id) : undefined;
+              } else if (event.type === 'connection') {
+                eId = event.post?.connectionId ? String(event.post.connectionId) : (event.post?.id ? String(event.post.id) : undefined);
+              } else if (event.type === 'request') {
+                eId = event.post?.id ? String(event.post.id) : undefined;
+              } else if (event.cluster?.id) {
+                eId = String(event.cluster.id);
+              }
+            }
+
+            if (event.type === 'post' && eId) event.activityKey = `post:${eId}`;
+            else if (event.type === 'reply' && eId) event.activityKey = `reply:${eId}`;
+            else if (event.type === 'connection' && eId) event.activityKey = `conn:${eId}`;
+            else if (event.type === 'request' && eId) event.activityKey = `req:${eId}`;
+            else if (event.type === 'cluster' || event.cluster?.id) {
+              const clusterEventId = (event as any).eventId ||
+                                     (event as any).clusterEventId ||
+                                     (event.entityId && event.entityId !== event.cluster?.id ? event.entityId : undefined) ||
+                                     (event.id && !event.id.startsWith('fa_') ? event.id : undefined);
+
+              if (clusterEventId) {
+                event.activityKey = `cluster-event:${clusterEventId}`;
+              } else if (event.cluster?.id) {
+                const action = getClusterAction(event.text, event.type);
+                const target = event.peerAgentId || event.peerName || '';
+                event.activityKey = `cluster:${event.cluster.id}:${event.agentId}:${action}${target ? `:${target}` : ''}`;
+              }
+            }
+            else if (eId) event.activityKey = `${event.type}:${eId}`;
+            else event.activityKey = `generic:${event.type}:${event.agentId}:${event.peerAgentId || event.peerName || ''}:${event.text.trim().toLowerCase()}`;
+          }
+
+          if (event.activityKey && seenKeys.has(event.activityKey)) {
+            continue;
+          }
+          if (event.activityKey) {
+            seenKeys.add(event.activityKey);
+            event.canonicalKey = event.activityKey.startsWith('conn:') ? 'connection:' + event.activityKey.substring(5) : event.activityKey;
+          }
+
+          this.events.push(event);
         }
-        this.events = deduplicateFloorActivities(loadedEvents);
       }
     } catch (err) {
       console.warn('[FloorActivityService] Could not preload historical events:', err);
@@ -159,26 +232,109 @@ class FloorActivityService extends EventEmitter {
       clusterData.symbol = getClusterSymbol(clusterData.id);
     }
 
+    const type = params.type || 'activity';
+
+    let entityId = params.entityId;
+    if (!entityId) {
+      if (type === 'reply') {
+        entityId = (params as any).reply?.id ? String((params as any).reply.id) :
+                   ((params as any).replyId ? String((params as any).replyId) :
+                   (params.replyId ? String(params.replyId) :
+                   ((params.post as any)?.replyId ? String((params.post as any).replyId) :
+                   ((params.post as any)?.reply?.id ? String((params.post as any).reply.id) :
+                   (params.entityId ? String(params.entityId) : undefined)))));
+      } else if (type === 'connection') {
+        entityId = (params as any).connectionId ||
+                   (params.post as any)?.connectionId ||
+                   (params.post?.id ? String(params.post.id) : undefined);
+      } else if (type === 'request') {
+        entityId = (params as any).requestId ||
+                   (params.post as any)?.requestId ||
+                   (params.post?.id ? String(params.post.id) : undefined);
+      } else if (type === 'post') {
+        entityId = !params.post?.postId && params.post?.id ? String(params.post.id) : undefined;
+      } else if (params.post?.id) {
+        entityId = String(params.post.id);
+      } else if (params.cluster?.id) {
+        entityId = String(params.cluster.id);
+      }
+    }
+
+    let activityKey = params.activityKey || params.canonicalKey;
+    if (activityKey?.startsWith('connection:')) {
+      activityKey = 'conn:' + activityKey.substring(11);
+    }
+
+    if (!activityKey) {
+      if (type === 'post' && entityId) {
+        activityKey = `post:${entityId}`;
+      } else if (type === 'reply' && entityId) {
+        activityKey = `reply:${entityId}`;
+      } else if (type === 'connection' && entityId) {
+        activityKey = `conn:${entityId}`;
+      } else if (type === 'request' && entityId) {
+        activityKey = `req:${entityId}`;
+      } else if (type === 'cluster' || clusterData?.id) {
+        const clusterEventId = (params as any).eventId ||
+                               (params as any).clusterEventId ||
+                               (params.entityId && params.entityId !== clusterData?.id ? params.entityId : undefined) ||
+                               (params.id && !params.id.startsWith('fa_') ? params.id : undefined);
+
+        if (clusterEventId) {
+          activityKey = `cluster-event:${clusterEventId}`;
+        } else if (clusterData?.id) {
+          const action = getClusterAction(params.text, type);
+          const target = params.peerAgentId || peerName || '';
+          activityKey = `cluster:${clusterData.id}:${cleanAgentId}:${action}${target ? `:${target}` : ''}`;
+        }
+      } else if (entityId) {
+        activityKey = `${type}:${entityId}`;
+      } else {
+        activityKey = `generic:${type}:${cleanAgentId}:${params.peerAgentId || peerName || ''}:${params.text.trim().toLowerCase()}`;
+      }
+    }
+
+    const canonicalKey = activityKey.startsWith('conn:') ? 'connection:' + activityKey.substring(5) : activityKey;
+
     const event: FloorActivityEvent = {
-      id: `fa_${crypto.randomUUID()}`,
+      id: params.id || `fa_${crypto.randomUUID()}`,
+      activityKey,
+      canonicalKey,
+      entityId,
       agentId: cleanAgentId,
       agentName: resolvedName,
       avatar: resolvedAvatar,
       emailVerified: Boolean(resolvedVerified),
       text: params.text,
-      type: params.type || 'activity',
+      type,
       peerName,
       peerAgentId: params.peerAgentId,
       cluster: clusterData,
       post: params.post,
-      canonicalKey: params.canonicalKey,
       createdAt: params.createdAt || new Date().toISOString()
     };
 
-    // Keep newest at front
-    this.events.unshift(event);
-    if (this.events.length > this.MAX_EVENTS) {
-      this.events = this.events.slice(0, this.MAX_EVENTS);
+    // Deduplicate in-memory events array
+    const existingIndex = this.events.findIndex(e => e.activityKey === event.activityKey);
+    let isDuplicate = false;
+    if (existingIndex !== -1) {
+      isDuplicate = true;
+      const existing = this.events[existingIndex];
+      this.events[existingIndex] = {
+        ...event,
+        ...existing,
+        post: existing.post || event.post,
+        cluster: existing.cluster || event.cluster,
+        peerName: existing.peerName || event.peerName,
+        peerAgentId: existing.peerAgentId || event.peerAgentId,
+        avatar: existing.avatar || event.avatar,
+        emailVerified: existing.emailVerified || event.emailVerified
+      };
+    } else {
+      this.events.unshift(event);
+      if (this.events.length > this.MAX_EVENTS) {
+        this.events = this.events.slice(0, this.MAX_EVENTS);
+      }
     }
 
     // Emit event locally
@@ -187,43 +343,49 @@ class FloorActivityService extends EventEmitter {
     // Broadcast via SSE to all active floor stream listeners
     this.broadcastToStream(event);
 
-    // Persist to account_audit_logs asynchronously
-    try {
-      const supabase = getSupabaseClient();
-      supabase.from('account_audit_logs').insert({
-        agentId: cleanAgentId,
-        eventType: 'FLOOR_ACTIVITY',
-        actionSource: 'SYSTEM',
-        details: {
-          id: event.id,
-          agentId: event.agentId,
-          agentName: event.agentName,
-          avatar: event.avatar,
-          emailVerified: event.emailVerified,
-          text: event.text,
-          type: event.type,
-          peerName: event.peerName,
-          peerAgentId: event.peerAgentId,
-          cluster: event.cluster,
-          post: event.post,
-          canonicalKey: event.canonicalKey,
+    // Persist to account_audit_logs asynchronously ONLY if it is not a duplicate.
+    // CONCURRENCY LIMITATION NOTE: Sequential and single-instance duplicate calls are prevented
+    // by the in-memory activityKey check. The account_audit_logs table uses a BIGSERIAL primary key
+    // without a unique index on details->>'activityKey', so database-level atomic uniqueness is not supported.
+    if (!isDuplicate) {
+      try {
+        const supabase = getSupabaseClient();
+        supabase.from('account_audit_logs').insert({
+          agentId: cleanAgentId,
+          eventType: 'FLOOR_ACTIVITY',
+          actionSource: 'SYSTEM',
+          details: {
+            id: event.id,
+            activityKey: event.activityKey,
+            canonicalKey: event.canonicalKey,
+            entityId: event.entityId,
+            agentId: event.agentId,
+            agentName: event.agentName,
+            avatar: event.avatar,
+            emailVerified: event.emailVerified,
+            text: event.text,
+            type: event.type,
+            peerName: event.peerName,
+            peerAgentId: event.peerAgentId,
+            cluster: event.cluster,
+            post: event.post,
+            createdAt: event.createdAt
+          },
           createdAt: event.createdAt
-        },
-        createdAt: event.createdAt
-      }).then(({ error }) => {
-        if (error) {
-          console.warn('[FloorActivityService] Failed to persist event:', error.message);
-        }
-      });
-    } catch (err) {
-      console.warn('[FloorActivityService] DB persist error:', err);
+        }).then(({ error }) => {
+          if (error) {
+            console.warn('[FloorActivityService] Failed to persist event:', error.message);
+          }
+        });
+      } catch (err) {
+        console.warn('[FloorActivityService] DB persist error:', err);
+      }
     }
 
     return event;
   }
 
   public getRecentFloorActivity(limit = 100): FloorActivityEvent[] {
-    this.events = deduplicateFloorActivities(this.events);
     return this.events.slice(0, limit);
   }
 

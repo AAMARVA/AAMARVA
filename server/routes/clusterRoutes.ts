@@ -54,6 +54,16 @@ export function resetClusterTablesCache() {
   cachedTables = null;
 }
 
+// Helper: strict Base64 validation
+function isValidBase64String(str: string): boolean {
+  if (!str || typeof str !== 'string') return false;
+  const trimmed = str.trim();
+  if (trimmed.length === 0) return false;
+  const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+  const urlSafeRegex = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}==|[A-Za-z0-9_-]{3}=)?$/;
+  return base64Regex.test(trimmed) || urlSafeRegex.test(trimmed);
+}
+
 // Helper to check if a user is a member of a cluster
 async function isClusterMember(supabase: any, clusterId: string, userId: string): Promise<boolean> {
   const tables = await getClusterTables(supabase);
@@ -353,8 +363,8 @@ router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedReques
       agentName: req.user!.name,
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
-      text: `created a new Cluster "${name.trim()}"`,
-      type: 'CLUSTER_CREATED',
+      text: `created a new Cluster ${clusterSymbol} "${name.trim()}"`,
+      type: 'cluster',
       cluster: { 
         id: clusterId,
         name: name.trim(),
@@ -628,7 +638,7 @@ router.patch('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req:
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
       text: `updated Cluster "${effectiveClusterName}" configuration`,
-      type: 'CLUSTER_UPDATED',
+      type: 'cluster',
       cluster: {
         id: clusterId,
         name: effectiveClusterName,
@@ -722,7 +732,7 @@ router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
       text: `disbanded Cluster "${clusterName}"`,
-      type: 'CLUSTER_DISBANDED',
+      type: 'cluster',
       cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
     }).catch(console.warn);
 
@@ -847,8 +857,8 @@ router.post('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: 
       agentName: req.user!.name,
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
-      text: `invited ${inviteeName} to Cluster "${clusterName}"`,
-      type: 'CLUSTER_INVITE_SENT',
+      text: `invited @${inviteeName} to Cluster "${clusterName}"`,
+      type: 'cluster',
       peerName: inviteeName,
       peerAgentId: invitee.agentId,
       cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
@@ -954,7 +964,7 @@ router.delete('/clusters/:clusterId/invites/:inviteId', requireUserOrAgentAuth, 
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
       text: `revoked an invite for Cluster "${clusterName}"`,
-      type: 'CLUSTER_INVITE_REVOKED',
+      type: 'cluster',
       cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
     }).catch(console.warn);
 
@@ -1066,8 +1076,8 @@ router.post('/clusters/:clusterId/join', requireUserOrAgentAuth, async (req: Aut
       agentName: req.user!.name,
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
-      text: `joined Cluster "${clusterName}"`,
-      type: 'CLUSTER_JOINED',
+      text: `joined Cluster ${cSymbol} "${clusterName}"`,
+      type: 'cluster',
       cluster: { name: clusterName, id: clusterId, symbol: cSymbol }
     }).catch(console.warn);
 
@@ -1156,8 +1166,8 @@ router.patch('/clusters/:clusterId/members/:memberAgentId/role', requireUserOrAg
       agentName: req.user!.name,
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
-      text: `modified ${targetMemberName}'s role in Cluster "${clusterName}"`,
-      type: 'CLUSTER_ROLE_UPDATED',
+      text: `modified @${targetMemberName}'s role in Cluster "${clusterName}" to ${role}`,
+      type: 'cluster',
       peerName: targetMemberName,
       peerAgentId: memberAgentId,
       cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
@@ -1174,46 +1184,451 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_message_create');
     const clusterId = req.params.clusterId as string;
-    const { ciphertext, nonce, iv, content } = req.body;
+    const body = req.body || {};
+    const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq } = body;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
     const userId = req.user!.id;
     const agentId = req.user!.agentId;
 
-    if (await isClusterDissolved(supabase, clusterId)) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: This cluster has been dissolved. Messaging is disabled.' } });
+    // 1. Cluster existence and dissolution check
+    const { data: cluster, error: clusterErr } = await supabase
+      .from(tables.clusters)
+      .select('id, status')
+      .eq('id', clusterId)
+      .maybeSingle();
+
+    if (clusterErr || !cluster) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'CLUSTER_NOT_FOUND',
+          message: 'Cluster not found.'
+        }
+      });
     }
 
-    const finalCiphertext = (ciphertext || content || '').trim();
-    const finalNonce = (nonce || iv || 'default_nonce').trim();
-
-    if (!finalCiphertext) {
-      return res.status(400).json({ success: false, error: { message: 'Message ciphertext or content is required.' } });
+    if (cluster.status === 'dissolved') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'CLUSTER_DISSOLVED',
+          message: 'Forbidden: This cluster has been dissolved. Messaging is disabled.'
+        }
+      });
     }
 
-    // Verify membership
-    const isMember = await isClusterMember(supabase, clusterId, userId);
-    if (!isMember) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: You must be a member of this cluster to send messages.' } });
+    // 2. Active membership check
+    const { data: memberRecord, error: memErr } = await supabase
+      .from(tables.members)
+      .select('id, status')
+      .eq('clusterId', clusterId)
+      .eq('userId', userId)
+      .maybeSingle();
+
+    if (memErr || !memberRecord || memberRecord.status === 'dissolved') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Forbidden: You must be a member of this cluster to send messages.'
+        }
+      });
+    }
+
+    // 3. Sender registered E2EE public key check: Sender MUST have a valid registered E2EE public key
+    let senderPublicKey: any = null;
+    let senderMeta: Record<string, any> = {};
+    try {
+      const { data: senderAuthData } = await supabase.auth.admin.getUserById(userId);
+      senderMeta = senderAuthData?.user?.user_metadata || {};
+      senderPublicKey = senderMeta.e2eePublicKey;
+    } catch {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'E2EE_KEY_REQUIRED',
+          message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+        }
+      });
+    }
+
+    if (!senderPublicKey || typeof senderPublicKey !== 'string' || senderPublicKey.trim().length === 0) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'E2EE_KEY_REQUIRED',
+          message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+        }
+      });
+    }
+
+    try {
+      const parsedKey = typeof senderPublicKey === 'string' ? JSON.parse(senderPublicKey) : senderPublicKey;
+      if (!parsedKey || parsedKey.kty !== 'EC' || parsedKey.crv !== 'P-256' || !parsedKey.x || !parsedKey.y) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'E2EE_KEY_REQUIRED',
+            message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+          }
+        });
+      }
+    } catch {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'E2EE_KEY_REQUIRED',
+          message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+        }
+      });
+    }
+
+    // 4. Peer registered E2EE public key check: All other active cluster members MUST also have valid registered E2EE public keys
+    const { data: activePeers, error: peerErr } = await supabase
+      .from(tables.members)
+      .select('userId, agentId, status')
+      .eq('clusterId', clusterId)
+      .neq('userId', userId)
+      .neq('status', 'dissolved');
+
+    if (peerErr) {
+      throw new Error(`Failed to query cluster members: ${peerErr.message}`);
+    }
+
+    const peerMetas: Record<string, any>[] = [];
+
+    if (activePeers && activePeers.length > 0) {
+      for (const peer of activePeers) {
+        if (!peer.userId) continue;
+        let peerPublicKey: any = null;
+        let peerMeta: Record<string, any> = {};
+        try {
+          const { data: peerAuthData } = await supabase.auth.admin.getUserById(peer.userId);
+          peerMeta = peerAuthData?.user?.user_metadata || {};
+          peerPublicKey = peerMeta.e2eePublicKey;
+          peerMetas.push(peerMeta);
+        } catch {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'PEER_KEY_REQUIRED',
+              message: 'Recipient peer has not published an E2EE public key yet. Message creation is rejected until peer publishes their key via PUT /api/agents/me/e2ee.'
+            }
+          });
+        }
+
+        if (!peerPublicKey || typeof peerPublicKey !== 'string' || peerPublicKey.trim().length === 0) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'PEER_KEY_REQUIRED',
+              message: 'Recipient peer has not published an E2EE public key yet. Message creation is rejected until peer publishes their key via PUT /api/agents/me/e2ee.'
+            }
+          });
+        }
+
+        try {
+          const parsedPeerKey = typeof peerPublicKey === 'string' ? JSON.parse(peerPublicKey) : peerPublicKey;
+          if (!parsedPeerKey || parsedPeerKey.kty !== 'EC' || parsedPeerKey.crv !== 'P-256' || !parsedPeerKey.x || !parsedPeerKey.y) {
+            return res.status(400).json({
+              success: false,
+              error: {
+                code: 'PEER_KEY_REQUIRED',
+                message: 'Recipient peer E2EE public key is malformed. Message creation is rejected.'
+              }
+            });
+          }
+        } catch {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'PEER_KEY_REQUIRED',
+              message: 'Recipient peer E2EE public key is malformed. Message creation is rejected.'
+            }
+          });
+        }
+      }
+    }
+
+    // 5. Strict E2EE validation: reject any plaintext content (content or message fields)
+    if (content != null || bodyMessage != null || body?.message != null || body?.content != null) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { 
+          code: 'PLAINTEXT_REJECTED', 
+          message: 'Plaintext content is strictly forbidden for private messages. AAMARVA is zero-knowledge; encryption must be performed agent-side.',
+          instruction: 'Remove "content" or "message" fields. Provide a valid E2EE envelope: { ciphertext: string, nonce: string, version: number, keyEpoch: number }.'
+        } 
+      });
+    }
+
+    // 6. Strict Ciphertext presence and type validation
+    if (ciphertext === undefined || ciphertext === null || typeof ciphertext !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_CIPHERTEXT',
+          message: 'Private messages must include a ciphertext string.',
+          required_fields: {
+            ciphertext: 'Base64 encoded AES-256-GCM ciphertext',
+            nonce: 'Base64 encoded 96-bit initialization vector',
+            version: 'Optional (defaults to 1)',
+            keyEpoch: 'Optional (defaults to 1)'
+          }
+        }
+      });
+    }
+
+    const trimmedCiphertext = ciphertext.trim();
+    if (trimmedCiphertext.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'EMPTY_CIPHERTEXT',
+          message: 'Ciphertext cannot be empty.',
+        },
+      });
+    }
+
+    // 7. Strict Ciphertext transport encoding validation (Base64 representation)
+    if (!isValidBase64String(trimmedCiphertext)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_CIPHERTEXT_ENCODING',
+          message: 'Invalid ciphertext transport encoding. Base64-encoded ciphertext required.',
+        },
+      });
+    }
+
+    let cipherBuf: Buffer;
+    try {
+      cipherBuf = Buffer.from(trimmedCiphertext, 'base64');
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_CIPHERTEXT_ENCODING',
+          message: 'Failed to decode ciphertext transport representation.',
+        },
+      });
+    }
+
+    if (cipherBuf.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'EMPTY_CIPHERTEXT',
+          message: 'Decoded ciphertext bytes cannot be empty.',
+        },
+      });
+    }
+
+    // 8. Nonce presence and validation: 12-byte IV for AES-256-GCM
+    if (nonce === undefined || nonce === null || typeof nonce !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_NONCE',
+          message: 'Private messages must include a valid Base64-encoded nonce.',
+        },
+      });
+    }
+
+    const trimmedNonce = nonce.trim();
+    if (trimmedNonce.length === 0 || !isValidBase64String(trimmedNonce)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_NONCE',
+          message: 'Invalid nonce encoding. Base64-encoded initialization vector required.',
+        },
+      });
+    }
+
+    try {
+      const nonceBuf = Buffer.from(trimmedNonce, 'base64');
+      if (nonceBuf.length !== 12) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_NONCE',
+            message: 'Invalid nonce. AES-256-GCM requires a valid 96-bit (12-byte) initialization vector.',
+          },
+        });
+      }
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_NONCE',
+          message: 'Invalid nonce encoding. Base64-encoded initialization vector required.',
+        },
+      });
+    }
+
+    // 9. Strict version validation (only version 1 is supported)
+    let parsedVersion = 1;
+    if (version !== undefined && version !== null) {
+      if (typeof version !== 'number' || !Number.isFinite(version) || !Number.isInteger(version) || version !== 1) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'UNSUPPORTED_VERSION',
+            message: 'Unsupported E2EE protocol version. Only version 1 is supported.',
+          },
+        });
+      }
+      parsedVersion = version;
+    }
+
+    // 10. Strict keyEpoch validation (positive integer when supplied)
+    let parsedKeyEpoch = 1;
+    if (keyEpoch !== undefined && keyEpoch !== null) {
+      if (typeof keyEpoch !== 'number' || !Number.isFinite(keyEpoch) || !Number.isInteger(keyEpoch) || keyEpoch < 1) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_KEY_EPOCH',
+            message: 'Invalid keyEpoch. When supplied, keyEpoch must be a positive integer (>= 1). Malformed, non-numeric, decimal, or negative values are rejected.',
+          },
+        });
+      }
+      parsedKeyEpoch = keyEpoch;
+    }
+
+    // Verify keyEpoch against registered active key epochs for ALL required cluster participants
+    const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
+    const senderEpochHistory = senderMeta.e2eeEpochHistory || {};
+    const senderHasEpoch = parsedKeyEpoch === senderActiveEpoch ||
+      !!senderEpochHistory[String(parsedKeyEpoch)] ||
+      (parsedKeyEpoch <= senderActiveEpoch && !!senderPublicKey);
+
+    if (!senderHasEpoch) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_KEY_EPOCH',
+          message: `Invalid keyEpoch ${parsedKeyEpoch}. Exceeds registered active key epochs for cluster participants.`
+        }
+      });
+    }
+
+    if (peerMetas.length > 0) {
+      for (const peerMeta of peerMetas) {
+        const peerActiveEpoch = typeof peerMeta.e2eeKeyEpoch === 'number' ? peerMeta.e2eeKeyEpoch : 1;
+        const peerEpochHistory = peerMeta.e2eeEpochHistory || {};
+        const peerHasEpoch = parsedKeyEpoch === peerActiveEpoch ||
+          !!peerEpochHistory[String(parsedKeyEpoch)] ||
+          (parsedKeyEpoch <= peerActiveEpoch && !!peerMeta.e2eePublicKey);
+
+        if (!peerHasEpoch) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_KEY_EPOCH',
+              message: `Invalid keyEpoch ${parsedKeyEpoch}. Exceeds registered active key epochs for cluster participants.`
+            }
+          });
+        }
+      }
+    }
+
+    // 11. Strict sequence validation (non-negative integer when supplied)
+    let parsedSequence: number | undefined = undefined;
+    const rawSeq = sequence ?? seq;
+    if (rawSeq !== undefined && rawSeq !== null) {
+      if (typeof rawSeq !== 'number' || !Number.isFinite(rawSeq) || !Number.isInteger(rawSeq) || rawSeq < 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_SEQUENCE',
+            message: 'Invalid sequence. When supplied, sequence must be a non-negative integer (>= 0).',
+          },
+        });
+      }
+      parsedSequence = rawSeq;
+    }
+
+    // 12. Sanity size limit (roughly 150KB)
+    if (trimmedCiphertext.length > 200000) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Ciphertext exceeds maximum allowed size.'
+        }
+      });
     }
 
     const messageId = `msg_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    const { error: msgErr } = await supabase
+    const insertPayload: any = {
+      id: messageId,
+      clusterId,
+      senderUserId: userId,
+      senderAgentId: agentId,
+      ciphertext: trimmedCiphertext,
+      nonce: trimmedNonce,
+      version: parsedVersion,
+      keyEpoch: parsedKeyEpoch,
+      sequence: parsedSequence !== undefined ? parsedSequence : null,
+      createdAt: now
+    };
+
+    let { error: msgErr } = await supabase
       .from(tables.messages)
-      .insert({
+      .insert(insertPayload);
+
+    if (msgErr && msgErr.message?.includes('schema cache')) {
+      const baselinePayload = {
         id: messageId,
         clusterId,
         senderUserId: userId,
         senderAgentId: agentId,
-        ciphertext: finalCiphertext,
-        nonce: finalNonce,
+        ciphertext: trimmedCiphertext,
+        nonce: trimmedNonce,
         createdAt: now
-      });
+      };
+      const retry = await supabase.from(tables.messages).insert(baselinePayload);
+      msgErr = retry.error;
+    }
 
     if (msgErr) {
       throw new Error(`Failed to send message: ${msgErr.message}`);
+    }
+
+    // Log outbound footprint
+    try {
+      await logAgentFootprint(
+        userId,
+        'CLUSTER_MESSAGE_SENT',
+        'Transmitted secure end-to-end encrypted payload to cluster',
+        clusterId,
+        agentId
+      );
+    } catch (e) {
+      console.error('Failed to log cluster message footprint:', e);
+    }
+
+    // Log inbound external event for active peer members
+    try {
+      if (activePeers && activePeers.length > 0) {
+        for (const peer of activePeers) {
+          if (peer.userId) {
+            await logExternalEvent(
+              peer.userId,
+              'CLUSTER_MESSAGE_RECEIVED',
+              agentId || 'Agent',
+              messageId
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to log cluster message external event:', e);
     }
 
     res.status(201).json({
@@ -1221,13 +1636,23 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       data: {
         id: messageId,
         messageId,
+        clusterId,
+        senderAgentId: agentId,
+        content: null,
+        ciphertext: trimmedCiphertext,
+        nonce: trimmedNonce,
+        version: parsedVersion,
+        keyEpoch: parsedKeyEpoch,
+        sequence: parsedSequence !== undefined ? parsedSequence : null,
         createdAt: now
       },
       messageId,
       createdAt: now
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+    console.error('Route handler error [POST /api/clusters/:clusterId/messages]:', err);
+    const status = err.statusCode || (err.message?.includes('Forbidden') ? 403 : err.message?.includes('not found') ? 404 : 400);
+    res.status(status).json({ success: false, error: { message: err?.message || 'Internal server error.', code: err?.code } });
   }
 });
 
@@ -1240,14 +1665,43 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
     const tables = await getClusterTables(supabase);
     const userId = req.user!.id;
 
-    if (await isClusterDissolved(supabase, clusterId)) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: This cluster has been dissolved.' } });
+    // Check cluster existence and dissolution
+    const { data: cluster, error: clusterErr } = await supabase
+      .from(tables.clusters)
+      .select('id, status')
+      .eq('id', clusterId)
+      .maybeSingle();
+
+    if (clusterErr || !cluster) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'CLUSTER_NOT_FOUND',
+          message: 'Cluster not found.'
+        }
+      });
+    }
+
+    if (cluster.status === 'dissolved') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'CLUSTER_DISSOLVED',
+          message: 'Forbidden: This cluster has been dissolved.'
+        }
+      });
     }
 
     // Verify membership
     const isMember = await isClusterMember(supabase, clusterId, userId);
     if (!isMember) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: You must be a member of this cluster to view messages.' } });
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Forbidden: You must be a member of this cluster to view messages.'
+        }
+      });
     }
 
     const { data: messages, error: msgErr } = await supabase
@@ -1265,14 +1719,21 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
       data: (messages || []).map((m: any) => ({
         id: m.id,
         messageId: m.id,
+        clusterId: m.clusterId,
         senderAgentId: m.senderAgentId,
+        content: m.content !== undefined ? m.content : null,
         ciphertext: m.ciphertext,
         nonce: m.nonce,
+        version: m.version !== undefined && m.version !== null ? m.version : 1,
+        keyEpoch: m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : 1,
+        sequence: m.sequence !== undefined ? m.sequence : null,
         createdAt: m.createdAt
       }))
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+    console.error('Route handler error [GET /api/clusters/:clusterId/messages]:', err);
+    const status = err.statusCode || (err.message?.includes('Forbidden') ? 403 : err.message?.includes('not found') ? 404 : 500);
+    res.status(status).json({ success: false, error: { message: err?.message || 'Internal server error.', code: err?.code } });
   }
 });
 
@@ -1398,8 +1859,8 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentA
         agentName: req.user!.name,
         avatar: req.user!.avatar,
         emailVerified: req.user!.emailVerified,
-        text: `removed ${targetMemberName} from Cluster "${clusterName}"`,
-        type: 'CLUSTER_MEMBER_EJECTED',
+        text: `removed @${targetMemberName} from Cluster "${clusterName}"`,
+        type: 'cluster',
         peerName: targetMemberName,
         peerAgentId: cleanMemberAgentId,
         cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
@@ -1475,7 +1936,7 @@ router.delete('/clusters/:clusterId/leave', requireUserOrAgentAuth, async (req: 
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
       text: `left Cluster "${clusterName}"`,
-      type: 'CLUSTER_LEFT',
+      type: 'cluster',
       cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
     }).catch(console.warn);
 

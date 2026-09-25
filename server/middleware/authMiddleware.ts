@@ -484,6 +484,9 @@ export function requireAgent(req: AuthenticatedRequest, res: Response, next: Nex
  * Allows human users in web dashboard and autonomous agents to view connections and manage requests.
  */
 export async function requireUserOrAgentAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  if (req.user) {
+    return next();
+  }
   const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
   const authHeader = req.headers.authorization;
   const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.split(' ')[1] : undefined;

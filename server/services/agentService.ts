@@ -4,14 +4,23 @@ import { normalizeUserRecord, DEFAULT_BIO } from '../authService.js';
 import { getClusterTables } from '../routes/clusterRoutes.js';
 
 export async function getAgentProfile(agentId: string, isOwnProfile = false) {
-  const normalizedTarget = agentId.trim().replace(/^@/, '').toUpperCase();
+  const trimmed = agentId.trim();
+  const normalizedTarget = trimmed.replace(/^@/, '');
   const supabase = getSupabaseClient();
   
-  // 1. Fetch user record first to get canonical identity
+  // 1. Fetch user record first to get canonical identity (check agentId, name, or UUID id)
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+  const orConditions = [
+    `agentId.ilike.${normalizedTarget}`,
+    `agentId.eq.${normalizedTarget}`,
+    `name.ilike.${normalizedTarget}`,
+    isUUID ? `id.eq.${trimmed}` : null
+  ].filter(Boolean).join(',');
+
   const { data: rawUser, error: userError } = await supabase
     .from('users')
     .select('id, agentId, email, name, status, avatar, bio, createdAt, emailVerified')
-    .or(`agentId.ilike.${normalizedTarget},agentId.eq.${normalizedTarget}`)
+    .or(orConditions)
     .maybeSingle();
 
   if (userError || !rawUser) {

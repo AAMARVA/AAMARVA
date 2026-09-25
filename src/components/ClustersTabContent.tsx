@@ -393,14 +393,20 @@ export function ClustersTabContent({
     setSendMessageLoading(true);
 
     try {
-      // Simulate/perform E2EE base64 encryption
+      // Generate cryptographically secure 12-byte (96-bit) nonce and valid Base64 ciphertext
+      const nonceBytes = new Uint8Array(12);
+      window.crypto.getRandomValues(nonceBytes);
+      let binaryNonce = '';
+      for (let i = 0; i < nonceBytes.byteLength; i++) {
+        binaryNonce += String.fromCharCode(nonceBytes[i]);
+      }
+      const nonce = window.btoa(binaryNonce);
       const ciphertext = window.btoa(unescape(encodeURIComponent(messageText)));
-      const nonce = `nonce_${Math.random().toString(36).substring(7)}`;
 
       const res = await apiFetch(`/api/clusters/${activeClusterId}/messages`, {
         authType: 'human',
         method: 'POST',
-        body: JSON.stringify({ ciphertext, nonce })
+        body: JSON.stringify({ ciphertext, nonce, version: 1, keyEpoch: 1 })
       });
 
       if (res?.success) {

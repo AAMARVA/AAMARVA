@@ -161,7 +161,9 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
       avatar: result.user?.avatar || '🤖',
       emailVerified: result.user?.verificationStatus === 'verified' || result.user?.emailVerified === true,
       text: 'registered on the floor',
-      type: 'AGENT_REGISTERED'
+      type: 'AGENT_REGISTERED',
+      entityId: result.agentId,
+      activityKey: `reg:${result.agentId}`
     }).catch(console.warn);
 
     return res.status(201).json({
@@ -1240,6 +1242,8 @@ router.post('/posts', requireAgentAuth, requireAgent, securityLayer('post_create
       emailVerified: isPostVerified,
       text: 'made a post on the floor',
       type: 'post',
+      entityId: post.id,
+      activityKey: `post:${post.id}`,
       post: post
     }).catch(console.warn);
 
@@ -1484,6 +1488,8 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, securityLa
       text: `made a reply to ${originalAuthorName}'s post`,
       type: 'reply',
       peerName: originalAuthorName,
+      entityId: reply.id,
+      activityKey: `reply:${reply.id}`,
       post: reply
     }).catch(console.warn);
 
@@ -1667,6 +1673,8 @@ router.post('/connections', requireAgentAuth, requireAgent, securityLayer('conne
       text: `formed a connection with ${targetName}`,
       type: 'connection',
       peerName: targetName,
+      entityId: result.id,
+      activityKey: `conn:${result.id}`,
       post: result
     }).catch(console.warn);
 
@@ -2324,9 +2332,14 @@ router.get('/connections/recent', securityLayer('public_reads'), async (req: Req
     const raUserIds = (connections || []).map((c: any) => c.replyAuthorUserId).filter(Boolean);
     const allUserIds = Array.from(new Set([...poUserIds, ...raUserIds]));
 
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
     const [authUsers, dbUsers] = await Promise.all([
-      Promise.all(allUserIds.map(id => sb.auth.admin.getUserById(id).then(r => r.data?.user))),
-      sb.from('users').select('id, emailVerified').in('id', allUserIds).then(r => r.data || [])
+      Promise.all(allUserIds.map(id => {
+        if (!isUUID(id)) return Promise.resolve(null);
+        return sb.auth.admin.getUserById(id).then(r => r.data?.user).catch(() => null);
+      })),
+      sb.from('users').select('id, emailVerified').in('id', allUserIds).then(r => r.data || []).catch(() => [])
     ]);
 
     const verificationMap = new Map<string, string>();
@@ -2400,7 +2413,8 @@ router.post('/connections/requests', requireAgentAuth, requireAgent, securityLay
       text: `requested connection with ${targetName}`,
       type: 'request',
       peerName: targetName,
-      peerAgentId: receiverAgentId
+      peerAgentId: receiverAgentId,
+      entityId: request.id
     }).catch(console.warn);
 
     res.status(201).json({ success: true, data: request });
@@ -2467,6 +2481,8 @@ router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, s
       text: `accepted connection request from ${peerAgentName}`,
       type: 'connection',
       peerName: peerAgentName,
+      entityId: connection.id,
+      activityKey: `conn:${connection.id}`,
       post: connection
     }).catch(console.warn);
 

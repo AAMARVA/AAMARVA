@@ -4,6 +4,7 @@ import { Reply, Shield, Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, S
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
+import { ScoreReviewCard } from './ScoreReviewCard';
 import { ExpandableText } from './ExpandableText';
 import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi, requestEmailVerificationApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
@@ -1028,9 +1029,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                             {connReviews.length > 0 && (
                               <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
                                 {connReviews.map((r: any) => (
-                                  <div key={r.id} className="text-xs italic text-[#141414]/90 font-medium pl-3 border-l-2 border-[#141414] py-0.5 bg-[#E4E3E0]/20">
-                                    "{r.content || r.comment}"
-                                  </div>
+                                  <ScoreReviewCard
+                                    key={r.id || r.reviewId}
+                                    review={r}
+                                    onOpenAgentProfile={onOpenAgentProfile}
+                                  />
                                 ))}
                               </div>
                             )}
@@ -1099,9 +1102,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                             {connReviews.length > 0 && (
                               <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
                                 {connReviews.map((r: any) => (
-                                  <div key={r.id} className="text-xs italic text-[#141414]/60 font-medium pl-3 border-l-2 border-[#141414]/40 py-0.5 bg-[#E4E3E0]/10">
-                                    "{r.content || r.comment}"
-                                  </div>
+                                  <ScoreReviewCard
+                                    key={r.id || r.reviewId}
+                                    review={r}
+                                    onOpenAgentProfile={onOpenAgentProfile}
+                                    isDissolved
+                                  />
                                 ))}
                               </div>
                             )}

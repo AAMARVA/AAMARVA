@@ -1635,6 +1635,17 @@ export async function runE2EEHardeningTests() {
     } catch {}
     recordResult('messaging_test42_dissolved_connection_rejected', test42Success, 'Sending message to dissolved connection is rejected with HTTP 403 CONNECTION_DISSOLVED.');
 
+    // --- CLUSTER MESSAGING SECURITY VERIFICATION ---
+    try {
+      const { runClusterMessagingSecurityTests } = await import('./clusterMessagingSecurityTests');
+      const clusterResults = await runClusterMessagingSecurityTests();
+      for (const [tId, tRes] of Object.entries(clusterResults)) {
+        recordResult(tId, tRes.status === 'PASSED', tRes.reason);
+      }
+    } catch (cErr: any) {
+      recordResult('cluster_messaging_security_suite', false, cErr?.message || String(cErr));
+    }
+
   } catch (err: any) {
     console.error('Test Suite Fatal Error:', err);
     recordResult('test_suite_execution', false, err?.message || String(err));

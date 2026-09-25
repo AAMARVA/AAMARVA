@@ -6,6 +6,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { FloorActivityContent } from './FloorActivityContent';
 import { apiFetch } from '../services/authApi';
+import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication';
 
 interface TelemetryViewProps {
   posts?: NetworkPost[];
@@ -40,17 +41,22 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
     let eventSource: EventSource | null = null;
     try {
       eventSource = new EventSource('/api/floor/stream');
-      eventSource.addEventListener('floor_activity', (e) => {
+
+      const handleFloorEvent = (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data);
-          if (data && data.text) {
-            setServerFloorLogs((prev) => {
-              if (prev.some(p => p.id === data.id || (p.agentId === data.agentId && p.text === data.text && p.createdAt === data.createdAt))) return prev;
-              return [data, ...prev];
-            });
+          if (data) {
+            const incoming = Array.isArray(data.recent) ? data.recent : [data];
+            const valid = incoming.filter((ev: any) => ev && ev.text);
+            if (valid.length > 0) {
+              setServerFloorLogs((prev) => deduplicateAndMergeFloorActivities([...valid, ...prev]));
+            }
           }
         } catch (err) {}
-      });
+      };
+
+      eventSource.addEventListener('floor_activity', handleFloorEvent);
+      eventSource.addEventListener('handshake', handleFloorEvent);
     } catch (err) {}
     return () => {
       if (eventSource) eventSource.close();
@@ -88,7 +94,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
       apiFetch('/api/floor/activity', { authType: 'none' })
         .then(res => {
           if (res?.success && Array.isArray(res.data)) {
-            setServerFloorLogs(res.data);
+            setServerFloorLogs((prev) => deduplicateAndMergeFloorActivities([...res.data, ...prev]));
           }
         })
         .catch(err => console.warn('Failed to fetch floor activity:', err));
@@ -185,8 +191,10 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
   };
 
   // Generate live activity logs strictly from real posts and replies
-  const liveFloorLogs: Array<{
+  const rawFloorLogs: Array<{
     id: string;
+    activityKey?: string;
+    entityId?: string;
     agentName: string;
     agentId?: string;
     emailVerified?: boolean;
@@ -204,7 +212,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
     const pResolved = masterNameMap[pKey];
     const pDisplayName = pResolved && !isTechnicalName(pResolved.name) ? pResolved.name : p.agentName;
 
-    liveFloorLogs.push({
+    rawFloorLogs.push({
       id: `p-${p.id}`,
       agentName: pDisplayName,
       agentId: p.agentId,
@@ -220,7 +228,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
       const rResolved = masterNameMap[rKey];
       const rDisplayName = rResolved && !isTechnicalName(rResolved.name) ? rResolved.name : r.agentName;
 
-      liveFloorLogs.push({
+      rawFloorLogs.push({
         id: `r-${r.id}`,
         agentName: rDisplayName,
         agentId: r.agentId,
@@ -241,7 +249,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
 
       const ownerName = c.postOwnerAgentName || pDisplayName;
 
-      liveFloorLogs.push({
+      rawFloorLogs.push({
         id: `c-${c.id || Date.now()}`,
         agentName: cDisplayName,
         agentId: c.agentId || c.replyAuthorAgentId,
@@ -266,7 +274,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
 
     const logText = `sent a connection request to ${rDisplayName}`;
 
-    liveFloorLogs.push({
+    rawFloorLogs.push({
       id: `req-${req.id}`,
       agentName: sDisplayName,
       agentId: req.senderAgentId,
@@ -279,9 +287,6 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
   });
 
   recentConnections.forEach((conn) => {
-    // Check if this connection was already added via post logic
-    if (liveFloorLogs.some(l => l.id === `c-${conn.id}`)) return;
-
     const sKey = normalizeId(conn.postOwnerAgentId || conn.postOwnerAgentName);
     const sResolved = masterNameMap[sKey];
     const sDisplayName = sResolved && !isTechnicalName(sResolved.name) ? sResolved.name : (conn.postOwnerAgentName || 'Agent');
@@ -292,7 +297,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
 
     const associatedPost = posts.find(p => p.id === conn.postId || p.id === conn.post_id || p.id === conn.id);
 
-    liveFloorLogs.push({
+    rawFloorLogs.push({
       id: `c-${conn.id}`,
       agentName: sDisplayName,
       agentId: conn.postOwnerAgentId,
@@ -306,20 +311,11 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
   });
 
   localClusters.forEach((cluster: any) => {
-    // If the server floor logs already recorded this cluster creation, do not synthesize a duplicate
-    const alreadyRecorded = serverFloorLogs.some((sf: any) => 
-      sf.type === 'CLUSTER_CREATED' && (
-        (sf.cluster?.id && sf.cluster.id === cluster.id) ||
-        (sf.cluster?.name === cluster.name || sf.text?.includes(`"${cluster.name}"`))
-      )
-    );
-    if (alreadyRecorded) return;
-
     const cKey = normalizeId(cluster.ownerAgentId);
     const cResolved = masterNameMap[cKey];
     const cDisplayName = cResolved && !isTechnicalName(cResolved.name) ? cResolved.name : cluster.ownerAgentId;
 
-    liveFloorLogs.push({
+    rawFloorLogs.push({
       id: `cluster-${cluster.id}`,
       agentName: cDisplayName,
       agentId: cluster.ownerAgentId,
@@ -334,18 +330,14 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
 
   serverFloorLogs.forEach((sf: any) => {
     if (!sf || !sf.text) return;
-    const isDuplicate = liveFloorLogs.some(l => 
-      l.id === sf.id || 
-      (l.agentId === sf.agentId && l.text === sf.text && l.type === sf.type) ||
-      (sf.type === 'CLUSTER_CREATED' && (l.id === `cluster-${sf.cluster?.id}` || (l.type === 'CLUSTER_CREATED' && l.cluster?.id === sf.cluster?.id)))
-    );
-    if (isDuplicate) return;
 
     const key = sf.agentId ? normalizeId(sf.agentId) : '';
     const resolved = key ? masterNameMap[key] : null;
     const displayName = resolved && !isTechnicalName(resolved.name) ? resolved.name : (sf.agentName || sf.agentId || 'Agent');
-    liveFloorLogs.push({
+    rawFloorLogs.push({
       id: sf.id || `sf-${Math.random()}`,
+      activityKey: sf.activityKey,
+      entityId: sf.entityId,
       agentName: displayName,
       agentId: sf.agentId,
       emailVerified: sf.emailVerified ?? resolved?.emailVerified,
@@ -355,6 +347,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
       createdAt: sf.createdAt || new Date().toISOString(),
       peerName: sf.peerName,
       cluster: sf.cluster,
+      post: sf.post,
     });
   });
 
@@ -362,12 +355,11 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
     const agId = ag.agentId || ag.id;
     if (!agId) return;
     const regLogId = `reg-${agId}`;
-    if (liveFloorLogs.some(l => l.id === regLogId || (l.text === 'registered on the floor' && (l.agentId === agId || l.agentId === ag.agentId)))) return;
     const agKey = normalizeId(ag.agentId || ag.name);
     const agResolved = masterNameMap[agKey];
     const agDisplayName = agResolved && !isTechnicalName(agResolved.name) ? agResolved.name : (ag.name || ag.agentId);
     if (!agDisplayName) return;
-    liveFloorLogs.push({
+    rawFloorLogs.push({
       id: regLogId,
       agentName: agDisplayName,
       agentId: ag.agentId,
@@ -379,6 +371,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
     });
   });
 
+  const liveFloorLogs = deduplicateAndMergeFloorActivities(rawFloorLogs);
   liveFloorLogs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
   return (

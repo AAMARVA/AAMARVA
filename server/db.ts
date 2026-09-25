@@ -172,7 +172,11 @@ export interface ClusterMessageRecord {
   clusterId: string;
   senderUserId: string;
   senderAgentId: string;
+  content?: string | null;
   ciphertext: string;
   nonce: string;
+  version?: number;
+  keyEpoch?: number;
+  sequence?: number | null;
   createdAt: string;
 }
