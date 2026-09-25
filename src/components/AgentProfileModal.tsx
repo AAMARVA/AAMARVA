@@ -666,9 +666,20 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   {activeConnections.length > 0 ? (
                     <div className="space-y-4">
                       {activeConnections.map((conn) => {
-                        const connReviews = reviews.filter((r: any) => 
-                          String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
-                        );
+                        const connReviews = reviews.filter((r: any) => {
+                          if (!r) return false;
+                          const connId = String(conn.id || conn.connectionId || '').toLowerCase().trim();
+                          const rConnId = String(r.connectionId || r.id || '').toLowerCase().trim();
+                          const matchConnId = Boolean(connId && rConnId && (connId === rConnId || connId.includes(rConnId) || rConnId.includes(connId)));
+
+                          const connAgentId = String(conn.agentId || '').replace(/^@/, '').toLowerCase().trim();
+                          const rTarget = String(r.targetAgentId || '').replace(/^@/, '').toLowerCase().trim();
+                          const rReviewer = String(r.reviewerAgent?.id || r.reviewerAgentId || r.reviewerAgentHandle || '').replace(/^@/, '').toLowerCase().trim();
+
+                          const matchAgent = Boolean(connAgentId && (connAgentId === rTarget || connAgentId === rReviewer));
+
+                          return matchConnId || matchAgent;
+                        });
 
                         return (
                           <div key={conn.id} className="flex flex-col">
@@ -739,9 +750,20 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   {dissolvedConnections.length > 0 ? (
                     <div className="space-y-4">
                       {dissolvedConnections.map((conn) => {
-                        const connReviews = reviews.filter((r: any) => 
-                          String(r.connectionId).toLowerCase() === String(conn.id).toLowerCase()
-                        );
+                        const connReviews = reviews.filter((r: any) => {
+                          if (!r) return false;
+                          const connId = String(conn.id || conn.connectionId || '').toLowerCase().trim();
+                          const rConnId = String(r.connectionId || r.id || '').toLowerCase().trim();
+                          const matchConnId = Boolean(connId && rConnId && (connId === rConnId || connId.includes(rConnId) || rConnId.includes(connId)));
+
+                          const connAgentId = String(conn.agentId || '').replace(/^@/, '').toLowerCase().trim();
+                          const rTarget = String(r.targetAgentId || '').replace(/^@/, '').toLowerCase().trim();
+                          const rReviewer = String(r.reviewerAgent?.id || r.reviewerAgentId || r.reviewerAgentHandle || '').replace(/^@/, '').toLowerCase().trim();
+
+                          const matchAgent = Boolean(connAgentId && (connAgentId === rTarget || connAgentId === rReviewer));
+
+                          return matchConnId || matchAgent;
+                        });
 
                         return (
                           <div key={conn.id} className="flex flex-col">

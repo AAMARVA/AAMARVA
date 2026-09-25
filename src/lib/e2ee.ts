@@ -467,10 +467,12 @@ export async function rotateAgentCryptoIdentity(
 ): Promise<AgentCryptoIdentity> {
   const normalizedAgentId = agentId.trim().toUpperCase();
   const currentKey = await getLocalKeyPair(normalizedAgentId);
+  const allEpochs = await getAllLocalEpochKeys(normalizedAgentId);
+  const maxStoredEpoch = allEpochs.reduce((max, ep) => Math.max(max, ep.keyEpoch || 1), 1);
 
   const effectiveEpoch = typeof currentEpoch === 'number' && currentEpoch > 0
     ? currentEpoch
-    : (currentKey?.keyEpoch || 1);
+    : Math.max(currentKey?.keyEpoch || 1, maxStoredEpoch);
   const nextEpoch = effectiveEpoch + 1;
 
   // Generate fresh ECDH key pair (operational key extractable: false)
@@ -543,6 +545,7 @@ export function clearTransientJwkKeys(agentId: string): void {
  * Saves agent's local keys into persistent IndexedDB keystore.
  * Stores native CryptoKey objects (non-exportable) directly via IndexedDB structured clone.
  * Also archives entry in historical epoch store.
+ * Strictly enforces epoch immutability: throws E2EE_EPOCH_ALREADY_EXISTS if attempting to overwrite an existing epoch with a different key.
  */
 export async function saveLocalKeyPair(
   agentId: string,
@@ -559,6 +562,36 @@ export async function saveLocalKeyPair(
   const normalizedAgentId = agentId.trim().toUpperCase();
   const fp = fingerprint || (await computeKeyFingerprint(publicKey));
   const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
+
+  // Strict epoch immutability check in memory cache
+  const epochCacheKey = `${normalizedAgentId}#epoch#${epoch}`;
+  const existingMemory = memoryEpochCache.get(epochCacheKey);
+  if (existingMemory && existingMemory.fingerprint && existingMemory.fingerprint !== fp && existingMemory.publicKey !== publicKey) {
+    throw new Error(`E2EE_EPOCH_ALREADY_EXISTS: Key epoch ${epoch} already exists for agent ${normalizedAgentId} with a different key. Existing epochs are immutable.`);
+  }
+
+  // Check persistent IndexedDB before writing
+  try {
+    const db = await openKeyDatabase();
+    const existingDbEpoch = await new Promise<any>((resolve) => {
+      try {
+        const checkTx = db.transaction(EPOCH_STORE_NAME, 'readonly');
+        const req = checkTx.objectStore(EPOCH_STORE_NAME).get(`${normalizedAgentId}#epoch#${epoch}`);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+
+    if (existingDbEpoch && existingDbEpoch.fingerprint && existingDbEpoch.fingerprint !== fp && existingDbEpoch.publicKey !== publicKey) {
+      throw new Error(`E2EE_EPOCH_ALREADY_EXISTS: Key epoch ${epoch} already exists for agent ${normalizedAgentId} with a different key in persistent storage.`);
+    }
+  } catch (idbCheckErr: any) {
+    if (idbCheckErr?.message?.includes('E2EE_EPOCH_ALREADY_EXISTS')) {
+      throw idbCheckErr;
+    }
+  }
 
   if (transientPrivateKeyJwk) {
     transientJwkMap.set(`${normalizedAgentId}:${epoch}:e2ee`, transientPrivateKeyJwk);
@@ -579,7 +612,7 @@ export async function saveLocalKeyPair(
 
   // Update in-memory caches
   memoryKeyCache.set(normalizedAgentId, entry);
-  memoryEpochCache.set(`${normalizedAgentId}#epoch#${epoch}`, entry);
+  memoryEpochCache.set(epochCacheKey, entry);
 
   try {
     const db = await openKeyDatabase();
@@ -1328,12 +1361,44 @@ export async function restoreFromEncryptedRecoveryVault(
   memoryKeyCache.set(canonicalAgentId, lastActiveEntry);
   for (const item of preparedEntries) {
     memoryEpochCache.set(`${canonicalAgentId}#epoch#${item.entry.keyEpoch}`, item.entry);
+    if (item.privJwk) {
+      transientJwkMap.set(`${canonicalAgentId}:${item.entry.keyEpoch}:e2ee`, item.privJwk);
+    }
+    if (item.idPrivJwk) {
+      transientJwkMap.set(`${canonicalAgentId}:${item.entry.keyEpoch}:identity`, item.idPrivJwk);
+    }
   }
 
   return {
     activeKey: lastActiveEntry,
     restoredEpochCount: preparedEntries.length
   };
+}
+
+/**
+ * Re-encrypts an existing recovery vault with a new credential during password changes.
+ * Preserves the complete historical key epoch history without losing any keys.
+ */
+export async function reEncryptRecoveryVaultWithNewCredential(
+  agentId: string,
+  oldCredential: string,
+  newCredential: string,
+  existingVault: { ciphertext: string; nonce: string; version?: number; kdfVersion?: number }
+): Promise<{ ciphertext: string; nonce: string; version: number; kdfVersion?: number }> {
+  const normalizedAgentId = agentId.trim().toUpperCase();
+
+  // 1. Decrypt existing vault locally using oldCredential and restore all epochs into memory/transient map
+  const restored = await restoreFromEncryptedRecoveryVault(normalizedAgentId, oldCredential, existingVault);
+
+  // 2. Re-encrypt all historical and active epochs using newCredential with KDF version 2
+  const updatedVault = await createEncryptedRecoveryVault(
+    normalizedAgentId,
+    newCredential,
+    restored.activeKey.keyEpoch,
+    existingVault
+  );
+
+  return updatedVault;
 }
 
 /**

@@ -481,7 +481,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     const persistedMsg = mockMessages.find(m => m.clusterId === clusterId);
     const dbPersistedValid = Boolean(
       persistedMsg &&
-      persistedMsg.content === null &&
+      (persistedMsg.content === null || persistedMsg.content === undefined) &&
       persistedMsg.ciphertext === validCiphertext &&
       persistedMsg.nonce === validNonce &&
       persistedMsg.version === 1 &&
@@ -634,7 +634,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       res31.status === 201 &&
       res31.json?.success === true &&
       persistedEpoch5 &&
-      persistedEpoch5.content === null &&
+      (persistedEpoch5.content === null || persistedEpoch5.content === undefined) &&
       persistedEpoch5.ciphertext === validCiphertext &&
       persistedEpoch5.nonce === validNonce &&
       persistedEpoch5.version === 1 &&

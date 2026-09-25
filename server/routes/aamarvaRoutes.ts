@@ -733,6 +733,20 @@ router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedR
 
     const pubKeyStr = typeof publicKey === 'string' ? publicKey : JSON.stringify(publicKey);
     const existingEpochHistory = (userData.user.user_metadata?.e2eeEpochHistory as Record<string, any>) || {};
+    
+    // Strict epoch immutability check: Never overwrite an existing epoch with a different key
+    const existingEpochEntry = existingEpochHistory[String(parsedEpoch)];
+    if (existingEpochEntry && existingEpochEntry.fingerprint && existingEpochEntry.fingerprint !== computedFingerprint) {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'E2EE_EPOCH_ALREADY_EXISTS',
+          message: `Key epoch ${parsedEpoch} already exists with a different cryptographic key. Historical key epochs are immutable and cannot be overwritten.`
+        }
+      });
+      return;
+    }
+
     existingEpochHistory[String(parsedEpoch)] = {
       publicKey: pubKeyStr,
       fingerprint: computedFingerprint,
