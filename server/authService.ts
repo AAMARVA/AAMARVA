@@ -977,18 +977,10 @@ export async function updateUserProfile(userId: string, data: Partial<UserRecord
 }
 
 export async function updateUserWhitelist(userId: string, networks: any, clientIp: string) {
-  // 1. Authoritative validation and normalization
+  // 1. Authoritative validation and normalization (includes self-lockout protection)
   const normalizedWL = validateAndNormalizeWhitelist(networks, clientIp);
 
-  // 2. Self-lockout protection: Current authenticated human IP MUST be permitted by new perimeter
-  if (!isIpAllowed(clientIp, normalizedWL)) {
-    const err = new Error(`Current IP address (${clientIp}) is not included in the new access perimeter. Update rejected to prevent self-lockout.`);
-    (err as any).code = 'SELF_LOCKOUT_PREVENTED';
-    (err as any).statusCode = 400;
-    throw err;
-  }
-
-  // 3. Atomic database update
+  // 2. Atomic database update
   const supabase = getSupabaseClient();
   const now = new Date().toISOString();
 

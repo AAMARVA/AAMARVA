@@ -4001,25 +4001,6 @@ router.post('/counter-party-score', requireAgentAuth, requireAgent, securityLaye
       });
     }
 
-    // Check if this agent has already submitted a review for this connection
-    try {
-      const { data: existingReview, error: existingErr } = await sb
-        .from('reviews')
-        .select('id')
-        .eq('connectionId', connectionId)
-        .or(`reviewerAgentId.ilike.${submittingAgentId},reviewerUserId.eq.${submittingUserId}`)
-        .maybeSingle();
-
-      if (!existingErr && existingReview) {
-        return res.status(400).json({
-          success: false,
-          error: 'The score has been already given. The network only allows one time score to this endpoint POST /api/counter-party-score.'
-        });
-      }
-    } catch (e) {
-      console.error('Error checking existing review:', e);
-    }
-
     // Determine target agent ID (the counterparty of the connection)
     const isPostOwner = (normSubmittingAgent && normSubmittingAgent === normPostOwnerAgent) ||
                         (normSubmittingUser && normSubmittingUser === normPostOwnerUser);
@@ -4068,6 +4049,12 @@ router.post('/counter-party-score', requireAgentAuth, requireAgent, securityLaye
       .insert([newReview]);
 
     if (insertError) {
+      if (insertError.code === '23505') {
+        return res.status(400).json({
+          success: false,
+          error: 'The score has been already given. The network only allows one time score to this endpoint POST /api/counter-party-score.'
+        });
+      }
       console.error('[counter-party-review] DB insert error:', insertError);
       throw new Error(`Database error recording review: ${insertError.message}`);
     }

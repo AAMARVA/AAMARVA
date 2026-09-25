@@ -123,7 +123,18 @@ export function validateAndNormalizeWhitelist(networks: any, clientIp?: string):
     }
   }
 
-  return Array.from(normalizedSet).sort();
+  const normalizedList = Array.from(normalizedSet).sort();
+
+  if (clientIp && normalizedList.length > 0) {
+    if (!isIpAllowed(clientIp, normalizedList)) {
+      const err = new Error(`Current network ${clientIp} is not included in the provided whitelist. Registration rejected to prevent immediate account self-lockout. You must include your current IP address or network range.`);
+      (err as any).code = 'SELF_LOCKOUT_PREVENTED';
+      (err as any).statusCode = 400;
+      throw err;
+    }
+  }
+
+  return normalizedList;
 }
 
 export function isIpAllowed(clientIp: string, whitelistedNetworks: string[] | null | undefined): boolean {

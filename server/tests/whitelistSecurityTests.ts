@@ -114,6 +114,18 @@ export async function runWhitelistSecurityTests() {
     const dupWL = validateAndNormalizeWhitelist(['198.51.100.42', '198.51.100.42/32']);
     recordResult('val_23_duplicate_normalization', dupWL.length === 1 && dupWL[0] === '198.51.100.42/32', 'Duplicates deduplicated');
 
+    // Test 24: Registration with self-lockout IP rejected
+    try {
+      await registerUser({
+        email: `lockout-${Date.now()}@example.com`,
+        password: 'StrongPassword123!@#',
+        whitelisted_networks: ['1.1.1.1/32']
+      }, '2.2.2.2');
+      recordResult('val_24_self_lockout_rejected', false, 'Registration should have failed when current IP (2.2.2.2) was not whitelisted');
+    } catch (err: any) {
+      recordResult('val_24_self_lockout_rejected', err.message.includes('include your current IP'), `Caught expected self-lockout error: ${err.message}`);
+    }
+
     // Perform actual registration or mock test
     try {
       const regResult = await registerUser({
