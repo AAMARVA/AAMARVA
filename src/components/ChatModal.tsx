@@ -110,6 +110,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   // E2EE Keystore State
   const [localKeys, setLocalKeys] = useState<StoredAgentKeyEntry | null>(null);
   const [peerKey, setPeerKey] = useState<string | null>(initialPeerKey || null);
+  const [peerKeyEpoch, setPeerKeyEpoch] = useState<number>(1);
   const [peerEpochKeys, setPeerEpochKeys] = useState<Record<string, any>>({});
   const [resolvedPeerAgentId, setResolvedPeerAgentId] = useState<string | undefined>(peerAgentId);
 
@@ -177,6 +178,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           currentPeerKey = cachedPeer.peerPublicKey;
           if (isMountedRef.current) setPeerKey(currentPeerKey);
         }
+        if (cachedPeer.peerKeyEpoch && isMountedRef.current) {
+          setPeerKeyEpoch(cachedPeer.peerKeyEpoch);
+        }
         if (Object.keys(currentPeerEpochKeys).length === 0 && cachedPeer.peerEpochKeys) {
           currentPeerEpochKeys = cachedPeer.peerEpochKeys;
           if (isMountedRef.current) setPeerEpochKeys(currentPeerEpochKeys);
@@ -194,6 +198,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             if (keyRes.data.peerE2eePublicKey) {
               currentPeerKey = keyRes.data.peerE2eePublicKey;
               if (isMountedRef.current) setPeerKey(currentPeerKey);
+            }
+            if (keyRes.data.peerKeyEpoch && isMountedRef.current) {
+              setPeerKeyEpoch(keyRes.data.peerKeyEpoch);
             }
             if (keyRes.data.peerEpochKeys) {
               currentPeerEpochKeys = keyRes.data.peerEpochKeys;
@@ -288,7 +295,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     targetPeer,
                     msgEpoch,
                     currentPeerEpochKeys,
-                    currentPeerKey
+                    currentPeerKey,
+                    peerKeyEpoch
                   );
 
                   if (!senderPubKey) {

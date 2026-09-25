@@ -1297,7 +1297,7 @@ export async function runE2EEHardeningTests() {
           keyEpoch: 9999 // Non-existent unverified epoch
         });
       } catch (err: any) {
-        if (err.code === 'INVALID_KEY_EPOCH') {
+        if (err.code === 'INVALID_KEY_EPOCH' || err.code === 'KEY_EPOCH_NOT_FOUND') {
           test37Success = true;
         }
       } finally {
@@ -1634,6 +1634,297 @@ export async function runE2EEHardeningTests() {
       }
     } catch {}
     recordResult('messaging_test42_dissolved_connection_rejected', test42Success, 'Sending message to dissolved connection is rejected with HTTP 403 CONNECTION_DISSOLVED.');
+
+    // -------------------------------------------------------------
+    // STRICT EPOCH VALIDATION & CONCURRENCY TESTS (TESTS A - G)
+    // -------------------------------------------------------------
+
+    // Helper mock supabase for testing epoch validation on connectionService.sendMessage
+    const createEpochMockSupabase = (senderEpochHistory: Record<string, any>, senderActiveEpoch: number) => ({
+      auth: {
+        admin: {
+          getUserById: async (id: string) => ({
+            data: {
+              user: {
+                id,
+                user_metadata: {
+                  e2eePublicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x_active', y: 'y_active' }),
+                  e2eeKeyEpoch: senderActiveEpoch,
+                  e2eeEpochHistory: senderEpochHistory
+                }
+              }
+            },
+            error: null
+          })
+        }
+      },
+      from: (table: string) => {
+        if (table === 'connections') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { id: 'conn_epoch_test', status: 'active', postOwnerUserId: 'u_sender', replyAuthorUserId: 'u_recipient' }, error: null })
+              })
+            })
+          };
+        }
+        if (table === 'users') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { id: 'u_sender', agentId: 'a_sender', status: 'active' }, error: null })
+              })
+            })
+          };
+        }
+        return {
+          insert: async () => ({ error: null })
+        };
+      }
+    });
+
+    // --- TEST A: Valid Historical Epoch (Registered 1, 2, 3; Active 3; keyEpoch = 1 -> ACCEPTED) ---
+    let testASuccess = false;
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      const mockEpochs = {
+        '1': { publicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x1', y: 'y1' }), keyEpoch: 1 },
+        '2': { publicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x2', y: 'y2' }), keyEpoch: 2 },
+        '3': { publicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x3', y: 'y3' }), keyEpoch: 3 }
+      };
+      sbModule.setSupabaseClient(createEpochMockSupabase(mockEpochs, 3) as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      const res = await sendMessage('conn_epoch_test', 'u_sender', {
+        ciphertext: Buffer.from('validCiphertext').toString('base64'),
+        nonce: Buffer.from(new Uint8Array(12)).toString('base64'),
+        version: 1,
+        keyEpoch: 1
+      });
+      if (res && res.keyEpoch === 1) {
+        testASuccess = true;
+      }
+      sbModule.setSupabaseClient(origClient);
+    } catch (e) {
+      console.error('Test A failure:', e);
+    }
+    recordResult('test_A_valid_historical_epoch_accepted', testASuccess, 'Valid registered historical epoch (Epoch 1) is cleanly accepted.');
+
+    // --- TEST B: Missing Middle Epoch (Registered 1, 3; Active 3; keyEpoch = 2 -> REJECTED with KEY_EPOCH_NOT_FOUND) ---
+    let testBSuccess = false;
+    let testBErrorCode = '';
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      const mockEpochsMissing2 = {
+        '1': { publicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x1', y: 'y1' }), keyEpoch: 1 },
+        '3': { publicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x3', y: 'y3' }), keyEpoch: 3 }
+      };
+      sbModule.setSupabaseClient(createEpochMockSupabase(mockEpochsMissing2, 3) as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      try {
+        await sendMessage('conn_epoch_test', 'u_sender', {
+          ciphertext: Buffer.from('validCiphertext').toString('base64'),
+          nonce: Buffer.from(new Uint8Array(12)).toString('base64'),
+          version: 1,
+          keyEpoch: 2 // Missing middle epoch!
+        });
+      } catch (err: any) {
+        testBErrorCode = err?.code || '';
+        if (err?.code === 'KEY_EPOCH_NOT_FOUND' && err?.statusCode === 400) {
+          testBSuccess = true;
+        }
+      } finally {
+        sbModule.setSupabaseClient(origClient);
+      }
+    } catch (e) {
+      console.error('Test B failure:', e);
+    }
+    recordResult('test_B_missing_middle_epoch_rejected', testBSuccess, `Missing middle epoch 2 strictly rejected with KEY_EPOCH_NOT_FOUND (code: ${testBErrorCode}).`);
+
+    // --- TEST C: Future Epoch (Registered 1, 3; Active 3; keyEpoch = 4 -> REJECTED) ---
+    let testCSuccess = false;
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      const mockEpochs = {
+        '1': { publicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x1', y: 'y1' }), keyEpoch: 1 },
+        '3': { publicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x3', y: 'y3' }), keyEpoch: 3 }
+      };
+      sbModule.setSupabaseClient(createEpochMockSupabase(mockEpochs, 3) as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      try {
+        await sendMessage('conn_epoch_test', 'u_sender', {
+          ciphertext: Buffer.from('validCiphertext').toString('base64'),
+          nonce: Buffer.from(new Uint8Array(12)).toString('base64'),
+          version: 1,
+          keyEpoch: 4 // Future uncreated epoch!
+        });
+      } catch (err: any) {
+        if (err?.code === 'KEY_EPOCH_NOT_FOUND' || err?.code === 'INVALID_KEY_EPOCH') {
+          testCSuccess = true;
+        }
+      } finally {
+        sbModule.setSupabaseClient(origClient);
+      }
+    } catch {}
+    recordResult('test_C_future_epoch_rejected', testCSuccess, 'Future unregistered epoch 4 is strictly rejected.');
+
+    // --- TEST D: Arbitrary Huge Epoch (keyEpoch = 9999 -> REJECTED) ---
+    let testDSuccess = false;
+    try {
+      const sbModule = await import('../supabase');
+      const origClient = sbModule.getSupabaseClient();
+      const mockEpochs = {
+        '1': { publicKey: JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x1', y: 'y1' }), keyEpoch: 1 }
+      };
+      sbModule.setSupabaseClient(createEpochMockSupabase(mockEpochs, 1) as any);
+
+      const { sendMessage } = await import('../services/connectionService');
+      try {
+        await sendMessage('conn_epoch_test', 'u_sender', {
+          ciphertext: Buffer.from('validCiphertext').toString('base64'),
+          nonce: Buffer.from(new Uint8Array(12)).toString('base64'),
+          version: 1,
+          keyEpoch: 9999
+        });
+      } catch (err: any) {
+        if (err?.code === 'KEY_EPOCH_NOT_FOUND' || err?.code === 'INVALID_KEY_EPOCH') {
+          testDSuccess = true;
+        }
+      } finally {
+        sbModule.setSupabaseClient(origClient);
+      }
+    } catch {}
+    recordResult('test_D_arbitrary_huge_epoch_rejected', testDSuccess, 'Arbitrary huge epoch 9999 is strictly rejected.');
+
+    // --- TEST E: Concurrent Same-Epoch Creation (Two simultaneous writes with different keys) ---
+    const testEAgentId = 'AMR-CONCURRENCY-AGENT-' + Date.now();
+    const keyPairE1 = await deriveAgentCryptoIdentity(testEAgentId, 'Pass1!', 2);
+    const keyPairE2 = await deriveAgentCryptoIdentity(testEAgentId, 'Pass2_Different!', 2);
+
+    let op1Success = false;
+    let op2Success = false;
+    let op2RejectedCorrectly = false;
+
+    const op1 = saveLocalKeyPair(
+      testEAgentId,
+      keyPairE1.e2eePublicKey,
+      keyPairE1.e2eePrivateKey,
+      keyPairE1.fingerprint,
+      keyPairE1.identityPublicKey,
+      keyPairE1.identityPrivateKey,
+      keyPairE1.signature,
+      2
+    ).then(() => { op1Success = true; }).catch((e) => {
+      if (e?.message?.includes('E2EE_EPOCH_ALREADY_EXISTS')) op2RejectedCorrectly = true;
+    });
+
+    const op2 = saveLocalKeyPair(
+      testEAgentId,
+      keyPairE2.e2eePublicKey,
+      keyPairE2.e2eePrivateKey,
+      keyPairE2.fingerprint,
+      keyPairE2.identityPublicKey,
+      keyPairE2.identityPrivateKey,
+      keyPairE2.signature,
+      2
+    ).then(() => { op2Success = true; }).catch((e) => {
+      if (e?.message?.includes('E2EE_EPOCH_ALREADY_EXISTS')) op2RejectedCorrectly = true;
+    });
+
+    await Promise.allSettled([op1, op2]);
+
+    const storedEpoch2 = await getLocalKeyPair(testEAgentId, 2);
+    const exactlyOneWon = (op1Success && !op2Success && op2RejectedCorrectly) || (op2Success && !op1Success && op2RejectedCorrectly);
+    const storedMatchesWinner = storedEpoch2 && (storedEpoch2.fingerprint === (op1Success ? keyPairE1.fingerprint : keyPairE2.fingerprint));
+
+    recordResult('test_E_concurrent_same_epoch_creation', Boolean(exactlyOneWon && storedMatchesWinner), 'Concurrent creation of Epoch 2 with different keys allows exactly one winner and rejects the conflicting write.');
+
+    // --- TEST F: Idempotent Same-Key Creation ---
+    const testFAgentId = 'AMR-IDEMPOTENT-AGENT-' + Date.now();
+    const keyPairF = await deriveAgentCryptoIdentity(testFAgentId, 'PassF!', 2);
+    let testFSuccess = false;
+    try {
+      // First save -> creates
+      await saveLocalKeyPair(
+        testFAgentId,
+        keyPairF.e2eePublicKey,
+        keyPairF.e2eePrivateKey,
+        keyPairF.fingerprint,
+        keyPairF.identityPublicKey,
+        keyPairF.identityPrivateKey,
+        keyPairF.signature,
+        2
+      );
+
+      // Second save with identical key -> idempotent success
+      await saveLocalKeyPair(
+        testFAgentId,
+        keyPairF.e2eePublicKey,
+        keyPairF.e2eePrivateKey,
+        keyPairF.fingerprint,
+        keyPairF.identityPublicKey,
+        keyPairF.identityPrivateKey,
+        keyPairF.signature,
+        2
+      );
+
+      const storedF = await getLocalKeyPair(testFAgentId, 2);
+      if (storedF && storedF.fingerprint === keyPairF.fingerprint) {
+        testFSuccess = true;
+      }
+    } catch (e) {
+      console.error('Test F failure:', e);
+    }
+    recordResult('test_F_idempotent_same_key_creation', testFSuccess, 'Attempting to save identical key to existing epoch is completely idempotent and succeeds without corruption.');
+
+    // --- TEST G: Overwrite Attempt Rejection (Existing Epoch 2 KEY_A, Attempt Epoch 2 KEY_B) ---
+    const testGAgentId = 'AMR-OVERWRITE-AGENT-' + Date.now();
+    const keyPairGA = await deriveAgentCryptoIdentity(testGAgentId, 'PassGA!', 2);
+    const keyPairGB = await deriveAgentCryptoIdentity(testGAgentId, 'PassGB_Different!', 2);
+    let testGSuccess = false;
+    try {
+      await saveLocalKeyPair(
+        testGAgentId,
+        keyPairGA.e2eePublicKey,
+        keyPairGA.e2eePrivateKey,
+        keyPairGA.fingerprint,
+        keyPairGA.identityPublicKey,
+        keyPairGA.identityPrivateKey,
+        keyPairGA.signature,
+        2
+      );
+
+      let threwExpectedError = false;
+      try {
+        await saveLocalKeyPair(
+          testGAgentId,
+          keyPairGB.e2eePublicKey,
+          keyPairGB.e2eePrivateKey,
+          keyPairGB.fingerprint,
+          keyPairGB.identityPublicKey,
+          keyPairGB.identityPrivateKey,
+          keyPairGB.signature,
+          2
+        );
+      } catch (err: any) {
+        if (err?.message?.includes('E2EE_EPOCH_ALREADY_EXISTS')) {
+          threwExpectedError = true;
+        }
+      }
+
+      const verifiedStoredG = await getLocalKeyPair(testGAgentId, 2);
+      if (threwExpectedError && verifiedStoredG && verifiedStoredG.fingerprint === keyPairGA.fingerprint) {
+        testGSuccess = true;
+      }
+    } catch (e) {
+      console.error('Test G failure:', e);
+    }
+    recordResult('test_G_overwrite_attempt_rejected', testGSuccess, 'Attempting to overwrite Epoch 2 with different key is rejected with E2EE_EPOCH_ALREADY_EXISTS and original KEY_A remains intact.');
 
     // --- CLUSTER MESSAGING SECURITY VERIFICATION ---
     try {

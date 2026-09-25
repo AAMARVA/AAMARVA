@@ -541,11 +541,72 @@ export function clearTransientJwkKeys(agentId: string): void {
   }
 }
 
+// In-process lock map to serialize concurrent saves per agent/epoch and prevent write races
+const agentEpochSaveLocks = new Map<string, Promise<any>>();
+
+async function withAgentSaveLock<T>(lockKey: string, fn: () => Promise<T>): Promise<T> {
+  const currentLock = agentEpochSaveLocks.get(lockKey) || Promise.resolve();
+  let releaseLock: () => void = () => {};
+  const newLock = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  agentEpochSaveLocks.set(lockKey, currentLock.then(() => newLock, () => newLock));
+
+  try {
+    await currentLock;
+    return await fn();
+  } finally {
+    releaseLock();
+    if (agentEpochSaveLocks.get(lockKey) === newLock) {
+      agentEpochSaveLocks.delete(lockKey);
+    }
+  }
+}
+
+function normalizeJwkKeyString(k: any): string {
+  if (!k) return '';
+  if (typeof k === 'string') {
+    try {
+      const parsed = JSON.parse(k);
+      return JSON.stringify(parsed);
+    } catch {
+      return k.trim();
+    }
+  }
+  try {
+    return JSON.stringify(k);
+  } catch {
+    return String(k);
+  }
+}
+
+function isSameKeyMaterial(
+  storedFp?: string,
+  storedPub?: any,
+  incomingFp?: string,
+  incomingPub?: any
+): boolean {
+  if (storedFp && incomingFp && storedFp === incomingFp) {
+    return true;
+  }
+  if (storedPub && incomingPub) {
+    const normStored = normalizeJwkKeyString(storedPub);
+    const normIncoming = normalizeJwkKeyString(incomingPub);
+    if (normStored && normIncoming && normStored === normIncoming) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Saves agent's local keys into persistent IndexedDB keystore.
  * Stores native CryptoKey objects (non-exportable) directly via IndexedDB structured clone.
  * Also archives entry in historical epoch store.
- * Strictly enforces epoch immutability: throws E2EE_EPOCH_ALREADY_EXISTS if attempting to overwrite an existing epoch with a different key.
+ * Strictly enforces epoch immutability:
+ * - If requested epoch already exists with the SAME key -> treated as idempotent (success).
+ * - If requested epoch already exists with a DIFFERENT key -> strictly rejected with E2EE_EPOCH_ALREADY_EXISTS.
+ * Concurrency safe: Serialized per agent/epoch and executes within an atomic IndexedDB transaction.
  */
 export async function saveLocalKeyPair(
   agentId: string,
@@ -562,99 +623,174 @@ export async function saveLocalKeyPair(
   const normalizedAgentId = agentId.trim().toUpperCase();
   const fp = fingerprint || (await computeKeyFingerprint(publicKey));
   const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
+  const lockKey = `${normalizedAgentId}#epoch#${epoch}`;
 
-  // Strict epoch immutability check in memory cache
-  const epochCacheKey = `${normalizedAgentId}#epoch#${epoch}`;
-  const existingMemory = memoryEpochCache.get(epochCacheKey);
-  if (existingMemory && existingMemory.fingerprint && existingMemory.fingerprint !== fp && existingMemory.publicKey !== publicKey) {
-    throw new Error(`E2EE_EPOCH_ALREADY_EXISTS: Key epoch ${epoch} already exists for agent ${normalizedAgentId} with a different key. Existing epochs are immutable.`);
-  }
-
-  // Check persistent IndexedDB before writing
-  try {
-    const db = await openKeyDatabase();
-    const existingDbEpoch = await new Promise<any>((resolve) => {
-      try {
-        const checkTx = db.transaction(EPOCH_STORE_NAME, 'readonly');
-        const req = checkTx.objectStore(EPOCH_STORE_NAME).get(`${normalizedAgentId}#epoch#${epoch}`);
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => resolve(null);
-      } catch {
-        resolve(null);
+  return withAgentSaveLock(lockKey, async () => {
+    // 1. Strict epoch immutability check in memory cache
+    const epochCacheKey = `${normalizedAgentId}#epoch#${epoch}`;
+    const existingMemory = memoryEpochCache.get(epochCacheKey);
+    if (existingMemory) {
+      const isSame = isSameKeyMaterial(existingMemory.fingerprint, existingMemory.publicKey, fp, publicKey);
+      if (!isSame) {
+        throw new Error(`E2EE_EPOCH_ALREADY_EXISTS: Key epoch ${epoch} already exists for agent ${normalizedAgentId} with a different key. Existing epochs are immutable.`);
       }
-    });
-
-    if (existingDbEpoch && existingDbEpoch.fingerprint && existingDbEpoch.fingerprint !== fp && existingDbEpoch.publicKey !== publicKey) {
-      throw new Error(`E2EE_EPOCH_ALREADY_EXISTS: Key epoch ${epoch} already exists for agent ${normalizedAgentId} with a different key in persistent storage.`);
+      // Same key: update transient representations if available and proceed idempotently
+      if (transientPrivateKeyJwk) {
+        transientJwkMap.set(`${normalizedAgentId}:${epoch}:e2ee`, transientPrivateKeyJwk);
+      }
+      if (transientIdentityPrivateKeyJwk) {
+        transientJwkMap.set(`${normalizedAgentId}:${epoch}:identity`, transientIdentityPrivateKeyJwk);
+      }
+      return;
     }
-  } catch (idbCheckErr: any) {
-    if (idbCheckErr?.message?.includes('E2EE_EPOCH_ALREADY_EXISTS')) {
-      throw idbCheckErr;
+
+    const entry: StoredAgentKeyEntry = {
+      publicKey,
+      privateKey,
+      fingerprint: fp,
+      identityPublicKey,
+      identityPrivateKey,
+      signature,
+      keyEpoch: epoch
+    };
+
+    // 2. Atomic read-and-conditional-write in a single IndexedDB transaction
+    try {
+      const db = await openKeyDatabase();
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const safeReject = (err: any) => {
+          if (!settled) {
+            settled = true;
+            reject(err);
+          }
+        };
+        const safeResolve = () => {
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        };
+
+        const tx = db.transaction([KEY_STORE_NAME, EPOCH_STORE_NAME], 'readwrite');
+        const epochStore = tx.objectStore(EPOCH_STORE_NAME);
+        const keyStore = tx.objectStore(KEY_STORE_NAME);
+        const epochId = `${normalizedAgentId}#epoch#${epoch}`;
+
+        const epochReq = epochStore.get(epochId);
+        epochReq.onsuccess = () => {
+          const existing = epochReq.result;
+          if (existing) {
+            const isSame = isSameKeyMaterial(existing.fingerprint, existing.publicKey, fp, publicKey);
+            if (!isSame) {
+              try {
+                tx.abort();
+              } catch {}
+              safeReject(new Error(`E2EE_EPOCH_ALREADY_EXISTS: Key epoch ${epoch} already exists for agent ${normalizedAgentId} with a different key in persistent storage.`));
+              return;
+            }
+            // Same key: Idempotent! Do not overwrite historical epoch record.
+            const curKeyReq = keyStore.get(normalizedAgentId);
+            curKeyReq.onsuccess = () => {
+              const cur = curKeyReq.result;
+              if (!cur || !cur.keyEpoch || epoch >= cur.keyEpoch) {
+                keyStore.put({
+                  agentId: normalizedAgentId,
+                  publicKey,
+                  privateKey,
+                  fingerprint: fp,
+                  identityPublicKey,
+                  identityPrivateKey,
+                  signature,
+                  keyEpoch: epoch,
+                  updatedAt: new Date().toISOString()
+                });
+              }
+            };
+            return;
+          }
+
+          // Epoch does NOT exist yet: store in historical epoch archive
+          epochStore.put({
+            id: epochId,
+            agentId: normalizedAgentId,
+            keyEpoch: epoch,
+            publicKey,
+            privateKey,
+            fingerprint: fp,
+            identityPublicKey,
+            identityPrivateKey,
+            signature,
+            archivedAt: new Date().toISOString()
+          });
+
+          // Check and update active key if epoch >= existing active epoch
+          const curKeyReq = keyStore.get(normalizedAgentId);
+          curKeyReq.onsuccess = () => {
+            const cur = curKeyReq.result;
+            if (!cur || !cur.keyEpoch || epoch >= cur.keyEpoch) {
+              keyStore.put({
+                agentId: normalizedAgentId,
+                publicKey,
+                privateKey,
+                fingerprint: fp,
+                identityPublicKey,
+                identityPrivateKey,
+                signature,
+                keyEpoch: epoch,
+                updatedAt: new Date().toISOString()
+              });
+            }
+          };
+        };
+
+        epochReq.onerror = () => {
+          safeReject(epochReq.error);
+        };
+
+        tx.oncomplete = () => {
+          // Transaction committed successfully: update in-memory caches
+          memoryEpochCache.set(epochCacheKey, entry);
+          const curMem = memoryKeyCache.get(normalizedAgentId);
+          if (!curMem || !curMem.keyEpoch || epoch >= curMem.keyEpoch) {
+            memoryKeyCache.set(normalizedAgentId, entry);
+          }
+          if (transientPrivateKeyJwk) {
+            transientJwkMap.set(`${normalizedAgentId}:${epoch}:e2ee`, transientPrivateKeyJwk);
+          }
+          if (transientIdentityPrivateKeyJwk) {
+            transientJwkMap.set(`${normalizedAgentId}:${epoch}:identity`, transientIdentityPrivateKeyJwk);
+          }
+          safeResolve();
+        };
+
+        tx.onerror = () => {
+          safeReject(tx.error || new Error('IndexedDB transaction error'));
+        };
+
+        tx.onabort = () => {
+          safeReject(new Error(`E2EE_EPOCH_ALREADY_EXISTS: Key epoch ${epoch} already exists for agent ${normalizedAgentId} with a different key in persistent storage.`));
+        };
+      });
+    } catch (idbErr: any) {
+      if (idbErr?.message?.includes('E2EE_EPOCH_ALREADY_EXISTS')) {
+        throw idbErr;
+      }
+      // If IndexedDB is unavailable in current runtime, memory cache fallback
+      console.warn('E2EE Keystore: IndexedDB unavailable or write error, using session memory cache:', idbErr);
+      memoryEpochCache.set(epochCacheKey, entry);
+      const curMem = memoryKeyCache.get(normalizedAgentId);
+      if (!curMem || !curMem.keyEpoch || epoch >= curMem.keyEpoch) {
+        memoryKeyCache.set(normalizedAgentId, entry);
+      }
+      if (transientPrivateKeyJwk) {
+        transientJwkMap.set(`${normalizedAgentId}:${epoch}:e2ee`, transientPrivateKeyJwk);
+      }
+      if (transientIdentityPrivateKeyJwk) {
+        transientJwkMap.set(`${normalizedAgentId}:${epoch}:identity`, transientIdentityPrivateKeyJwk);
+      }
     }
-  }
-
-  if (transientPrivateKeyJwk) {
-    transientJwkMap.set(`${normalizedAgentId}:${epoch}:e2ee`, transientPrivateKeyJwk);
-  }
-  if (transientIdentityPrivateKeyJwk) {
-    transientJwkMap.set(`${normalizedAgentId}:${epoch}:identity`, transientIdentityPrivateKeyJwk);
-  }
-
-  const entry: StoredAgentKeyEntry = {
-    publicKey,
-    privateKey,
-    fingerprint: fp,
-    identityPublicKey,
-    identityPrivateKey,
-    signature,
-    keyEpoch: epoch
-  };
-
-  // Update in-memory caches
-  memoryKeyCache.set(normalizedAgentId, entry);
-  memoryEpochCache.set(epochCacheKey, entry);
-
-  try {
-    const db = await openKeyDatabase();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction([KEY_STORE_NAME, EPOCH_STORE_NAME], 'readwrite');
-      
-      // Store current key
-      const keyStore = tx.objectStore(KEY_STORE_NAME);
-      keyStore.put({
-        agentId: normalizedAgentId,
-        publicKey,
-        privateKey,
-        fingerprint: fp,
-        identityPublicKey,
-        identityPrivateKey,
-        signature,
-        keyEpoch: epoch,
-        updatedAt: new Date().toISOString()
-      });
-
-      // Archive into historical epoch store
-      const epochStore = tx.objectStore(EPOCH_STORE_NAME);
-      epochStore.put({
-        id: `${normalizedAgentId}#epoch#${epoch}`,
-        agentId: normalizedAgentId,
-        keyEpoch: epoch,
-        publicKey,
-        privateKey,
-        fingerprint: fp,
-        identityPublicKey,
-        identityPrivateKey,
-        signature,
-        archivedAt: new Date().toISOString()
-      });
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (e) {
-    // If IndexedDB fails, memory cache retains keys for current session
-    console.warn('E2EE Keystore: IndexedDB write error, retained in session cache:', e);
-  }
+  });
 }
 
 /**
@@ -1625,18 +1761,19 @@ export async function getPeerEpochKey(
 
 /**
  * Resolves the public key for a sender/peer for a given epoch.
- * Strictly checks historical epoch mappings and local cache.
- * Fails closed if the specific epoch key is not found.
+ * Strictly checks historical epoch mappings and local cache for the EXACT requested epoch.
+ * Fails closed if the specific epoch key is not found (never substitutes keys from other epochs).
  */
 export async function resolveSenderPublicKey(
   senderAgentId: string,
   epoch: number,
   peerEpochMap?: Record<string, any>,
-  currentPeerKey?: string | null
+  currentPeerKey?: string | null,
+  currentPeerKeyEpoch?: number | null
 ): Promise<string | null> {
   const epochNum = typeof epoch === 'number' && epoch > 0 ? epoch : 1;
 
-  // 1. Check peerEpochMap if provided by API
+  // 1. Check peerEpochMap if provided by API (exact epoch match)
   if (peerEpochMap && Object.keys(peerEpochMap).length > 0) {
     const match = peerEpochMap[String(epochNum)] || peerEpochMap[epochNum];
     if (match?.publicKey) {
@@ -1644,26 +1781,31 @@ export async function resolveSenderPublicKey(
     }
   }
 
-  // 2. Check local peer epoch keystore
+  // 2. Check local peer epoch keystore (exact epoch match)
   const localEpochPeer = await getPeerEpochKey(senderAgentId, epochNum);
   if (localEpochPeer?.publicKey) {
-    return localEpochPeer.publicKey;
+    return typeof localEpochPeer.publicKey === 'string' ? localEpochPeer.publicKey : JSON.stringify(localEpochPeer.publicKey);
   }
 
-  // 3. Check pinned peer
+  // 3. Check pinned peer (exact epoch match in epochKeys or pinned active keyEpoch)
   const pinned = await getPinnedPeerKey(senderAgentId);
   if (pinned && pinned.epochKeys && pinned.epochKeys[String(epochNum)]) {
-    return pinned.epochKeys[String(epochNum)].publicKey;
+    const epKey = pinned.epochKeys[String(epochNum)].publicKey;
+    if (epKey) return typeof epKey === 'string' ? epKey : JSON.stringify(epKey);
   }
-  if (pinned?.publicKey) {
-    return pinned.publicKey;
+  if (pinned?.publicKey && (pinned.keyEpoch === epochNum || (!pinned.keyEpoch && epochNum === 1))) {
+    return typeof pinned.publicKey === 'string' ? pinned.publicKey : JSON.stringify(pinned.publicKey);
   }
 
-  // 4. Fallback to currentPeerKey if provided
+  // 4. Fallback to currentPeerKey ONLY if its declared epoch matches requested epoch (or default epoch 1 for unversioned legacy keys)
   if (currentPeerKey) {
-    return typeof currentPeerKey === 'string' ? currentPeerKey : JSON.stringify(currentPeerKey);
+    const activeEpoch = typeof currentPeerKeyEpoch === 'number' && currentPeerKeyEpoch > 0 ? currentPeerKeyEpoch : (pinned?.keyEpoch || 1);
+    if (epochNum === activeEpoch) {
+      return typeof currentPeerKey === 'string' ? currentPeerKey : JSON.stringify(currentPeerKey);
+    }
   }
 
+  // Exact epoch key not found: fail closed
   return null;
 }
 

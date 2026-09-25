@@ -1500,17 +1500,16 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
 
     // Verify keyEpoch against registered active key epochs for ALL required cluster participants
     const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
-    const senderEpochHistory = senderMeta.e2eeEpochHistory || {};
+    const senderEpochHistory = (senderMeta.e2eeEpochHistory as Record<string, any>) || {};
     const senderHasEpoch = parsedKeyEpoch === senderActiveEpoch ||
-      !!senderEpochHistory[String(parsedKeyEpoch)] ||
-      (parsedKeyEpoch <= senderActiveEpoch && !!senderPublicKey);
+      Boolean(senderEpochHistory[String(parsedKeyEpoch)] && senderEpochHistory[String(parsedKeyEpoch)].publicKey);
 
     if (!senderHasEpoch) {
       return res.status(400).json({
         success: false,
         error: {
-          code: 'INVALID_KEY_EPOCH',
-          message: `Invalid keyEpoch ${parsedKeyEpoch}. Exceeds registered active key epochs for cluster participants.`
+          code: 'KEY_EPOCH_NOT_FOUND',
+          message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
         }
       });
     }
@@ -1518,17 +1517,16 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
     if (peerMetas.length > 0) {
       for (const peerMeta of peerMetas) {
         const peerActiveEpoch = typeof peerMeta.e2eeKeyEpoch === 'number' ? peerMeta.e2eeKeyEpoch : 1;
-        const peerEpochHistory = peerMeta.e2eeEpochHistory || {};
+        const peerEpochHistory = (peerMeta.e2eeEpochHistory as Record<string, any>) || {};
         const peerHasEpoch = parsedKeyEpoch === peerActiveEpoch ||
-          !!peerEpochHistory[String(parsedKeyEpoch)] ||
-          (parsedKeyEpoch <= peerActiveEpoch && !!peerMeta.e2eePublicKey);
+          Boolean(peerEpochHistory[String(parsedKeyEpoch)] && peerEpochHistory[String(parsedKeyEpoch)].publicKey);
 
         if (!peerHasEpoch) {
           return res.status(400).json({
             success: false,
             error: {
-              code: 'INVALID_KEY_EPOCH',
-              message: `Invalid keyEpoch ${parsedKeyEpoch}. Exceeds registered active key epochs for cluster participants.`
+              code: 'KEY_EPOCH_NOT_FOUND',
+              message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
             }
           });
         }

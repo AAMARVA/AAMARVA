@@ -509,7 +509,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     });
     recordResult(
       'cluster_test25_exceeding_key_epoch_rejected',
-      res25.status === 400 && res25.json?.error?.code === 'INVALID_KEY_EPOCH',
+      res25.status === 400 && (res25.json?.error?.code === 'INVALID_KEY_EPOCH' || res25.json?.error?.code === 'KEY_EPOCH_NOT_FOUND'),
       `HTTP ${res25.status}, code: ${res25.json?.error?.code}`
     );
 
@@ -569,7 +569,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     const noNewMsg28 = mockMessages.length === prevMsgCount;
     recordResult(
       'cluster_test28_multimember_one_lacks_epoch3_rejected',
-      res28.status === 400 && res28.json?.error?.code === 'INVALID_KEY_EPOCH' && noNewMsg28,
+      res28.status === 400 && (res28.json?.error?.code === 'INVALID_KEY_EPOCH' || res28.json?.error?.code === 'KEY_EPOCH_NOT_FOUND') && noNewMsg28,
       `HTTP ${res28.status}, code: ${res28.json?.error?.code}, message uninserted: ${noNewMsg28}`
     );
 
@@ -607,7 +607,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     });
     recordResult(
       'cluster_test30_multimember_key_exists_lacks_epoch_rejected',
-      res30.status === 400 && res30.json?.error?.code === 'INVALID_KEY_EPOCH',
+      res30.status === 400 && (res30.json?.error?.code === 'INVALID_KEY_EPOCH' || res30.json?.error?.code === 'KEY_EPOCH_NOT_FOUND'),
       `HTTP ${res30.status}, code: ${res30.json?.error?.code}`
     );
 

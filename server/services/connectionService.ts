@@ -530,36 +530,30 @@ export async function sendMessage(
     );
   }
 
-  // 2. Validate incoming keyEpoch against registered activeKeyEpoch of sender and recipient
+  // 2. Strict keyEpoch validation against registered activeKeyEpoch and exact epoch history (no numeric range fallback)
+  const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
+  const senderEpochHistory = (senderMeta.e2eeEpochHistory as Record<string, any>) || {};
+  const senderHasEpoch = Boolean(
+    keyEpoch === senderActiveEpoch ||
+    (senderEpochHistory[String(keyEpoch)] && senderEpochHistory[String(keyEpoch)].publicKey)
+  );
+
+  let recipientHasEpoch = false;
   if (recipientUserId) {
-    try {
-      const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
-      const recipientActiveEpoch = typeof recipientMeta.e2eeKeyEpoch === 'number' ? recipientMeta.e2eeKeyEpoch : 1;
+    const recipientActiveEpoch = typeof recipientMeta.e2eeKeyEpoch === 'number' ? recipientMeta.e2eeKeyEpoch : 1;
+    const recipientEpochHistory = (recipientMeta.e2eeEpochHistory as Record<string, any>) || {};
+    recipientHasEpoch = Boolean(
+      (recipientMeta.e2eePublicKey && keyEpoch === recipientActiveEpoch) ||
+      (recipientEpochHistory[String(keyEpoch)] && recipientEpochHistory[String(keyEpoch)].publicKey)
+    );
+  }
 
-      const senderEpochHistory = senderMeta.e2eeEpochHistory || {};
-      const recipientEpochHistory = recipientMeta.e2eeEpochHistory || {};
-
-      const senderHasEpoch = keyEpoch === senderActiveEpoch || !!senderEpochHistory[String(keyEpoch)] || (keyEpoch <= senderActiveEpoch && !!senderMeta.e2eePublicKey);
-      const recipientHasEpoch = keyEpoch === recipientActiveEpoch || !!recipientEpochHistory[String(keyEpoch)] || (keyEpoch <= recipientActiveEpoch && !!recipientMeta.e2eePublicKey);
-
-      if (!senderHasEpoch && !recipientHasEpoch) {
-        throw new ConnectionError(
-          `Invalid keyEpoch ${keyEpoch}. Neither connection participant has published or registered an active E2EE key for epoch ${keyEpoch}.`,
-          400,
-          'INVALID_KEY_EPOCH'
-        );
-      }
-    } catch (e: any) {
-      if (e instanceof ConnectionError) throw e;
-      // If auth user lookup fails unexpectedly (e.g. test environment mock user IDs), reject arbitrary large unvalidated epochs
-      if (keyEpoch > 50) {
-        throw new ConnectionError(
-          `Invalid keyEpoch ${keyEpoch}. Exceeds registered active key epochs for connection participants.`,
-          400,
-          'INVALID_KEY_EPOCH'
-        );
-      }
-    }
+  if (!senderHasEpoch && !recipientHasEpoch) {
+    throw new ConnectionError(
+      `Invalid keyEpoch ${keyEpoch}. Key epoch ${keyEpoch} not found in registered active key or epoch history for connection participants.`,
+      400,
+      'KEY_EPOCH_NOT_FOUND'
+    );
   }
 
   const now = new Date().toISOString();

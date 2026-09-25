@@ -26,6 +26,7 @@ import {
   constructAAD,
   normalizeAgentId,
   computeKeyFingerprint,
+  resolveSenderPublicKey,
   E2EEDecryptionError,
   formatDecryptionErrorStatus
 } from './e2ee';
@@ -492,6 +493,97 @@ export async function runE2EEUnitTest(): Promise<boolean> {
       throw new Error('TEST 8 FAILED: Formatted status did not describe missing historical epoch accurately.');
     }
     console.log('✅ TEST 8 PASSED: Missing historical epoch correctly reported as KEY_EPOCH_NOT_FOUND.');
+
+    // ---------------------------------------------------------
+    // TEST 9: Strict Peer Public Key Resolution (No Middle-Epoch Fallback)
+    // ---------------------------------------------------------
+    console.log('\n[TEST 9] Strict Peer Public Key Resolution (Missing-Middle-Epoch Verification)...');
+    const peerEpochMap = {
+      '1': { publicKey: aEpoch1.e2eePublicKey, keyEpoch: 1 },
+      '3': { publicKey: aEpoch3.e2eePublicKey, keyEpoch: 3 }
+    };
+
+    // Valid historical epoch 1 -> resolves
+    const resolvedEp1 = await resolveSenderPublicKey(chatAgentA, 1, peerEpochMap, aEpoch3.e2eePublicKey, 3);
+    if (!resolvedEp1) {
+      throw new Error('TEST 9 FAILED: Epoch 1 must resolve from peerEpochMap.');
+    }
+
+    // Active epoch 3 -> resolves
+    const resolvedEp3 = await resolveSenderPublicKey(chatAgentA, 3, peerEpochMap, aEpoch3.e2eePublicKey, 3);
+    if (!resolvedEp3) {
+      throw new Error('TEST 9 FAILED: Epoch 3 must resolve from active/peerEpochMap.');
+    }
+
+    // Missing middle epoch 2 -> MUST return null (fail closed, no fallback to epoch 1 or 3)
+    const resolvedEp2 = await resolveSenderPublicKey(chatAgentA, 2, peerEpochMap, aEpoch3.e2eePublicKey, 3);
+    if (resolvedEp2 !== null) {
+      throw new Error('TEST 9 FAILED: Missing middle epoch 2 must return null instead of falling back to active/other epoch.');
+    }
+
+    // Future epoch 4 -> MUST return null
+    const resolvedEp4 = await resolveSenderPublicKey(chatAgentA, 4, peerEpochMap, aEpoch3.e2eePublicKey, 3);
+    if (resolvedEp4 !== null) {
+      throw new Error('TEST 9 FAILED: Future epoch 4 must return null.');
+    }
+    console.log('✅ TEST 9 PASSED: Peer key resolution is strictly exact with zero numeric-range fallbacks.');
+
+    // ---------------------------------------------------------
+    // TEST 10: Concurrent Same-Epoch Creation & Idempotency
+    // ---------------------------------------------------------
+    console.log('\n[TEST 10] Concurrency & Idempotency Invariants...');
+    const concAgent = 'AMR-CONC-UNIT-' + Date.now();
+    const keyConc1 = await deriveAgentCryptoIdentity(concAgent, 'Pass1!', 2);
+    const keyConc2 = await deriveAgentCryptoIdentity(concAgent, 'Pass2_Diff!', 2);
+
+    let winnerCount = 0;
+    let rejectedCount = 0;
+
+    const p1 = saveLocalKeyPair(
+      concAgent,
+      keyConc1.e2eePublicKey,
+      keyConc1.e2eePrivateKey,
+      keyConc1.fingerprint,
+      keyConc1.identityPublicKey,
+      keyConc1.identityPrivateKey,
+      keyConc1.signature,
+      2
+    ).then(() => { winnerCount++; }).catch(() => { rejectedCount++; });
+
+    const p2 = saveLocalKeyPair(
+      concAgent,
+      keyConc2.e2eePublicKey,
+      keyConc2.e2eePrivateKey,
+      keyConc2.fingerprint,
+      keyConc2.identityPublicKey,
+      keyConc2.identityPrivateKey,
+      keyConc2.signature,
+      2
+    ).then(() => { winnerCount++; }).catch(() => { rejectedCount++; });
+
+    await Promise.allSettled([p1, p2]);
+
+    if (winnerCount !== 1 || rejectedCount !== 1) {
+      throw new Error(`TEST 10 FAILED: Concurrent write race failure (winners: ${winnerCount}, rejected: ${rejectedCount})`);
+    }
+
+    // Idempotent test: save winner again
+    const storedWinningEpoch = await getLocalKeyPair(concAgent, 2);
+    if (!storedWinningEpoch) {
+      throw new Error('TEST 10 FAILED: Winner epoch was not saved.');
+    }
+
+    await saveLocalKeyPair(
+      concAgent,
+      storedWinningEpoch.publicKey,
+      storedWinningEpoch.privateKey,
+      storedWinningEpoch.fingerprint,
+      storedWinningEpoch.identityPublicKey,
+      storedWinningEpoch.identityPrivateKey,
+      storedWinningEpoch.signature,
+      2
+    );
+    console.log('✅ TEST 10 PASSED: Concurrency serialization and same-key idempotency verified.');
 
     console.log('\n====================================================');
     console.log('🎉 ALL E2EE KEY EPOCH & RECOVERY TESTS PASSED SUCCESSFULLY!');
