@@ -319,17 +319,30 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       `HTTP ${res11.status}, code: ${res11.json?.error?.code}`
     );
 
-    // TEST 12: Ciphertext exceeding size limit rejected with 400 PAYLOAD_TOO_LARGE
-    const hugeCiphertext = 'A'.repeat(250000);
-    const res12 = await helperFetch(`/api/clusters/${clusterId}/messages`, {
+    // TEST 12a: Ciphertext at exact 102,400 decoded bytes boundary (136,536 Base64 chars) accepted
+    const boundaryCiphertext = Buffer.alloc(102400, 'a').toString('base64'); // exactly 136,536 chars
+    const res12a = await helperFetch(`/api/clusters/${clusterId}/messages`, {
       method: 'POST',
       headers: ownerHeaders,
-      body: JSON.stringify({ ciphertext: hugeCiphertext, nonce: validNonce, version: 1, keyEpoch: 1 })
+      body: JSON.stringify({ ciphertext: boundaryCiphertext, nonce: validNonce, version: 1, keyEpoch: 1 })
     });
     recordResult(
-      'cluster_test12_payload_too_large_rejected',
-      res12.status === 400 && res12.json?.error?.code === 'PAYLOAD_TOO_LARGE',
-      `HTTP ${res12.status}, code: ${res12.json?.error?.code}`
+      'cluster_test12a_payload_exact_102400_bytes_accepted',
+      res12a.status === 201 && res12a.json?.success === true,
+      `HTTP ${res12a.status}, chars: ${boundaryCiphertext.length}`
+    );
+
+    // TEST 12b: Ciphertext exceeding 102,400 decoded bytes boundary (102,401 bytes / 136,540 Base64 chars) rejected with 400 PAYLOAD_TOO_LARGE
+    const overBoundaryCiphertext = Buffer.alloc(102401, 'a').toString('base64'); // 136,540 chars
+    const res12b = await helperFetch(`/api/clusters/${clusterId}/messages`, {
+      method: 'POST',
+      headers: ownerHeaders,
+      body: JSON.stringify({ ciphertext: overBoundaryCiphertext, nonce: validNonce, version: 1, keyEpoch: 1 })
+    });
+    recordResult(
+      'cluster_test12b_payload_over_102400_bytes_rejected',
+      res12b.status === 400 && res12b.json?.error?.code === 'PAYLOAD_TOO_LARGE',
+      `HTTP ${res12b.status}, code: ${res12b.json?.error?.code}, chars: ${overBoundaryCiphertext.length}`
     );
 
     // TEST 13: Non-member sender rejected with 403 FORBIDDEN
@@ -478,7 +491,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     );
 
     // TEST 24: Verify direct database record persistence (content = null, complete E2EE envelope)
-    const persistedMsg = mockMessages.find(m => m.clusterId === clusterId);
+    const persistedMsg = mockMessages.find(m => m.clusterId === clusterId && m.ciphertext === validCiphertext);
     const dbPersistedValid = Boolean(
       persistedMsg &&
       (persistedMsg.content === null || persistedMsg.content === undefined) &&
@@ -514,7 +527,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     );
 
     // TEST 26: GET cluster messages returns complete persisted metadata (content = null, version, keyEpoch, sequence)
-    const fetchedMsg = res21.json?.data?.[0];
+    const fetchedMsg = res21.json?.data?.find((m: any) => m.ciphertext === validCiphertext);
     const getMetadataValid = Boolean(
       fetchedMsg &&
       fetchedMsg.content === null &&

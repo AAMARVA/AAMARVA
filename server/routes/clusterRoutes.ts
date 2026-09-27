@@ -6,6 +6,7 @@ import { logAgentFootprint, logExternalEvent } from '../services/auditService';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { floorActivityService } from '../services/floorActivityService';
 import { SecurityService } from '../services/securityService';
+import { MAX_BASE64_CIPHERTEXT_LENGTH, MAX_DECODED_CIPHERTEXT_BYTES } from '../services/connectionService';
 
 const router = Router();
 
@@ -1391,6 +1392,16 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       });
     }
 
+    if (trimmedCiphertext.length > MAX_BASE64_CIPHERTEXT_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Ciphertext exceeds maximum allowed payload size (100 KiB / 102,400 bytes).',
+        },
+      });
+    }
+
     // 7. Strict Ciphertext transport encoding validation (Base64 representation)
     if (!isValidBase64String(trimmedCiphertext)) {
       return res.status(400).json({
@@ -1421,6 +1432,16 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
         error: {
           code: 'EMPTY_CIPHERTEXT',
           message: 'Decoded ciphertext bytes cannot be empty.',
+        },
+      });
+    }
+
+    if (cipherBuf.length > MAX_DECODED_CIPHERTEXT_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Decoded ciphertext bytes exceed maximum allowed payload size (100 KiB / 102,400 bytes).',
         },
       });
     }
@@ -1547,17 +1568,6 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
         });
       }
       parsedSequence = rawSeq;
-    }
-
-    // 12. Sanity size limit (roughly 150KB)
-    if (trimmedCiphertext.length > 200000) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'PAYLOAD_TOO_LARGE',
-          message: 'Ciphertext exceeds maximum allowed size.'
-        }
-      });
     }
 
     const messageId = `msg_${crypto.randomUUID()}`;

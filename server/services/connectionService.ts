@@ -302,7 +302,9 @@ export async function getUserConnections(userId: string, page: number, limit: nu
   };
 }
 
-export const MAX_MESSAGE_CONTENT_LENGTH = 100000;
+export const MAX_DECODED_CIPHERTEXT_BYTES = 102400; // 100 KiB raw decoded ciphertext
+export const MAX_BASE64_CIPHERTEXT_LENGTH = 136536; // Math.ceil(102400 / 3) * 4 Base64 transport characters
+export const MAX_MESSAGE_CONTENT_LENGTH = MAX_BASE64_CIPHERTEXT_LENGTH;
 
 export interface MessagePayload {
   content?: string;
@@ -443,12 +445,26 @@ export async function sendMessage(
   version = 1;
   keyEpoch = typeof keyEpoch === 'number' && Number.isInteger(keyEpoch) && keyEpoch >= 1 ? keyEpoch : 1;
 
-  if (ciphertext.length > MAX_MESSAGE_CONTENT_LENGTH) {
+  if (ciphertext.length > MAX_BASE64_CIPHERTEXT_LENGTH) {
     throw new ConnectionError(
-      `Payload exceeds the maximum limit.`,
+      `Ciphertext exceeds maximum allowed payload size (100 KiB / 102,400 bytes).`,
       400,
       'PAYLOAD_TOO_LARGE'
     );
+  }
+
+  try {
+    const cipherBuf = Buffer.from(ciphertext, 'base64');
+    if (cipherBuf.length > MAX_DECODED_CIPHERTEXT_BYTES) {
+      throw new ConnectionError(
+        `Decoded ciphertext bytes exceed maximum allowed payload size (100 KiB / 102,400 bytes).`,
+        400,
+        'PAYLOAD_TOO_LARGE'
+      );
+    }
+  } catch (err) {
+    if (err instanceof ConnectionError) throw err;
+    // Malformed base64 will fail downstream or in route validation
   }
 
   const supabase = getSupabaseClient();

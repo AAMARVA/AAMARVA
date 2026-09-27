@@ -89,6 +89,11 @@ export function validateConfig(): AppConfig {
     missingSecrets.push('API_KEY_HMAC_SECRET');
   }
 
+  const adminSecretKey = process.env.ADMIN_SECRET_KEY?.trim();
+  if (process.env.NODE_ENV === 'production' && !adminSecretKey) {
+    missingSecrets.push('ADMIN_SECRET_KEY');
+  }
+
   if (missingSecrets.length > 0) {
     const errorMsg = `[Configuration Error] Missing required environment variables: [${missingSecrets.join(', ')}].`;
     if (process.env.NODE_ENV === 'production') {

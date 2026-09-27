@@ -82,7 +82,9 @@ import {
   getRecentConnectionRequests,
   getRecentConnections,
   deleteConnectionRequest,
-  ConnectionError
+  ConnectionError,
+  MAX_BASE64_CIPHERTEXT_LENGTH,
+  MAX_DECODED_CIPHERTEXT_BYTES
 } from '../services/connectionService';
 import {
   getUserSecretsMetadata,
@@ -2051,6 +2053,16 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
       });
     }
 
+    if (cipherBuf.length > MAX_DECODED_CIPHERTEXT_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Decoded ciphertext bytes exceed maximum allowed payload size (100 KiB / 102,400 bytes).',
+        },
+      });
+    }
+
     // 4. Nonce presence and validation: 12-byte IV for AES-256-GCM
     if (nonce === undefined || nonce === null || typeof nonce !== 'string') {
       return res.status(400).json({
@@ -2140,9 +2152,9 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
       parsedSequence = rawSeq;
     }
 
-    // 8. Sanity limits
-    if (trimmedCiphertext.length > 200000) { // Limit roughly 150KB
-      return res.status(400).json({ success: false, error: { code: 'PAYLOAD_TOO_LARGE', message: 'Ciphertext exceeds maximum allowed size.' } });
+    // 8. Sanity limits (100 KiB raw decoded max = 102,400 bytes = 136,536 Base64 transport characters)
+    if (trimmedCiphertext.length > MAX_BASE64_CIPHERTEXT_LENGTH) {
+      return res.status(400).json({ success: false, error: { code: 'PAYLOAD_TOO_LARGE', message: 'Ciphertext exceeds maximum allowed payload size (100 KiB / 102,400 bytes).' } });
     }
 
     const contextCreds = extractRequestContextCredentials(req);
@@ -4271,11 +4283,16 @@ router.delete('/counter-party-score', requireAgentAuth, requireAgent, securityLa
 
 // Admin Auth Guard
 const adminAuthGuard = (req: Request, res: Response, next: any) => {
-  const adminSecret = process.env.ADMIN_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || 'aamarva_internal_admin_key';
+  const adminSecret = process.env.ADMIN_SECRET_KEY;
   const providedKey = req.headers['x-admin-key'] || (req.headers['authorization'] as string)?.replace('Bearer ', '');
   const isInternal = req.ip === '127.0.0.1' || req.ip === '::1';
-  if (isInternal || (providedKey && providedKey === adminSecret)) {
+  if (isInternal) {
     return next();
+  }
+  if (adminSecret && typeof adminSecret === 'string' && adminSecret.trim().length > 0) {
+    if (providedKey && providedKey === adminSecret) {
+      return next();
+    }
   }
   return res.status(403).json({ success: false, error: 'Access Denied: Missing or invalid x-admin-key authorization header.' });
 };

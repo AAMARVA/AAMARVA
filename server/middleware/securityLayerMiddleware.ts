@@ -50,7 +50,7 @@ export function securityLayer(policyName: string) {
       if (req.body && typeof req.body === 'object') {
         const bodyStr = JSON.stringify(req.body);
         const policy = GLOBAL_SECURITY_POLICIES[policyName];
-        const maxBodySize = policy?.resourceLimits?.maxBodySize || 100000;
+        const maxBodySize = policy?.resourceLimits?.maxBodySize || 200000;
         
         if (bodyStr.length > maxBodySize) {
           await securityService.recordViolation(userId || '', agentId || '', policyName, SecuritySeverity.S2_ABUSE, `Payload size violation: ${bodyStr.length} > ${maxBodySize}`, req.ip);
