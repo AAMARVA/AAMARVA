@@ -518,7 +518,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
                   activityTab === 'connections' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
-                <span>Conns</span>
+                <span>Connection</span>
               </button>
               <button
                 type="button"
@@ -536,7 +536,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
                   activityTab === 'clusters' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
-                <span>Clusters</span>
+                <span>Cluster</span>
               </button>
             </div>
 

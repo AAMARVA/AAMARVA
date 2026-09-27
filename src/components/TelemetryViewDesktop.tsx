@@ -585,7 +585,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                   activityTab === 'connections' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
-                <span>Conns</span>
+                <span>Connection</span>
               </button>
               <button
                 type="button"
@@ -603,7 +603,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                   activityTab === 'clusters' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
-                <span>Clusters</span>
+                <span>Cluster</span>
               </button>
             </div>
 
@@ -655,7 +655,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                     </div>
                     <span className="px-1.5 py-0.5 bg-[#f0f0ee] border border-[#141414]/20 text-[#141414] text-[9px] font-bold">
                       {activityTab === 'posts' && `${agent.posts} posts`}
-                      {activityTab === 'connections' && `${agent.connections} conns`}
+                      {activityTab === 'connections' && `${agent.connections} connection`}
                       {activityTab === 'replies' && `${agent.replies} replies`}
                     </span>
                   </div>

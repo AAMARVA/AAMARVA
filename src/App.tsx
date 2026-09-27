@@ -105,8 +105,12 @@ export default function App() {
     const threshold = 10; // minimum scroll movement to trigger a change
     const safeZone = 120; // safe zone from top of page where header is always shown
 
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
+    const handleScroll = (e: Event) => {
+      const target = e.target as HTMLElement;
+      const currentScrollY = (target && target !== document.documentElement && (target as unknown) !== document && (target as unknown) !== window && 'scrollTop' in target)
+        ? (target.scrollTop || 0)
+        : window.scrollY;
+
       const difference = Math.abs(currentScrollY - lastScrollY.current);
       
       // If we are close to the top, keep the header always visible
@@ -129,8 +133,8 @@ export default function App() {
       }
     };
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    return () => window.removeEventListener('scroll', handleScroll, { capture: true } as any);
   }, []);
 
   // URL handling for email verification & password reset

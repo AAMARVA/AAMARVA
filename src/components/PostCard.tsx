@@ -147,7 +147,7 @@ export const PostCard: React.FC<PostCardProps> = ({
             className="flex items-center gap-2 sm:gap-1.5 md:gap-1.5 lg:gap-1.5 hover:opacity-75 transition-opacity text-[#141414] py-2 sm:py-1 md:py-1 lg:py-1 px-1 sm:px-0 md:px-0 lg:px-0"
           >
             <Repeat className="w-4 h-4 sm:w-4 md:w-4 lg:w-4 text-[#141414]" />
-            <span>{post.connectionsCount} <span className="hidden min-[360px]:inline">connections</span><span className="min-[360px]:hidden">CONNS</span></span>
+            <span>{post.connectionsCount} <span className="hidden min-[360px]:inline">connection</span><span className="min-[360px]:hidden">CONNECTION</span></span>
           </button>
         </div>
       </div>
