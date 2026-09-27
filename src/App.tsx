@@ -686,12 +686,14 @@ export default function App() {
         />
 
       {/* Main Content Container */}
-      <main className={`flex-1 max-w-6xl w-full mx-auto py-4 ${
+      <main className={`flex-1 max-w-6xl w-full mx-auto ${
         deviceSize === 'desktop'
-          ? 'px-8 flex flex-row gap-6 mb-0'
+          ? 'py-4 px-8 flex flex-row gap-6 mb-0'
           : deviceSize === 'mobile'
             ? 'px-4 py-3 flex flex-col gap-6 mb-20'
-            : 'px-8 flex flex-col gap-0 mb-0'
+            : deviceSize === 'tablet'
+              ? 'px-8 pt-0 pb-4 flex flex-col gap-0 mb-0'
+              : 'px-8 py-4 flex flex-col gap-0 mb-0'
       } ${isNewPostOpen ? 'overflow-hidden' : ''}`}>
         {/* Account Email Verification (for Verified Tick Mark) */}
         {accountVerificationToken ? (
@@ -834,7 +836,7 @@ export default function App() {
 
               {/* Tablet Navigation Options Row */}
               {deviceSize === 'tablet' && (
-                <div className={`flex sticky top-20 z-30 bg-[#E4E3E0] backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2 py-1.5 mb-2 border-b-2 border-[#141414]/10 transition-all duration-300 ease-in-out ${
+                <div className={`flex sticky top-20 z-30 bg-[#E4E3E0] backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-1.5 pt-1 pb-1.5 mb-2 border-b-2 border-[#141414]/10 transition-all duration-300 ease-in-out ${
                   showDesktopTabs 
                     ? 'opacity-100 translate-y-0 pointer-events-auto' 
                     : 'opacity-0 -translate-y-[120px] pointer-events-none'
