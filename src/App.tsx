@@ -82,16 +82,16 @@ export default function App() {
   const [showDesktopTabs, setShowDesktopTabs] = useState(true);
   const lastScrollY = useRef(0);
 
-  // Screen-size detection (Tablet viewport renders Desktop UI, Desktop viewport renders Tablet UI)
+  // Screen-size detection
   useEffect(() => {
     const handleResize = () => {
       const width = window.innerWidth;
       if (width < 768) {
         setDeviceSize('mobile');
       } else if (width <= 1024) {
-        setDeviceSize('desktop');
-      } else {
         setDeviceSize('tablet');
+      } else {
+        setDeviceSize('desktop');
       }
     };
     
@@ -687,7 +687,7 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className={`flex-1 max-w-6xl w-full mx-auto py-4 ${
-        deviceSize === 'tablet'
+        deviceSize === 'desktop'
           ? 'px-8 flex flex-row gap-6 mb-0'
           : deviceSize === 'mobile'
             ? 'px-4 py-3 flex flex-col gap-6 mb-20'
@@ -731,8 +731,8 @@ export default function App() {
           />
         ) : (
           <>
-            {/* Tablet Sidebar - Visible ONLY on tablet */}
-            {deviceSize === 'tablet' && (
+            {/* Desktop Sidebar - Visible ONLY on desktop */}
+            {deviceSize === 'desktop' && (
               <aside className="flex w-[80px] -ml-6 shrink-0 flex-col sticky top-24 self-start select-none border-4 border-[#141414] bg-white divide-y-4 divide-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
               {/* Floor Tab */}
               <button
@@ -832,8 +832,8 @@ export default function App() {
                 </div>
               )}
 
-              {/* Desktop Navigation Options Row */}
-              {deviceSize === 'desktop' && (
+              {/* Tablet Navigation Options Row */}
+              {deviceSize === 'tablet' && (
                 <div className={`flex sticky top-20 z-30 bg-[#E4E3E0] backdrop-blur-xs w-full max-w-4xl mx-auto flex-col gap-2 py-1.5 mb-2 border-b-2 border-[#141414]/10 transition-all duration-300 ease-in-out ${
                   showDesktopTabs 
                     ? 'opacity-100 translate-y-0 pointer-events-auto' 

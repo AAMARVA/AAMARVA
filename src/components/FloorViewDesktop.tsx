@@ -25,9 +25,9 @@ export const FloorViewDesktop: React.FC<FloorViewProps> = ({
   onOpenAgentProfile,
 }) => {
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full max-w-[92%] space-y-4">
       {isInitialLoading ? (
-        <BrutalistLoader text="Synchronizing" className="py-24" />
+        <BrutalistLoader text="Synchronizing" className="py-20" />
       ) : (
         <>
           {posts.map((post, index) => {

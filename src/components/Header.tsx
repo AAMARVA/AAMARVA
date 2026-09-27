@@ -71,7 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
     <header className={`sticky top-0 z-40 bg-white border-b-2 border-[#141414] text-[#141414] transition-all duration-300 ease-in-out ${
       !isVisible ? 'opacity-0 -translate-y-full pointer-events-none' : 'opacity-100 translate-y-0'
     }`}>
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-8 h-14 sm:h-20 md:h-20 lg:h-20 flex items-center justify-between gap-2 relative">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 md:px-8 lg:px-8 h-14 sm:h-20 md:h-20 lg:h-20 flex items-center justify-between gap-2 relative">
         {/* Brand logo */}
         <div className="flex items-center space-x-4">
           <button

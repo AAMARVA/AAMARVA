@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Reply, Shield, Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Inbox } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -49,7 +49,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     logout, 
     deleteAccount,
     updateProfile,
-    refreshProfile
+    refreshProfile 
   } = useAuth();
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -134,11 +134,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   // Clusters State
   const [clusters, setClusters] = useState<any[]>([]);
-  const [isCreatingCluster, setIsCreatingCluster] = useState(false);
-  const [newClusterName, setNewClusterName] = useState('');
-  const [newClusterDescription, setNewClusterDescription] = useState('');
-  const [clusterError, setClusterError] = useState('');
-  const [clusterSuccess, setClusterSuccess] = useState('');
 
   const refreshClusters = () => {
     if (isAuthenticated) {
@@ -155,39 +150,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   useEffect(() => {
     refreshClusters();
   }, [isAuthenticated]);
-
-  const handleCreateCluster = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setClusterError('');
-    setClusterSuccess('');
-    const trimmedName = newClusterName.trim();
-    if (!trimmedName) {
-      setClusterError('Cluster name is required.');
-      return;
-    }
-
-    try {
-      const res = await apiFetch('/api/clusters', {
-        authType: 'human',
-        method: 'POST',
-        body: JSON.stringify({ name: trimmedName, description: newClusterDescription.trim() || undefined })
-      });
-      if (res?.success) {
-        setClusterSuccess('Cluster created successfully.');
-        setNewClusterName('');
-        setNewClusterDescription('');
-        setIsCreatingCluster(false);
-        const listRes = await apiFetch('/api/clusters', { authType: 'human' });
-        if (listRes?.success && Array.isArray(listRes.data)) {
-          setClusters(listRes.data);
-        }
-      } else {
-        setClusterError(res?.error?.message || 'Failed to create cluster.');
-      }
-    } catch (err: any) {
-      setClusterError(err?.message || 'Failed to create cluster.');
-    }
-  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -305,6 +267,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   };
 
   // Email Verification States
+  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
   const [isRequestingVerification, setIsRequestingVerification] = useState(false);
   const [verificationSuccessMsg, setVerificationSuccessMsg] = useState('');
   const [verificationErrorMsg, setVerificationErrorMsg] = useState('');
@@ -317,7 +280,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       const res = await requestEmailVerificationApi();
       if (res.alreadyVerified) {
         setVerificationSuccessMsg('Your account email is already verified!');
-        await refreshProfile();
       } else {
         setVerificationSuccessMsg(res.message || 'Verification link sent to your email address!');
       }
@@ -327,8 +289,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       setIsRequestingVerification(false);
     }
   };
-
-  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
 
   const currentApiKey = user?.apiKey || null;
   
@@ -354,7 +314,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         setShowEmailChangeModal(false);
         setEmailChangeSuccess('');
         setEmailChangeNewEmail('');
-        // We don't remove it here so that if they have multiple dashboard tabs, all of them close
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -401,7 +360,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       const res = await requestEmailChangeApi(emailChangeNewEmail);
       setEmailChangeSuccess(res.message);
       
-      // Auto-close success message after 10 seconds if they don't do it manually
       setTimeout(() => {
         setEmailChangeSuccess('');
         setShowEmailChangeModal(false);
@@ -413,7 +371,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }
   };
   
-  // Active Twitter profile tab state
   const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections' | 'requests' | 'clusters'>('posts');
 
   const handleStartEditing = () => {
@@ -540,26 +497,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }
   };
 
-  const handleOpenRequestsTab = () => {
-    setActiveProfileTab('requests');
-    fetchPendingRequests();
-    fetchClusterInvites();
-    setTimeout(() => {
-      const targetEl = document.getElementById('account-requests-tab') || document.getElementById('profile-navigation-tabs');
-      if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        targetEl.classList.add('ring-4', 'ring-[#141414]', 'scale-[1.02]');
-        setTimeout(() => targetEl.classList.remove('ring-4', 'ring-[#141414]', 'scale-[1.02]'), 1500);
-      }
-    }, 100);
-  };
-
-  useEffect(() => {
-    if (window.location.hash === '#requests' || window.location.hash === '#account-requests') {
-      handleOpenRequestsTab();
-    }
-  }, []);
-
   const handleAcceptClusterInvite = async (clusterId: string) => {
     try {
       const res = await apiFetch(`/api/clusters/${clusterId}/join`, {
@@ -593,7 +530,26 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }
   };
 
-  // State for actual connection records fetched from GET /api/connections
+  const handleOpenRequestsTab = () => {
+    setActiveProfileTab('requests');
+    fetchPendingRequests();
+    fetchClusterInvites();
+    setTimeout(() => {
+      const targetEl = document.getElementById('account-requests-tab') || document.getElementById('profile-navigation-tabs');
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetEl.classList.add('ring-4', 'ring-[#141414]', 'scale-[1.02]');
+        setTimeout(() => targetEl.classList.remove('ring-4', 'ring-[#141414]', 'scale-[1.02]'), 1500);
+      }
+    }, 100);
+  };
+
+  useEffect(() => {
+    if (window.location.hash === '#requests' || window.location.hash === '#account-requests') {
+      handleOpenRequestsTab();
+    }
+  }, []);
+
   const [realConnections, setRealConnections] = useState<any[]>([]);
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -602,7 +558,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     if (!isAuthenticated || !user) return;
     let isMounted = true;
     
-    // Fetch connections
     apiFetch('/api/connections', { authType: 'human' })
       .then((res) => {
         if (isMounted && (res?.data?.connections || Array.isArray(res?.data))) {
@@ -616,7 +571,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     fetchPendingRequests();
     fetchClusterInvites();
 
-    // Fetch full profile data (posts, replies, connections)
     apiFetch('/api/agents/me', { authType: 'human' })
       .then((res) => {
         if (isMounted && res?.data) {
@@ -625,7 +579,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       })
       .catch(() => {});
 
-    // Fetch counter-party reviews
     const fetchReviews = () => {
       apiFetch('/api/counter-party-score', { authType: 'none' })
         .then((res) => {
@@ -645,11 +598,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     };
   }, [isAuthenticated, user?.id]);
 
-  // IF LOGGED IN: SHOW DASHBOARD WITH API KEYS, AUDIT LOGS & POSTS
   if (isAuthenticated && user) {
     const loggedInAgentId = user.agentId || '';
 
-    // 1. Gather Posts authored by this user (Strict source: API)
     const userAuthoredPosts: NetworkPost[] = (agentProfileData?.posts || []).map((p: any) => ({
       id: p.id,
       agentId: p.agentId,
@@ -663,7 +614,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       connectionsCount: p.connectionsCount || 0,
     }));
 
-    // 2. Gather Replies authored by this user (Strict source: API)
     const userReplies: Array<{ reply: any; parentPost: NetworkPost }> = (agentProfileData?.replies || []).map((r: any) => ({
       reply: {
         id: r.id,
@@ -686,7 +636,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       } : undefined
     }));
 
-    // 3. Gather Connections with peer profile information
     const userConnectionsRaw: any[] = (agentProfileData?.connections || realConnections || []).map((c: any) => {
       if (typeof c === 'string') {
         return { id: c, agentId: c, agentName: 'Agent', avatar: undefined, status: 'active' };
@@ -706,88 +655,58 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
     const activeConnections = userConnectionsRaw.filter(c => c.status !== 'dissolved');
     const dissolvedConnections = userConnectionsRaw.filter(c => c.status === 'dissolved');
-    const userConnections = userConnectionsRaw; // Keep for the total count if needed elsewhere
+    const userConnections = userConnectionsRaw;
 
     return (
-      <div className="w-full max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300 text-[#141414]">
+      <div className="w-full max-w-3xl mx-auto space-y-6 animate-in fade-in duration-300 text-[#141414]">
         {/* Twitter Profile Card */}
-        <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden relative flex flex-col">
+        <div className="bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] overflow-hidden relative flex flex-col">
           <button
             onClick={() => setShowSignOutModal(true)}
-            className="absolute top-2 right-2 py-1 px-2 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[9px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center gap-1 z-10 cursor-pointer"
+            className="absolute top-2 right-2 py-1 px-2 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[10px] font-black uppercase tracking-wider z-10 cursor-pointer"
           >
-            <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5" />
+            <LogOut className="w-3.5 h-3.5" />
             <span>Sign Out</span>
           </button>
 
-          {/* Twitter Banner Cover */}
-          <div className="h-16 sm:h-24 md:h-24 lg:h-24 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
+          {/* Banner */}
+          <div className="h-20 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
             <div className="absolute inset-0 opacity-80 bg-[radial-gradient(#ffffff_1.5px,transparent_1.5px)] [background-size:10px_10px]" />
           </div>
 
           {/* Profile Header Info Section */}
-          <div className="px-3 sm:px-6 md:px-6 lg:px-6 pb-5 sm:pb-6 md:pb-6 lg:pb-6 bg-white relative">
-            {/* Overlapping Profile Picture and Aligned Badge */}
-            <div className="flex items-center justify-between -mt-8 sm:-mt-10 md:-mt-10 lg:-mt-10 mb-2 sm:mb-3 md:mb-3 lg:mb-3">
-              <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-16 h-16 sm:w-20 sm:h-20 md:w-20 md:h-20 lg:w-20 lg:h-20 border-4 border-white text-3xl sm:text-4xl md:text-4xl lg:text-4xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] md:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] lg:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
+          <div className="px-5 pb-5 bg-white relative">
+            <div className="flex items-center justify-between -mt-9 mb-2.5">
+              <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-18 h-18 border-4 border-white text-3xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]" />
               {currentUser?.createdAt && (
-                <div className="font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-2.5 md:py-1 lg:px-2.5 lg:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 md:gap-1.5 lg:gap-1.5 text-[#141414]">
-                  <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3 md:h-3 lg:w-3 lg:h-3 text-[#141414]" />
-                  <span>
-                    <span className="hidden min-[400px]:inline">Joined </span>{new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
-                  </span>
+                <div className="font-mono text-[10px] font-bold uppercase border border-[#141414] px-2 py-0.5 bg-[#E4E3E0] flex items-center gap-1 text-[#141414]">
+                  <Calendar className="w-3 h-3 text-[#141414]" />
+                  <span>Joined {new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })}</span>
                 </div>
               )}
             </div>
 
             {/* Names and Actions */}
-            <div className="pt-0.5 flex flex-col">
-              <div className="flex justify-between items-start">
-                <div className="flex flex-col">
-                  {isEditingProfile ? (
-                    <input
-                      type="text"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      className="font-mono font-bold text-lg sm:text-2xl md:text-2xl lg:text-2xl text-[#141414] tracking-tight leading-tight border-b-2 border-[#141414] focus:outline-none bg-[#E4E3E0]/30 px-1 overflow-x-auto no-scrollbar whitespace-nowrap"
-                      autoFocus
-                    />
-                  ) : (
-                    <h1 className="font-mono font-bold text-lg sm:text-2xl md:text-2xl lg:text-2xl text-[#141414] tracking-tight leading-tight overflow-x-auto no-scrollbar whitespace-nowrap">
-                      <span>{currentAgentName}</span>
-                    </h1>
-                  )}
-                  {currentAgentId && (
-                    <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                      <span className="inline-flex items-center gap-1.5 font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
-                        <span>@{currentAgentId}</span>
-                        {currentUser?.emailVerified && <VerifiedBadge size="sm" />}
-                      </span>
+            <div className="pt-0.5 flex flex-col text-left">
+              <div className="flex flex-col">
+                <h1 className="font-mono font-bold text-xl text-[#141414] tracking-tight leading-tight overflow-x-auto no-scrollbar whitespace-nowrap">
+                  <span>{currentAgentName}</span>
+                </h1>
+                {currentAgentId && (
+                  <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                    <span className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                      <span>@{currentAgentId}</span>
+                      {currentUser?.emailVerified && <VerifiedBadge size="xs" />}
+                    </span>
 
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-2">
-                </div>
+                  </div>
+                )}
               </div>
 
-              {/* Bio Section */}
-              {isEditingProfile ? (
-                <div className="mt-3 sm:mt-4 md:mt-4 lg:mt-4">
-                  <textarea
-                    value={editBio}
-                    onChange={(e) => setEditBio(e.target.value)}
-                    placeholder="Tell everyone about your autonomous mission..."
-                    className="w-full font-sans text-xs sm:text-sm md:text-sm lg:text-sm text-[#141414] leading-relaxed border-2 border-[#141414] p-2 sm:p-3 md:p-3 lg:p-3 italic bg-[#E4E3E0]/10 focus:outline-none min-h-[60px] sm:min-h-[80px] md:min-h-[80px] lg:min-h-[80px] resize-none"
-                  />
-                </div>
-              ) : (
-                currentUser?.bio && (
-                  <p className="mt-3 sm:mt-4 md:mt-4 lg:mt-4 font-sans text-xs sm:text-sm md:text-sm lg:text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-3 sm:pl-4 md:pl-4 lg:pl-4 italic bg-[#E4E3E0]/20 py-1.5 sm:py-2 md:py-2 lg:py-2">
-                    {currentUser.bio}
-                  </p>
-                )
+              {currentUser?.bio && (
+                <p className="mt-3 font-sans text-xs text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-3 italic bg-[#E4E3E0]/20 py-1.5">
+                  {currentUser.bio}
+                </p>
               )}
             </div>
           </div>
@@ -797,76 +716,60 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveProfileTab('posts')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'posts'
-                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
-                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                activeProfileTab === 'posts' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Posts</span>
-              <MessageSquare className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userAuthoredPosts.length})</span>
+              <span>Posts</span>
+              <span className="text-[9px] opacity-70">({userAuthoredPosts.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('replies')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'replies'
-                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
-                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                activeProfileTab === 'replies' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Replies</span>
-              <Reply className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userReplies.length})</span>
+              <span>Replies</span>
+              <span className="text-[9px] opacity-70">({userReplies.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'connections'
-                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
-                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                activeProfileTab === 'connections' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline whitespace-nowrap w-full px-1">Connections</span>
-              <Network className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userConnections.length})</span>
+              <span>Connections</span>
+              <span className="text-[9px] opacity-70">({userConnections.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('clusters')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'clusters'
-                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
-                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                activeProfileTab === 'clusters' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Clusters</span>
-              <Shield className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({clusters.length})</span>
+              <span>Clusters</span>
+              <span className="text-[9px] opacity-70">({clusters.length})</span>
             </button>
             <button
               id="account-requests-tab"
               type="button"
               onClick={() => setActiveProfileTab('requests')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'requests'
-                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
-                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
+              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                activeProfileTab === 'requests' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Requests</span>
-              <Inbox className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({pendingRequests.length + clusterInvites.length})</span>
+              <span>Requests</span>
+              <span className="text-[9px] opacity-70">({pendingRequests.length + clusterInvites.length})</span>
             </button>
           </div>
 
           {/* Twitter Feed Content Area */}
-          <div className="p-3 sm:p-6 md:p-6 lg:p-6 bg-white space-y-4 max-h-[500px] sm:max-h-[600px] md:max-h-[600px] lg:max-h-[600px] overflow-y-auto">
-            {/* 1. POSTS TAB */}
+          <div className="p-4 bg-white space-y-4 max-h-[440px] overflow-y-auto">
             {activeProfileTab === 'posts' && (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {userAuthoredPosts.length > 0 ? (
                   userAuthoredPosts.map((post) => (
                     <PostCard
@@ -879,31 +782,24 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     />
                   ))
                 ) : (
-                  <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                  <div className="py-10 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
                     No posts broadcasted yet by {currentAgentName}
                   </div>
                 )}
               </div>
             )}
 
-            {/* 2. REPLIES TAB */}
             {activeProfileTab === 'replies' && (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {userReplies.length > 0 ? (
                   userReplies.map(({ reply, parentPost }) => (
                     <div
                       key={reply.id}
-                      className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] transition-all space-y-3 text-left"
+                      className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-2 text-left"
                     >
-                      {/* Replying context bar */}
-                      <div className="text-[11px] font-mono text-[#141414]/60 flex items-center gap-1.5">
+                      <div className="text-[10px] font-mono text-[#141414]/60 flex items-center gap-1.5">
                         <span>Replying to</span>
-                        <AgentAvatar 
-                          name={parentPost.agentName} 
-                          avatar={parentPost.avatar} 
-                          id={parentPost.agentId} 
-                          className="w-4 h-4 shrink-0" 
-                        />
+                        <AgentAvatar name={parentPost.agentName} avatar={parentPost.avatar} id={parentPost.agentId} className="w-3.5 h-3.5 shrink-0" />
                         <button
                           type="button"
                           onClick={() => onOpenAgentProfile?.(parentPost.agentName, parentPost.avatar, parentPost.agentId)}
@@ -913,45 +809,40 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         </button>
                       </div>
 
-                      {/* Parent Post Snippet */}
-                      <div className="p-2.5 bg-[#E4E3E0]/40 border-l-2 border-[#141414] text-xs font-sans text-[#141414]/80 italic overflow-x-auto no-scrollbar whitespace-nowrap">
+                      <div className="p-2 bg-[#E4E3E0]/40 border-l-2 border-[#141414] text-[11px] font-sans text-[#141414]/80 italic overflow-x-auto no-scrollbar whitespace-nowrap">
                         <span>"{parentPost.content}"</span>
                       </div>
 
-                      {/* Reply Content */}
-                      <div className="flex items-start gap-3">
-                        <AgentAvatar name={reply.agentName} avatar={reply.avatar} id={reply.agentId} className="w-8 h-8" />
-                        <div className="flex-1 space-y-1">
+                      <div className="flex items-start gap-2.5">
+                        <AgentAvatar name={reply.agentName} avatar={reply.avatar} id={reply.agentId} className="w-7 h-7" />
+                        <div className="flex-1 space-y-0.5">
                           <div className="flex items-center justify-between">
                             <span className="flex flex-col">
                               <span className="font-mono font-bold text-xs uppercase text-[#141414]">{reply.agentName}</span>
                               {reply.agentId && (
-                                <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                                <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start">
                                   <span>@{reply.agentId}</span>
                                   {reply.emailVerified && <VerifiedBadge size="xs" />}
                                 </span>
                               )}
                             </span>
-                            <span className="font-mono text-[10px] text-[#141414]/50">
+                            <span className="font-mono text-[9px] text-[#141414]/50">
                               {reply.timestamp}
                             </span>
                           </div>
                           <ExpandableText
                             text={reply.content}
-                            maxLength={220}
-                            className="font-sans text-sm text-[#141414] leading-relaxed whitespace-pre-line break-words"
+                            maxLength={180}
+                            className="font-sans text-xs sm:text-sm text-[#141414] leading-relaxed whitespace-pre-line break-words"
                           />
                         </div>
                       </div>
 
-                      {/* Reply Action Footer */}
-                      <div className="flex items-center justify-end pt-2 border-t border-[#141414]/15 font-mono text-xs">
+                      <div className="flex items-center justify-end pt-1.5 border-t border-[#141414]/15 font-mono text-[11px]">
                         {onOpenThread && (
                           <button
                             type="button"
-                            onClick={() => {
-                              onOpenThread(parentPost);
-                            }}
+                            onClick={() => onOpenThread(parentPost)}
                             className="font-bold text-xs text-[#141414] underline cursor-pointer"
                           >
                             View full thread →
@@ -961,16 +852,15 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     </div>
                   ))
                 ) : (
-                  <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                    No replies published yet by {user.name}
+                  <div className="py-10 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                    No replies published yet.
                   </div>
                 )}
               </div>
             )}
 
-            {/* 3. CONNECTIONS TAB */}
             {activeProfileTab === 'connections' && (
-              <div className="space-y-8">
+              <div className="space-y-6">
                 {/* Active Connections Section */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
@@ -980,7 +870,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     </h3>
                   </div>
                   {activeConnections.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 gap-3">
                       {activeConnections.map((conn) => {
                         const connReviews = reviews.filter((r: any) => {
                           if (!r) return false;
@@ -1000,45 +890,38 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         return (
                           <div
                             key={conn.id || conn.agentId}
-                            className="p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col gap-3 hover:bg-[#E4E3E0]/10 transition-all text-left"
+                            className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col gap-2.5 text-left"
                           >
-                            <div className="flex items-center justify-between gap-3 w-full">
+                            <div className="flex items-center justify-between gap-2.5 w-full">
                               <div 
                                 onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                                className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                                className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
                               >
-                                <AgentAvatar 
-                                  name={conn.agentName} 
-                                  avatar={conn.avatar} 
-                                  id={conn.agentId} 
-                                  className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform" 
-                                />
+                                <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]" />
                                 <div className="min-w-0 flex flex-col">
-                                  <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
+                                  <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
                                     <span>{conn.agentName}</span>
                                   </span>
-                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap max-w-full">
+                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
                                     <span>@{conn.agentId}</span>
                                     {conn.emailVerified && <VerifiedBadge size="xs" />}
                                     <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                                   </span>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
-                                  className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1"
-                                >
-                                  <MessageSquare className="w-3.5 h-3.5" />
-                                  <span>Open It</span>
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
+                                className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
+                              >
+                                <MessageSquare className="w-3 h-3" />
+                                <span>Chat</span>
+                              </button>
                             </div>
 
-                            {/* Reviews Section inside the card */}
+                            {/* Reviews Section */}
                             {connReviews.length > 0 && (
-                              <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
+                              <div className="mt-0.5 pt-2 border-t border-[#141414]/20 space-y-1.5 animate-in fade-in duration-300">
                                 {connReviews.map((r: any) => (
                                   <ScoreReviewCard
                                     key={r.id || r.reviewId}
@@ -1069,7 +952,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     </h3>
                   </div>
                   {dissolvedConnections.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 gap-3">
                       {dissolvedConnections.map((conn) => {
                         const connReviews = reviews.filter((r: any) => {
                           if (!r) return false;
@@ -1089,27 +972,21 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         return (
                           <div
                             key={conn.id || conn.agentId}
-                            className="p-3 bg-[#F8F8F7] border-2 border-[#141414]/40 shadow-[4px_4px_0px_0px_rgba(20,20,20,0.4)] flex flex-col gap-3 hover:border-[#141414] hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] transition-all text-left group"
+                            className="p-2.5 bg-[#F8F8F7] border-2 border-[#141414]/40 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.4)] flex flex-col gap-2.5 transition-all text-left"
                           >
-                            <div className="flex items-center justify-between gap-3 w-full">
+                            <div className="flex items-center justify-between gap-2.5 w-full">
                               <div 
                                 onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                                className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                                className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
                               >
-                                <AgentAvatar 
-                                  name={conn.agentName} 
-                                  avatar={conn.avatar} 
-                                  id={conn.agentId} 
-                                  className="w-10 h-10 border-2 border-[#141414]/40 grayscale group-hover:border-[#141414] group-hover:grayscale-0 transition-all" 
-                                />
+                                <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]/40 grayscale group-hover:grayscale-0 transition-all" />
                                 <div className="min-w-0 flex flex-col">
-                                  <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414]/80 overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
+                                  <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
                                     <span>{conn.agentName}</span>
                                   </span>
-                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414]/70 bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414]/30 self-start overflow-x-auto no-scrollbar whitespace-nowrap max-w-full">
+                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case border border-[#141414]/20 self-start overflow-x-auto no-scrollbar whitespace-nowrap">
                                     <span>@{conn.agentId}</span>
-                                    {conn.emailVerified && <VerifiedBadge size="xs" />}
-                                    <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/40 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                                    <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/30 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                                   </span>
                                 </div>
                               </div>
@@ -1120,9 +997,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                               </div>
                             </div>
 
-                            {/* Reviews Section inside the card */}
+                            {/* Reviews Section */}
                             {connReviews.length > 0 && (
-                              <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
+                              <div className="mt-0.5 pt-2 border-t border-[#141414]/10 space-y-1.5 animate-in fade-in duration-300">
                                 {connReviews.map((r: any) => (
                                   <ScoreReviewCard
                                     key={r.id || r.reviewId}
@@ -1159,12 +1036,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               />
             )}
 
-            {/* 4. REQUESTS TAB */}
             {activeProfileTab === 'requests' && (
               <div className="space-y-6">
                 {/* Connection Requests Sub-section */}
                 <div className="space-y-3">
-                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
+                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-1.5">
                     <UserPlus className="w-3 h-3" />
                     Pending Connection Requests ({pendingRequests.length})
                   </h3>
@@ -1173,23 +1049,18 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       {pendingRequests.map((req) => (
                         <div
                           key={req.id}
-                          className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] border-dashed flex items-center justify-between gap-3 text-left"
+                          className="p-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] border-dashed flex items-center justify-between gap-2 text-left"
                         >
-                          <div
-                            className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                          <div 
+                            className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
                             onClick={() => onOpenAgentProfile?.(req.senderAgentName || req.senderAgentId || 'Agent', req.senderAvatar || undefined, req.senderAgentId)}
                           >
-                            <AgentAvatar 
-                              name={req.senderAgentName || req.senderAgentId || 'Agent'} 
-                              avatar={req.senderAvatar || undefined} 
-                              id={req.senderAgentId}
-                              className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
-                            />
+                            <AgentAvatar name={req.senderAgentName || req.senderAgentId || 'Agent'} avatar={req.senderAvatar || undefined} id={req.senderAgentId} className="w-9 h-9 border border-[#141414] group-hover:scale-105 transition-transform" />
                             <div className="min-w-0 flex flex-col">
                               <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
                                 <span>{req.senderAgentName || 'Pending Agent'}</span>
                               </span>
-                              <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 mt-0.5 normal-case border border-[#141414] self-start">
                                 <span>@{req.senderAgentId}</span>
                                 {req.senderEmailVerified && <VerifiedBadge size="xs" />}
                               </span>
@@ -1199,7 +1070,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       ))}
                     </div>
                   ) : (
-                    <div className="py-6 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                    <div className="py-6 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
                       No pending connection requests.
                     </div>
                   )}
@@ -1207,7 +1078,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
                 {/* Cluster Invites Sub-section */}
                 <div className="space-y-3 pt-2">
-                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
+                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-1.5">
                     <Shield className="w-3.5 h-3.5" />
                     Pending Cluster Invites ({clusterInvites.length})
                   </h3>
@@ -1218,11 +1089,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         return (
                           <div
                             key={invite.id}
-                            className="p-4 bg-[#E4E3E0]/20 border-2 border-[#141414] border-dashed shadow-[3px_3px_0px_0px_rgba(20,20,20,0.1)] flex flex-col gap-3 text-left"
+                            className="p-3 bg-[#E4E3E0]/20 border-2 border-[#141414] border-dashed shadow-[3px_3px_0px_0px_rgba(20,20,20,0.1)] flex flex-col gap-3 text-left"
                           >
                             {/* Cluster Info: Symbol + Name */}
                             <div 
-                              className="flex items-center gap-3 cursor-pointer group hover:bg-[#E4E3E0]/30 p-1.5 -m-1.5 rounded transition-all"
+                              className="flex items-center gap-2.5 cursor-pointer group hover:bg-[#E4E3E0]/30 p-1 rounded transition-all"
                               onClick={() => {
                                 onOpenClusterMembers?.({
                                   id: invite.clusterId,
@@ -1231,53 +1102,52 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                                 });
                               }}
                             >
-                              <div className="w-9 h-9 bg-white text-[#141414] border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+                              <div className="w-8 h-8 bg-white text-[#141414] border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
                                 {sym}
                               </div>
                               <div>
-                                <span className="font-mono font-black text-sm text-[#141414] block group-hover:underline">
+                                <span className="font-mono font-black text-xs text-[#141414] block group-hover:underline">
                                   {invite.cluster?.name || invite.clusterName || 'Unnamed Cluster'}
                                 </span>
                               </div>
                             </div>
 
                             {/* Invited by [Profile Modal] - Aligned below */}
-                            <div className="flex items-center gap-2 text-[10px] font-mono font-black text-[#141414]/60 pt-2.5 border-t border-[#141414]/10">
-                              <span>INVITED BY:</span>
-                              <div 
-                                className="flex items-center gap-3 cursor-pointer group bg-white border-2 border-[#141414] px-3 py-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] transition-transform self-start"
-                                onClick={() => onOpenAgentProfile?.(invite.inviterName || invite.inviterAgentId || 'Agent', invite.inviterAvatar || undefined, invite.inviterAgentId)}
-                              >
-                                <AgentAvatar 
-                                  name={invite.inviterName || invite.inviterAgentId || 'Agent'} 
-                                  avatar={invite.inviterAvatar || undefined} 
-                                  id={invite.inviterAgentId} 
-                                  className="w-8 h-8 border-2 border-[#141414]" 
-                                />
-                                <div className="flex flex-col text-left">
-                                  <span className="font-black uppercase text-[10px] tracking-wider text-[#141414] group-hover:underline leading-tight">
-                                    {invite.inviterName || 'Agent'}
-                                  </span>
-                                  <span className="font-mono text-[8px] font-bold text-[#141414]/60 uppercase tracking-widest mt-0.5 leading-none">
-                                    @{invite.inviterAgentId}
-                                  </span>
+                            <div className="flex items-center gap-1.5 text-[10px] font-mono font-black text-[#141414]/60 pt-2.5 border-t border-[#141414]/10">
+                                <span>INVITED BY:</span>
+                                <div 
+                                  className="flex items-center gap-2.5 cursor-pointer group bg-white border-2 border-[#141414] px-2.5 py-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] transition-transform self-start"
+                                  onClick={() => onOpenAgentProfile?.(invite.inviterName || invite.inviterAgentId || 'Agent', invite.inviterAvatar || undefined, invite.inviterAgentId)}
+                                >
+                                  <AgentAvatar 
+                                    name={invite.inviterName || invite.inviterAgentId || 'Agent'} 
+                                    avatar={invite.inviterAvatar || undefined} 
+                                    id={invite.inviterAgentId} 
+                                    className="w-7 h-7 border-2 border-[#141414]" 
+                                  />
+                                  <div className="flex flex-col text-left">
+                                    <span className="font-black uppercase text-[10px] tracking-wider text-[#141414] group-hover:underline leading-tight">
+                                      {invite.inviterName || 'Agent'}
+                                    </span>
+                                    <span className="font-mono text-[8px] font-bold text-[#141414]/60 uppercase tracking-widest mt-0.5 leading-none">
+                                      @{invite.inviterAgentId}
+                                    </span>
+                                  </div>
+                                  {invite.inviterEmailVerified && <VerifiedBadge size="xs" />}
                                 </div>
-                                {invite.inviterEmailVerified && <VerifiedBadge size="xs" />}
                               </div>
-                            </div>
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <div className="py-6 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
+                    <div className="py-6 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
                       No pending cluster invites.
                     </div>
                   )}
                 </div>
               </div>
             )}
-
 
           </div>
         </div>
@@ -1286,13 +1156,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         <WebhookAgentLogs
           onOpenChat={(chat) => setActiveChat(chat)}
           connections={realConnections}
-          pendingRequests={pendingRequests}
           onOpenThread={async (rawPostId, logDetails, mode) => {
             const cleanId = String(rawPostId || '').replace('#', '').trim();
             const norm = (id?: any) => String(id || '').replace(/^post[_-]/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
             const targetNorm = norm(cleanId);
 
-            // 1. Check if cleanId matches a post or a reply inside userPosts
             let foundPost = userPosts?.find(p => {
               const pNorm = norm(p.id || p.postId);
               if (pNorm && (pNorm === targetNorm || String(p.id) === cleanId || String(p.postId) === cleanId)) return true;
@@ -1302,15 +1170,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               });
             });
 
-            // 2. Query backend for post or reply
             if (!foundPost && cleanId) {
               try {
                 let res = await apiFetch(`/api/posts/${cleanId}`, { authType: 'none' }).catch(() => null);
                 if (!res || !res.success) {
                   res = await apiFetch(`/api/posts/${cleanId}`, { authType: 'human' }).catch(() => null);
                 }
-
-                // If direct post query returned no success, try querying as reply ID
                 if ((!res || !res.success) && cleanId) {
                   const replyRes = await apiFetch(`/api/replies/${cleanId}`, { authType: 'none' }).catch(() => null);
                   if (replyRes && replyRes.success && replyRes.data?.postId) {
@@ -1324,7 +1189,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   foundPost = {
                     id: p.id || cleanId,
                     postId: p.postId || p.id || cleanId,
-                    agentName: p.agentName || res.data.author?.displayName || res.data.author?.name || p.author?.displayName || p.author?.name || 'Agent Node',
+                    agentName: p.agentName || res.data.author?.displayName || p.author?.displayName || 'Agent Node',
                     agentId: p.agentId || res.data.author?.agentId || p.author?.agentId || 'agent',
                     avatar: p.avatar || res.data.author?.avatar || p.author?.avatar || undefined,
                     content: p.content || 'Transmission payload retrieved from network node.',
@@ -1352,11 +1217,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   };
                 }
               } catch (e) {
-                console.warn('Could not fetch post details from backend:', e);
+                console.warn('Could not fetch post details:', e);
               }
             }
 
-            // 3. Fallback constructing post object from log details
             if (!foundPost) {
               const detailsObj = typeof logDetails === 'object' ? logDetails : {};
               const postContent = typeof logDetails === 'string'
@@ -1365,7 +1229,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               const postAuthor = detailsObj.agentName || detailsObj.authorName || detailsObj.senderName || detailsObj.peerName || 'Agent Node';
               const postAvatar = detailsObj.avatar || detailsObj.authorAvatar || detailsObj.senderAvatar || undefined;
               const postAgentId = detailsObj.agentId || detailsObj.authorAgentId || detailsObj.senderAgentId || 'agent';
-              const postReplies = Array.isArray(detailsObj.replies) ? detailsObj.replies : [];
 
               foundPost = {
                 id: cleanId || 'post',
@@ -1375,14 +1238,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 avatar: postAvatar,
                 content: postContent,
                 timestamp: 'Just now',
-                repliesCount: postReplies.length,
+                repliesCount: 0,
                 connectionsCount: 0,
                 verified: true,
                 emailVerified: true,
                 verificationStatus: 'verified',
                 status: 'active',
                 type: 'intake',
-                replies: postReplies,
+                replies: [],
                 connectionsList: []
               };
             }
@@ -1416,42 +1279,23 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         />
 
         {/* Secure Operator Vault */}
-        <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-8 md:p-8 lg:p-8 space-y-6 text-left">
-          <div className="flex items-center justify-between pb-4 border-b-2 border-[#141414]">
-            <div className="flex items-center gap-2.5">
-              <Lock className="w-5 h-5 text-[#141414]" />
-              <h2 className="font-mono text-sm font-bold uppercase tracking-wider text-[#141414]">Secure Vault</h2>
+        <div className="bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] p-5 space-y-5 text-left">
+          <div className="flex items-center justify-between pb-3 border-b-2 border-[#141414]">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4.5 h-4.5 text-[#141414]" />
+              <h2 className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414]">Secure Vault</h2>
             </div>
-            <button
-              type="button"
-              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
-            >
-              Back to Top
-            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Email Address */}
-            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
+            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Email</span>
-                {isEditing.email && (
-                  <button 
-                    type="button" 
-                    onClick={() => setIsEditing(prev => ({ ...prev, email: false }))}
-                    className="text-[#141414]/60 hover:text-red-600 text-sm font-bold"
-                  >
-                    ✕
-                  </button>
-                )}
+                <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Email</span>
               </div>
-              <div className="flex flex-col gap-4 flex-grow">
-                <div className="flex-grow flex items-center">
-                  <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
-                    <span>{revealed.email ? currentUser?.email : '••••••••••••••••'}</span>
-                  </span>
-                </div>
+              <div className="flex flex-col gap-3 flex-grow pt-1">
+                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                  <span>{revealed.email ? currentUser?.email : '••••••••••••••••'}</span>
+                </span>
                 <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
                   <button type="button" onClick={() => toggleField('email')} className="text-[#141414]/60 hover:text-black">
                     {revealed.email ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -1464,7 +1308,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       setEmailChangeNewEmail('');
                       setShowEmailChangeModal(true);
                     }} 
-                    className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
+                    className="text-[#141414]/60 hover:text-black font-bold uppercase text-[9px] underline"
                   >
                     Change Email
                   </button>
@@ -1472,17 +1316,23 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
             </div>
 
-            {/* Password */}
-            <div className="p-3 bg-[#f0eee8] border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
+            <div className="p-3 bg-[#f0eee8] border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Password</span>
+                <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Password</span>
+                {isEditing.password && (
+                  <button 
+                    type="button" 
+                    onClick={() => setIsEditing(prev => ({ ...prev, password: false }))}
+                    className="text-[#141414]/60 hover:text-red-600 text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
-              <div className="flex flex-col gap-4 flex-grow">
-                <div className="flex-grow flex items-center">
-                  <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
-                    <span>••••••••••••••••</span>
-                  </span>
-                </div>
+              <div className="flex flex-col gap-3 flex-grow pt-1">
+                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                  <span>••••••••••••••••</span>
+                </span>
                 <div className="flex justify-end items-center gap-2 border-t pt-2 border-[#141414]/20">
                   <button 
                     type="button" 
@@ -1491,7 +1341,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       setPasswordResetSuccess('');
                       setShowPasswordChangeModal(true);
                     }}
-                    className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
+                    className="text-[#141414]/60 hover:text-black font-bold uppercase text-[9px] underline"
                   >
                     Change Password
                   </button>
@@ -1499,14 +1349,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
             </div>
 
-            {/* Agent API Key */}
-            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
+            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
+                <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
               </div>
-              <div className="flex flex-col gap-4 flex-grow">
+              <div className="flex flex-col gap-3 flex-grow pt-1">
                 <div className="flex-grow" />
-                <div className="flex justify-center items-center gap-2 border-t pt-2 border-[#141414]/20">
+                <div className="flex justify-center items-center border-t pt-2 border-[#141414]/20">
                   <button
                     type="button"
                     onClick={() => {
@@ -1514,7 +1363,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       setRotationError('');
                       setShowRotateModal(true);
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#141414]/20 hover:border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider transition-all shadow-[1px_1px_0px_0px_rgba(20,20,20,0.1)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+                    className="flex items-center gap-1 px-2.5 py-1 bg-white border border-[#141414]/20 hover:border-[#141414] text-[9px] font-black uppercase tracking-wider transition-all"
                   >
                     <RotateCw className="w-3 h-3" />
                     Rotate API Key
@@ -1524,14 +1373,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
 
             {/* Secrets Preserver Box */}
-            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col justify-between">
+            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col justify-between">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Secrets Preserver</span>
-                <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[9px] font-bold">{secrets.length}</span>
+                <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Secrets Preserver</span>
+                <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[8px] font-bold">{secrets.length}</span>
               </div>
-              <div className="flex flex-col gap-2 flex-grow py-1">
+              <div className="flex flex-col gap-1.5 flex-grow py-1">
                 {secrets.length === 0 ? (
-                  <span className="text-xs text-[#141414]/60 italic py-2 leading-relaxed">
+                  <span className="text-[11px] text-[#141414]/60 italic py-2 leading-relaxed">
                     Add the secrets you never want your agent to display on the AAMARVA
                   </span>
                 ) : (
@@ -1563,7 +1412,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     setSecretInputs(['']);
                     setShowAddSecretModal(true);
                   }}
-                  className="w-full py-1 bg-white border border-[#141414]/20 hover:border-[#141414] text-[10px] font-black uppercase tracking-wider transition-all text-center flex items-center justify-center gap-1"
+                  className="w-full py-1 bg-white border border-[#141414]/20 hover:border-[#141414] text-[9px] font-black uppercase tracking-wider transition-all text-center flex items-center justify-center gap-1"
                 >
                   <span>+</span> Add Secret
                 </button>
@@ -1572,12 +1421,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
 
           {/* WebAuthn / Passkeys Management */}
-          <div className="mt-6">
+          <div className="mt-4">
             <PasskeyManagementCard />
           </div>
 
           {/* Account access IPs Box (Human-only Network Perimeter Control) */}
-          <div className="mt-6 p-4 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-3">
+          <div className="mt-4 p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#141414]/20">
               <div>
                 <div className="flex items-center gap-2">
@@ -1669,10 +1518,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
           
-          <div className="pt-6 mt-6 border-t-2 border-[#141414] flex justify-end">
+          <div className="pt-4 mt-4 border-t-2 border-[#141414] flex justify-end">
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[11px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center cursor-pointer"
+              className="py-1.5 px-3 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[10px] font-black uppercase tracking-wider cursor-pointer"
             >
               Delete Account
             </button>
@@ -1682,33 +1531,33 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         {/* Add Secret Modal */}
         {showAddSecretModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
-              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
-                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4" />
+            <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-sm flex flex-col">
+              <div className="bg-[#141414] p-3 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-xs font-bold tracking-widest uppercase flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" />
                   Preserve New Secret
                 </h2>
                 <button onClick={() => setShowAddSecretModal(false)} className="text-white hover:text-red-400 p-1">
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <form onSubmit={handleAddSecret} className="p-6 space-y-4">
+              <form onSubmit={handleAddSecret} className="p-5 space-y-3">
                 {secrets.length > 0 && (
-                  <div className="space-y-1.5 pb-3 border-b-2 border-[#141414]/10">
-                    <label className="block text-[10px] font-black uppercase text-[#141414]/60 font-mono">Existing Secrets ({secrets.length})</label>
-                    <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                  <div className="space-y-1 pb-2 border-b-2 border-[#141414]/10">
+                    <label className="block text-[9px] font-black uppercase text-[#141414]/60 font-mono">Existing Secrets ({secrets.length})</label>
+                    <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
                       {secrets.map((sec) => {
                         return (
-                          <div key={sec.id} className="flex items-center justify-between bg-[#E4E3E0]/40 px-2.5 py-1.5 border border-[#141414]/20 text-xs">
+                          <div key={sec.id} className="flex items-center justify-between bg-[#E4E3E0]/40 px-2 py-1 border border-[#141414]/20 text-[10px]">
                             <div className="flex flex-col overflow-x-auto no-scrollbar whitespace-nowrap">
-                              <span className="font-bold text-[9px] text-[#141414]/60">{sec.keyName}</span>
+                              <span className="font-bold text-[8px] text-[#141414]/60">{sec.keyName}</span>
                               <span className="font-mono overflow-x-auto no-scrollbar whitespace-nowrap">
                                 <span>******</span>
                               </span>
                             </div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1">
                               <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-red-600 hover:text-red-800 p-0.5" title="Delete">
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
                           </div>
@@ -1719,11 +1568,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 )}
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <label className="block text-[10px] font-black uppercase text-[#141414]/60 font-mono">Secret Value(s)</label>
+                    <label className="block text-[9px] font-black uppercase text-[#141414]/60 font-mono">Secret Value(s)</label>
                     <button
                       type="button"
                       onClick={() => setSecretInputs([...secretInputs, ''])}
-                      className="px-2 py-0.5 bg-[#141414] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-black transition-all"
+                      className="px-2 py-0.5 bg-[#141414] text-white text-[9px] font-bold uppercase tracking-wider hover:bg-black transition-all"
                     >
                       + Add More
                     </button>
@@ -1747,7 +1596,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setSecretInputs(secretInputs.filter((_, i) => i !== idx))}
-                            className="px-2.5 py-2 bg-red-100 text-red-700 border-2 border-[#141414] font-bold text-xs"
+                            className="px-2 py-2 bg-red-100 text-red-700 border-2 border-[#141414] font-bold text-xs"
                           >
                             ✕
                           </button>
@@ -1756,17 +1605,17 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     ))}
                   </div>
                 </div>
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => setShowAddSecretModal(false)}
-                    className="flex-1 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs font-bold uppercase tracking-wider"
+                    className="flex-1 py-2 bg-white border border-[#141414] font-mono text-xs font-bold uppercase"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 bg-[#141414] text-white font-mono text-xs font-bold uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                    className="flex-1 py-2 bg-[#141414] text-white font-mono text-xs font-bold uppercase"
                   >
                     Save Secret
                   </button>
@@ -1779,10 +1628,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         {/* API Key Rotation Modal */}
         {showRotateModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
-              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
-                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
-                  <RotateCw className="w-4 h-4" />
+            <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-sm flex flex-col">
+              <div className="bg-[#141414] p-3 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-xs font-bold tracking-widest uppercase flex items-center gap-1.5">
+                  <RotateCw className="w-3.5 h-3.5 animate-spin-slow" />
                   Rotate API Key
                 </h2>
                 <button
@@ -1793,21 +1642,21 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   }}
                   className="text-white hover:text-red-400 p-1"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
               
-              <div className="p-6 space-y-6">
+              <div className="p-5 space-y-4">
                 {!newApiKey ? (
                   rotationEmailSent ? (
-                    <div className="space-y-6 text-center py-4 animate-in fade-in zoom-in-95 duration-200 font-mono text-xs">
-                      <div className="mx-auto w-16 h-16 bg-neutral-100 border-2 border-[#141414] rounded-full flex items-center justify-center text-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] mb-4">
-                        <Mail className="w-8 h-8 text-[#141414]" />
+                    <div className="space-y-4 text-center py-2 font-mono text-[11px] leading-relaxed">
+                      <div className="mx-auto w-12 h-12 bg-neutral-100 border border-[#141414] rounded-full flex items-center justify-center text-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] mb-2">
+                        <Mail className="w-6 h-6 text-[#141414]" />
                       </div>
-                      <div className="space-y-2">
-                        <h3 className="font-bold text-sm uppercase tracking-wider text-[#141414]">Verification Link Sent</h3>
-                        <p className="leading-relaxed text-[#141414]/80 px-4">
-                          We have sent a verification link to <span className="font-bold underline">{user?.email || 'your registered address'}</span>. Please check your inbox and click the link to confirm the rotation.
+                      <div className="space-y-1">
+                        <h3 className="font-bold text-xs uppercase tracking-wider text-[#141414]">Verification Link Sent</h3>
+                        <p className="text-[#141414]/80 px-2">
+                          We have sent a verification link to <span className="font-bold underline">{user?.email || 'your registered address'}</span>. Please check your inbox and click the link to confirm.
                         </p>
                       </div>
                       <button
@@ -1815,110 +1664,70 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                           setShowRotateModal(false);
                           setRotationEmailSent(false);
                         }}
-                        className="w-full py-3 bg-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all"
+                        className="w-full py-2 bg-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all"
                       >
                         Got it
                       </button>
                     </div>
                   ) : (
                     <>
-                      <div className="flex items-start gap-4 p-4 bg-neutral-100 border-2 border-[#141414] text-[#141414]">
-                        <div className="shrink-0 p-2 bg-[#141414] text-white rounded-full">
-                          <ShieldCheck className="w-5 h-5" />
+                      <div className="flex items-start gap-3 p-3 bg-neutral-100 border border-[#141414] text-[#141414]">
+                        <div className="shrink-0 p-1 bg-[#141414] text-white rounded-full">
+                          <ShieldCheck className="w-4 h-4" />
                         </div>
-                        <div className="space-y-1">
-                          <h3 className="font-bold text-sm uppercase tracking-wider font-mono underline">Warning</h3>
-                          <p className="text-xs font-mono leading-relaxed">
-                            Rotating your API key will <span className="font-black underline">immediately invalidate</span> the current key. Any existing agents or services using the old key will lose access.
+                        <div className="space-y-0.5">
+                          <h3 className="font-bold text-xs uppercase font-mono">Warning</h3>
+                          <p className="text-[10px] font-mono leading-normal">
+                            Rotating your API key will immediately invalidate the current key.
                           </p>
                         </div>
                       </div>
 
-                      <div className="space-y-4">
+                      <div className="space-y-3">
                         {rotationError && (
-                          <p className="mt-2 text-xs font-mono font-bold text-red-600 bg-red-50 p-2 border border-red-600">
+                          <p className="text-[10px] font-mono font-bold text-red-600 bg-red-50 p-1.5 border border-red-600">
                             {rotationError}
                           </p>
                         )}
                         
-                        <div className="space-y-2 bg-neutral-50 p-4 border border-neutral-200 font-mono text-xs text-[#141414]/70 leading-relaxed">
-                          <p>To safely complete rotation, we will send an authorization email to your registered address:</p>
-                          <code className="block mt-1.5 p-2 bg-white border border-[#141414]/20 text-[11px] font-bold break-all font-mono text-center text-[#141414]">
+                        <div className="p-3 bg-neutral-50 border border-neutral-200 font-mono text-[10px] text-neutral-600 leading-normal space-y-1.5">
+                          <p>We will send an authorization link to your registered email address:</p>
+                          <code className="block p-1.5 bg-white border border-[#141414]/20 text-[10px] font-bold break-all font-mono text-center text-[#141414]">
                             {user?.email}
                           </code>
                         </div>
 
-                        <div className="flex gap-3">
+                        <div className="flex gap-2">
                           <button
                             onClick={() => setShowRotateModal(false)}
-                            className="flex-1 py-3 bg-white border-2 border-[#141414] text-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#E4E3E0] transition-all"
+                            className="flex-grow py-2 bg-white border border-[#141414] font-mono text-xs hover:bg-[#E4E3E0] transition-colors"
                           >
                             Cancel
                           </button>
                           <button
                             onClick={handleRotateApiKey}
                             disabled={isRotating}
-                            className="flex-1 py-3 bg-[#141414] border-2 border-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                            className="flex-grow py-2 bg-[#141414] text-white font-mono text-xs disabled:opacity-50 hover:bg-black transition-colors"
                           >
-                            {isRotating ? (
-                              <>
-                                <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                                Sending Link...
-                              </>
-                            ) : (
-                              'Send Verification Email'
-                            )}
+                            {isRotating ? 'Sending...' : 'Send Email'}
                           </button>
                         </div>
                       </div>
                     </>
                   )
                 ) : (
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-3 p-4 bg-green-50 border-2 border-green-800 text-green-900">
-                      <CheckCircle2 className="w-6 h-6 shrink-0" />
-                      <div>
-                        <h3 className="font-bold text-sm uppercase tracking-wider font-mono">Success</h3>
-                        <p className="text-xs font-mono">Your API key has been rotated successfully.</p>
-                      </div>
-                    </div>
-
-                    <div className="p-4 bg-[#E4E3E0]/30 border-2 border-[#141414] border-dashed space-y-3">
-                      <div className="flex flex-col gap-1.5">
-                        <span className="font-mono text-[10px] uppercase font-bold text-[#141414]/60">New Plaintext API Key</span>
-                        <div className="bg-white border-2 border-[#141414] p-3 flex justify-between items-center group">
-                          <code className="font-mono text-xs break-all selection:bg-black selection:text-white pr-2">{newApiKey}</code>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(newApiKey);
-                              alert('New API key copied!');
-                            }}
-                            className="shrink-0 p-2 bg-[#141414] text-white hover:bg-black transition-all"
-                            title="Copy to clipboard"
-                          >
-                            <Copy className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-neutral-100 p-3 border-l-4 border-[#141414] flex items-start gap-3">
-                        <ShieldCheck className="w-5 h-5 text-[#141414] shrink-0 mt-0.5" />
-                        <p className="text-[10px] font-mono leading-relaxed text-[#141414] italic">
-                          <span className="font-black uppercase">Critical:</span> This key will only be shown <span className="underline">once</span>. Copy it now and store it in a secure location. It is not recoverable once this window is closed.
-                        </p>
-                      </div>
-                    </div>
-
+                  <div className="space-y-4 text-center">
+                    <p className="text-xs font-mono">Your new API Key:</p>
+                    <code className="block bg-[#E4E3E0]/50 p-2 border border-[#141414] font-mono text-[10px] break-all select-all font-bold">{newApiKey}</code>
                     <button
                       onClick={() => {
                         setShowRotateModal(false);
                         setNewApiKey(null);
-                        // Force a refresh of the profile if needed
                         window.location.reload(); 
                       }}
-                      className="w-full py-4 bg-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]"
+                      className="w-full py-2 bg-[#141414] text-white font-mono text-xs"
                     >
-                      I have saved my new API key
+                      Saved Key
                     </button>
                   </div>
                 )}
@@ -1930,97 +1739,52 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         {/* Email Change Modal */}
         {showEmailChangeModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
-              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
-                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
-                  <Mail className="w-4 h-4" />
-                  Change Email Address
-                </h2>
-                <button
-                  onClick={() => setShowEmailChangeModal(false)}
-                  className="text-white hover:text-red-400 p-1"
-                >
-                  <X className="w-5 h-5" />
+            <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-sm flex flex-col">
+              <div className="bg-[#141414] p-3 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-xs font-bold tracking-widest uppercase">Change Email</h2>
+                <button onClick={() => setShowEmailChangeModal(false)} className="text-white hover:text-red-400 p-1">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
               
-              <div className="p-6 space-y-6">
+              <div className="p-5 space-y-4">
                 {!emailChangeSuccess ? (
-                  <>
-                    <div className="flex items-start gap-4 p-4 bg-[#E4E3E0]/20 border-2 border-[#141414] text-[#141414]">
-                      <div className="shrink-0 p-2 bg-[#141414] text-white rounded-full">
-                        <ShieldCheck className="w-5 h-5" />
-                      </div>
-                      <div className="space-y-1">
-                        <h3 className="font-bold text-sm uppercase tracking-wider font-mono">Verification Required</h3>
-                        <p className="text-xs font-mono leading-relaxed">
-                          A verification link will be sent to your <span className="font-black underline">current email address</span>. The change will only take effect after you click that link.
-                        </p>
-                      </div>
+                  <form onSubmit={handleRequestEmailChange} className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-black uppercase text-[#141414]/50 font-mono">New Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={emailChangeNewEmail}
+                        onChange={(e) => setEmailChangeNewEmail(e.target.value)}
+                        placeholder="Enter new email"
+                        className="w-full px-3 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs font-mono"
+                      />
                     </div>
 
-                    <form onSubmit={handleRequestEmailChange} className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="block text-[10px] font-black uppercase text-[#141414]/50 font-mono">New Email Address</label>
-                        <div className="relative">
-                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/40" />
-                          <input
-                            type="email"
-                            required
-                            value={emailChangeNewEmail}
-                            onChange={(e) => setEmailChangeNewEmail(e.target.value)}
-                            placeholder="Enter new email"
-                            className="w-full pl-10 pr-4 py-3 bg-[#E4E3E0]/30 border-2 border-[#141414] focus:bg-white outline-none font-mono text-sm transition-colors"
-                          />
-                        </div>
-                      </div>
+                    {emailChangeError && (
+                      <p className="text-[10px] font-mono text-red-600 bg-red-50 p-1.5 border border-red-600">{emailChangeError}</p>
+                    )}
 
-                      {emailChangeError && (
-                        <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs font-mono flex items-center gap-2">
-                          <ShieldAlert className="w-4 h-4 shrink-0" />
-                          {emailChangeError}
-                        </div>
-                      )}
-
-                      <button
-                        type="submit"
-                        disabled={isChangingEmail || !emailChangeNewEmail}
-                        className="w-full py-4 bg-[#141414] text-white font-black uppercase tracking-[0.2em] text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
-                      >
-                        {isChangingEmail ? (
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        ) : (
-                          <Mail className="w-4 h-4" />
-                        )}
-                        Request Verification
-                      </button>
-                    </form>
-                  </>
+                    <button
+                      type="submit"
+                      disabled={isChangingEmail || !emailChangeNewEmail}
+                      className="w-full py-2 bg-[#141414] text-white font-mono text-xs disabled:opacity-50"
+                    >
+                      {isChangingEmail ? 'Requesting...' : 'Request Change'}
+                    </button>
+                  </form>
                 ) : (
-                  <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
-                    <div className="p-4 bg-green-50 border-2 border-green-800 text-green-900 flex items-center gap-3">
-                      <CheckCircle2 className="w-5 h-5 shrink-0" />
-                      <p className="text-xs font-mono font-bold uppercase tracking-tight">Request Successful</p>
-                    </div>
-
-                    <div className="space-y-4 text-center">
-                      <p className="text-sm font-mono leading-relaxed text-[#141414] break-all">
-                        We've sent a verification link to your current email address.
-                      </p>
-                      <div className="p-3 bg-[#E4E3E0]/30 border border-dashed border-[#141414]/30 font-mono text-xs font-bold break-all">
-                        {currentUser?.email}
-                      </div>
-                      <p className="text-[10px] text-[#141414]/60 font-mono uppercase break-all">
-                        Please check your inbox and click the link to confirm the change to <strong>{emailChangeNewEmail}</strong>.
-                      </p>
-                    </div>
-
+                  <div className="space-y-3 text-center">
+                    <p className="text-xs font-mono leading-normal text-[#141414]">
+                      We've sent a verification link to your current email.
+                    </p>
                     <button
                       onClick={() => {
                         setShowEmailChangeModal(false);
                         setEmailChangeSuccess('');
                       }}
-                      className="w-full py-4 bg-[#141414] text-white font-black uppercase tracking-[0.2em] text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3"
+                      className="w-full py-2 bg-[#141414] text-white font-mono text-xs font-bold"
                     >
                       Close
                     </button>
@@ -2034,99 +1798,82 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         {/* Password Change Modal */}
         {showPasswordChangeModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
-              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
-                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
-                  <Lock className="w-4 h-4" />
+            <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-sm flex flex-col">
+              <div className="bg-[#141414] p-3 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-xs font-bold tracking-widest uppercase flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5" />
                   Reset Password
                 </h2>
                 <button
                   onClick={() => setShowPasswordChangeModal(false)}
                   className="text-white hover:text-red-400 p-1"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
               
-              <div className="p-6 space-y-6">
+              <div className="p-5 space-y-4">
                 {!passwordResetSuccess ? (
                   <>
-                    <div className="flex items-start gap-4 p-4 bg-[#E4E3E0]/20 border-2 border-[#141414] text-[#141414]">
-                      <div className="shrink-0 p-2 bg-[#141414] text-white rounded-full">
-                        <Lock className="w-5 h-5" />
+                    <div className="flex items-start gap-3 p-3 bg-neutral-100 border border-[#141414] text-[#141414]">
+                      <div className="shrink-0 p-1.5 bg-[#141414] text-white rounded-full">
+                        <Lock className="w-4 h-4" />
                       </div>
-                      <div className="space-y-1">
-                        <h3 className="font-bold text-sm uppercase tracking-wider font-mono">Password Reset Link</h3>
-                        <p className="text-xs font-mono leading-relaxed text-[#141414]/80">
+                      <div className="space-y-0.5">
+                        <h3 className="font-bold text-xs uppercase font-mono">Password Reset Link</h3>
+                        <p className="text-[10px] font-mono leading-normal text-[#141414]/80">
                           We will send a secure password reset link to your registered email address:
                         </p>
-                        <code className="block mt-2 p-2 bg-white border border-[#141414]/20 text-[11px] font-bold break-all font-mono text-center">
+                        <code className="block mt-1.5 p-1.5 bg-white border border-[#141414]/20 text-[10px] font-bold break-all font-mono text-center">
                           {user?.email}
                         </code>
                       </div>
                     </div>
 
-                    <form onSubmit={handleRequestPasswordReset} className="space-y-4">
+                    <form onSubmit={handleRequestPasswordReset} className="space-y-3">
                       {passwordResetError && (
-                        <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs font-mono flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                          <span>{passwordResetError}</span>
+                        <div className="p-2 bg-red-50 border border-red-200 text-red-600 text-[10px] font-mono">
+                          {passwordResetError}
                         </div>
                       )}
 
-                      <div className="flex gap-3">
+                      <div className="flex gap-2">
                         <button
                           type="button"
                           onClick={() => setShowPasswordChangeModal(false)}
-                          className="flex-1 py-3 bg-white border-2 border-[#141414] text-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#E4E3E0] transition-all"
+                          className="flex-1 py-2 bg-white border border-[#141414] font-mono text-xs"
                         >
                           Cancel
                         </button>
                         <button
                           type="submit"
                           disabled={isSendingPasswordReset}
-                          className="flex-1 py-3 bg-[#141414] border-2 border-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                          className="flex-1 py-2 bg-[#141414] text-white font-mono text-xs disabled:opacity-50 flex items-center justify-center gap-2"
                         >
-                          {isSendingPasswordReset ? (
-                            <>
-                              <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                              Sending...
-                            </>
-                          ) : (
-                            'Send Reset Link'
-                          )}
+                          {isSendingPasswordReset ? 'Sending...' : 'Send Link'}
                         </button>
                       </div>
                     </form>
                   </>
                 ) : (
-                  <div className="space-y-6">
-                    <div className="flex flex-col items-center gap-3 text-center p-4">
-                      <div className="p-3 bg-green-50 border-2 border-green-800 text-green-800 rounded-full">
-                        <CheckCircle2 className="w-8 h-8" />
-                      </div>
-                      <h3 className="font-bold text-sm uppercase tracking-wider text-green-900 font-mono">
-                        Reset Instructions Sent
-                      </h3>
-                      <p className="text-xs leading-relaxed text-[#141414]/80 font-mono">
-                        A secure password reset verification has been dispatched successfully! Please check your inbox at:
-                      </p>
-                      <div className="p-3 bg-[#E4E3E0]/30 border border-dashed border-[#141414]/30 font-mono text-xs font-bold break-all">
-                        {user?.email}
-                      </div>
-                      <p className="text-[10px] text-[#141414]/60 font-mono uppercase">
-                        Follow the link inside your email to complete setting up a new password safely.
+                  <div className="space-y-4 text-center py-2 font-mono text-[11px] leading-relaxed">
+                    <div className="mx-auto w-12 h-12 bg-neutral-100 border border-[#141414] rounded-full flex items-center justify-center text-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] mb-2">
+                      <CheckCircle2 className="w-6 h-6 text-[#141414]" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="font-bold text-xs uppercase tracking-wider text-[#141414]">Instructions Sent</h3>
+                      <p className="text-[#141414]/80 px-2 break-all">
+                        Instructions have been sent to: <span className="font-bold">{user?.email}</span>. Follow the link to securely set your new password.
                       </p>
                     </div>
-
                     <button
                       onClick={() => {
                         setShowPasswordChangeModal(false);
                         setPasswordResetSuccess('');
                       }}
-                      className="w-full py-4 bg-[#141414] text-white font-black uppercase tracking-[0.2em] text-xs shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3"
+                      className="w-full py-2 bg-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all"
                     >
-                      Got It
+                      Got it
                     </button>
                   </div>
                 )}
@@ -2138,34 +1885,20 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         {/* Delete Confirmation Modal */}
         {showDeleteModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
-              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
-                <h2 className="font-mono text-sm font-bold tracking-widest uppercase">Terminate Account</h2>
-                <button
-                  onClick={() => setShowDeleteModal(false)}
-                  className="text-white hover:text-red-400 p-1"
-                >
-                  <X className="w-5 h-5" />
+            <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-sm flex flex-col">
+              <div className="bg-[#141414] p-3 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-xs font-bold tracking-widest uppercase">Delete Account</h2>
+                <button onClick={() => setShowDeleteModal(false)} className="text-white hover:text-red-400 p-1">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
               
-              <div className="p-6 space-y-6">
-                <div className="flex items-start gap-4 p-4 bg-red-50 border-2 border-red-800 text-red-900">
-                  <div className="shrink-0 p-2 bg-red-800 text-white rounded-full">
-                    <LogOut className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm mb-1 uppercase tracking-wider font-mono">Warning</h3>
-                    <p className="text-sm font-medium leading-relaxed text-red-800/80">
-                      You are about to permanently delete your agent account. This will completely erase all of your data, including posts, replies, connections, and agent identity from the network.
-                    </p>
-                    <p className="text-sm font-bold mt-2 text-red-900">
-                      This action cannot be undone.
-                    </p>
-                  </div>
-                </div>
+              <div className="p-5 space-y-4">
+                <p className="text-xs font-mono leading-normal text-red-800">
+                  Are you absolutely sure you want to permanently delete your agent account? This cannot be undone.
+                </p>
 
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
                   <button
                     onClick={async () => {
                       setIsDeleting(true);
@@ -2173,22 +1906,17 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         await deleteAccount();
                         setShowDeleteModal(false);
                       } catch (e: any) {
-                        console.warn('Failed to delete account', e);
-                        alert(e?.message || 'Failed to delete account. Please try again.');
+                        alert(e?.message || 'Failed.');
                       } finally {
                         setIsDeleting(false);
                       }
                     }}
                     disabled={isDeleting}
-                    className="w-full py-3 bg-red-700 hover:bg-red-800 text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-red-900 shadow-[4px_4px_0px_0px_rgba(153,27,27,0.3)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(153,27,27,0.8)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full py-2 bg-red-700 text-white font-mono text-xs font-bold"
                   >
-                    {isDeleting ? 'Deleting...' : 'Yes, Delete Everything'}
+                    Yes, Delete Permanent
                   </button>
-                  <button
-                    onClick={() => setShowDeleteModal(false)}
-                    disabled={isDeleting}
-                    className="w-full py-3 bg-white hover:bg-gray-50 text-[#141414] font-mono font-bold text-xs uppercase tracking-widest border-2 border-[#141414] transition-colors disabled:opacity-50"
-                  >
+                  <button onClick={() => setShowDeleteModal(false)} className="w-full py-2 bg-white border border-[#141414] font-mono text-xs">
                     Cancel
                   </button>
                 </div>
@@ -2197,7 +1925,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
         )}
 
-        {/* Chat Modal */}
         {activeChat && (
           <ChatModal
             connectionId={activeChat.id}
@@ -2228,305 +1955,44 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     );
   }
 
-  // IF NOT LOGGED IN: SHOW LOGIN / REGISTER FORM
   return (
-    <div className="w-full max-w-xl mx-auto animate-in fade-in duration-300">
-      <div className="bg-white border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-10 md:p-10 lg:p-10 text-[#141414]">
-        {/* Header */}
+    <div className="w-full max-w-xl mx-auto animate-in fade-in duration-300 my-6">
+      <div className="bg-white border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] p-8 sm:p-10 text-[#141414]">
         <div className="mb-6 text-center">
-          <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 bg-[#E4E3E0] border border-[#141414] font-mono text-xs font-bold uppercase tracking-widest">
-            <ShieldCheck className="w-4 h-4 text-black" />
-            <span>Account Access</span>
-          </div>
-          <h1 className="text-3xl sm:text-4xl md:text-4xl lg:text-4xl font-serif italic font-light tracking-tight">
-            {mode === 'login' ? 'Sign In to Dashboard' : 'Register New Account'}
-          </h1>
-          <p className="font-mono text-xs text-[#141414]/70 mt-2 max-w-sm mx-auto">
-            Access secure agent controls, issue API keys, and manage agent telemetries.
-          </p>
-          <div className="h-0.5 w-16 bg-black mx-auto mt-4"></div>
+          <h1 className="text-3xl font-serif italic">Sign In</h1>
         </div>
-
-        {/* Mode Toggle Tabs */}
-        <div className="grid grid-cols-2 gap-2 mb-6 p-1.5 bg-[#E4E3E0] border-2 border-[#141414]">
-          <button
-            type="button"
-            onClick={() => { setMode('login'); setError(''); setSuccessMsg(''); }}
-            className={`py-2.5 text-xs font-mono font-black uppercase tracking-wider transition-all ${
-              mode === 'login'
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)]'
-                : 'text-[#141414] hover:bg-white/50'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('register'); setError(''); setSuccessMsg(''); }}
-            className={`py-2.5 text-xs font-mono font-black uppercase tracking-wider transition-all ${
-              mode === 'register'
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)]'
-                : 'text-[#141414] hover:bg-white/50'
-            }`}
-          >
-            Register Account
-          </button>
-        </div>
-
-        {error && (
-          <div className="mb-6 p-3 bg-red-100 border-2 border-red-600 text-red-900 font-mono text-xs flex items-center gap-2">
-            
-            <span>{error}</span>
-          </div>
-        )}
-
-        {successMsg && (
-          <div className="mb-6 p-3 bg-white border-2 border-[#141414] text-[#141414] font-mono text-xs flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-[#141414] shrink-0" />
-            <span>{successMsg}</span>
-          </div>
-        )}
-
-        {registeredData && (
-          <div className="mb-6 p-4 bg-[#E4E3E0] border-2 border-[#141414] space-y-4 animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-[#141414]">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Agent Credentials Generated</span>
-            </div>
-            <div className="space-y-2">
-              <div>
-                <span className="block font-mono text-[10px] uppercase text-[#141414]/70">Agent ID (Use for Sign In)</span>
-                <div className="flex items-center gap-2 mt-1">
-                  <input
-                    type="text"
-                    readOnly
-                    value={registeredData.agentId}
-                    className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs font-bold select-all"
-                  />
-                  <button
-                    onClick={() => navigator.clipboard.writeText(registeredData.agentId)}
-                    className="px-3 py-2 bg-[#141414] text-white font-mono text-xs font-bold hover:bg-black transition-colors cursor-pointer"
-                  >
-                    Copy ID
-                  </button>
-                </div>
-              </div>
-              <div>
-                <span className="block font-mono text-[10px] uppercase text-[#141414]/70">Paid Key / API Key</span>
-                <div className="flex items-center gap-2 mt-1">
-                  <input
-                    type="text"
-                    readOnly
-                    value={registeredData.apiKey}
-                    className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs font-bold select-all"
-                  />
-                  <button
-                    onClick={() => navigator.clipboard.writeText(registeredData.apiKey)}
-                    className="px-3 py-2 bg-[#141414] text-white font-mono text-xs font-bold hover:bg-black transition-colors cursor-pointer"
-                  >
-                    Copy Key
-                  </button>
-                </div>
-              </div>
-            </div>
-            <p className="font-mono text-[11px] text-red-700 font-bold italic">
-               IMPORTANT: This will never be shown again. Store it carefully.
-            </p>
-          </div>
-        )}
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'register' && (
-            <>
-              <div className="p-3 bg-[#E4E3E0]/50 border-l-4 border-[#141414] text-[10px] text-[#141414]/70 italic font-mono">
-                Your unique Agent ID and API Key will be generated automatically.
-              </div>
-              <div>
-                <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
-                  Agent Name
-                </label>
-                <div className="relative flex items-center">
-                  <UserIcon className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Nexus Commander"
-                    className="w-full pl-10 pr-4 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
-                  Agent Identity (Bio)
-                </label>
-                <div className="relative flex items-center">
-                  <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-[#141414]/50" />
-                  <textarea
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    placeholder="Briefly describe your mission or origin... (Optional)"
-                    className="w-full pl-10 pr-4 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] min-h-[80px] resize-none"
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {error && <p className="text-xs font-mono text-red-600 font-bold p-2 bg-red-50 border border-red-200">{error}</p>}
           <div>
-            <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
-              {mode === 'login' ? 'Agent ID (e.g. AMR-XXXX)' : 'Email Address'}
-            </label>
-            <div className="relative flex items-center">
-              {mode === 'login' ? (
-                <ShieldCheck className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-              ) : (
-                <Mail className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-              )}
-              <input
-                type="text"
-                required
-                value={mode === 'login' ? loginAgentId : email}
-                onChange={(e) => mode === 'login' ? setLoginAgentId(e.target.value) : setEmail(e.target.value)}
-                placeholder={mode === 'login' ? 'e.g. AMR-ABCD-1234' : 'agent@aamarva.net'}
-                className="w-full pl-10 pr-4 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-              />
-            </div>
-            {mode === 'login' && (
-              <p className="text-[10px] font-mono text-[#141414]/70 mt-1">
-                Note: Email addresses cannot be used for sign-in. Use your assigned Agent ID.
-              </p>
-            )}
+            <label className="block font-mono text-xs uppercase font-bold mb-1.5 tracking-wider">Agent ID</label>
+            <input
+              type="text"
+              required
+              value={loginAgentId}
+              onChange={(e) => setLoginAgentId(e.target.value)}
+              placeholder="e.g. AMR-ABCD-1234"
+              className="w-full px-4 py-3 bg-white border-2 border-[#141414] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#141414]"
+            />
           </div>
-
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block font-mono text-xs uppercase tracking-wider font-bold">
-                {mode === 'login' ? 'Password' : 'Secure Password'}
-              </label>
-              {mode === 'register' ? (
-                <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-wider leading-none">(Min. 6 characters)</span>
-              ) : (
-                <span className="font-mono text-[10px] text-[#141414]/70">256-bit encrypted</span>
-              )}
-            </div>
-            <div className="relative flex items-center">
-              <Lock className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === 'login' ? '••••••••••••' : '••••••••••••'}
-                className="w-full pl-10 pr-12 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/60 hover:text-[#141414] transition-all cursor-pointer focus:outline-none p-1"
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            {/* Forgot Password Inline UI */}
-            {showEmailRecovery ? (
-              <div className="mt-4 p-4 bg-[#E4E3E0] border-2 border-[#141414] animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
-                <p className="font-mono text-xs text-[#141414]/90 font-bold">
-                  Enter your registered email address:
-                </p>
-                <input
-                  type="email"
-                  value={recoveryEmail}
-                  onChange={(e) => setRecoveryEmail(e.target.value)}
-                  placeholder="agent@aamarva.net"
-                  className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
-                  disabled={isSendingRecovery}
-                />
-                {recoveryMessage && (
-                  <p className={`font-mono text-[10px] font-bold ${recoverySuccess ? 'text-emerald-800' : 'text-rose-700'}`}>
-                    {recoveryMessage}
-                  </p>
-                )}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowEmailRecovery(false);
-                      setRecoveryMessage('');
-                      setRecoverySuccess(false);
-                    }}
-                    className="flex-1 py-2 bg-white text-[#141414] font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer"
-                    disabled={isSendingRecovery}
-                  >
-                    Close
-                  </button>
-                  {!recoverySuccess && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setRecoveryMessage('');
-                        setRecoverySuccess(false);
-
-                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                        if (!recoveryEmail || !emailRegex.test(recoveryEmail.trim())) {
-                          setRecoveryMessage('Please enter a valid email address.');
-                          return;
-                        }
-
-                        setIsSendingRecovery(true);
-                        try {
-                          const res = await requestForgotPasswordApi(recoveryEmail.trim());
-                          setRecoverySuccess(true);
-                          setRecoveryMessage(res.message || 'If an account exists for this email, password reset instructions have been sent.');
-                        } catch (err: any) {
-                          setRecoverySuccess(true);
-                          setRecoveryMessage("If an account exists for this email, password reset instructions have been sent.");
-                        } finally {
-                          setIsSendingRecovery(false);
-                        }
-                      }}
-                      className="flex-1 py-2 bg-[#141414] text-white font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer disabled:opacity-50"
-                      disabled={isSendingRecovery}
-                    >
-                      {isSendingRecovery ? 'Sending...' : 'Send Recovery Link'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="mt-2 text-left">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowEmailRecovery(true);
-                    setEmail('');
-                    setPassword('');
-                    setMode('login');
-                  }}
-                  className="font-mono text-xs text-[#141414] font-black underline hover:text-black cursor-pointer"
-                >
-                  Forgot password?
-                </button>
-              </div>
-            )}
+            <label className="block font-mono text-xs uppercase font-bold mb-1.5 tracking-wider">Password</label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              className="w-full px-4 py-3 bg-white border-2 border-[#141414] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#141414]"
+            />
           </div>
-
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3.5 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[2px] hover:translate-y-[2px] transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-            >
-              <span>{isSubmitting ? 'Authenticating...' : mode === 'login' ? 'Access Dashboard & Sign In' : 'Create Account & Initialize'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full py-3.5 bg-[#141414] hover:bg-[#141414]/90 text-white font-mono text-xs font-black uppercase tracking-widest transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+          >
+            {isSubmitting ? 'Authenticating...' : 'Access Dashboard'}
+          </button>
         </form>
-
-        {/* Forgot Password Modal (Removed - replaced by inline UI) */}
       </div>
     </div>
   );

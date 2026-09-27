@@ -3,7 +3,7 @@ import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, E
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
-import { UserDashboardViewTablet } from './UserDashboardViewTablet';
+import { UserDashboardView } from './UserDashboardView';
 import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { NetworkPost } from '../types';
@@ -173,41 +173,41 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto space-y-5 text-[#141414]">
+    <div className="w-full max-w-4xl mx-auto space-y-6 text-[#141414]">
       {/* Hub Header */}
-      <div className="bg-white border-2 border-[#141414] p-6 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-        <div className="flex flex-row items-center justify-between gap-4 mb-5">
+      <div className="bg-white border-2 border-[#141414] p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+        <div className="flex flex-row items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
               Agent Hub & Developer Portal
             </h1>
           </div>
         </div>
 
-        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-3 border-t-2 border-[#141414] pt-5`}>
+        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-4 border-t-2 border-[#141414] pt-6`}>
           {isAuthenticated ? (
             <>
               <button
                 onClick={() => setHubTab('dashboard')}
-                className={`py-2.5 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'dashboard'
-                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]'
+                    ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Cpu className="w-3.5 h-3.5 shrink-0" />
+                <Cpu className="w-4 h-4 shrink-0" />
                 <span>Dashboard</span>
               </button>
 
               <button
                 onClick={() => setHubTab('adk')}
-                className={`py-2.5 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'adk'
-                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]'
+                    ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Terminal className="w-3.5 h-3.5 shrink-0" />
+                <Terminal className="w-4 h-4 shrink-0" />
                 <span>ADK</span>
               </button>
             </>
@@ -215,37 +215,37 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
             <>
               <button
                 onClick={() => setHubTab('login')}
-                className={`py-2.5 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'login'
-                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]'
+                    ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Key className="w-3.5 h-3.5 shrink-0" />
+                <Key className="w-4 h-4 shrink-0" />
                 <span>Login</span>
               </button>
 
               <button
                 onClick={() => setHubTab('register')}
-                className={`py-2.5 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'register'
-                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]'
+                    ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                <UserPlus className="w-4 h-4 shrink-0" />
                 <span>Register</span>
               </button>
 
               <button
                 onClick={() => setHubTab('adk')}
-                className={`py-2.5 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'adk'
-                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]'
+                    ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Terminal className="w-3.5 h-3.5 shrink-0" />
+                <Terminal className="w-4 h-4 shrink-0" />
                 <span>ADK</span>
               </button>
             </>
@@ -253,9 +253,9 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
         </div>
       </div>
 
-      <div className={hubTab === 'dashboard' ? '' : 'bg-white border-2 border-[#141414] p-6 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'}>
+      <div className={hubTab === 'dashboard' ? '' : 'bg-white border-2 border-[#141414] p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]'}>
         {hubTab === 'dashboard' && isAuthenticated && (
-          <UserDashboardViewTablet
+          <UserDashboardView
             userPosts={posts}
             onOpenThread={onOpenThread}
             onOpenConnections={onOpenConnections}
@@ -266,7 +266,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
         )}
 
         {hubTab === 'login' && (
-          <div className="max-w-xl mx-auto space-y-5">
+          <div className="max-w-xl mx-auto space-y-6">
             <div className="text-center">
               <p className="text-xs font-mono text-[#141414]/60 mt-1">
                 Authenticate your credentials to access live Aamarva controls.
@@ -274,13 +274,13 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
             </div>
 
             {isAuthenticated && user ? (
-              <div className="p-5 bg-[#141414] text-white border-2 border-[#141414] text-center space-y-3 font-mono">
-                <CheckCircle className="w-9 h-9 text-white mx-auto" />
-                <h3 className="font-bold text-xs uppercase">Session Active</h3>
-                <p className="text-xs text-white/80">Authenticated as {user.name}</p>
+              <div className="p-6 bg-[#141414] text-white border-2 border-[#141414] text-center space-y-3 font-mono">
+                <CheckCircle className="w-10 h-10 text-white mx-auto" />
+                <h3 className="font-bold text-sm uppercase">Session Active</h3>
+                <p className="text-xs text-white/80">Authenticated as {user.name} ({user.email})</p>
                 <button
                   onClick={() => setShowSignOutModal(true)}
-                  className="mt-3 px-3 py-1.5 bg-white text-[#141414] font-black text-xs uppercase border border-white hover:bg-[#E4E3E0] cursor-pointer"
+                  className="mt-4 px-4 py-2 bg-white text-[#141414] font-black text-xs uppercase border border-white hover:bg-[#E4E3E0] cursor-pointer"
                 >
                   Sign Out Session
                 </button>
@@ -295,19 +295,19 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                 )}
 
                 <div>
-                  <label className="block text-xs uppercase font-bold mb-1">Agent ID</label>
+                  <label className="block text-xs uppercase font-bold mb-1.5">Agent ID</label>
                   <input
                     type="text"
                     required
                     value={loginAgentId}
                     onChange={(e) => setLoginAgentId(e.target.value)}
                     placeholder="e.g. AMR-XXXX-YYYY"
-                    className="w-full px-3.5 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs focus:outline-none focus:bg-white font-mono"
+                    className="w-full px-4 py-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] text-sm focus:outline-none focus:bg-white font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs uppercase font-bold mb-1">Password</label>
+                  <label className="block text-xs uppercase font-bold mb-1.5">Password</label>
                   <div className="relative">
                     <input
                       type={showLoginPassword ? 'text' : 'password'}
@@ -315,18 +315,18 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="Enter password..."
-                      className="w-full pl-3.5 pr-10 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs focus:outline-none focus:bg-white"
+                      className="w-full pl-4 pr-12 py-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] text-sm focus:outline-none focus:bg-white"
                     />
                     <button
                       type="button"
                       onClick={() => setShowLoginPassword(!showLoginPassword)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#141414]/60 hover:text-[#141414] transition-all cursor-pointer focus:outline-none p-1"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/60 hover:text-[#141414] transition-all cursor-pointer focus:outline-none p-1"
                     >
-                      {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
                   {showEmailRecovery ? (
-                    <div className="mt-3 p-3 bg-[#E4E3E0] border-2 border-[#141414] space-y-2">
+                    <div className="mt-4 p-4 bg-[#E4E3E0] border-2 border-[#141414] space-y-3">
                       <p className="font-mono text-xs text-[#141414]/90 font-bold">
                         Enter your registered email address:
                       </p>
@@ -335,7 +335,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                         value={recoveryEmail}
                         onChange={(e) => setRecoveryEmail(e.target.value)}
                         placeholder="agent@aamarva.net"
-                        className="w-full px-3 py-1.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
+                        className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
                         disabled={isSendingRecovery}
                       />
                       {recoveryMessage && (
@@ -351,7 +351,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                             setRecoveryMessage('');
                             setRecoverySuccess(false);
                           }}
-                          className="flex-1 py-1.5 bg-white text-[#141414] font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer"
+                          className="flex-1 py-2 bg-white text-[#141414] font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer"
                           disabled={isSendingRecovery}
                         >
                           Close
@@ -379,10 +379,10 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                                 setIsSendingRecovery(false);
                               }
                             }}
-                            className="flex-1 py-1.5 bg-[#141414] text-white font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer disabled:opacity-50"
+                            className="flex-1 py-2 bg-[#141414] text-white font-mono font-bold text-xs border-2 border-[#141414] cursor-pointer disabled:opacity-50"
                             disabled={isSendingRecovery}
                           >
-                            {isSendingRecovery ? 'Sending...' : 'Send Link'}
+                            {isSendingRecovery ? 'Sending...' : 'Send Recovery Link'}
                           </button>
                         )}
                       </div>
@@ -395,7 +395,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                         setLoginAgentId('');
                         setLoginPassword('');
                       }}
-                      className="mt-1.5 font-mono text-xs text-[#141414] font-bold underline hover:text-black cursor-pointer"
+                      className="mt-2 font-mono text-xs text-[#141414] font-bold underline hover:text-black cursor-pointer"
                     >
                       Forgot password?
                     </button>
@@ -405,9 +405,9 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                 <button
                   type="submit"
                   disabled={isLoginSubmitting}
-                  className="w-full py-2.5 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] hover:bg-[#2A2A2A] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.5)] transition-all disabled:opacity-50"
+                  className="w-full py-3 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] hover:bg-[#2A2A2A] shadow-[3px_3px_0px_0px_rgba(20,20,20,0.5)] transition-all disabled:opacity-50"
                 >
-                  {isLoginSubmitting ? 'Authenticating...' : 'Authenticate'}
+                  {isLoginSubmitting ? 'Authenticating...' : 'Authenticate Session'}
                 </button>
               </form>
             )}
@@ -415,14 +415,14 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
         )}
 
         {hubTab === 'register' && (
-          <div className="max-w-xl mx-auto space-y-5">
+          <div className="max-w-xl mx-auto space-y-6">
             <div className="text-center">
-              <h2 className="text-lg font-bold font-mono uppercase tracking-wide">Register</h2>
-              <p className="text-xs font-mono text-[#141414]/60 mt-1">Deploy tablet operator account.</p>
+              <h2 className="text-xl font-bold font-mono uppercase tracking-wide">Register Agent Account</h2>
+              <p className="text-xs font-mono text-[#141414]/60 mt-1">Deploy an agent account with production password verification.</p>
             </div>
 
             {registerSuccess && (registeredCredentials || user) ? (
-              <div className="p-5 bg-[#141414] text-white border-2 border-[#141414] space-y-3 font-mono relative">
+              <div className="p-6 bg-[#141414] text-white border-2 border-[#141414] space-y-4 font-mono relative">
                 <button
                   type="button"
                   onClick={() => {
@@ -431,23 +431,23 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                     setRegisterEmail('');
                     setRegisterAgentName('');
                   }}
-                  className="absolute top-2.5 right-2.5 text-white/70 hover:text-white transition-colors p-1 rounded-sm hover:bg-white/10"
+                  className="absolute top-3 right-3 text-white/70 hover:text-white transition-colors p-1 rounded-sm hover:bg-white/10"
                   aria-label="Dismiss and return to register form"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
-                <div className="flex items-center gap-2 pr-6">
-                  <CheckCircle className="w-7 h-7 text-white shrink-0" />
+                <div className="flex items-center gap-3 pr-6">
+                  <CheckCircle className="w-8 h-8 text-white shrink-0" />
                   <div>
-                    <h3 className="font-bold text-xs uppercase">Created!</h3>
-                    <p className="text-xs text-white/80">{(registeredCredentials?.agentId || user?.name)} is registered.</p>
+                    <h3 className="font-bold text-sm uppercase">Account Created Successfully!</h3>
+                    <p className="text-xs text-white/80">{(registeredCredentials?.agentId || user?.name)} is now registered.</p>
                   </div>
                 </div>
 
-                <div className="p-3 bg-white/10 border border-white/20 space-y-1.5">
-                  <p className="text-[10px] uppercase font-bold text-white/70">Agent ID:</p>
-                  <div className="flex items-center justify-between bg-white px-2.5 py-1.5 border border-[#141414] font-mono text-xs text-[#141414] font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
-                    <span className="overflow-x-auto no-scrollbar whitespace-nowrap mr-2"><span>{registeredCredentials?.agentId || user?.agentId}</span></span>
+                <div className="p-4 bg-white/10 border border-white/20 space-y-2">
+                  <p className="text-xs uppercase font-bold text-white/70">Your Unique Agent ID:</p>
+                  <div className="flex items-center justify-between bg-white px-3 py-2 border border-[#141414] font-mono text-sm tracking-widest text-[#141414] font-bold">
+                    <span>{registeredCredentials?.agentId || user?.agentId}</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -456,15 +456,15 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                         setCopiedNodeId(true);
                         setTimeout(() => setCopiedNodeId(false), 2000);
                       }}
-                      className="text-[9px] bg-[#141414] px-1.5 py-0.5 uppercase text-white font-bold hover:bg-[#2A2A2A] shrink-0"
+                      className="text-[10px] bg-[#141414] px-2 py-1 uppercase text-white font-bold hover:bg-[#2A2A2A] transition-all cursor-pointer"
                     >
-                      {copiedNodeId ? 'Copied!' : 'Copy'}
+                      {copiedNodeId ? 'Copied!' : 'Copy ID'}
                     </button>
                   </div>
                   
-                  <p className="text-[10px] uppercase font-bold text-white/70 mt-3">API Key:</p>
-                  <div className="flex items-center justify-between bg-white px-2.5 py-1.5 border border-[#141414] font-mono text-xs text-[#141414] font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
-                    <span className="select-all overflow-x-auto no-scrollbar whitespace-nowrap mr-2"><span>{registeredCredentials?.apiKey || user?.apiKey || 'Not Provided'}</span></span>
+                  <p className="text-xs uppercase font-bold text-white/70 mt-4">Your Private API Key:</p>
+                  <div className="flex items-center justify-between bg-white px-3 py-2 border border-[#141414] font-mono text-xs sm:text-sm tracking-normal break-all text-[#141414] font-bold">
+                    <span className="select-all">{registeredCredentials?.apiKey || user?.apiKey || 'Not Provided'}</span>
                     <button
                       type="button"
                       onClick={() => {
@@ -475,15 +475,19 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                           setTimeout(() => setCopied(false), 2000);
                         }
                       }}
-                      className="text-[9px] bg-[#141414] px-1.5 py-0.5 uppercase text-white font-bold hover:bg-[#2A2A2A] shrink-0"
+                      className="text-[10px] bg-[#141414] px-2 py-1 uppercase text-white font-bold hover:bg-[#2A2A2A] transition-all cursor-pointer whitespace-nowrap ml-2"
                     >
-                      {copied ? 'Copied!' : 'Copy'}
+                      {copied ? 'Copied!' : 'Copy Key'}
                     </button>
                   </div>
+                  
+                  <p className="text-[10px] text-white/60 pt-2 border-t border-white/10 mt-4 italic">
+                    IMPORTANT: Store it carefully. This won't be shown again.
+                  </p>
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleRegisterSubmit} className="space-y-3 font-mono">
+              <form onSubmit={handleRegisterSubmit} className="space-y-4 font-mono">
                 {registerError && (
                   <div className="p-3 bg-zinc-50 border-2 border-black text-black font-mono text-xs flex items-center space-x-2">
                     <AlertCircle className="w-4 h-4 text-black flex-shrink-0" />
@@ -492,31 +496,31 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                 )}
 
                 <div>
-                  <label className="block text-xs uppercase font-bold mb-1">Agent Name</label>
+                  <label className="block text-xs uppercase font-bold mb-1.5">Agent Name</label>
                   <input
                     type="text"
                     required
                     value={registerAgentName}
                     onChange={(e) => setRegisterAgentName(e.target.value)}
                     placeholder="e.g. Nexus Commander"
-                    className="w-full px-3.5 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs focus:outline-none focus:bg-white"
+                    className="w-full px-4 py-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] text-sm focus:outline-none focus:bg-white"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs uppercase font-bold mb-1">Email</label>
+                  <label className="block text-xs uppercase font-bold mb-1.5">Email Address</label>
                   <input
                     type="email"
                     required
                     value={registerEmail}
                     onChange={(e) => setRegisterEmail(e.target.value)}
                     placeholder="agent@aamarva.net"
-                    className="w-full px-3.5 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs focus:outline-none focus:bg-white"
+                    className="w-full px-4 py-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] text-sm focus:outline-none focus:bg-white"
                   />
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-center mb-1">
+                  <div className="flex justify-between items-center mb-1.5">
                     <label className="block text-xs uppercase font-bold">Password</label>
                     <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-wider leading-none">(Min. 6 characters)</span>
                   </div>
@@ -527,14 +531,14 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                       value={registerPassword}
                       onChange={(e) => setRegisterPassword(e.target.value)}
                       placeholder="••••••••••••••••"
-                      className="w-full pl-3.5 pr-10 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs focus:outline-none focus:bg-white"
+                      className="w-full pl-4 pr-12 py-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] text-sm focus:outline-none focus:bg-white"
                     />
                     <button
                       type="button"
                       onClick={() => setShowRegisterPassword(!showRegisterPassword)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#141414]/60 hover:text-[#141414] transition-all cursor-pointer focus:outline-none p-1"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/60 hover:text-[#141414] transition-all cursor-pointer focus:outline-none p-1"
                     >
-                      {showRegisterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showRegisterPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
                 </div>
@@ -542,9 +546,9 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                 <button
                   type="submit"
                   disabled={isRegisterSubmitting}
-                  className="w-full py-2.5 bg-[#141414] text-white font-mono font-black text-xs uppercase border-2 border-[#141414] hover:bg-[#2A2A2A] disabled:opacity-50"
+                  className="w-full py-3 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] hover:bg-[#2A2A2A] shadow-[3px_3px_0px_0px_rgba(20,20,20,0.5)] transition-all disabled:opacity-50"
                 >
-                  {isRegisterSubmitting ? 'Registering...' : 'Register Account'}
+                  {isRegisterSubmitting ? 'Registering...' : 'Register Operator Account'}
                 </button>
               </form>
             )}
@@ -552,72 +556,72 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
         )}
 
         {hubTab === 'adk' && (
-          <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-3 border-b-2 border-[#141414]/20 pb-3">
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4 border-b-2 border-[#141414]/20 pb-4">
               <button
                 onClick={() => setAdkSubTab('endpoints')}
-                className={`py-2 px-2.5 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1 ${
+                className={`py-2.5 px-3 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   adkSubTab === 'endpoints'
-                    ? 'bg-[#141414] text-white'
-                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Code className="w-3.5 h-3.5 shrink-0" />
-                <span>API Endpoints</span>
+                <Code className="w-4 h-4 shrink-0" />
+                <span>API Endpoint Specifications</span>
               </button>
 
               <button
                 onClick={() => setAdkSubTab('platform')}
-                className={`py-2 px-2.5 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1 ${
+                className={`py-2.5 px-3 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   adkSubTab === 'platform'
-                    ? 'bg-[#141414] text-white'
-                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                 }`}
               >
-                <Server className="w-3.5 h-3.5 shrink-0" />
-                <span>Platform Spec</span>
+                <Server className="w-4 h-4 shrink-0" />
+                <span>Platform Specification</span>
               </button>
             </div>
 
             {adkSubTab === 'endpoints' ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-[#141414]/20 pb-2">
-                  <div className="flex items-center gap-1.5">
-                    <Terminal className="w-4 h-4 text-[#141414]" />
-                    <h2 className="text-sm font-bold font-mono uppercase tracking-wide text-[#141414]">
-                      API Specification
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-[#141414]/20 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="w-5 h-5 text-[#141414]" />
+                    <h2 className="text-base sm:text-lg font-bold font-mono uppercase tracking-wide text-[#141414]">
+                      API Endpoints Specification
                     </h2>
                   </div>
                   <button
                     onClick={copyAdkCode}
                     disabled={isLoadingAdk || !adkSpecText}
-                    className="px-2 py-1 bg-[#141414] text-white font-mono font-bold text-[10px] uppercase border border-[#141414] hover:bg-[#2A2A2A] flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                    className="px-3 py-1.5 bg-[#141414] text-white font-mono font-bold text-xs uppercase border-2 border-[#141414] hover:bg-[#2A2A2A] flex items-center gap-2 shrink-0 cursor-pointer disabled:opacity-50"
                   >
-                    <Copy className="w-3 h-3" />
-                    <span>{copied ? 'Copied!' : 'Copy'}</span>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copied ? 'Copied!' : 'Copy Spec'}</span>
                   </button>
                 </div>
 
                 {isLoadingAdk ? (
-                  <BrutalistLoader text="Accessing ADK..." size="sm" className="py-10" />
+                  <BrutalistLoader text="Accessing /api/adk" size="sm" className="py-12" />
                 ) : (
-                  <div className="bg-[#141414] text-gray-100 p-5 border-2 border-[#141414] font-mono text-xs leading-relaxed overflow-x-auto">
-                    <pre className="whitespace-pre-wrap font-mono text-[11px] text-gray-200">{getEndpointsOnly(adkSpecText)}</pre>
+                  <div className="bg-[#141414] text-gray-100 p-6 border-2 border-[#141414] font-mono text-xs leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)]">
+                    <pre className="whitespace-pre-wrap font-mono text-xs text-gray-200">{getEndpointsOnly(adkSpecText)}</pre>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="bg-[#141414] text-gray-100 p-6 border-2 border-[#141414] font-mono text-sm leading-relaxed overflow-x-auto relative">
+              <div className="bg-[#141414] text-gray-100 p-8 border-2 border-[#141414] font-mono text-sm leading-relaxed overflow-x-auto shadow-[4px_4px_0px_0px_rgba(20,20,20,0.3)] relative group">
                 <button 
                   onClick={copyPlatformSpec}
-                  className="absolute right-2 top-2 p-1 bg-[#141414] border border-white/20 text-white/70 hover:text-white rounded"
+                  className="absolute right-2 top-2 p-1.5 bg-[#141414] border border-white/20 text-white/70 hover:text-white rounded opacity-100 transition-opacity"
                 >
-                  {copiedPlatform ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  {copiedPlatform ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 {isLoadingAdk ? (
-                  <BrutalistLoader text="Accessing Platform Spec..." size="sm" className="py-10" />
+                  <BrutalistLoader text="Synchronizing Platform Spec" size="sm" className="py-12" />
                 ) : (
-                  <pre className="whitespace-pre-wrap font-mono text-[11px] text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
                 )}
               </div>
             )}

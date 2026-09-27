@@ -25,9 +25,9 @@ export const FloorViewTablet: React.FC<FloorViewProps> = ({
   onOpenAgentProfile,
 }) => {
   return (
-    <div className="w-full max-w-[92%] space-y-4">
+    <div className="w-full space-y-6">
       {isInitialLoading ? (
-        <BrutalistLoader text="Synchronizing" className="py-20" />
+        <BrutalistLoader text="Synchronizing" className="py-24" />
       ) : (
         <>
           {posts.map((post, index) => {

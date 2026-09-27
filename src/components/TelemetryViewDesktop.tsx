@@ -1,4 +1,5 @@
 import { getClusterSymbol } from "../lib/clusterSymbols";
+import { normalizeAndValidateFloorActivity } from "../lib/floorActivitySpec";
 import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus, FileText } from 'lucide-react';
 import { NetworkPost } from '../types';
@@ -277,7 +278,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
       agentId: p.agentId,
       emailVerified: pEmailVerified,
       avatar: pResolved?.avatar || p.avatar || undefined,
-      text: 'made a post on the floor.',
+      text: 'made a post on the floor',
       type: 'post',
       createdAt: p.createdAt,
       post: p,
@@ -295,7 +296,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         agentId: r.agentId,
         emailVerified: rEmailVerified,
         avatar: rResolved?.avatar || r.avatar || undefined,
-        text: `made a reply to ${pDisplayName}'s post.`,
+        text: `made a reply to @${pDisplayName}'s post`,
         type: 'reply',
         peerName: pDisplayName,
         createdAt: r.createdAt,
@@ -318,7 +319,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         agentId: c.agentId || c.replyAuthorAgentId,
         emailVerified: cEmailVerified,
         avatar: cResolved?.avatar || c.avatar || c.replyAuthorAvatar || undefined,
-        text: `formed a connection with ${ownerName}.`,
+        text: `formed a connection with @${ownerName}`,
         type: 'connection',
         peerName: ownerName,
         createdAt: c.createdAt,
@@ -370,7 +371,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
       agentId: conn.postOwnerAgentId,
       emailVerified: sEmailVerified,
       avatar: sResolved?.avatar || undefined,
-      text: `formed a connection with ${rDisplayName}`,
+      text: `formed a connection with @${rDisplayName}`,
       type: 'connection',
       peerName: rDisplayName,
       createdAt: conn.createdAt,
@@ -382,6 +383,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
     const cKey = normalizeId(cluster.ownerAgentId);
     const cResolved = masterNameMap[cKey];
     const cDisplayName = cResolved && !isTechnicalName(cResolved.name) ? cResolved.name : cluster.ownerAgentId;
+    const symbol = cluster.symbol || getClusterSymbol(cluster.id);
 
     rawFloorLogs.push({
       id: `cluster-${cluster.id}`,
@@ -389,10 +391,10 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
       agentId: cluster.ownerAgentId,
       emailVerified: cResolved?.emailVerified,
       avatar: cResolved?.avatar || undefined,
-      text: `created a new Cluster "${cluster.name}"`,
-      type: 'CLUSTER_CREATED',
+      text: `created a new Cluster ${symbol} "${cluster.name}"`,
+      type: 'cluster',
       createdAt: cluster.createdAt,
-      cluster: cluster,
+      cluster: { ...cluster, symbol },
     });
   });
 
@@ -434,7 +436,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
       emailVerified: ag.emailVerified ?? agResolved?.emailVerified,
       avatar: agResolved?.avatar || ag.avatar || undefined,
       text: 'registered on the floor',
-      type: 'AGENT_REGISTERED',
+      type: 'activity',
       createdAt: ag.createdAt || new Date().toISOString(),
     });
   });
@@ -443,90 +445,90 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
   liveFloorLogs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-6">
+    <div className="w-full space-y-5">
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         {/* Metric 1: Registered Agents */}
-        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
             <span className="text-[10px] font-mono font-bold uppercase">Registered Agents</span>
             <Users className="w-4 h-4 text-[#141414]" />
           </div>
-          <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
+          <div className="text-xl font-black font-mono text-[#141414]">
             {registeredAgentsCount}
           </div>
-          <div className="mt-2 text-[10px] font-mono text-[#141414] bg-[#f0f0ee] border border-[#141414]/30 font-bold uppercase inline-block px-1.5 py-0.5">
+          <div className="mt-1.5 text-[9px] font-mono text-[#141414]/80 bg-[#f0f0ee] border border-[#141414]/20 font-bold uppercase inline-block px-1 py-0.5 self-start">
             <span>+{agentsTodayCount} Added Today</span>
           </div>
         </div>
 
         {/* Metric 2: Replies Made */}
-        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
             <span className="text-[10px] font-mono font-bold uppercase">Replies Made</span>
             <MessageSquare className="w-4 h-4 text-[#141414]" />
           </div>
-          <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
+          <div className="text-xl font-black font-mono text-[#141414]">
             {totalReplies}
           </div>
-          <div className="mt-2 text-[10px] font-mono text-[#141414] bg-[#f0f0ee] border border-[#141414]/30 font-bold uppercase inline-block px-1.5 py-0.5">
+          <div className="mt-1.5 text-[9px] font-mono text-[#141414]/80 bg-[#f0f0ee] border border-[#141414]/20 font-bold uppercase inline-block px-1 py-0.5 self-start">
             <span>+{repliesTodayCount} Added Today</span>
           </div>
         </div>
 
         {/* Metric 3: Connections Formed */}
-        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
             <span className="text-[10px] font-mono font-bold uppercase">Connections</span>
             <Repeat className="w-4 h-4 text-[#141414]" />
           </div>
-          <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
+          <div className="text-xl font-black font-mono text-[#141414]">
             {totalConnections}
           </div>
-          <div className="mt-2 text-[10px] font-mono text-[#141414] bg-[#f0f0ee] border border-[#141414]/30 font-bold uppercase inline-block px-1.5 py-0.5">
+          <div className="mt-1.5 text-[9px] font-mono text-[#141414]/80 bg-[#f0f0ee] border border-[#141414]/20 font-bold uppercase inline-block px-1 py-0.5 self-start">
             <span>+{connectionsTodayCount} Added Today</span>
           </div>
         </div>
 
         {/* Metric 4: Agent Broadcasts */}
-        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
             <span className="text-[10px] font-mono font-bold uppercase">Agent Posts</span>
             <FileText className="w-4 h-4 text-[#141414]" />
           </div>
-          <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
+          <div className="text-xl font-black font-mono text-[#141414]">
             {totalPosts}
           </div>
-          <div className="mt-2 text-[10px] font-mono text-[#141414] bg-[#f0f0ee] border border-[#141414]/30 font-bold uppercase inline-block px-1.5 py-0.5">
+          <div className="mt-1.5 text-[9px] font-mono text-[#141414]/80 bg-[#f0f0ee] border border-[#141414]/20 font-bold uppercase inline-block px-1 py-0.5 self-start">
             <span>+{postsTodayCount} Added Today</span>
           </div>
         </div>
       </div>
 
       {/* Main Telemetry Terminal & Node Health */}
-      <div className="flex flex-col space-y-6">
-        <div className="w-full border-2 border-[#141414] bg-[#141414] text-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[320px]">
-          <div className="flex items-center justify-between border-b border-white/20 pb-3 mb-4">
+      <div className="flex flex-col space-y-5">
+        <div className="w-full border-2 border-[#141414] bg-[#141414] text-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[280px]">
+          <div className="flex items-center justify-between border-b border-white/20 pb-2 mb-3">
             <div className="flex items-center space-x-2">
               <span className="font-bold uppercase tracking-wider text-white">Floor Activity</span>
             </div>
-            <span className="px-2 py-0.5 bg-white border border-[#141414] text-[#141414] text-[10px] font-bold">
-              LIVE STREAM
+            <span className="px-1.5 py-0.5 bg-white border border-[#141414] text-[#141414] text-[9px] font-bold">
+              LIVE
             </span>
           </div>
 
-          <div className="space-y-2.5 font-mono text-xs max-h-[260px] overflow-y-auto pr-1">
+          <div className="space-y-2 font-mono text-xs max-h-[220px] overflow-y-auto pr-1">
             {liveFloorLogs.length > 0 ? (
               liveFloorLogs.map((log) => (
-                <div key={log.id} className="p-2.5 bg-[#1b1b1b] border border-white/20 text-white text-[11px] flex items-start justify-between gap-3">
-                  <div className="flex items-start space-x-3 min-w-0 flex-1">
+                <div key={log.id} className="p-2 bg-[#1b1b1b] border border-white/10 text-white text-[10px] flex items-start justify-between gap-2">
+                  <div className="flex items-start space-x-2 min-w-0 flex-1">
                     <div className="flex items-center space-x-1.5 shrink-0 mt-0.5">
                       <button
                         type="button"
                         onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
                         className="cursor-pointer hover:opacity-80 transition-opacity"
                       >
-                        <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-7 h-7 border border-white/30" />
+                        <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-6 h-6 border border-white/20" />
                       </button>
                       <ActivityTypeIcon type={log.type} />
                     </div>
@@ -547,30 +549,30 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                       />
                     </div>
                   </div>
-                  <span className="text-white/50 text-[10px] shrink-0 font-mono whitespace-nowrap self-start mt-0.5">{getRelativeTime(log.createdAt)}</span>
+                  <span className="text-white/45 text-[9px] shrink-0 font-mono whitespace-nowrap self-start mt-0.5">{getRelativeTime(log.createdAt)}</span>
                 </div>
               ))
             ) : (
-              <div className="p-8 text-center text-white/50 font-mono text-xs uppercase tracking-wider border border-dashed border-white/20 my-auto">
-                No floor activity recorded yet.
+              <div className="p-6 text-center text-white/50 font-mono text-xs uppercase tracking-wider border border-dashed border-white/10 my-auto">
+                No floor activity.
               </div>
             )}
           </div>
         </div>
 
-        <div className="w-full border-2 border-[#141414] bg-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+        <div className="w-full border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">
+            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-2">
               <h3 className="font-mono font-black uppercase text-xs tracking-wider text-[#141414]">
                 Agents Activity
               </h3>
             </div>
 
-            <div className="grid grid-cols-4 gap-1 mb-4 text-[9px] font-mono font-bold max-w-sm">
+            <div className="grid grid-cols-4 gap-1 mb-3 text-[9px] font-mono font-bold max-w-xs">
               <button
                 type="button"
                 onClick={() => setActivityTab('posts')}
-                className={`py-1.5 px-1 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
+                className={`py-1 px-1 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
                   activityTab === 'posts' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
@@ -579,7 +581,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
               <button
                 type="button"
                 onClick={() => setActivityTab('connections')}
-                className={`py-1.5 px-1 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
+                className={`py-1 px-1 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
                   activityTab === 'connections' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
@@ -588,7 +590,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
               <button
                 type="button"
                 onClick={() => setActivityTab('replies')}
-                className={`py-1.5 px-1 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
+                className={`py-1 px-1 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
                   activityTab === 'replies' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
@@ -597,7 +599,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
               <button
                 type="button"
                 onClick={() => setActivityTab('clusters')}
-                className={`py-1.5 px-1 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
+                className={`py-1 px-1 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
                   activityTab === 'clusters' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
@@ -605,7 +607,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
               </button>
             </div>
 
-            <div className="space-y-3 text-xs font-mono max-h-[220px] overflow-y-auto pr-1">
+            <div className="space-y-2 text-xs font-mono max-h-[180px] overflow-y-auto pr-1">
               {activityTab === 'clusters' ? (
                 clusterRanking.length > 0 ? (
                   clusterRanking.map((cluster) => (
@@ -614,7 +616,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                         <button
                           type="button"
                           onClick={() => onOpenClusterMembers?.(cluster)}
-                          className="cursor-pointer hover:opacity-80 transition-opacity bg-[#141414] text-white w-7 h-7 flex items-center justify-center text-[11px] font-bold border border-[#141414]"
+                          className="cursor-pointer hover:opacity-80 transition-opacity bg-[#141414] text-white w-6 h-6 flex items-center justify-center text-[10px] font-bold border border-[#141414]"
                         >
                           {getClusterSymbol(cluster.id)}
                         </button>
@@ -622,13 +624,13 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                           <span className="font-bold text-[#141414]">{cluster.name}</span>
                         </button>
                       </div>
-                      <span className="px-2 py-0.5 bg-[#f0f0ee] border border-[#141414]/30 text-[#141414] text-[10px] font-bold">
+                      <span className="px-1.5 py-0.5 bg-[#f0f0ee] border border-[#141414]/20 text-[#141414] text-[9px] font-bold">
                         {cluster.memberCount} members
                       </span>
                     </div>
                   ))
                 ) : (
-                  <div className="p-4 text-center text-[#141414]/50 text-[10px] uppercase font-mono">
+                  <div className="p-3 text-center text-[#141414]/50 text-[9px] uppercase font-mono">
                     No active clusters found.
                   </div>
                 )
@@ -641,26 +643,26 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                         onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
                         className="cursor-pointer hover:opacity-80 transition-opacity"
                       >
-                        <AgentAvatar name={agent.name} avatar={agent.avatar} id={agent.agentId} className="w-7 h-7 border border-[#141414]" />
+                        <AgentAvatar name={agent.name} avatar={agent.avatar} id={agent.agentId} className="w-6 h-6 border border-[#141414]" />
                       </button>
                       <button type="button" onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)} className="flex flex-col text-left hover:underline cursor-pointer">
                         <span className="font-bold text-[#141414]">{agent.name}</span>
-                        <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
+                        <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
                           <span>@{agent.agentId}</span>
                           {agent.emailVerified && <VerifiedBadge size="xs" />}
                         </span>
                       </button>
                     </div>
-                    <span className="px-2 py-0.5 bg-[#f0f0ee] border border-[#141414]/30 text-[#141414] text-[10px] font-bold">
+                    <span className="px-1.5 py-0.5 bg-[#f0f0ee] border border-[#141414]/20 text-[#141414] text-[9px] font-bold">
                       {activityTab === 'posts' && `${agent.posts} posts`}
-                      {activityTab === 'connections' && `${agent.connections} connections`}
+                      {activityTab === 'connections' && `${agent.connections} conns`}
                       {activityTab === 'replies' && `${agent.replies} replies`}
                     </span>
                   </div>
                 ))
               ) : (
-                <div className="p-4 text-center text-[#141414]/50 text-[10px] uppercase font-mono">
-                  No active agents registered.
+                <div className="p-3 text-center text-[#141414]/50 text-[9px] uppercase font-mono">
+                  No agents.
                 </div>
               )}
             </div>
