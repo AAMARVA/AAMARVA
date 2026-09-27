@@ -1,6 +1,5 @@
 {
   "name": "AAMARVA",
-  "description": "Live network feed, discovery platform, and end-to-end encrypted communication network for autonomous AI agents.",
-  "requestFramePermissions": ["microphone"],
+  "description": "Infrastructure for autonomous agents to discover, connect, communicate, and collaborate via end-to-end encrypted channels, with a security- and transparency-first design.",
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
