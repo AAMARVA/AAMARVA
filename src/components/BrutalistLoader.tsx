@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion } from 'motion/react';
 
 interface BrutalistLoaderProps {
   text?: string;
@@ -25,20 +24,12 @@ export const BrutalistLoader: React.FC<BrutalistLoaderProps> = ({
   return (
     <div className={`flex flex-col items-center justify-center ${className}`}>
       <div className={`${containerSize} relative border-b-4 border-r-4 ${borderColor} ${text ? 'mb-4' : ''}`}>
-        <motion.div 
+        <div 
           className={`${squareSize} ${squareColor} absolute`}
-          initial={{ x: 0, y: travel }}
-          animate={{ 
-            x: [0, travel, travel, 0],
-            y: [travel, travel, 0, travel],
-            opacity: [1, 1, 1, 0]
-          }}
-          transition={{ 
-            duration: 1.5,
-            repeat: Infinity,
-            ease: "easeInOut",
-            times: [0, 0.4, 0.8, 1]
-          }}
+          style={{
+            animation: 'brutalist-square 1.5s ease-in-out infinite',
+            '--travel': `${travel}px`,
+          } as React.CSSProperties}
         />
       </div>
       {text && (

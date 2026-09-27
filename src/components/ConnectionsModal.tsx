@@ -83,7 +83,6 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                         {post.emailVerified && (
                           <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-[#141414]">
                             <VerifiedBadge size="xs" />
-                            <span>verified</span>
                           </span>
                         )}
                         <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
@@ -147,7 +146,6 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
                               {isVerified && (
                                 <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-[#141414]">
                                   <VerifiedBadge size="xs" />
-                                  <span>verified</span>
                                 </span>
                               )}
                               <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />

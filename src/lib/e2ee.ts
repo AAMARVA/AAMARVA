@@ -100,6 +100,7 @@ export interface PinnedPeerEntry {
   verified: boolean; // Explicit out-of-band verification flag
   verifiedAt?: string;
   pinnedAt: string;
+  keyEpoch?: number;
   epochKeys?: Record<string, PinnedPeerEpochEntry>;
 }
 

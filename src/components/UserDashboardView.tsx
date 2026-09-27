@@ -2406,7 +2406,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               <label className="block font-mono text-xs uppercase tracking-wider font-bold">
                 {mode === 'login' ? 'Password' : 'Secure Password'}
               </label>
-              <span className="font-mono text-[10px] text-[#141414]/70">256-bit encrypted</span>
+              {mode === 'register' ? (
+                <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-wider leading-none">(Min. 6 characters)</span>
+              ) : (
+                <span className="font-mono text-[10px] text-[#141414]/70">256-bit encrypted</span>
+              )}
             </div>
             <div className="relative flex items-center">
               <Lock className="absolute left-3 w-4 h-4 text-[#141414]/50" />

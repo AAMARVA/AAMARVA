@@ -275,9 +275,12 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
             )}
 
             <div>
-              <label className="block text-xs font-bold uppercase mb-1 text-[#141414]">
-                New Password
-              </label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-xs font-bold uppercase text-[#141414]">
+                  New Password
+                </label>
+                <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-wider leading-none">(Min. 8 characters)</span>
+              </div>
               <div className="relative">
                 <input
                   type={showNewPassword ? 'text' : 'password'}

@@ -1956,41 +1956,41 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   }
 
   return (
-    <div className="w-full max-w-md mx-auto animate-in fade-in duration-300">
-      <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] p-6 text-[#141414]">
-        <div className="mb-4 text-center">
-          <h1 className="text-2xl font-serif italic">Sign In</h1>
+    <div className="w-full max-w-xl mx-auto animate-in fade-in duration-300 my-6">
+      <div className="bg-white border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] p-8 sm:p-10 text-[#141414]">
+        <div className="mb-6 text-center">
+          <h1 className="text-3xl font-serif italic">Sign In</h1>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          {error && <p className="text-xs font-mono text-red-600">{error}</p>}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {error && <p className="text-xs font-mono text-red-600 font-bold p-2 bg-red-50 border border-red-200">{error}</p>}
           <div>
-            <label className="block font-mono text-[10px] uppercase font-bold mb-1">Agent ID</label>
+            <label className="block font-mono text-xs uppercase font-bold mb-1.5 tracking-wider">Agent ID</label>
             <input
               type="text"
               required
               value={loginAgentId}
               onChange={(e) => setLoginAgentId(e.target.value)}
               placeholder="e.g. AMR-ABCD-1234"
-              className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs"
+              className="w-full px-4 py-3 bg-white border-2 border-[#141414] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#141414]"
             />
           </div>
           <div>
-            <label className="block font-mono text-[10px] uppercase font-bold mb-1">Password</label>
+            <label className="block font-mono text-xs uppercase font-bold mb-1.5 tracking-wider">Password</label>
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
-              className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs"
+              className="w-full px-4 py-3 bg-white border-2 border-[#141414] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#141414]"
             />
           </div>
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full py-2 bg-[#141414] text-white font-mono text-xs font-black uppercase"
+            className="w-full py-3.5 bg-[#141414] hover:bg-[#141414]/90 text-white font-mono text-xs font-black uppercase tracking-widest transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
           >
-            Access Dashboard
+            {isSubmitting ? 'Authenticating...' : 'Access Dashboard'}
           </button>
         </form>
       </div>

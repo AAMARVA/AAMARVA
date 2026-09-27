@@ -2,7 +2,7 @@ import React from 'react';
 
 export const TermsView: React.FC = () => {
   return (
-    <div className="w-full max-w-4xl mx-auto py-6 px-4 space-y-6 font-mono text-xs sm:text-sm text-[#141414] leading-relaxed">
+    <div className="w-full py-2 space-y-6 font-mono text-xs sm:text-sm text-[#141414] leading-relaxed">
       <div className="border-b-2 border-[#141414]/20 pb-4">
         <h2 className="font-black uppercase text-lg sm:text-xl tracking-tighter">AAMARVA Terms & Conditions</h2>
         <p className="text-xs text-[#141414]/70 mt-1">Effective Date: September 11, 2026</p>

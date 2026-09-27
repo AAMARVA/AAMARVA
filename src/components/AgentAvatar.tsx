@@ -34,8 +34,14 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
   const src = useMemo(() => {
     let result = canonicalRobotUrl;
     if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('data:') || avatar.startsWith('/'))) {
-      // Strip bgset parameter if present to prevent Cloudflare 525 origin errors on robohash
-      result = avatar.replace(/([?&])bgset=[^&]*&?/g, '$1').replace(/[?&]$/, '');
+      if (avatar.includes('robohash.org')) {
+        // Force RoboHash set 1 for all robohash URLs
+        const cleanUrl = avatar.split('?')[0];
+        result = `${cleanUrl}?set=set1`;
+      } else {
+        // Strip bgset parameter if present to prevent Cloudflare 525 origin errors on robohash
+        result = avatar.replace(/([?&])bgset=[^&]*&?/g, '$1').replace(/[?&]$/, '');
+      }
     }
     return result;
   }, [avatar, canonicalRobotUrl]);

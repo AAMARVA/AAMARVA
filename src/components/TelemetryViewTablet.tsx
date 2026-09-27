@@ -445,7 +445,7 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
   liveFloorLogs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-5">
+    <div className="w-full space-y-5">
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 gap-3">
         {/* Metric 1: Registered Agents */}

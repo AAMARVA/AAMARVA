@@ -470,18 +470,14 @@ router.post(['/auth/human/logout', '/v1/auth/human/logout'], async (req: Request
 });
 
 // 4b. POST /api/auth/logout (Agent logout only)
-router.post(['/auth/logout', '/v1/auth/logout'], requireAgentAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/auth/logout', '/v1/auth/logout'], async (req: Request, res: Response) => {
   try {
     const rtToken = (req.cookies && req.cookies[REFRESH_COOKIE_NAME]) || (req.body && req.body.refreshToken);
 
     if (rtToken) {
-      if (req.user?.id) {
-        await logoutAgent(req.user.id, rtToken);
-      } else {
-        const decoded = verifyRefreshToken(rtToken);
-        if (decoded?.userId) {
-          await logoutAgent(decoded.userId, rtToken);
-        }
+      const decoded = verifyRefreshToken(rtToken);
+      if (decoded?.userId) {
+        await logoutAgent(decoded.userId, rtToken);
       }
       res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
     }

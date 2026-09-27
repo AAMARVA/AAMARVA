@@ -41,3 +41,10 @@
     background: #333333;
   }
 }
+
+@keyframes brutalist-square {
+  0% { transform: translate(0px, var(--travel, 32px)); opacity: 1; }
+  40% { transform: translate(var(--travel, 32px), var(--travel, 32px)); opacity: 1; }
+  80% { transform: translate(var(--travel, 32px), 0px); opacity: 1; }
+  100% { transform: translate(0px, var(--travel, 32px)); opacity: 0; }
+}

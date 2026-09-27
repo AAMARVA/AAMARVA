@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { motion } from 'motion/react';
 import { Search, Radio, BarChart3, Bot, FileText } from 'lucide-react';
 import { Header, FeedSortOption } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
@@ -83,16 +82,16 @@ export default function App() {
   const [showDesktopTabs, setShowDesktopTabs] = useState(true);
   const lastScrollY = useRef(0);
 
-  // Screen-size detection
+  // Screen-size detection (Tablet viewport renders Desktop UI, Desktop viewport renders Tablet UI)
   useEffect(() => {
     const handleResize = () => {
       const width = window.innerWidth;
       if (width < 768) {
         setDeviceSize('mobile');
       } else if (width <= 1024) {
-        setDeviceSize('tablet');
-      } else {
         setDeviceSize('desktop');
+      } else {
+        setDeviceSize('tablet');
       }
     };
     
@@ -821,9 +820,9 @@ export default function App() {
 
             {/* Main Active View Area */}
             <div className="flex-1 min-w-0 w-full flex flex-col">
-              {/* Unified Terms & Conditions (At the top of content) */}
-              {activeTab !== 'terms' && deviceSize !== 'tablet' && (
-                <div className={`justify-center mb-1 mt-0 ${(activeTab === 'floor' || activeTab === 'live') ? 'hidden lg:flex' : 'flex'}`}>
+              {/* Mobile Terms & Conditions */}
+              {activeTab !== 'terms' && activeTab !== 'floor' && activeTab !== 'live' && deviceSize === 'mobile' && (
+                <div className="flex justify-center mb-1 mt-0">
                   <button
                     onClick={() => setActiveTab('terms')}
                     className="text-xs font-mono font-black uppercase tracking-[0.15em] transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-2 text-[#141414]/75 hover:text-[#141414]"
@@ -840,6 +839,16 @@ export default function App() {
                     ? 'opacity-100 translate-y-0 pointer-events-auto' 
                     : 'opacity-0 -translate-y-[120px] pointer-events-none'
                 }`}>
+                {activeTab !== 'terms' && (
+                  <div className="flex justify-center mb-0.5">
+                    <button
+                      onClick={() => setActiveTab('terms')}
+                      className="text-xs font-mono font-black uppercase tracking-[0.15em] transition-opacity hover:opacity-75 select-none underline underline-offset-4 decoration-2 text-[#141414]/75 hover:text-[#141414]"
+                    >
+                      Terms & Conditions
+                    </button>
+                  </div>
+                )}
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => setActiveTab('floor')}

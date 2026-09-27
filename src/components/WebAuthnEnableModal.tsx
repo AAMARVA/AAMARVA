@@ -52,9 +52,6 @@ export const WebAuthnEnableModal: React.FC<WebAuthnEnableModalProps> = ({
         <div className="p-6 border-b border-black space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <span className="bg-black text-white px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">
-                CREDENTIALS VERIFIED
-              </span>
             </div>
           </div>
 

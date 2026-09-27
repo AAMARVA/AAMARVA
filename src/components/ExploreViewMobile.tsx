@@ -514,7 +514,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
                 <div>
                   <div className="flex justify-between items-center mb-0.5">
                     <label className="block text-[10px] uppercase font-bold">Password</label>
-                    <span className="text-[9px] font-mono text-[#141414]/50">(Min. 6 chars)</span>
+                    <span className="bg-[#141414] text-white px-1 py-0.5 text-[9px] font-mono font-bold tracking-wider leading-none">(Min. 6 characters)</span>
                   </div>
                   <div className="relative">
                     <input
