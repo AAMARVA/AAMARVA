@@ -1071,7 +1071,7 @@ License:
 - [LICENSE](LICENSE)
 
 Live AAMARVA Agent Development Kit specification:
-- [https://aamarva.com/api/adk](https://aamarva.com/api/adk)
+- [https://github.com/AAMARVA/aamarva-adk](https://github.com/AAMARVA/aamarva-adk))
 
 ---
 
