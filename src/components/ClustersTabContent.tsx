@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
-  Lock, Users, MessageSquare, Send, RefreshCw, 
-  UserPlus, Shield, ShieldAlert, LogOut, Check, X, AlertTriangle, ChevronRight, UserMinus, Plus
+  Lock, Users, MessageSquare, RefreshCw, 
+  UserPlus, Shield, ShieldAlert, LogOut, X, AlertTriangle, ChevronRight, UserMinus, Plus
 } from 'lucide-react';
 import { apiFetch, getAccessToken, getRefreshToken } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
@@ -201,9 +201,6 @@ export function ClustersTabContent({
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState('');
   const [inviteSuccess, setInviteSuccess] = useState('');
-
-  const [messageText, setMessageText] = useState('');
-  const [sendMessageLoading, setSendMessageLoading] = useState(false);
 
   // Incoming Invites State
   const [incomingInvites, setIncomingInvites] = useState<any[]>([]);
@@ -442,44 +439,6 @@ export function ClustersTabContent({
       }
     } catch (err: any) {
       alert(err?.message || 'Failed to dismiss invite.');
-    }
-  };
-
-  // Handle Send Secure Message
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!messageText.trim() || !activeClusterId) return;
-
-    sendMessageLoading;
-    setSendMessageLoading(true);
-
-    try {
-      // Generate cryptographically secure 12-byte (96-bit) nonce and valid Base64 ciphertext
-      const nonceBytes = new Uint8Array(12);
-      window.crypto.getRandomValues(nonceBytes);
-      let binaryNonce = '';
-      for (let i = 0; i < nonceBytes.byteLength; i++) {
-        binaryNonce += String.fromCharCode(nonceBytes[i]);
-      }
-      const nonce = window.btoa(binaryNonce);
-      const ciphertext = window.btoa(unescape(encodeURIComponent(messageText)));
-
-      const res = await apiFetch(`/api/clusters/${activeClusterId}/messages`, {
-        authType: 'human',
-        method: 'POST',
-        body: JSON.stringify({ ciphertext, nonce, version: 1, keyEpoch: 1 })
-      });
-
-      if (res?.success) {
-        setMessageText('');
-        fetchClusterDetails(activeClusterId);
-      } else {
-        alert(res?.error?.message || 'Failed to dispatch secure log.');
-      }
-    } catch (err: any) {
-      alert(err?.message || 'Failed to dispatch secure log.');
-    } finally {
-      setSendMessageLoading(false);
     }
   };
 
@@ -831,8 +790,12 @@ export function ClustersTabContent({
                 messages.map((m) => {
                   const isMe = m.senderAgentId === currentAgentId || Boolean(user?.agentId && m.senderAgentId?.toLowerCase() === user.agentId.toLowerCase());
                   const isSystem = !m.senderAgentId;
-                  const plainText = m.content || (m.ciphertext ? (tryDecodeBase64Message(m.ciphertext) || tryDecryptMessage(m.ciphertext)) : '');
-                  const hasDecryptedText = Boolean(m.isDecrypted && m.content) || (Boolean(plainText) && !plainText.startsWith('[SECURE CIPHER]'));
+                  const msgAvatar = isMe ? (user?.avatar || undefined) : m.senderAgentAvatar;
+                  const msgName = isMe ? (user?.name || currentAgentName) : (m.senderAgentName || m.senderAgentId || 'Agent');
+
+                  const rawPlainText = m.content || (m.ciphertext ? (tryDecodeBase64Message(m.ciphertext) || tryDecryptMessage(m.ciphertext)) : '');
+                  const plainText = typeof rawPlainText === 'string' ? rawPlainText.trim() : '';
+                  const hasDecryptedText = Boolean(m.isDecrypted && m.content && m.content.trim()) || (Boolean(plainText) && !plainText.startsWith('[SECURE CIPHER]'));
 
                   if (isSystem) {
                     return (
@@ -844,9 +807,6 @@ export function ClustersTabContent({
                     );
                   }
 
-                  const msgAvatar = isMe ? (user?.avatar || undefined) : m.senderAgentAvatar;
-                  const msgName = isMe ? (user?.name || currentAgentName) : (m.senderAgentName || m.senderAgentId || 'Agent');
-
                   return (
                     <div key={m.id} className={`flex items-start gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
                       <AgentAvatar
@@ -856,46 +816,40 @@ export function ClustersTabContent({
                         className="w-8 h-8 shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                       />
                       <div
-                        className={`p-3 border-2 flex-1 max-w-[85%] ${
-                          isMe
-                            ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                            : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
-                        }`}
+                        className="p-3 border-2 border-slate-300 bg-white flex-1 max-w-[85%] shadow-[2px_2px_0px_0px_rgba(15,23,42,0.06)]"
                       >
                         {hasDecryptedText ? (
-                          <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words">{m.content || plainText}</p>
+                          <div className="space-y-1">
+                            <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words text-[#141414]">{m.content || plainText}</p>
+                          </div>
                         ) : (
                           <div className="space-y-1.5">
-                            <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-amber-600 dark:text-amber-400">
-                              <Lock className="w-3.5 h-3.5 shrink-0" />
+                            <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-indigo-600">
+                              <Lock className="w-3.5 h-3.5 shrink-0 text-indigo-600" />
                               <span>[E2EE Encrypted Payload]</span>
                             </div>
-                            <p className={`text-[10px] font-mono leading-relaxed ${isMe ? 'text-white/70' : 'text-[#141414]/70'}`}>
+                            <p className="text-[10px] font-mono leading-relaxed text-slate-600">
                               Sovereign zero-knowledge ciphertext. Decryption keys are held exclusively by authenticated agent endpoints.
                             </p>
                             {m.ciphertext && (
-                              <details className={`text-[9px] font-mono ${isMe ? 'text-white/60' : 'text-[#141414]/60'}`}>
-                                <summary className="cursor-pointer hover:underline">Inspect Ciphertext</summary>
-                                <div className={`mt-1 p-1.5 border break-all font-mono text-[8px] ${isMe ? 'bg-white/10 border-white/20 text-white/90' : 'bg-[#E4E3E0]/50 border-[#141414]/20 text-[#141414]'}`}>
-                                  <code>{m.ciphertext.slice(0, 48)}...</code>
+                              <details className="text-[9px] font-mono text-slate-500">
+                                <summary className="cursor-pointer hover:underline hover:text-slate-800">Inspect Ciphertext</summary>
+                                <div className="mt-1 p-1.5 border border-slate-200 bg-slate-50 text-slate-700 font-mono text-[8px] break-all">
+                                  <code>{m.ciphertext.length > 48 ? `${m.ciphertext.slice(0, 48)}...` : m.ciphertext}</code>
                                 </div>
                               </details>
                             )}
                           </div>
                         )}
                         
-                        <div className={`mt-1.5 flex items-center justify-between border-t border-current/15 pt-1 text-[9px] font-mono opacity-70`}>
-                          <span className="flex items-center gap-1">
-                            {hasDecryptedText ? (
-                              <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-bold">
-                                <Check className="w-2.5 h-2.5" /> Decrypted
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400 font-bold">
-                                <Lock className="w-2.5 h-2.5" /> Sealed
-                              </span>
-                            )}
-                          </span>
+                        <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-1 text-[9px] font-mono text-slate-500">
+                          {hasDecryptedText ? (
+                            <span />
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-indigo-600 font-semibold">
+                              <Lock className="w-2.5 h-2.5" /> Sealed
+                            </span>
+                          )}
                           <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                       </div>
@@ -906,32 +860,12 @@ export function ClustersTabContent({
                 <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/20 bg-white" id="no-cluster-messages-placeholder">
                   <div className="font-bold text-[#141414]">No transmissions recorded in this cluster</div>
                   <div className="text-[10px] lowercase text-[#141414]/60">
-                    be the first to broadcast telemetry log
+                    autonomous agents will broadcast telemetry logs here
                   </div>
                 </div>
               )}
               <div ref={messagesEndRef} />
             </div>
-
-            {/* Message Input Form */}
-            <form onSubmit={handleSendMessage} className="p-3 border-t-2 border-[#141414] bg-white flex gap-2 shrink-0">
-              <input
-                type="text"
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Transmit encrypted cluster payload..."
-                className="flex-1 bg-[#F5F4F0] border-2 border-[#141414] px-3 py-2 font-mono text-xs text-[#141414] placeholder-[#141414]/40 focus:outline-hidden focus:bg-white"
-                disabled={sendMessageLoading}
-              />
-              <button
-                type="submit"
-                disabled={sendMessageLoading || !messageText.trim()}
-                className="px-4 py-2 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-bold uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-              >
-                {sendMessageLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                <span>Send</span>
-              </button>
-            </form>
 
 
           </div>
