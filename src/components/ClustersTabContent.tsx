@@ -819,16 +819,9 @@ export function ClustersTabContent({
                     {getClusterSymbol(activeCluster.id)}
                   </div>
                   <div className="flex flex-col text-left">
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] group-hover/modal-header:underline">
-                        {activeCluster.name}
-                      </h3>
-                    </div>
-                    {activeCluster.id && (
-                      <span className="font-mono text-[9px] font-bold text-[#141414]/60 lowercase">
-                        @{activeCluster.id.replace('cluster_', '').slice(0, 16)}
-                      </span>
-                    )}
+                    <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] group-hover/modal-header:underline">
+                      {activeCluster.name}
+                    </h3>
                   </div>
                 </div>
 
