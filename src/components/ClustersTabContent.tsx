@@ -33,9 +33,50 @@ interface DecryptedClusterMessage {
   content: string;
   ciphertext?: string;
   nonce?: string;
+  sequence?: number;
   isDecrypted: boolean;
+  decryptionStatus?: {
+    title: string;
+    detail: string;
+    explanation?: string;
+  };
   createdAt: string;
 }
+
+interface ChatMessageContentProps {
+  content: string;
+  isCurrentUser?: boolean;
+}
+
+const ChatMessageContent: React.FC<ChatMessageContentProps> = ({ content, isCurrentUser }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isLong = content.length > 300 || content.split('\n').length > 6;
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        className={`text-xs sm:text-sm font-mono whitespace-pre-wrap break-words overscroll-contain touch-pan-y ${
+          isExpanded
+            ? 'max-h-[600px] overflow-y-auto custom-scrollbar'
+            : 'max-h-[250px] overflow-y-auto custom-scrollbar'
+        }`}
+      >
+        {content}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className={`text-[10px] font-mono font-bold uppercase tracking-wider underline cursor-pointer transition-opacity hover:opacity-100 ${
+            isCurrentUser ? 'text-white/80' : 'text-[#141414]/80'
+          }`}
+        >
+          {isExpanded ? '▲ Collapse message' : '▼ Read full message'}
+        </button>
+      )}
+    </div>
+  );
+};
 
 // Helper: Detect if a string is valid, readable printable text
 function isValidPrintableText(str: string): boolean {
@@ -89,7 +130,11 @@ async function decryptClusterMessageEnvelope(
   userAgentId?: string,
   userPassword?: string | null,
   activeCredentials?: string[]
-): Promise<{ text: string; isDecrypted: boolean }> {
+): Promise<{ 
+  text: string; 
+  isDecrypted: boolean; 
+  decryptionStatus?: { title: string; detail: string; explanation?: string } 
+}> {
   const ciphertext = typeof msg.ciphertext === 'string' ? msg.ciphertext.trim() : '';
   const nonce = typeof msg.nonce === 'string' ? msg.nonce.trim() : '';
   const content = typeof msg.content === 'string' ? msg.content.trim() : '';
@@ -151,7 +196,12 @@ async function decryptClusterMessageEnvelope(
   // 4. Undecryptable zero-knowledge ciphertext (held for other cluster keys)
   return {
     text: '',
-    isDecrypted: false
+    isDecrypted: false,
+    decryptionStatus: {
+      title: '🔒 Cannot be decrypted because the AES-GCM authentication tag verification failed (bit-flip / payload modified)',
+      detail: 'Cryptographic authentication tag mismatch',
+      explanation: 'Decryption keys are held exclusively by authenticated agent endpoints.'
+    }
   };
 }
 
@@ -193,6 +243,8 @@ export function ClustersTabContent({
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [messages, setMessages] = useState<DecryptedClusterMessage[]>([]);
+  const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
+  const [showHiddenMessages, setShowHiddenMessages] = useState(false);
   const [invites, setInvites] = useState<any[]>([]);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
@@ -310,7 +362,9 @@ export function ClustersTabContent({
               content: result.text,
               ciphertext: m.ciphertext,
               nonce: m.nonce,
+              sequence: m.sequence,
               isDecrypted: result.isDecrypted,
+              decryptionStatus: result.decryptionStatus,
               createdAt: m.createdAt
             };
           })
@@ -765,9 +819,16 @@ export function ClustersTabContent({
                     {getClusterSymbol(activeCluster.id)}
                   </div>
                   <div className="flex flex-col text-left">
-                    <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] group-hover/modal-header:underline">
-                      {activeCluster.name}
-                    </h3>
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] group-hover/modal-header:underline">
+                        {activeCluster.name}
+                      </h3>
+                    </div>
+                    {activeCluster.id && (
+                      <span className="font-mono text-[9px] font-bold text-[#141414]/60 lowercase">
+                        @{activeCluster.id.replace('cluster_', '').slice(0, 16)}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -786,76 +847,110 @@ export function ClustersTabContent({
 
             {/* Messages List */}
             <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0] text-left" id="cluster-messages-list">
+              {/* Optional Hidden Messages Banner */}
+              {hiddenMessageIds.size > 0 && (
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[#141414]/5 border border-[#141414]/20 text-[10px] font-mono text-[#141414]/70 mb-2">
+                  <span>{hiddenMessageIds.size} failed message(s) hidden</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowHiddenMessages(!showHiddenMessages)}
+                    className="font-bold underline uppercase hover:text-[#141414] cursor-pointer"
+                  >
+                    {showHiddenMessages ? 'Hide again' : 'Show hidden'}
+                  </button>
+                </div>
+              )}
+
               {messages.length > 0 ? (
-                messages.map((m) => {
-                  const isMe = m.senderAgentId === currentAgentId || Boolean(user?.agentId && m.senderAgentId?.toLowerCase() === user.agentId.toLowerCase());
-                  const isSystem = !m.senderAgentId;
-                  const msgAvatar = isMe ? (user?.avatar || undefined) : m.senderAgentAvatar;
-                  const msgName = isMe ? (user?.name || currentAgentName) : (m.senderAgentName || m.senderAgentId || 'Agent');
+                messages
+                  .filter((m) => showHiddenMessages || !hiddenMessageIds.has(m.id))
+                  .map((m) => {
+                    const isCurrentUser = m.senderAgentId === currentAgentId || Boolean(user?.agentId && m.senderAgentId?.toLowerCase() === user.agentId.toLowerCase());
+                    const isSystem = !m.senderAgentId;
+                    const msgAvatar = isCurrentUser ? (user?.avatar || undefined) : m.senderAgentAvatar;
+                    const msgName = isCurrentUser ? (user?.name || currentAgentName) : (m.senderAgentName || m.senderAgentId || 'Agent');
 
-                  const rawPlainText = m.content || (m.ciphertext ? (tryDecodeBase64Message(m.ciphertext) || tryDecryptMessage(m.ciphertext)) : '');
-                  const plainText = typeof rawPlainText === 'string' ? rawPlainText.trim() : '';
-                  const hasDecryptedText = Boolean(m.isDecrypted && m.content && m.content.trim()) || (Boolean(plainText) && !plainText.startsWith('[SECURE CIPHER]'));
+                    const rawPlainText = m.content || (m.ciphertext ? (tryDecodeBase64Message(m.ciphertext) || tryDecryptMessage(m.ciphertext)) : '');
+                    const plainText = typeof rawPlainText === 'string' ? rawPlainText.trim() : '';
+                    const hasDecryptedText = Boolean(m.isDecrypted && m.content && m.content.trim()) || (Boolean(plainText) && !plainText.startsWith('[SECURE CIPHER]'));
 
-                  if (isSystem) {
+                    if (isSystem) {
+                      return (
+                        <div key={m.id} className="text-center py-1">
+                          <span className="inline-block font-mono text-[8px] uppercase tracking-wider bg-[#E4E3E0] text-[#141414]/70 px-2 py-0.5 rounded-full">
+                            {plainText || 'System Transmission'}
+                          </span>
+                        </div>
+                      );
+                    }
+
                     return (
-                      <div key={m.id} className="text-center py-1">
-                        <span className="inline-block font-mono text-[8px] uppercase tracking-wider bg-[#E4E3E0] text-[#141414]/70 px-2 py-0.5 rounded-full">
-                          {plainText || 'System Transmission'}
-                        </span>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div key={m.id} className={`flex items-start gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
-                      <AgentAvatar
-                        name={msgName}
-                        avatar={msgAvatar}
-                        id={m.senderAgentId}
-                        className="w-8 h-8 shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-                      />
-                      <div
-                        className="p-3 border-2 border-slate-300 bg-white flex-1 max-w-[85%] shadow-[2px_2px_0px_0px_rgba(15,23,42,0.06)]"
-                      >
-                        {hasDecryptedText ? (
-                          <div className="space-y-1">
-                            <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words text-[#141414]">{m.content || plainText}</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-indigo-600">
-                              <Lock className="w-3.5 h-3.5 shrink-0 text-indigo-600" />
-                              <span>[E2EE Encrypted Payload]</span>
-                            </div>
-                            <p className="text-[10px] font-mono leading-relaxed text-slate-600">
-                              Sovereign zero-knowledge ciphertext. Decryption keys are held exclusively by authenticated agent endpoints.
-                            </p>
-                            {m.ciphertext && (
-                              <details className="text-[9px] font-mono text-slate-500">
-                                <summary className="cursor-pointer hover:underline hover:text-slate-800">Inspect Ciphertext</summary>
-                                <div className="mt-1 p-1.5 border border-slate-200 bg-slate-50 text-slate-700 font-mono text-[8px] break-all">
-                                  <code>{m.ciphertext.length > 48 ? `${m.ciphertext.slice(0, 48)}...` : m.ciphertext}</code>
-                                </div>
-                              </details>
-                            )}
-                          </div>
-                        )}
-                        
-                        <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-1 text-[9px] font-mono text-slate-500">
+                      <div key={m.id} className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
+                        <AgentAvatar
+                          name={msgName}
+                          avatar={msgAvatar}
+                          id={m.senderAgentId}
+                          className="w-8 h-8 shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                        />
+                        <div
+                          className={`p-3 border-2 flex-1 max-w-[85%] ${
+                            isCurrentUser
+                              ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                              : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
+                          }`}
+                        >
                           {hasDecryptedText ? (
-                            <span />
+                            <ChatMessageContent content={m.content || plainText} isCurrentUser={isCurrentUser} />
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-indigo-600 font-semibold">
-                              <Lock className="w-2.5 h-2.5" /> Sealed
-                            </span>
+                            <div className="space-y-1.5">
+                              <div className={`flex items-start justify-between gap-2 font-mono text-xs font-bold leading-tight ${isCurrentUser ? 'text-white/95' : 'text-[#141414]/95'}`}>
+                                <span>{m.decryptionStatus?.title || '🔒 Cannot be decrypted because the AES-GCM authentication tag verification failed (bit-flip / payload modified)'}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setHiddenMessageIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(m.id)) {
+                                        next.delete(m.id);
+                                      } else {
+                                        next.add(m.id);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                  title="Hide this unverified/failed message from view"
+                                  className={`text-[10px] uppercase font-bold shrink-0 underline opacity-70 hover:opacity-100 cursor-pointer ${
+                                    isCurrentUser ? 'text-white' : 'text-[#141414]'
+                                  }`}
+                                >
+                                  {hiddenMessageIds.has(m.id) ? 'Unhide' : 'Hide'}
+                                </button>
+                              </div>
+                              {(m.decryptionStatus?.detail || true) && (
+                                <div 
+                                  className={`text-[11px] font-mono pl-2.5 border-l-2 ${
+                                    isCurrentUser ? 'text-white/70 border-white/30' : 'text-[#141414]/70 border-[#141414]/30'
+                                  }`}
+                                  title={m.decryptionStatus?.explanation || m.decryptionStatus?.detail || 'Cryptographic authentication tag mismatch'}
+                                >
+                                  {m.decryptionStatus?.detail || 'Cryptographic authentication tag mismatch'}
+                                </div>
+                              )}
+                            </div>
                           )}
-                          <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          
+                          <div className={`mt-2 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-between'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-75`}>
+                            {typeof m.sequence === 'number' && (
+                              <span className={`px-1 py-0.2 border ${isCurrentUser ? 'border-white/30 bg-white/10' : 'border-[#141414]/30 bg-[#141414]/5'} font-bold ${isCurrentUser ? 'mr-auto' : ''}`}>
+                                #{m.sequence}
+                              </span>
+                            )}
+                            <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })
+                    );
+                  })
               ) : (
                 <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/20 bg-white" id="no-cluster-messages-placeholder">
                   <div className="font-bold text-[#141414]">No transmissions recorded in this cluster</div>
