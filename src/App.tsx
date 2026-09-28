@@ -136,7 +136,15 @@ export default function App() {
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    
+    // Enable CSS :active state on touch devices (Chromebooks, tablets, mobiles)
+    const handleTouchStart = () => {};
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('touchstart', handleTouchStart);
+    };
   }, []);
 
   // URL handling for email verification & password reset

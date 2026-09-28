@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Shield } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Shield, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -1520,10 +1520,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           
           <div className="pt-4 mt-4 border-t-2 border-[#141414] flex justify-end">
             <button
+              type="button"
               onClick={() => setShowDeleteModal(true)}
-              className="py-1.5 px-3 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[10px] font-black uppercase tracking-wider cursor-pointer"
+              className="py-2 px-4 bg-white text-red-700 hover:bg-red-700 hover:text-white active:bg-red-800 active:text-white border-2 border-red-700 hover:border-red-900 active:border-black font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_rgba(185,28,28,1)] hover:shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5"
             >
-              Delete Account
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Account</span>
             </button>
           </div>
         </div>
@@ -1885,10 +1887,19 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         {/* Delete Confirmation Modal */}
         {showDeleteModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-sm flex flex-col">
-              <div className="bg-[#141414] p-3 flex justify-between items-center text-white border-b-2 border-[#141414]">
-                <h2 className="font-mono text-xs font-bold tracking-widest uppercase">Delete Account</h2>
-                <button onClick={() => setShowDeleteModal(false)} className="text-white hover:text-red-400 p-1">
+            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-sm flex flex-col animate-in zoom-in-95 duration-150">
+              <div className="bg-[#141414] p-3.5 flex justify-between items-center text-white border-b-2 border-[#141414]">
+                <h2 className="font-mono text-xs font-bold tracking-widest uppercase flex items-center gap-1.5">
+                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                  <span>Delete Account</span>
+                </h2>
+                <button 
+                  type="button"
+                  onClick={() => setShowDeleteModal(false)} 
+                  disabled={isDeleting}
+                  className="p-1 text-white hover:bg-white hover:text-[#141414] active:bg-white active:text-[#141414] border border-transparent hover:border-white active:border-white transition-all cursor-pointer touch-manipulation select-none"
+                  title="Close modal"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1898,25 +1909,41 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   Are you absolutely sure you want to permanently delete your agent account? This cannot be undone.
                 </p>
 
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2.5">
                   <button
+                    type="button"
                     onClick={async () => {
                       setIsDeleting(true);
                       try {
                         await deleteAccount();
                         setShowDeleteModal(false);
                       } catch (e: any) {
-                        alert(e?.message || 'Failed.');
+                        alert(e?.message || 'Failed to delete account.');
                       } finally {
                         setIsDeleting(false);
                       }
                     }}
                     disabled={isDeleting}
-                    className="w-full py-2 bg-red-700 text-white font-mono text-xs font-bold"
+                    className="w-full py-2.5 px-4 bg-red-700 text-white hover:bg-white hover:text-red-700 active:bg-red-900 active:text-white border-2 border-red-900 hover:border-red-700 active:border-black font-mono text-xs font-black uppercase tracking-widest shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:shadow-[5px_5px_0px_0px_rgba(185,28,28,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    Yes, Delete Permanent
+                    {isDeleting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Deleting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Yes, Delete Permanent</span>
+                      </>
+                    )}
                   </button>
-                  <button onClick={() => setShowDeleteModal(false)} className="w-full py-2 bg-white border border-[#141414] font-mono text-xs">
+                  <button 
+                    type="button"
+                    onClick={() => setShowDeleteModal(false)} 
+                    disabled={isDeleting}
+                    className="w-full py-2.5 px-4 bg-white text-[#141414] hover:bg-[#141414] hover:text-white active:bg-black active:text-white border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-widest shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-[#141414] focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none disabled:opacity-50"
+                  >
                     Cancel
                   </button>
                 </div>
