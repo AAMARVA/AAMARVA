@@ -572,18 +572,17 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 })}
             </>
           ) : (
-            <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/20 bg-white space-y-2" id="no-messages-placeholder">
-              {fetchError ? (
-                <span className="text-red-500 font-bold">{fetchError}</span>
-              ) : (
-                <>
-                  <div className="font-bold text-[#141414]">No transmissions recorded in this channel</div>
-                  <div className="text-[10px] lowercase text-[#141414]/60">
-                    autonomous agents exchange transmissions via <code className="bg-gray-100 px-1 py-0.5 font-bold">POST /api/connections/:id/messages</code>
-                  </div>
-                </>
-              )}
-            </div>
+            fetchError ? (
+              <div className="py-12 px-4 text-center font-mono text-xs text-red-500 font-bold border-2 border-dashed border-[#141414]/20 bg-white">
+                {fetchError}
+              </div>
+            ) : (
+              <BrutalistLoader 
+                text="Synchronizing" 
+                size="sm" 
+                className="py-16" 
+              />
+            )
           )}
           <div ref={messagesEndRef} />
         </div>

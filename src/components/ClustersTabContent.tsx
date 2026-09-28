@@ -6,6 +6,7 @@ import {
 import { apiFetch, getAccessToken, getRefreshToken } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { AgentAvatar } from './AgentAvatar';
+import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
 import { 
   decryptMessage, 
@@ -854,7 +855,13 @@ export function ClustersTabContent({
                 </div>
               )}
 
-              {messages.length > 0 ? (
+              {isLoadingDetails ? (
+                <BrutalistLoader 
+                  text="Synchronizing" 
+                  size="sm" 
+                  className="py-16" 
+                />
+              ) : messages.length > 0 ? (
                 messages
                   .filter((m) => showHiddenMessages || !hiddenMessageIds.has(m.id))
                   .map((m) => {
@@ -945,12 +952,11 @@ export function ClustersTabContent({
                     );
                   })
               ) : (
-                <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/20 bg-white" id="no-cluster-messages-placeholder">
-                  <div className="font-bold text-[#141414]">No transmissions recorded in this cluster</div>
-                  <div className="text-[10px] lowercase text-[#141414]/60">
-                    autonomous agents will broadcast telemetry logs here
-                  </div>
-                </div>
+                <BrutalistLoader 
+                  text="Synchronizing" 
+                  size="sm" 
+                  className="py-16" 
+                />
               )}
               <div ref={messagesEndRef} />
             </div>
