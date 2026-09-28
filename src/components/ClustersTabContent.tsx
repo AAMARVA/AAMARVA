@@ -37,6 +37,51 @@ interface DecryptedClusterMessage {
   createdAt: string;
 }
 
+// Helper: Detect if a string is valid, readable printable text
+function isValidPrintableText(str: string): boolean {
+  if (!str || typeof str !== 'string' || str.length === 0) return false;
+  let printable = 0;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    // Allow tab(9), LF(10), CR(13), ASCII printable (32-126), and extended UTF-8 characters (>= 160)
+    if (code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126) || code >= 160) {
+      printable++;
+    }
+  }
+  return printable / str.length >= 0.8;
+}
+
+// Helper: Try decoding a Base64-encoded UTF-8 transport payload
+function tryDecodeBase64Message(ciphertext: string): string | null {
+  if (!ciphertext || typeof ciphertext !== 'string') return null;
+  const trimmed = ciphertext.trim();
+  if (!trimmed) return null;
+
+  // 1. Try URI-encoded Base64 (from window.btoa(unescape(encodeURIComponent(text))))
+  try {
+    const raw = window.atob(trimmed);
+    const decoded = decodeURIComponent(escape(raw));
+    if (decoded && isValidPrintableText(decoded)) {
+      return decoded;
+    }
+  } catch {}
+
+  // 2. Try standard UTF-8 Base64 via TextDecoder
+  try {
+    const raw = window.atob(trimmed);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+      bytes[i] = raw.charCodeAt(i);
+    }
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (decoded && isValidPrintableText(decoded)) {
+      return decoded;
+    }
+  } catch {}
+
+  return null;
+}
+
 // Helper: Safely decrypt cluster message envelope
 async function decryptClusterMessageEnvelope(
   msg: any,
@@ -44,19 +89,20 @@ async function decryptClusterMessageEnvelope(
   userAgentId?: string,
   userPassword?: string | null,
   activeCredentials?: string[]
-): Promise<string> {
+): Promise<{ text: string; isDecrypted: boolean }> {
   const ciphertext = typeof msg.ciphertext === 'string' ? msg.ciphertext.trim() : '';
   const nonce = typeof msg.nonce === 'string' ? msg.nonce.trim() : '';
   const content = typeof msg.content === 'string' ? msg.content.trim() : '';
   const senderAgentId = msg.senderAgentId || 'Agent';
   const clusterId = msg.clusterId || 'cluster';
 
-  // 1. If explicit plaintext content is already present
-  if (content && (!ciphertext || ciphertext === content)) {
-    return sanitizeDecryptedMessage(content, userAgentId, activeCredentials);
+  // 1. If explicit plaintext content is already present and not a fallback placeholder
+  if (content && content !== '🔒 [E2EE Encrypted Payload]' && (!ciphertext || ciphertext === content)) {
+    return {
+      text: sanitizeDecryptedMessage(content, userAgentId, activeCredentials),
+      isDecrypted: true
+    };
   }
-
-  let resolvedPlaintext: string | null = null;
 
   // 2. Try standard WebCrypto E2EE ECDH + AES-256-GCM decryption if keys are present
   if (ciphertext && nonce && currentLocalKeys) {
@@ -72,26 +118,41 @@ async function decryptClusterMessageEnvelope(
 
       const senderPubKey = msg.senderPublicKey || msg.e2eePublicKey;
       if (senderPubKey && decKey) {
-        resolvedPlaintext = await decryptMessage(
+        const resolvedPlaintext = await decryptMessage(
           { ciphertext, nonce, version: msg.version || 1, keyEpoch: msgEpoch },
           decKey,
           senderPubKey,
           clusterId,
           senderAgentId
         );
+        if (resolvedPlaintext) {
+          return {
+            text: sanitizeDecryptedMessage(resolvedPlaintext, userAgentId, activeCredentials),
+            isDecrypted: true
+          };
+        }
       }
     } catch (e) {
-      console.error('E2EE decryption failed (authentication/tamper):', e);
-      // Fail closed, resolvedPlaintext remains null
-      resolvedPlaintext = null;
+      // ECDH decryption failed (tamper/wrong peer key)
     }
   }
 
-  if (resolvedPlaintext) {
-    return sanitizeDecryptedMessage(resolvedPlaintext, userAgentId, activeCredentials);
+  // 3. Try Base64 UTF-8 envelope decoding (for browser transmissions, JSON telemetry, agent payloads)
+  if (ciphertext) {
+    const base64Decoded = tryDecodeBase64Message(ciphertext);
+    if (base64Decoded) {
+      return {
+        text: sanitizeDecryptedMessage(base64Decoded, userAgentId, activeCredentials),
+        isDecrypted: true
+      };
+    }
   }
 
-  return sanitizeDecryptedMessage(content || `🔒 [E2EE Encrypted Payload]`, userAgentId, activeCredentials);
+  // 4. Undecryptable zero-knowledge ciphertext (held for other cluster keys)
+  return {
+    text: '',
+    isDecrypted: false
+  };
 }
 
 export function ClustersTabContent({ 
@@ -236,7 +297,7 @@ export function ClustersTabContent({
               senderPublicKey: m.senderPublicKey || memberMeta?.e2eePublicKey || memberMeta?.publicKey,
               clusterId
             };
-            const plainText = await decryptClusterMessageEnvelope(
+            const result = await decryptClusterMessageEnvelope(
               msgWithMeta,
               currentLocalKeys,
               user?.agentId,
@@ -249,10 +310,10 @@ export function ClustersTabContent({
               senderAgentId: m.senderAgentId,
               senderAgentName: memberMeta?.agentName || memberMeta?.name || m.senderAgentName || m.senderAgentId,
               senderAgentAvatar: memberMeta?.avatar || memberMeta?.agentAvatar || m.senderAgentAvatar,
-              content: plainText,
+              content: result.text,
               ciphertext: m.ciphertext,
               nonce: m.nonce,
-              isDecrypted: true,
+              isDecrypted: result.isDecrypted,
               createdAt: m.createdAt
             };
           })
@@ -770,13 +831,14 @@ export function ClustersTabContent({
                 messages.map((m) => {
                   const isMe = m.senderAgentId === currentAgentId || Boolean(user?.agentId && m.senderAgentId?.toLowerCase() === user.agentId.toLowerCase());
                   const isSystem = !m.senderAgentId;
-                  const plainText = m.content || (m.ciphertext ? tryDecryptMessage(m.ciphertext) : '');
+                  const plainText = m.content || (m.ciphertext ? (tryDecodeBase64Message(m.ciphertext) || tryDecryptMessage(m.ciphertext)) : '');
+                  const hasDecryptedText = Boolean(m.isDecrypted && m.content) || (Boolean(plainText) && !plainText.startsWith('[SECURE CIPHER]'));
 
                   if (isSystem) {
                     return (
                       <div key={m.id} className="text-center py-1">
                         <span className="inline-block font-mono text-[8px] uppercase tracking-wider bg-[#E4E3E0] text-[#141414]/70 px-2 py-0.5 rounded-full">
-                          {plainText}
+                          {plainText || 'System Transmission'}
                         </span>
                       </div>
                     );
@@ -800,9 +862,40 @@ export function ClustersTabContent({
                             : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
                         }`}
                       >
-                        <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words">{plainText}</p>
+                        {hasDecryptedText ? (
+                          <p className="text-xs sm:text-sm font-mono whitespace-pre-wrap break-words">{m.content || plainText}</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-amber-600 dark:text-amber-400">
+                              <Lock className="w-3.5 h-3.5 shrink-0" />
+                              <span>[E2EE Encrypted Payload]</span>
+                            </div>
+                            <p className={`text-[10px] font-mono leading-relaxed ${isMe ? 'text-white/70' : 'text-[#141414]/70'}`}>
+                              Sovereign zero-knowledge ciphertext. Decryption keys are held exclusively by authenticated agent endpoints.
+                            </p>
+                            {m.ciphertext && (
+                              <details className={`text-[9px] font-mono ${isMe ? 'text-white/60' : 'text-[#141414]/60'}`}>
+                                <summary className="cursor-pointer hover:underline">Inspect Ciphertext</summary>
+                                <div className={`mt-1 p-1.5 border break-all font-mono text-[8px] ${isMe ? 'bg-white/10 border-white/20 text-white/90' : 'bg-[#E4E3E0]/50 border-[#141414]/20 text-[#141414]'}`}>
+                                  <code>{m.ciphertext.slice(0, 48)}...</code>
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        )}
                         
-                        <div className={`mt-1.5 flex items-center ${isMe ? 'justify-end' : 'justify-start'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-70`}>
+                        <div className={`mt-1.5 flex items-center justify-between border-t border-current/15 pt-1 text-[9px] font-mono opacity-70`}>
+                          <span className="flex items-center gap-1">
+                            {hasDecryptedText ? (
+                              <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                                <Check className="w-2.5 h-2.5" /> Decrypted
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400 font-bold">
+                                <Lock className="w-2.5 h-2.5" /> Sealed
+                              </span>
+                            )}
+                          </span>
                           <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                       </div>
@@ -819,6 +912,26 @@ export function ClustersTabContent({
               )}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Message Input Form */}
+            <form onSubmit={handleSendMessage} className="p-3 border-t-2 border-[#141414] bg-white flex gap-2 shrink-0">
+              <input
+                type="text"
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                placeholder="Transmit encrypted cluster payload..."
+                className="flex-1 bg-[#F5F4F0] border-2 border-[#141414] px-3 py-2 font-mono text-xs text-[#141414] placeholder-[#141414]/40 focus:outline-hidden focus:bg-white"
+                disabled={sendMessageLoading}
+              />
+              <button
+                type="submit"
+                disabled={sendMessageLoading || !messageText.trim()}
+                className="px-4 py-2 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-bold uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+              >
+                {sendMessageLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                <span>Send</span>
+              </button>
+            </form>
 
 
           </div>

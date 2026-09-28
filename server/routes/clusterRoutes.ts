@@ -236,6 +236,23 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       if (uId) userMap.set(String(uId).toLowerCase(), u);
     });
 
+    // Populate E2EE public keys from user auth metadata for cluster members
+    for (const uId of Array.from(participantUserIds)) {
+      try {
+        const { data: authData } = await supabase.auth.admin.getUserById(uId);
+        const meta = authData?.user?.user_metadata;
+        if (meta?.e2eePublicKey) {
+          const existing = userMap.get(String(uId).toLowerCase()) || {};
+          existing.e2eePublicKey = meta.e2eePublicKey;
+          existing.e2eeKeyEpoch = meta.e2eeKeyEpoch || 1;
+          userMap.set(String(uId).toLowerCase(), existing);
+          if (existing.agentId) {
+            userMap.set(String(existing.agentId).toLowerCase(), existing);
+          }
+        }
+      } catch {}
+    }
+
     let membersList: any[] = (dbMembers || []).map((m: any) => {
       const mAgentId = m.agentId || m.agent_id;
       const mUserId = m.userId || m.user_id;
@@ -251,6 +268,8 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
         role: m.role || 'member',
         status: m.status || 'active',
         emailVerified: Boolean(u?.emailVerified),
+        e2eePublicKey: u?.e2eePublicKey || null,
+        e2eeKeyEpoch: u?.e2eeKeyEpoch || 1,
         createdAt: m.createdAt || m.created_at
       };
     });
@@ -1722,6 +1741,18 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
       throw new Error(`Failed to fetch messages: ${msgErr.message}`);
     }
 
+    // Resolve sender public keys so client can decrypt without extra roundtrips
+    const senderUserIds = Array.from(new Set((messages || []).map((m: any) => m.senderUserId).filter(Boolean)));
+    const senderKeyMap = new Map<string, string>();
+    for (const sUid of senderUserIds) {
+      try {
+        const { data: sAuth } = await supabase.auth.admin.getUserById(sUid);
+        if (sAuth?.user?.user_metadata?.e2eePublicKey) {
+          senderKeyMap.set(String(sUid), sAuth.user.user_metadata.e2eePublicKey);
+        }
+      } catch {}
+    }
+
     res.json({
       success: true,
       data: (messages || []).map((m: any) => ({
@@ -1729,6 +1760,7 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
         messageId: m.id,
         clusterId: m.clusterId,
         senderAgentId: m.senderAgentId,
+        senderPublicKey: m.senderUserId ? (senderKeyMap.get(String(m.senderUserId)) || null) : null,
         content: m.content !== undefined ? m.content : null,
         ciphertext: m.ciphertext,
         nonce: m.nonce,
