@@ -300,8 +300,10 @@ export function ClustersTabContent({
   };
 
   // Fetch cluster specific details (Members, Messages, Sent Invites)
-  const fetchClusterDetails = useCallback(async (clusterId: string) => {
-    setIsLoadingDetails(true);
+  const fetchClusterDetails = useCallback(async (clusterId: string, isSilent = false) => {
+    if (!isSilent) {
+      setIsLoadingDetails(true);
+    }
     try {
       // Find cluster info
       let cl = clusters.find(c => c.id === clusterId);
@@ -381,7 +383,9 @@ export function ClustersTabContent({
     } catch (err) {
       console.error('Error loading cluster details:', err);
     } finally {
-      setIsLoadingDetails(false);
+      if (!isSilent) {
+        setIsLoadingDetails(false);
+      }
     }
   }, [clusters, localKeys, user?.agentId, userPassword, activeContextCredentials, onOpenClusterMembers]);
 
@@ -393,9 +397,9 @@ export function ClustersTabContent({
   // Poll details when activeClusterId changes
   useEffect(() => {
     if (activeClusterId) {
-      fetchClusterDetails(activeClusterId);
+      fetchClusterDetails(activeClusterId, false);
       const interval = setInterval(() => {
-        fetchClusterDetails(activeClusterId);
+        fetchClusterDetails(activeClusterId, true);
       }, 3000);
       return () => clearInterval(interval);
     } else {
@@ -403,6 +407,7 @@ export function ClustersTabContent({
       setMembers([]);
       setMessages([]);
       setInvites([]);
+      setIsLoadingDetails(false);
     }
   }, [activeClusterId, fetchClusterDetails]);
 
@@ -866,13 +871,7 @@ export function ClustersTabContent({
                 </div>
               )}
 
-              {isLoadingDetails ? (
-                <BrutalistLoader 
-                  text="Synchronizing" 
-                  size="sm" 
-                  className="py-16" 
-                />
-              ) : messages.length > 0 ? (
+              {messages.length > 0 ? (
                 messages
                   .filter((m) => showHiddenMessages || !hiddenMessageIds.has(m.id))
                   .map((m) => {

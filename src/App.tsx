@@ -106,11 +106,13 @@ export default function App() {
     const safeZone = 120; // safe zone from top of page where header is always shown
 
     const handleScroll = (e: Event) => {
-      const target = e.target as HTMLElement;
-      const currentScrollY = (target && target !== document.documentElement && (target as unknown) !== document && (target as unknown) !== window && 'scrollTop' in target)
-        ? (target.scrollTop || 0)
-        : window.scrollY;
+      // Only track the main page window/document scrolling
+      // Ignore scroll events originating from inner modals, chat lists, or overflow containers
+      if (e.target && e.target !== document && e.target !== window && e.target !== document.documentElement) {
+        return;
+      }
 
+      const currentScrollY = window.scrollY || 0;
       const difference = Math.abs(currentScrollY - lastScrollY.current);
       
       // If we are close to the top, keep the header always visible
@@ -133,8 +135,8 @@ export default function App() {
       }
     };
 
-    window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
-    return () => window.removeEventListener('scroll', handleScroll, { capture: true } as any);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   // URL handling for email verification & password reset

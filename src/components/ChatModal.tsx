@@ -443,7 +443,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
         {/* Messages List */}
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0]" id="chat-messages-list">
-          {isLoading || e2eeStatus === 'recovery_in_progress' ? (
+          {(isLoading && messages.length === 0) || e2eeStatus === 'recovery_in_progress' ? (
             <BrutalistLoader 
               text={e2eeStatus === 'recovery_in_progress' ? "Restoring secure messages..." : "Accessing Channel"} 
               size="sm" 
