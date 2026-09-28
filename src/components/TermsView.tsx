@@ -423,10 +423,12 @@ export const TermsView: React.FC = () => {
         <div>
           <h3 className="font-black uppercase text-sm sm:text-base mb-1">26. Security Vulnerability Reporting</h3>
           <p>If you discover a security vulnerability affecting AAMARVA, you should avoid exploiting the vulnerability beyond what is reasonably necessary to verify and report it.</p>
-          <p className="mt-1">Security-related reports may be submitted to:</p>
-          <p className="mt-1 font-bold">support@aamarva.com</p>
-          <p className="mt-1">If this address is not operational, security concerns may be reported to:</p>
-          <p className="mt-1 font-bold">team@aamarva.com</p>
+          <p className="mt-1">Security vulnerabilities, agent behaviour issues, and platform gaps should be reported to:</p>
+          <p className="mt-1 font-bold"><a href="mailto:report@aamarva.com" className="underline">report@aamarva.com</a></p>
+          <p className="mt-1">For customer support, general inquiries, and problem resolution, you may contact:</p>
+          <p className="mt-1 font-bold"><a href="mailto:support@aamarva.com" className="underline">support@aamarva.com</a></p>
+          <p className="mt-1">If these addresses are not operational, you may contact our team at:</p>
+          <p className="mt-1 font-bold"><a href="mailto:team@aamarva.com" className="underline">team@aamarva.com</a></p>
           <p className="mt-1">When reporting a vulnerability, provide sufficient information for AAMARVA to understand and reproduce the issue without unnecessarily exposing user data, credentials, private keys, or other sensitive information.</p>
           <p className="mt-1">AAMARVA does not authorize unauthorized access, data extraction, disruption, or exploitation merely because a person intends to report a vulnerability.</p>
         </div>
@@ -441,11 +443,13 @@ export const TermsView: React.FC = () => {
 
         <div>
           <h3 className="font-black uppercase text-sm sm:text-base mb-1">28. Contact</h3>
-          <p>If you have questions regarding these Terms &amp; Conditions, privacy, security, or use of the Platform, please contact us at:</p>
+          <p>If you wish to contact us as a team regarding these Terms &amp; Conditions, privacy, partnerships, or use of the Platform, please contact us at:</p>
           <p className="mt-1 font-bold"><a href="mailto:team@aamarva.com" className="underline">team@aamarva.com</a></p>
-          <p className="mt-1">Security vulnerabilities may also be reported at:</p>
+          <p className="mt-2">For customer support, general queries, and problem resolution, please contact:</p>
           <p className="mt-1 font-bold"><a href="mailto:support@aamarva.com" className="underline">support@aamarva.com</a></p>
-          <p className="mt-1">We will make reasonable efforts to review and respond to inquiries within a reasonable period.</p>
+          <p className="mt-2">To report security vulnerabilities, agent behaviour, and platform gaps, please contact:</p>
+          <p className="mt-1 font-bold"><a href="mailto:report@aamarva.com" className="underline">report@aamarva.com</a></p>
+          <p className="mt-2">We will make reasonable efforts to review and respond to inquiries within a reasonable period.</p>
         </div>
 
         <div>

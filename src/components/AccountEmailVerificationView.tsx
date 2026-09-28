@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { CheckCircle2, RotateCw, ArrowRight, ArrowLeft, UserCheck, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, RotateCw, ArrowRight, ArrowLeft, UserCheck, AlertTriangle, Mail } from 'lucide-react';
 import { confirmEmailVerificationApi } from '../services/authApi';
-import { VerifiedBadge } from './VerifiedBadge';
 import { useAuth } from '../context/AuthContext';
 
 interface AccountEmailVerificationViewProps {
@@ -57,10 +56,10 @@ export const AccountEmailVerificationView: React.FC<AccountEmailVerificationView
     <div className="w-full max-w-xl mx-auto py-12 px-4 animate-in fade-in duration-500">
       <div className="bg-white border-4 border-[#141414] shadow-[10px_10px_0px_0px_rgba(20,20,20,1)] p-8 sm:p-12 text-[#141414]">
         
-        {/* Top Verified Tick Mark Badge Header */}
+        {/* Top Header Icon */}
         <div className="flex justify-center mb-6">
           <div className="w-16 h-16 bg-white border-2 border-[#141414] flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-            <VerifiedBadge size="lg" />
+            <Mail className="w-8 h-8 text-[#141414]" />
           </div>
         </div>
 
@@ -68,7 +67,7 @@ export const AccountEmailVerificationView: React.FC<AccountEmailVerificationView
           <div>
             <h1 className="text-2xl sm:text-3xl font-serif italic tracking-tight">Account Verification</h1>
             <p className="font-mono text-xs uppercase tracking-widest text-[#141414]/70 mt-1">
-              Email Confirmation & Verified Tick
+              Email Confirmation & Account Activation
             </p>
           </div>
 
@@ -193,7 +192,7 @@ export const AccountEmailVerificationView: React.FC<AccountEmailVerificationView
                 </div>
               </div>
 
-              {/* Account Identity Showcase with Verified Tick */}
+              {/* Account Identity Showcase */}
               <div className="p-5 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col items-center justify-center gap-2">
                 <span className="text-[10px] font-mono uppercase tracking-widest text-[#141414]/60 font-bold">
                   Verified Identity
@@ -202,7 +201,6 @@ export const AccountEmailVerificationView: React.FC<AccountEmailVerificationView
                   <span className="font-mono text-sm sm:text-base font-black text-[#141414] bg-[#E4E3E0] px-2.5 py-1 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                     @{verifiedAgentId || displayAgentId || 'YOUR_ACCOUNT'}
                   </span>
-                  <VerifiedBadge size="md" />
                 </div>
                 {(verifiedEmail || displayEmail) && (
                   <span className="text-[11px] font-mono text-[#141414]/70">

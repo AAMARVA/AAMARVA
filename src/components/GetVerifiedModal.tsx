@@ -72,7 +72,7 @@ export const GetVerifiedModal: React.FC<GetVerifiedModalProps> = ({
         <div className="bg-[#141414] text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-[#141414] select-none">
           <div className="flex items-center gap-2.5">
             <div className="w-5 h-5 bg-white text-[#141414] flex items-center justify-center border border-white">
-              <VerifiedBadge size="xs" />
+              <Mail className="w-3.5 h-3.5" />
             </div>
             <span className="font-mono font-black text-sm uppercase tracking-wider">
               {isAlreadyVerified ? 'Account Verified' : 'Get Verified'}
