@@ -493,17 +493,25 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                             className="flex flex-col p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/30 hover:border-black cursor-pointer group transition-all text-left w-full"
                             title={`Cluster: ${cluster.name} - Click to view members`}
                           >
-                            <div className="flex items-center gap-3 min-w-0 mb-2">
-                              <div className="flex items-center justify-center w-10 h-10 border-2 border-[#141414] bg-[#141414] text-white shrink-0 font-mono text-sm tracking-widest font-black">
-                                <span className="grayscale [font-variant-emoji:text] select-none text-white">{getClusterSymbol(cluster.id)}</span>
+                            <div className="flex items-center justify-between gap-2 min-w-0 mb-2">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="flex items-center justify-center w-10 h-10 border-2 border-[#141414] bg-[#141414] text-white shrink-0 font-mono text-sm tracking-widest font-black">
+                                  <span className="grayscale [font-variant-emoji:text] select-none text-white">{getClusterSymbol(cluster.id)}</span>
+                                </div>
+                                <div className="min-w-0 flex flex-col">
+                                  <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
+                                    <span>{cluster.name}</span>
+                                  </span>
+                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap max-w-full">
+                                    <span>Role: {cluster.role}</span>
+                                    <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                                  </span>
+                                </div>
                               </div>
-                              <div className="min-w-0 flex flex-col">
-                                <span className="font-black uppercase text-xs sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
-                                  <span>{cluster.name}</span>
-                                </span>
-                                <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap max-w-full">
-                                  <span>Role: {cluster.role}</span>
-                                  <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                              <div className="shrink-0">
+                                <span className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider group-hover:bg-white group-hover:text-[#141414] transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1">
+                                  <MessageSquare className="w-3 h-3" />
+                                  <span>Open It</span>
                                 </span>
                               </div>
                             </div>

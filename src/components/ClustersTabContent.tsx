@@ -640,12 +640,12 @@ export function ClustersTabContent({
                         className="p-4 bg-white border-2 border-[#141414] hover:bg-[#E4E3E0]/15 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer flex flex-col justify-between gap-4 text-left"
                       >
                         <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-[#141414] text-white border-2 border-[#141414] font-mono text-sm flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 bg-[#141414] text-white border-2 border-[#141414] font-mono text-sm flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
                                 {sym}
                               </div>
-                              <div>
+                              <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wide text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
                                     <span>{cl.name}</span>
@@ -653,6 +653,17 @@ export function ClustersTabContent({
                                 </div>
                               </div>
                             </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveClusterId(cl.id);
+                              }}
+                              className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              <span>Open It</span>
+                            </button>
                           </div>
 
                           {cl.description && (

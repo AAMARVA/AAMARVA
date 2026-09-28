@@ -915,7 +915,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                                 className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
                               >
                                 <MessageSquare className="w-3 h-3" />
-                                <span>Chat</span>
+                                <span>Open It</span>
                               </button>
                             </div>
 
