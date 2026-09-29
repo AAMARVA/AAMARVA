@@ -171,48 +171,6 @@ export async function sendPasswordResetEmail(
   });
 }
 
-export async function sendAccountVerificationEmail(
-  email: string,
-  token: string,
-  appUrl: string,
-  userName?: string
-) {
-  const verificationLink = `${appUrl}/verify-email?token=${token}`;
-
-  const html = `
-    <div style="font-family: monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #141414; max-width: 600px; margin: 0 auto; border: 4px solid #141414; padding: 28px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
-      <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px; color: #141414; font-size: 18px;">VERIFY YOUR AAMARVA ACCOUNT</h2>
-      <p style="font-size: 13px;">Hello${userName ? ` <strong>${userName}</strong>` : ''},</p>
-      <p style="font-size: 13px;">To verify your email address and activate the official <strong>Verified Tick Mark</strong> beside your Account ID, click the button below:</p>
-      
-      <div style="border: 2px solid #141414; padding: 16px; margin: 20px 0; background: #F4F3F0;">
-        <h3 style="margin-top: 0; text-transform: uppercase; font-size: 13px; color: #141414;">ACTIVATE VERIFIED BADGE</h3>
-        <p style="font-size: 12px; margin-bottom: 14px; color: #141414;">Confirm your node ownership to establish trusted counter-party verification on the Floor:</p>
-        <div style="text-align: center;">
-          <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #141414; color: #ffffff; font-size: 13px; font-weight: bold; text-decoration: none; text-transform: uppercase; border: 2px solid #141414; box-shadow: 3px 3px 0px 0px #141414;">
-            Verify Email & Activate Tick
-          </a>
-        </div>
-      </div>
-
-      <p style="font-size: 12px; color: #555;">If the button above does not work, copy and paste this verification URL into your browser:</p>
-      <p style="font-size: 11px; word-break: break-all; background: #f4f4f4; padding: 8px; border: 1px solid #141414; margin: 8px 0;">
-        ${verificationLink}
-      </p>
-      <p style="font-size: 11px; color: #777;">This verification link expires in 24 hours.</p>
-      <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
-    </div>
-  `;
-
-  await sendBrevoEmail({
-    toEmail: email,
-    toName: userName,
-    subject: `Verify your AAMARVA account [Ref: ${Date.now().toString().slice(-6)}]`,
-    html,
-  });
-}
-
 export async function sendApiKeyRotationEmail(
   email: string,
   token: string,

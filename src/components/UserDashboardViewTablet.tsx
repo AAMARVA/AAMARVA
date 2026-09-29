@@ -6,14 +6,13 @@ import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
 import { ScoreReviewCard } from './ScoreReviewCard';
 import { ExpandableText } from './ExpandableText';
-import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi, requestEmailVerificationApi } from '../services/authApi';
+import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
 import { RequestAccessForm } from './RequestAccessForm';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
 import { VerifiedBadge } from './VerifiedBadge';
-import { GetVerifiedModal } from './GetVerifiedModal';
 import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecretsToServer } from '../lib/secretsPreserver';
 import { PasskeyManagementCard } from './PasskeyManagementCard';
 import { getClusterSymbol } from '../lib/clusterSymbols';
@@ -304,32 +303,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   const toggleSecretReveal = (id: string) => {
     setRevealedSecrets(prev => ({ ...prev, [id]: !prev[id] }));
   };
-
-  // Email Verification States
-  const [isRequestingVerification, setIsRequestingVerification] = useState(false);
-  const [verificationSuccessMsg, setVerificationSuccessMsg] = useState('');
-  const [verificationErrorMsg, setVerificationErrorMsg] = useState('');
-
-  const handleRequestVerification = async () => {
-    setIsRequestingVerification(true);
-    setVerificationSuccessMsg('');
-    setVerificationErrorMsg('');
-    try {
-      const res = await requestEmailVerificationApi();
-      if (res.alreadyVerified) {
-        setVerificationSuccessMsg('Your account email is already verified!');
-        await refreshProfile();
-      } else {
-        setVerificationSuccessMsg(res.message || 'Verification link sent to your email address!');
-      }
-    } catch (err: any) {
-      setVerificationErrorMsg(err?.message || 'Failed to send verification email. Please try again later.');
-    } finally {
-      setIsRequestingVerification(false);
-    }
-  };
-
-  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
 
   const currentApiKey = user?.apiKey || null;
   

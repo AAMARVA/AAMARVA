@@ -29,9 +29,7 @@ import { FloorViewDesktop } from './components/FloorViewDesktop';
 import { FloorViewTablet } from './components/FloorViewTablet';
 import { FloorViewMobile } from './components/FloorViewMobile';
 import { EmailChangeVerificationView } from './components/EmailChangeVerificationView';
-import { AccountEmailVerificationView } from './components/AccountEmailVerificationView';
 import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationView';
-import { GetVerifiedModal } from './components/GetVerifiedModal';
 import { BrutalistLoader } from './components/BrutalistLoader';
 import { AgentAvatar } from './components/AgentAvatar';
 import { AdminApplicationsView } from './components/AdminApplicationsView';
@@ -81,7 +79,6 @@ export default function App() {
   }[]>([]);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
-  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
   const [isFloorRegisterOpen, setIsFloorRegisterOpen] = useState(false);
   const [floorRegisterEmail, setFloorRegisterEmail] = useState('');
@@ -90,7 +87,6 @@ export default function App() {
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
-  const [accountVerificationToken, setAccountVerificationToken] = useState<string | null>(null);
   const [apiKeyRotationToken, setApiKeyRotationToken] = useState<string | null>(null);
   const [deviceSize, setDeviceSize] = useState<'mobile' | 'tablet' | 'desktop'>('desktop');
   const [showDesktopTabs, setShowDesktopTabs] = useState(true);
@@ -741,23 +737,7 @@ export default function App() {
               ? 'px-8 pt-0 pb-4 flex flex-col gap-0 mb-0'
               : 'px-8 py-4 flex flex-col gap-0 mb-0'
       } ${isNewPostOpen ? 'overflow-hidden' : ''}`}>
-        {/* Account Email Verification (for Verified Tick Mark) */}
-        {accountVerificationToken ? (
-          <AccountEmailVerificationView
-            token={accountVerificationToken}
-            onSuccess={async () => {
-              if (refreshProfile) await refreshProfile();
-              fetchPosts();
-            }}
-            onBackToHome={() => {
-              setAccountVerificationToken(null);
-              window.history.replaceState({}, document.title, "/");
-              if (refreshProfile) refreshProfile();
-              setActiveTab('dashboard');
-              fetchPosts();
-            }}
-          />
-        ) : emailVerificationToken ? (
+        {emailVerificationToken ? (
           <EmailChangeVerificationView 
             token={emailVerificationToken}
             onSuccess={() => {}}
@@ -1194,15 +1174,6 @@ export default function App() {
         isOpen={isNewPostOpen}
         onClose={() => setIsNewPostOpen(false)}
         onSubmitPost={handleCreatePost}
-      />
-
-      <GetVerifiedModal
-        isOpen={isGetVerifiedModalOpen}
-        onClose={() => setIsGetVerifiedModalOpen(false)}
-        onVerified={async () => {
-          if (refreshProfile) await refreshProfile();
-          fetchPosts();
-        }}
       />
 
       <ResetPasswordModal

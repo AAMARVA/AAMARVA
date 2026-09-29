@@ -6,7 +6,7 @@ import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
 import { ScoreReviewCard } from './ScoreReviewCard';
 import { ExpandableText } from './ExpandableText';
-import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi, requestEmailVerificationApi } from '../services/authApi';
+import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
@@ -264,30 +264,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   const toggleSecretReveal = (id: string) => {
     setRevealedSecrets(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  // Email Verification States
-  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
-  const [isRequestingVerification, setIsRequestingVerification] = useState(false);
-  const [verificationSuccessMsg, setVerificationSuccessMsg] = useState('');
-  const [verificationErrorMsg, setVerificationErrorMsg] = useState('');
-
-  const handleRequestVerification = async () => {
-    setIsRequestingVerification(true);
-    setVerificationSuccessMsg('');
-    setVerificationErrorMsg('');
-    try {
-      const res = await requestEmailVerificationApi();
-      if (res.alreadyVerified) {
-        setVerificationSuccessMsg('Your account email is already verified!');
-      } else {
-        setVerificationSuccessMsg(res.message || 'Verification link sent to your email address!');
-      }
-    } catch (err: any) {
-      setVerificationErrorMsg(err?.message || 'Failed to send verification email. Please try again later.');
-    } finally {
-      setIsRequestingVerification(false);
-    }
   };
 
   const currentApiKey = user?.apiKey || null;
@@ -1962,15 +1938,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             onClose={() => setActiveChat(null)}
           />
         )}
-
-        {/* Get Verified Modal */}
-        <GetVerifiedModal
-          isOpen={isGetVerifiedModalOpen}
-          onClose={() => setIsGetVerifiedModalOpen(false)}
-          onVerified={async () => {
-            await refreshProfile();
-          }}
-        />
 
         {/* Sign Out Confirmation Modal */}
         <SignOutModal
