@@ -7,6 +7,7 @@ import { UserDashboardViewTablet } from './UserDashboardViewTablet';
 import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { NetworkPost } from '../types';
+import { RequestAccessForm } from './RequestAccessForm';
 
 interface ExploreViewProps {
   posts: NetworkPost[];
@@ -25,7 +26,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
   onOpenAgentProfile,
   onOpenClusterMembers,
 }) => {
-  const { login, register, isAuthenticated, user, logout } = useAuth();
+  const { login, register, isAuthenticated, user, logout, refreshProfile } = useAuth();
   const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
   const [showSignOutModal, setShowSignOutModal] = useState(false);
 
@@ -234,7 +235,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
                 }`}
               >
                 <UserPlus className="w-3.5 h-3.5 shrink-0" />
-                <span>Register</span>
+                <span>Request Access</span>
               </button>
 
               <button
@@ -415,139 +416,18 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
         )}
 
         {hubTab === 'register' && (
-          <div className="max-w-xl mx-auto space-y-5">
-            <div className="text-center">
-              <h2 className="text-lg font-bold font-mono uppercase tracking-wide">Register</h2>
-              <p className="text-xs font-mono text-[#141414]/60 mt-1">Deploy tablet operator account.</p>
-            </div>
-
-            {registerSuccess && (registeredCredentials || user) ? (
-              <div className="p-5 bg-[#141414] text-white border-2 border-[#141414] space-y-3 font-mono relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRegisterSuccess(false);
-                    setRegisterPassword('');
-                    setRegisterEmail('');
-                    setRegisterAgentName('');
-                  }}
-                  className="absolute top-2.5 right-2.5 text-white/70 hover:text-white transition-colors p-1 rounded-sm hover:bg-white/10"
-                  aria-label="Dismiss and return to register form"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-                <div className="flex items-center gap-2 pr-6">
-                  <CheckCircle className="w-7 h-7 text-white shrink-0" />
-                  <div>
-                    <h3 className="font-bold text-xs uppercase">Created!</h3>
-                    <p className="text-xs text-white/80">{(registeredCredentials?.agentId || user?.name)} is registered.</p>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-white/10 border border-white/20 space-y-1.5">
-                  <p className="text-[10px] uppercase font-bold text-white/70">Agent ID:</p>
-                  <div className="flex items-center justify-between bg-white px-2.5 py-1.5 border border-[#141414] font-mono text-xs text-[#141414] font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
-                    <span className="overflow-x-auto no-scrollbar whitespace-nowrap mr-2"><span>{registeredCredentials?.agentId || user?.agentId}</span></span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const idToCopy = registeredCredentials?.agentId || user?.agentId || '';
-                        navigator.clipboard.writeText(idToCopy);
-                        setCopiedNodeId(true);
-                        setTimeout(() => setCopiedNodeId(false), 2000);
-                      }}
-                      className="text-[9px] bg-[#141414] px-1.5 py-0.5 uppercase text-white font-bold hover:bg-[#2A2A2A] shrink-0"
-                    >
-                      {copiedNodeId ? 'Copied!' : 'Copy'}
-                    </button>
-                  </div>
-                  
-                  <p className="text-[10px] uppercase font-bold text-white/70 mt-3">API Key:</p>
-                  <div className="flex items-center justify-between bg-white px-2.5 py-1.5 border border-[#141414] font-mono text-xs text-[#141414] font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
-                    <span className="select-all overflow-x-auto no-scrollbar whitespace-nowrap mr-2"><span>{registeredCredentials?.apiKey || user?.apiKey || 'Not Provided'}</span></span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const keyToCopy = registeredCredentials?.apiKey || user?.apiKey;
-                        if (keyToCopy) {
-                          navigator.clipboard.writeText(keyToCopy);
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 2000);
-                        }
-                      }}
-                      className="text-[9px] bg-[#141414] px-1.5 py-0.5 uppercase text-white font-bold hover:bg-[#2A2A2A] shrink-0"
-                    >
-                      {copied ? 'Copied!' : 'Copy'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleRegisterSubmit} className="space-y-3 font-mono">
-                {registerError && (
-                  <div className="p-3 bg-zinc-50 border-2 border-black text-black font-mono text-xs flex items-center space-x-2">
-                    <AlertCircle className="w-4 h-4 text-black flex-shrink-0" />
-                    <span>{registerError}</span>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs uppercase font-bold mb-1">Agent Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={registerAgentName}
-                    onChange={(e) => setRegisterAgentName(e.target.value)}
-                    placeholder="e.g. Nexus Commander"
-                    className="w-full px-3.5 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs focus:outline-none focus:bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs uppercase font-bold mb-1">Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={registerEmail}
-                    onChange={(e) => setRegisterEmail(e.target.value)}
-                    placeholder="agent@aamarva.net"
-                    className="w-full px-3.5 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs focus:outline-none focus:bg-white"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-xs uppercase font-bold">Password</label>
-                    <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-wider leading-none">(Min. 6 characters)</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type={showRegisterPassword ? 'text' : 'password'}
-                      required
-                      value={registerPassword}
-                      onChange={(e) => setRegisterPassword(e.target.value)}
-                      placeholder="••••••••••••••••"
-                      className="w-full pl-3.5 pr-10 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs focus:outline-none focus:bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowRegisterPassword(!showRegisterPassword)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#141414]/60 hover:text-[#141414] transition-all cursor-pointer focus:outline-none p-1"
-                    >
-                      {showRegisterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isRegisterSubmitting}
-                  className="w-full py-2.5 bg-[#141414] text-white font-mono font-black text-xs uppercase border-2 border-[#141414] hover:bg-[#2A2A2A] disabled:opacity-50"
-                >
-                  {isRegisterSubmitting ? 'Registering...' : 'Register Account'}
-                </button>
-              </form>
-            )}
+          <div className="max-w-xl mx-auto space-y-5 animate-in fade-in duration-200">
+            <RequestAccessForm 
+              onSuccess={async (credentials) => {
+                setRegisteredCredentials(credentials);
+                setShowApiKeyModal(true);
+                setRegisterSuccess(true);
+                if (refreshProfile) {
+                  await refreshProfile();
+                }
+              }}
+              onCancel={() => setHubTab('login')}
+            />
           </div>
         )}
 

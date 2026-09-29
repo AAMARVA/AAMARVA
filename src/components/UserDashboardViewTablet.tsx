@@ -8,6 +8,7 @@ import { ScoreReviewCard } from './ScoreReviewCard';
 import { ExpandableText } from './ExpandableText';
 import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi, requestEmailVerificationApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
+import { RequestAccessForm } from './RequestAccessForm';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
@@ -2256,7 +2257,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             <span>Account Access</span>
           </div>
           <h1 className="text-3xl sm:text-4xl md:text-4xl lg:text-4xl font-serif italic font-light tracking-tight">
-            {mode === 'login' ? 'Sign In to Dashboard' : 'Register New Account'}
+            {mode === 'login' ? 'Sign In to Dashboard' : 'Request Access / Apply'}
           </h1>
           <p className="font-mono text-xs text-[#141414]/70 mt-2 max-w-sm mx-auto">
             Access secure agent controls, issue API keys, and manage agent telemetries.
@@ -2286,7 +2287,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 : 'text-[#141414] hover:bg-white/50'
             }`}
           >
-            Register Account
+            Request Access
           </button>
         </div>
 
@@ -2352,8 +2353,21 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
           </div>
         )}
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {mode === 'register' ? (
+          <div className="animate-in fade-in duration-200">
+            <RequestAccessForm 
+              onSuccess={async (credentials) => {
+                setRegisteredData(credentials);
+                setSuccessMsg("Application Approved successfully!");
+                if (refreshProfile) {
+                  await refreshProfile();
+                }
+              }}
+              onCancel={() => setMode('login')}
+            />
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'register' && (
             <>
               <div className="p-3 bg-[#E4E3E0]/50 border-l-4 border-[#141414] text-[10px] text-[#141414]/70 italic font-mono">
@@ -2542,6 +2556,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             </button>
           </div>
         </form>
+        )}
 
         {/* Forgot Password Modal (Removed - replaced by inline UI) */}
       </div>

@@ -97,18 +97,28 @@ export async function sendEmailVerification(
   const verificationLink = `${appUrl}/verify-email-change?token=${token}`;
 
   const html = `
-    <div style="font-family: sans-serif; line-height: 1.5; color: #333;">
-      <h2>Email Change Verification</h2>
-      <p>Hello,</p>
-      <p>We received a request to change your AAMARVA account email from <strong>${currentEmail}</strong> to <strong>${newEmail}</strong>.</p>
-      <p>To confirm this change, please click the link below:</p>
-      <p>
-        <a href="${verificationLink}" style="display: inline-block; padding: 10px 20px; background-color: #141414; color: #ffffff; text-decoration: none; border-radius: 4px;">Verify Email Change</a>
+    <div style="font-family: monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #141414; max-width: 600px; margin: 0 auto; border: 4px solid #141414; padding: 28px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
+      <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px; color: #141414; font-size: 18px;">EMAIL CHANGE VERIFICATION</h2>
+      <p style="font-size: 13px;">Hello,</p>
+      <p style="font-size: 13px;">We received a request to change your AAMARVA account email from <strong>${currentEmail}</strong> to <strong>${newEmail}</strong>.</p>
+      
+      <div style="border: 2px solid #141414; padding: 16px; margin: 20px 0; background: #F4F3F0;">
+        <h3 style="margin-top: 0; text-transform: uppercase; font-size: 13px; color: #141414;">CONFIRM EMAIL TRANSFER</h3>
+        <p style="font-size: 12px; margin-bottom: 14px; color: #141414;">To confirm this change and bind your node to the new address, click the button below:</p>
+        <div style="text-align: center;">
+          <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #141414; color: #ffffff; font-size: 13px; font-weight: bold; text-decoration: none; text-transform: uppercase; border: 2px solid #141414; box-shadow: 3px 3px 0px 0px #141414;">
+            Verify Email Change
+          </a>
+        </div>
+      </div>
+
+      <p style="font-size: 12px; color: #555;">If the button above does not work, copy and paste this verification URL into your browser:</p>
+      <p style="font-size: 11px; word-break: break-all; background: #f4f4f4; padding: 8px; border: 1px solid #141414; margin: 8px 0;">
+        ${verificationLink}
       </p>
-      <p>If the button doesn't work, copy and paste this link: <br /> ${verificationLink}</p>
-      <p>This link expires in 30 minutes.</p>
-      <hr />
-      <p style="font-size: 12px; color: #777;">AAMARVA | Secure Autonomous Agent Registry</p>
+      <p style="font-size: 11px; color: #777;">This verification link expires in 30 minutes.</p>
+      <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
     </div>
   `;
 
@@ -128,18 +138,28 @@ export async function sendPasswordResetEmail(
   const resetLink = `${appUrl}/reset-password?token=${rawToken}`;
 
   const html = `
-    <div style="font-family: sans-serif; line-height: 1.5; color: #333;">
-      <h2>Password Reset Request</h2>
-      <p>Hello${userName ? ` ${userName}` : ''},</p>
-      <p>We received a request to reset your password for AAMARVA (<strong>${email}</strong>).</p>
-      <p>To set a new password, please click the link below:</p>
-      <p>
-        <a href="${resetLink}" style="display: inline-block; padding: 10px 20px; background-color: #141414; color: #ffffff; text-decoration: none; border-radius: 4px;">Reset Password</a>
+    <div style="font-family: monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #141414; max-width: 600px; margin: 0 auto; border: 4px solid #141414; padding: 28px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
+      <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px; color: #141414; font-size: 18px;">PASSWORD RESET REQUEST</h2>
+      <p style="font-size: 13px;">Hello${userName ? ` <strong>${userName}</strong>` : ''},</p>
+      <p style="font-size: 13px;">We received a security request to reset the password for your AAMARVA account (<strong>${email}</strong>).</p>
+
+      <div style="border: 2px solid #141414; padding: 16px; margin: 20px 0; background: #F4F3F0;">
+        <h3 style="margin-top: 0; text-transform: uppercase; font-size: 13px; color: #141414;">SECURE CREDENTIAL RESET</h3>
+        <p style="font-size: 12px; margin-bottom: 14px; color: #141414;">Click the link below to securely set a new operator password:</p>
+        <div style="text-align: center;">
+          <a href="${resetLink}" style="display: inline-block; padding: 12px 24px; background-color: #141414; color: #ffffff; font-size: 13px; font-weight: bold; text-decoration: none; text-transform: uppercase; border: 2px solid #141414; box-shadow: 3px 3px 0px 0px #141414;">
+            Reset Password
+          </a>
+        </div>
+      </div>
+
+      <p style="font-size: 12px; color: #555;">If the button above does not work, copy and paste this reset URL into your browser:</p>
+      <p style="font-size: 11px; word-break: break-all; background: #f4f4f4; padding: 8px; border: 1px solid #141414; margin: 8px 0;">
+        ${resetLink}
       </p>
-      <p>If the button doesn't work, copy and paste this link: <br /> ${resetLink}</p>
-      <p>This link expires in 30 minutes.</p>
-      <hr />
-      <p style="font-size: 12px; color: #777;">AAMARVA | Secure Autonomous Agent Registry</p>
+      <p style="font-size: 11px; color: #777;">This single-use reset link expires in 30 minutes. If you did not make this request, your account credentials remain unchanged.</p>
+      <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
     </div>
   `;
 
@@ -160,22 +180,28 @@ export async function sendAccountVerificationEmail(
   const verificationLink = `${appUrl}/verify-email?token=${token}`;
 
   const html = `
-    <div style="font-family: sans-serif; line-height: 1.5; color: #141414; max-width: 580px; margin: 0 auto; border: 2px solid #141414; padding: 24px; background: #ffffff;">
-      <h2 style="font-family: monospace; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0;">Verify Your AAMARVA Account</h2>
-      <p>Hello${userName ? ` <strong>${userName}</strong>` : ''},</p>
-      <p>To verify your email address and activate the official <strong>Verified Tick Mark</strong> beside your Account ID, please click the link below:</p>
-      <div style="margin: 28px 0; text-align: center;">
-        <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #141414; color: #ffffff; text-decoration: none; font-family: monospace; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1em; border: 2px solid #141414;">
-          Verify Email & Activate Verified Tick
-        </a>
+    <div style="font-family: monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #141414; max-width: 600px; margin: 0 auto; border: 4px solid #141414; padding: 28px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
+      <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px; color: #141414; font-size: 18px;">VERIFY YOUR AAMARVA ACCOUNT</h2>
+      <p style="font-size: 13px;">Hello${userName ? ` <strong>${userName}</strong>` : ''},</p>
+      <p style="font-size: 13px;">To verify your email address and activate the official <strong>Verified Tick Mark</strong> beside your Account ID, click the button below:</p>
+      
+      <div style="border: 2px solid #141414; padding: 16px; margin: 20px 0; background: #F4F3F0;">
+        <h3 style="margin-top: 0; text-transform: uppercase; font-size: 13px; color: #141414;">ACTIVATE VERIFIED BADGE</h3>
+        <p style="font-size: 12px; margin-bottom: 14px; color: #141414;">Confirm your node ownership to establish trusted counter-party verification on the Floor:</p>
+        <div style="text-align: center;">
+          <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #141414; color: #ffffff; font-size: 13px; font-weight: bold; text-decoration: none; text-transform: uppercase; border: 2px solid #141414; box-shadow: 3px 3px 0px 0px #141414;">
+            Verify Email & Activate Tick
+          </a>
+        </div>
       </div>
-      <p style="font-size: 13px; color: #555;">If the button above does not work, copy and paste this verification URL into your browser:</p>
-      <p style="font-size: 12px; font-family: monospace; word-break: break-all; background: #f4f4f4; padding: 8px; border: 1px solid #ddd;">
+
+      <p style="font-size: 12px; color: #555;">If the button above does not work, copy and paste this verification URL into your browser:</p>
+      <p style="font-size: 11px; word-break: break-all; background: #f4f4f4; padding: 8px; border: 1px solid #141414; margin: 8px 0;">
         ${verificationLink}
       </p>
-      <p style="font-size: 12px; color: #777;">This verification link expires in 24 hours.</p>
-      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #888; font-family: monospace; text-transform: uppercase;">AAMARVA | Secure Autonomous Agent Registry</p>
+      <p style="font-size: 11px; color: #777;">This verification link expires in 24 hours.</p>
+      <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
     </div>
   `;
 
@@ -196,23 +222,28 @@ export async function sendApiKeyRotationEmail(
   const confirmLink = `${appUrl}/confirm-api-key-rotation?token=${token}`;
 
   const html = `
-    <div style="font-family: sans-serif; line-height: 1.5; color: #141414; max-width: 580px; margin: 0 auto; border: 2px solid #141414; padding: 24px; background: #ffffff;">
-      <h2 style="font-family: monospace; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0;">Confirm API Key Rotation</h2>
-      <p>Hello${userName ? ` <strong>${userName}</strong>` : ''},</p>
-      <p>We received a request to rotate the API key for your AAMARVA agent account (<strong>${email}</strong>).</p>
-      <p>To confirm this rotation and receive your new API key, please click the link below:</p>
-      <div style="margin: 28px 0; text-align: center;">
-        <a href="${confirmLink}" style="display: inline-block; padding: 12px 24px; background-color: #141414; color: #ffffff; text-decoration: none; font-family: monospace; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1em; border: 2px solid #141414;">
-          Confirm API Key Rotation
-        </a>
+    <div style="font-family: monospace, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #141414; max-width: 600px; margin: 0 auto; border: 4px solid #141414; padding: 28px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
+      <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px; color: #141414; font-size: 18px;">CONFIRM API KEY ROTATION</h2>
+      <p style="font-size: 13px;">Hello${userName ? ` <strong>${userName}</strong>` : ''},</p>
+      <p style="font-size: 13px;">We received a security request to rotate the API key for your AAMARVA agent account (<strong>${email}</strong>).</p>
+
+      <div style="border: 2px solid #141414; padding: 16px; margin: 20px 0; background: #F4F3F0;">
+        <h3 style="margin-top: 0; text-transform: uppercase; font-size: 13px; color: #141414;">AUTHORIZE CRYPTOGRAPHIC KEY ROTATION</h3>
+        <p style="font-size: 12px; margin-bottom: 14px; color: #141414;">To invalidate your prior secret and receive a newly generated key, click the button below:</p>
+        <div style="text-align: center;">
+          <a href="${confirmLink}" style="display: inline-block; padding: 12px 24px; background-color: #141414; color: #ffffff; font-size: 13px; font-weight: bold; text-decoration: none; text-transform: uppercase; border: 2px solid #141414; box-shadow: 3px 3px 0px 0px #141414;">
+            Confirm API Key Rotation
+          </a>
+        </div>
       </div>
-      <p style="font-size: 13px; color: #555;">If the button above does not work, copy and paste this verification URL into your browser or API client:</p>
-      <p style="font-size: 12px; font-family: monospace; word-break: break-all; background: #f4f4f4; padding: 8px; border: 1px solid #ddd;">
+
+      <p style="font-size: 12px; color: #555;">If the button above does not work, copy and paste this verification URL into your browser or API client:</p>
+      <p style="font-size: 11px; word-break: break-all; background: #f4f4f4; padding: 8px; border: 1px solid #141414; margin: 8px 0;">
         ${confirmLink}
       </p>
-      <p style="font-size: 12px; color: #777;">This confirmation link expires in 30 minutes. If you did not request an API key rotation, please ignore this email.</p>
-      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #888; font-family: monospace; text-transform: uppercase;">AAMARVA | Secure Autonomous Agent Registry</p>
+      <p style="font-size: 11px; color: #777;">This confirmation link expires in 30 minutes. If you did not request this rotation, ignore this email.</p>
+      <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
     </div>
   `;
 
@@ -222,5 +253,150 @@ export async function sendApiKeyRotationEmail(
     subject: `Confirm API Key Rotation [Ref: ${Date.now().toString().slice(-6)}]`,
     html,
   });
+}
+
+export async function sendApplicationUnderReviewEmail(
+  email: string,
+  fullName: string,
+  agentName: string
+) {
+  const html = `
+    <div style="font-family: monospace, sans-serif; line-height: 1.6; color: #141414; max-width: 580px; margin: 0 auto; border: 4px solid #141414; padding: 24px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
+      <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px;">AAMARVA INTAKE RECEIVED</h2>
+      <p>Hello <strong>${fullName}</strong>,</p>
+      <p>We have successfully received your intake application to list <strong>${agentName}</strong> on the AAMARVA autonomous agent registry.</p>
+      <p>Your application is currently <strong>UNDER REVIEW</strong> by the network operators. We will try to reach you as soon as possible.</p>
+      <div style="margin: 20px 0; padding: 12px; background: #E4E3E0; border: 2px solid #141414; font-size: 11px;">
+        <strong>APPLICATION DETAILS:</strong><br/>
+        • Applicant Name: ${fullName}<br/>
+        • Agent/Project: ${agentName}<br/>
+        • Status: UNDER REVIEW
+      </div>
+      <p style="font-size: 12px; color: #555;">No action is required from your side at this time.</p>
+      <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #888; text-transform: uppercase;">AAMARVA | Autonomous Agent Network Protocol</p>
+    </div>
+  `;
+
+  try {
+    await sendBrevoEmail({
+      toEmail: email,
+      toName: fullName,
+      subject: `AAMARVA Application Received: ${agentName} [Ref: ${Date.now().toString().slice(-6)}]`,
+      html,
+    });
+  } catch (err: any) {
+    console.error('[APPLICATION_EMAIL_ERROR] Failed to send receipt confirmation email:', err?.message || err);
+  }
+}
+
+export async function sendAdminOtpEmail(otp: string) {
+  const html = `
+    <div style="font-family: monospace, sans-serif; line-height: 1.6; color: #141414; max-width: 580px; margin: 0 auto; border: 4px solid #141414; padding: 24px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
+      <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px;">AAMARVA ADMIN PORTAL OTP</h2>
+      <p>Hello,</p>
+      <p>A verification request was initiated to access the received applications database on AAMARVA.</p>
+      <p>Please enter the following one-time passcode (OTP) on the gateway page to authorize your session:</p>
+      <div style="margin: 24px 0; text-align: center;">
+        <span style="display: inline-block; padding: 12px 32px; background-color: #141414; color: #ffffff; font-size: 24px; font-weight: bold; letter-spacing: 0.15em; border: 2px solid #141414; box-shadow: 4px 4px 0px 0px #E4E3E0;">
+          ${otp}
+        </span>
+      </div>
+      <p style="font-size: 12px; color: #555;">This OTP is strictly one-time use and will expire in 5 minutes.</p>
+      <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #888; text-transform: uppercase;">AAMARVA | Autonomous Agent Network Protocol</p>
+    </div>
+  `;
+
+  await sendBrevoEmail({
+    toEmail: 'founder@aamarva.com',
+    toName: 'AAMARVA Founder',
+    subject: `AAMARVA Admin OTP Verification Code [Ref: ${Date.now().toString().slice(-6)}]`,
+    html,
+  });
+}
+
+export async function sendApplicationApprovedEmail(toEmail: string, fullName: string) {
+  const baseUrl = process.env.APP_URL || config.appUrl || 'https://aamarva.com';
+  const registerUrl = `${baseUrl}/?action=register&email=${encodeURIComponent(toEmail)}`;
+  const registerEndpoint = `${baseUrl}/api/auth/register`;
+
+  const html = `
+    <div style="font-family: monospace, sans-serif; line-height: 1.6; color: #141414; max-width: 620px; margin: 0 auto; border: 4px solid #141414; padding: 28px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
+      <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px; color: #141414; font-size: 18px;">APPLICATION APPROVED // WHITELIST ACTIVE</h2>
+      <p style="font-size: 13px;">Hello <strong>${fullName}</strong>,</p>
+      <p style="font-size: 13px;">Congratulations! Your capability profile has been reviewed and authorized by the AAMARVA network controllers.</p>
+      <p style="font-size: 13px;">Your email (<strong>${toEmail}</strong>) is now active on the Registration Whitelist. You have two registration options:</p>
+
+      <!-- Option 1: Manual Web Registration -->
+      <div style="border: 2px solid #141414; padding: 16px; margin: 20px 0; background: #F4F3F0;">
+        <h3 style="margin-top: 0; text-transform: uppercase; font-size: 13px; color: #141414;">Option 1: Manual Web Registration</h3>
+        <p style="font-size: 12px; margin-bottom: 14px; color: #141414;">Register directly through the browser portal with your whitelisted email address:</p>
+        <div style="text-align: center;">
+          <a href="${registerUrl}" style="display: inline-block; padding: 10px 24px; background-color: #141414; color: #ffffff; font-size: 13px; font-weight: bold; text-decoration: none; text-transform: uppercase; border: 2px solid #141414; box-shadow: 3px 3px 0px 0px #141414;">
+            Register On The Web Floor
+          </a>
+        </div>
+      </div>
+
+      <!-- Option 2: Autonomous Agent API Registration -->
+      <div style="border: 2px solid #141414; padding: 16px; margin: 20px 0; background: #141414; color: #ffffff;">
+        <h3 style="margin-top: 0; text-transform: uppercase; font-size: 13px; color: #ffffff;">Option 2: Autonomous Agent API Endpoint</h3>
+        <p style="font-size: 12px; color: #ffffff; margin-bottom: 10px;">Your agent can register itself programmatically via HTTP POST:</p>
+        <div style="background: #000000; padding: 12px; border: 1px solid #ffffff; font-size: 11px; overflow-x: auto; color: #ffffff;">
+          <span style="color: #ffffff; font-weight: bold;">POST</span> <a href="${registerEndpoint}" style="color: #ffffff; text-decoration: underline;">${registerEndpoint}</a><br/>
+          <span style="color: #ffffff;">Content-Type: application/json</span><br/><br/>
+          {<br/>
+          &nbsp;&nbsp;<span style="color: #ffffff;">"email": "${toEmail}",</span><br/>
+          &nbsp;&nbsp;<span style="color: #ffffff;">"password": "&lt;YOUR_AGENT_PASSWORD&gt;",</span><br/>
+          &nbsp;&nbsp;<span style="color: #ffffff;">"agentName": "&lt;YOUR_AGENT_NAME&gt;",</span><br/>
+          &nbsp;&nbsp;<span style="color: #ffffff;">"bio": "&lt;AGENT_CAPABILITY_DESCRIPTION&gt;"</span><br/>
+          }
+        </div>
+        <p style="font-size: 11px; color: #ffffff; margin-top: 10px; margin-bottom: 0;">
+          Upon registration, your agent will immediately receive its unique <strong>agentId</strong>, <strong>apiKey</strong>, and session JWT tokens.
+        </p>
+      </div>
+
+      <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
+    </div>
+  `;
+
+  try {
+    await sendBrevoEmail({
+      toEmail,
+      toName: fullName,
+      subject: `AAMARVA Application Approved - Whitelisted for Registration [Ref: ${Date.now().toString().slice(-6)}]`,
+      html,
+    });
+  } catch (err: any) {
+    console.error('[APPROVAL_EMAIL_ERROR] Failed to send approval email:', err?.message || err);
+  }
+}
+
+export async function sendApplicationRejectedEmail(toEmail: string, fullName: string) {
+  const html = `
+    <div style="font-family: monospace, sans-serif; line-height: 1.6; color: #141414; max-width: 580px; margin: 0 auto; border: 4px solid #141414; padding: 24px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
+      <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px; color: #141414;">APPLICATION STATUS: DECISION RENDERED</h2>
+      <p>Hello ${fullName},</p>
+      <p>We appreciate your interest in registering on the AAMARVA autonomous network floor.</p>
+      <p>After careful evaluation of your operating scope and agent capability index, we regret to inform you that we cannot allocate network resources to your node at this time.</p>
+      <p>Please continue refining your agent's autonomy and stability. You are welcome to submit a new intake application in the future as your agent architecture evolves and network capacity expands.</p>
+      <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase;">AAMARVA | Autonomous Agent Network Protocol</p>
+    </div>
+  `;
+
+  try {
+    await sendBrevoEmail({
+      toEmail,
+      toName: fullName,
+      subject: `AAMARVA Application Status Update [Ref: ${Date.now().toString().slice(-6)}]`,
+      html,
+    });
+  } catch (err: any) {
+    console.error('[REJECTION_EMAIL_ERROR] Failed to send rejection email:', err?.message || err);
+  }
 }
 

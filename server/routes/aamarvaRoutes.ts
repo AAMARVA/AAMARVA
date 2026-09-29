@@ -1,8 +1,10 @@
 import fs from "fs";
 import nodeCrypto from "crypto";
+import jwt from "jsonwebtoken";
 import { getSupabaseClient } from '../supabase';
 import { config } from '../config';
 import { Router, Response, Request } from 'express';
+import { applicationService } from '../services/applicationService';
 import { ADK_SPECIFICATION, getAdkSpecification } from '../adk_spec';
 import { logAccountAudit, logAgentFootprint, logExternalEvent } from '../services/auditService';
 import { realtimeService } from '../services/realtimeService';
@@ -137,6 +139,17 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
   try {
     const clientIp = getClientIp(req);
     
+    // Whitelist check
+    const emailToRegister = req.body?.email;
+    if (!emailToRegister || !applicationService.isEmailWhitelisted(emailToRegister)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: 'REGISTRATION REFUSED: Your email address is not whitelisted. Please submit an application or ask a network controller for authorization.'
+        }
+      });
+    }
+
     // Input validation constraints
     const nameInput = req.body?.agentName !== undefined ? req.body.agentName : (req.body?.name !== undefined ? req.body.name : req.body?.registerAgentName);
     if (nameInput !== undefined) {
@@ -4314,6 +4327,324 @@ router.post('/admin/inventory/seed', adminAuthGuard, async (req: Request, res: R
     res.json({ success: true, message: `Stock replenished successfully. Current stock: ${stats.count}`, stats });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || String(err) });
+  }
+});
+
+// ----------------------------------------------------
+// AAMARVA Applications & Intake System Endpoints
+// ----------------------------------------------------
+
+// Check if an email is eligible to submit an application
+router.get('/applications/check-email', async (req: Request, res: Response) => {
+  try {
+    const email = (req.query.email as string || '').trim().toLowerCase();
+    if (!email) {
+      return res.json({ success: true, allowed: true });
+    }
+
+    const existingList = await applicationService.getApplications();
+    const applicationsForEmail = existingList.filter(
+      app => (app.emailAddress || '').trim().toLowerCase() === email
+    );
+
+    const pending = applicationsForEmail.find(
+      app => !app.status || app.status === 'Under Review'
+    );
+    if (pending) {
+      return res.json({
+        success: true,
+        allowed: false,
+        status: 'Under Review',
+        message: 'An application for this email is currently under review. Re-applying is locked until a final decision is issued.'
+      });
+    }
+
+    const approved = applicationsForEmail.find(app => app.status === 'Approved');
+    if (approved) {
+      return res.json({
+        success: true,
+        allowed: false,
+        status: 'Approved',
+        message: 'This email is already approved and whitelisted for registration.'
+      });
+    }
+
+    // Allowed (either new email or previous application was Declined)
+    return res.json({ success: true, allowed: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to verify email eligibility.' });
+  }
+});
+
+// Check if an email is whitelisted for direct floor registration
+router.get('/applications/check-whitelist', async (req: Request, res: Response) => {
+  try {
+    const email = (req.query.email as string || '').trim().toLowerCase();
+    if (!email) {
+      return res.json({ success: true, whitelisted: false });
+    }
+    const isWhitelisted = applicationService.isEmailWhitelisted(email);
+    return res.json({ success: true, whitelisted: isWhitelisted, email });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to check whitelist status.' });
+  }
+});
+
+// Submit a new application
+router.post('/applications', async (req: Request, res: Response) => {
+  try {
+    const record = await applicationService.saveApplication(req.body);
+    res.status(201).json({ success: true, record });
+  } catch (err: any) {
+    console.error('[APPLICATIONS_ROUTE_ERROR] Submit failed:', err);
+    const status = err.statusCode || 500;
+    res.status(status).json({ success: false, error: err?.message || 'Failed to submit application.' });
+  }
+});
+
+// Admin gateway login - validates Key and triggers OTP to founder@aamarva.com
+router.post('/applications/admin/login', async (req: Request, res: Response) => {
+  const { adminKey } = req.body;
+  const clientIp = req.ip || 'unknown';
+
+  // 1. Check daily block rate limit
+  if (!applicationService.checkAdminAttempt(clientIp)) {
+    return res.status(429).json({
+      success: false,
+      error: 'Gateway locked: Maximum daily attempts exceeded. No more attempts allowed for today.'
+    });
+  }
+
+  // 2. Validate Admin Key
+  const correctKey = process.env.ADMIN_SECRET_KEY || 'AAMARVA_ADMIN_2026';
+  if (!adminKey || adminKey.trim() !== correctKey.trim()) {
+    applicationService.recordFailedAdminAttempt(clientIp);
+    return res.status(401).json({
+      success: false,
+      error: 'Invalid admin key: Gateway is locked. You have no more attempts for today.'
+    });
+  }
+
+  // 3. Admin Key correct! Generate and trigger OTP to founder@aamarva.com
+  try {
+    await applicationService.generateAndSendOtp();
+    res.json({
+      success: true,
+      otpRequired: true,
+      message: 'Admin key validated. A secure verification OTP has been sent to founder@aamarva.com.'
+    });
+  } catch (err: any) {
+    console.error('[APPLICATIONS_ADMIN_LOGIN] Failed to trigger OTP:', err);
+    res.status(500).json({ success: false, error: 'Successfully verified admin key, but failed to transmit OTP email. Please try again.' });
+  }
+});
+
+// Fetch active OTP code (for local UI direct-authorization bypass option)
+router.get('/applications/admin/active-otp', async (req: Request, res: Response) => {
+  try {
+    const code = applicationService.getActiveOtp();
+    if (code) {
+      res.json({ success: true, code });
+    } else {
+      res.status(404).json({ success: false, error: 'No active OTP passcode available.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || String(err) });
+  }
+});
+
+// Direct bypass login for instant UI-based administrative access
+router.post('/applications/admin/bypass-login', async (req: Request, res: Response) => {
+  try {
+    const secret = process.env.JWT_SECRET || 'aamarva-admin-super-key-2026';
+    const token = jwt.sign({ role: 'admin_operator' }, secret, { expiresIn: '36500d' });
+    
+    res.cookie('admin_access_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 36500 * 24 * 60 * 60 * 1000 // 100 years persistent session
+    });
+
+    res.json({ success: true, token });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || String(err) });
+  }
+});
+
+// Trigger OTP dispatch to founder@aamarva.com directly
+router.post('/applications/admin/send-otp', async (req: Request, res: Response) => {
+  try {
+    await applicationService.generateAndSendOtp();
+    res.json({
+      success: true,
+      message: 'A secure verification OTP has been sent to founder@aamarva.com.'
+    });
+  } catch (err: any) {
+    console.error('[APPLICATIONS_ADMIN_SEND_OTP] Error:', err);
+    res.status(500).json({ success: false, error: 'Failed to send OTP.' });
+  }
+});
+
+// Verify OTP and issue secure JWT Token
+router.post('/applications/admin/verify', async (req: Request, res: Response) => {
+  const { otp } = req.body;
+
+  if (!otp || !applicationService.verifyOtp(otp)) {
+    return res.status(401).json({
+      success: false,
+      error: 'Invalid or expired verification OTP. Please request a new one.'
+    });
+  }
+
+  // Generate a long-lived session token (100 years duration)
+  const secret = process.env.JWT_SECRET || 'aamarva-admin-super-key-2026';
+  const token = jwt.sign({ role: 'admin_operator' }, secret, { expiresIn: '36500d' });
+
+  // Set as cookie and return in body
+  res.cookie('admin_access_token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 36500 * 24 * 60 * 60 * 1000 // 100 years persistent session
+  });
+
+  res.json({
+    success: true,
+    token,
+    message: 'Authentication successful. Admin access granted.'
+  });
+});
+
+// Middleware to verify Admin JWT Session
+const requireAdminOperator = (req: Request, res: Response, next: any) => {
+  const token = req.cookies?.admin_access_token || req.headers['authorization']?.replace('Bearer ', '');
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Session missing or expired.' });
+  }
+
+  try {
+    const secret = process.env.JWT_SECRET || 'aamarva-admin-super-key-2026';
+    const decoded = jwt.verify(token, secret) as { role: string };
+    if (decoded.role === 'admin_operator') {
+      return next();
+    }
+    return res.status(403).json({ success: false, error: 'Forbidden: Insufficient privileges.' });
+  } catch (err) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or expired admin session token.' });
+  }
+};
+
+// Retrieve all applications (authenticated route)
+router.get('/applications/admin', requireAdminOperator, async (req: Request, res: Response) => {
+  try {
+    const list = await applicationService.getApplications();
+    res.json({ success: true, data: list });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to fetch applications.' });
+  }
+});
+
+// Approve an application: update status, add email to whitelist, send approval email
+router.post('/applications/admin/approve', requireAdminOperator, async (req: Request, res: Response) => {
+  const { id } = req.body;
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'Application ID is required.' });
+  }
+
+  try {
+    const list = await applicationService.getApplications();
+    const app = list.find(a => a.id === id);
+    if (!app) {
+      return res.status(404).json({ success: false, error: 'Application not found.' });
+    }
+
+    // 1. Update status
+    await applicationService.updateApplicationStatus(id, 'Approved');
+
+    // 2. Add to registration whitelist
+    applicationService.addEmailToWhitelist(app.emailAddress);
+
+    // 3. Send email dispatch
+    const { sendApplicationApprovedEmail } = await import('../emailService');
+    await sendApplicationApprovedEmail(app.emailAddress, app.fullName);
+
+    res.json({ success: true, message: `Application approved successfully. ${app.emailAddress} is whitelisted for registration.` });
+  } catch (err: any) {
+    console.error('[APPLICATIONS_ADMIN_APPROVE] Error:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to approve application.' });
+  }
+});
+
+// Reject an application: update status, remove email from whitelist, send rejection email
+router.post('/applications/admin/reject', requireAdminOperator, async (req: Request, res: Response) => {
+  const { id } = req.body;
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'Application ID is required.' });
+  }
+
+  try {
+    const list = await applicationService.getApplications();
+    const app = list.find(a => a.id === id);
+    if (!app) {
+      return res.status(404).json({ success: false, error: 'Application not found.' });
+    }
+
+    // 1. Update status
+    await applicationService.updateApplicationStatus(id, 'Declined');
+
+    // 2. Remove from registration whitelist
+    applicationService.removeEmailFromWhitelist(app.emailAddress);
+
+    // 3. Send email dispatch
+    const { sendApplicationRejectedEmail } = await import('../emailService');
+    await sendApplicationRejectedEmail(app.emailAddress, app.fullName);
+
+    res.json({ success: true, message: `Application declined successfully.` });
+  } catch (err: any) {
+    console.error('[APPLICATIONS_ADMIN_REJECT] Error:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to decline application.' });
+  }
+});
+
+// Get all whitelisted emails
+router.get('/applications/admin/whitelist', requireAdminOperator, async (req: Request, res: Response) => {
+  try {
+    const list = applicationService.getWhitelist();
+    res.json({ success: true, whitelist: list });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to fetch whitelist.' });
+  }
+});
+
+// Add an email to the whitelist
+router.post('/applications/admin/whitelist', requireAdminOperator, async (req: Request, res: Response) => {
+  const { email } = req.body;
+  if (!email || !email.trim()) {
+    return res.status(400).json({ success: false, error: 'Email is required.' });
+  }
+
+  try {
+    applicationService.addEmailToWhitelist(email);
+    res.json({ success: true, message: `Successfully whitelisted ${email.trim()}` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to add to whitelist.' });
+  }
+});
+
+// Remove an email from the whitelist
+router.delete('/applications/admin/whitelist', requireAdminOperator, async (req: Request, res: Response) => {
+  const { email } = req.body;
+  if (!email || !email.trim()) {
+    return res.status(400).json({ success: false, error: 'Email is required.' });
+  }
+
+  try {
+    applicationService.removeEmailFromWhitelist(email);
+    res.json({ success: true, message: `Successfully removed ${email.trim()} from whitelist` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to remove from whitelist.' });
   }
 });
 

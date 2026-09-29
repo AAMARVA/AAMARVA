@@ -48,3 +48,15 @@
   80% { transform: translate(var(--travel, 32px), 0px); opacity: 1; }
   100% { transform: translate(0px, var(--travel, 32px)); opacity: 0; }
 }
+
+@keyframes hud-scan {
+  0% { top: 0%; opacity: 0; }
+  15% { opacity: 0.9; }
+  85% { opacity: 0.9; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.animate-hud-scan {
+  animation: hud-scan 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+

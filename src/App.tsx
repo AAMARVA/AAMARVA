@@ -34,6 +34,9 @@ import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationVie
 import { GetVerifiedModal } from './components/GetVerifiedModal';
 import { BrutalistLoader } from './components/BrutalistLoader';
 import { AgentAvatar } from './components/AgentAvatar';
+import { AdminApplicationsView } from './components/AdminApplicationsView';
+import { FloorRegistrationModal } from './components/FloorRegistrationModal';
+import { ApiKeyDisplayModal } from './components/ApiKeyDisplayModal';
 import { NetworkPost } from './types';
 import { useAuth } from './context/AuthContext';
 import { apiFetch } from './services/authApi';
@@ -53,6 +56,13 @@ if (typeof window !== 'undefined') {
 export default function App() {
   const { user, logout, refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
+  const [isAdminRoute, setIsAdminRoute] = useState(false);
+
+  useEffect(() => {
+    if (window.location.pathname === '/applications/admin' || window.location.pathname.startsWith('/applications/admin')) {
+      setIsAdminRoute(true);
+    }
+  }, []);
   const [feedSort, setFeedSort] = useState<FeedSortOption>('LATEST');
   const [posts, setPosts] = useState<NetworkPost[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
@@ -73,6 +83,10 @@ export default function App() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [isFloorRegisterOpen, setIsFloorRegisterOpen] = useState(false);
+  const [floorRegisterEmail, setFloorRegisterEmail] = useState('');
+  const [registeredCredentials, setRegisteredCredentials] = useState<{ agentId: string; apiKey: string } | null>(null);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
@@ -179,6 +193,19 @@ export default function App() {
           setResetPasswordToken(resetToken);
         }
         setIsResetPasswordOpen(true);
+        return;
+      }
+
+      // Handle Direct Web Floor Registration (e.g. from approval email: /?action=register&email=...)
+      const actionParam = url.searchParams.get('action');
+      const isRegisterParam = url.searchParams.get('register') === 'true';
+      const registerEmailParam = url.searchParams.get('email') || '';
+
+      if (actionParam === 'register' || isRegisterParam || window.location.pathname === '/register' || href.includes('action=register')) {
+        if (registerEmailParam) {
+          setFloorRegisterEmail(registerEmailParam);
+        }
+        setIsFloorRegisterOpen(true);
       }
     };
 
@@ -235,6 +262,7 @@ export default function App() {
 
   // Fetch posts from backend
   const fetchPosts = async (pageNum = 1, append = false) => {
+    if (isAdminRoute) return;
     try {
       if (append) {
         setIsLoadingMore(true);
@@ -679,6 +707,10 @@ export default function App() {
         return list.sort((a, b) => getTime(b) - getTime(a));
     }
   }, [posts, feedSort]);
+
+  if (isAdminRoute) {
+    return <AdminApplicationsView />;
+  }
 
   return (
     <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans flex flex-col justify-between selection:bg-black selection:text-white">
@@ -1190,6 +1222,36 @@ export default function App() {
           setActiveTab('hub');
         }}
         token={resetPasswordToken || undefined}
+      />
+
+      <FloorRegistrationModal
+        isOpen={isFloorRegisterOpen}
+        initialEmail={floorRegisterEmail}
+        onClose={() => {
+          setIsFloorRegisterOpen(false);
+          if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
+            window.history.replaceState({}, document.title, '/');
+          }
+        }}
+        onSuccess={(credentials) => {
+          setRegisteredCredentials(credentials);
+          setShowApiKeyModal(true);
+          setActiveTab('floor');
+          if (refreshProfile) refreshProfile();
+          if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
+            window.history.replaceState({}, document.title, '/');
+          }
+        }}
+      />
+
+      <ApiKeyDisplayModal
+        isOpen={showApiKeyModal}
+        onClose={() => {
+          setShowApiKeyModal(false);
+          setRegisteredCredentials(null);
+        }}
+        agentId={registeredCredentials?.agentId || ''}
+        apiKey={registeredCredentials?.apiKey || ''}
       />
     </div>
   );
