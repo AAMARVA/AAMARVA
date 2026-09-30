@@ -9,6 +9,7 @@ interface FloorActivityContentProps {
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenThread?: (post: NetworkPost) => void;
   onOpenConnections?: (post: NetworkPost) => void;
+  onOpenPostCard?: (post: NetworkPost) => void;
 }
 
 export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
@@ -16,7 +17,8 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenThread,
-  onOpenConnections
+  onOpenConnections,
+  onOpenPostCard,
 }) => {
   const normalized = normalizeAndValidateFloorActivity(log);
   if (!normalized) {
@@ -74,33 +76,57 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
     );
   };
 
-  // Helper to render post thread button
-  const renderPostButton = (pObj: any, label = 'post') => {
-    if (!pObj || !onOpenThread) return null;
+  // Helper to render dedicated post card button (used strictly for post direct links through floor activity)
+  const renderPostCardButton = (pObj: any, label = 'post') => {
+    if (!pObj) return null;
+    const targetPostId = pObj.postId || pObj.id;
+    if (!targetPostId) return null;
+
     return (
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          onOpenThread(pObj);
+          const targetObj: NetworkPost = {
+            id: targetPostId,
+            postId: targetPostId,
+            agentName: pObj.agentName,
+            agentId: pObj.agentId,
+            avatar: pObj.avatar,
+            content: pObj.postId && pObj.postId !== pObj.id ? '' : pObj.content,
+            category: pObj.category,
+            type: pObj.type,
+            timestamp: pObj.timestamp || pObj.createdAt,
+          };
+          if (onOpenPostCard) {
+            onOpenPostCard(targetObj);
+          } else if (onOpenThread) {
+            onOpenThread(targetObj);
+          }
         }}
         className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
-        title="Click to view Transmission Thread"
+        title="Click to view Dedicated Post Card"
       >
-        <span>[ {label} {pObj.id ? `#${String(pObj.id).slice(0, 6)}` : ''} ]</span>
+        <span>[ {label} #{String(targetPostId).replace(/^post[_-]/i, '').slice(0, 6)} ]</span>
       </button>
     );
   };
 
+  // Helper to render post thread button (delegates directly to dedicated post card for post direct links through floor activity)
+  const renderPostButton = (pObj: any, label = 'post') => {
+    return renderPostCardButton(pObj, label);
+  };
+
   // Helper to render connection button
   const renderConnectionButton = (pObj: any) => {
-    if (!pObj || (!onOpenConnections && !onOpenThread)) return null;
+    if (!pObj || (!onOpenConnections && !onOpenThread && !onOpenPostCard)) return null;
     return (
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           if (onOpenConnections) onOpenConnections(pObj);
+          else if (onOpenPostCard) onOpenPostCard(pObj);
           else if (onOpenThread) onOpenThread(pObj);
         }}
         className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
@@ -111,23 +137,30 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
     );
   };
 
-  // Section B: Broadcast Post
+  // Section B: Broadcast Post (opens dedicated post card)
   if (type === 'post') {
+    const postPayload = post || (log?.entityId ? { id: log.entityId, postId: log.entityId } : null);
     return (
       <span className="text-white/90 break-words align-middle">
         made a post on the floor
-        {post && renderPostButton(post)}
+        {postPayload && renderPostCardButton(postPayload)}
       </span>
     );
   }
 
-  // Section B: Reply
+  // Section B: Reply (opens dedicated post card for post direct link)
   if (type === 'reply') {
     const targetPeer = peerName || (text.match(/@(.+?)'s/)?.[1]);
+    const replyPostPayload = post || (log?.entityId ? { id: log.entityId, postId: log.entityId } : null);
+    const targetPost = replyPostPayload ? {
+      ...replyPostPayload,
+      id: replyPostPayload.postId || replyPostPayload.id,
+      postId: replyPostPayload.postId || replyPostPayload.id,
+    } : null;
     return (
       <span className="text-white/90 break-words align-middle">
         made a reply to {targetPeer ? renderPeerButton(targetPeer) : '@peer'}'s post
-        {post && renderPostButton(post)}
+        {targetPost && renderPostCardButton(targetPost)}
       </span>
     );
   }

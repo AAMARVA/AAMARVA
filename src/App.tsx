@@ -32,6 +32,7 @@ import { EmailChangeVerificationView } from './components/EmailChangeVerificatio
 import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationView';
 import { BrutalistLoader } from './components/BrutalistLoader';
 import { AgentAvatar } from './components/AgentAvatar';
+import { DedicatedPostModal } from './components/DedicatedPostModal';
 import { AdminApplicationsView } from './components/AdminApplicationsView';
 import { FloorRegistrationModal } from './components/FloorRegistrationModal';
 import { ApiKeyDisplayModal } from './components/ApiKeyDisplayModal';
@@ -72,9 +73,10 @@ export default function App() {
   const hasInitialLoadedRef = useRef(false);
   const [activeThreadPost, setActiveThreadPost] = useState<NetworkPost | null>(null);
   const [activeConnectionsPost, setActiveConnectionsPost] = useState<NetworkPost | null>(null);
+  const [activeDedicatedPost, setActiveDedicatedPost] = useState<NetworkPost | null>(null);
   const [activeAgentProfile, setActiveAgentProfile] = useState<{ name: string; avatar?: string; agentId?: string } | null>(null);
   const [modalHistory, setModalHistory] = useState<{
-    type: 'thread' | 'connections' | 'profile' | 'cluster';
+    type: 'thread' | 'connections' | 'profile' | 'cluster' | 'dedicated_post';
     data: any;
   }[]>([]);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
@@ -499,6 +501,7 @@ export default function App() {
     // Switch active state to the new profile
     setActiveThreadPost(null);
     setActiveConnectionsPost(null);
+    setActiveDedicatedPost(null);
     setActiveCluster(null);
     setActiveAgentProfile({ name, avatar, agentId });
   };
@@ -510,6 +513,7 @@ export default function App() {
     setActiveAgentProfile(null);
     setActiveThreadPost(null);
     setActiveConnectionsPost(null);
+    setActiveDedicatedPost(null);
     setActiveCluster(cluster);
   };
 
@@ -518,7 +522,18 @@ export default function App() {
     setModalHistory((prev) => [...prev, newItem]);
     setActiveAgentProfile(null);
     setActiveConnectionsPost(null);
+    setActiveDedicatedPost(null);
     setActiveThreadPost(post);
+  };
+
+  const handleOpenDedicatedPost = (post: NetworkPost) => {
+    const newItem = { type: 'dedicated_post' as const, data: post };
+    setModalHistory((prev) => [...prev, newItem]);
+    setActiveAgentProfile(null);
+    setActiveConnectionsPost(null);
+    setActiveThreadPost(null);
+    setActiveCluster(null);
+    setActiveDedicatedPost(post);
   };
 
   const handleNavigateToPost = (rawPostId: string) => {
@@ -550,6 +565,7 @@ export default function App() {
     setModalHistory((prev) => [...prev, newItem]);
     setActiveAgentProfile(null);
     setActiveThreadPost(null);
+    setActiveDedicatedPost(null);
     setActiveConnectionsPost(post);
   };
 
@@ -560,6 +576,7 @@ export default function App() {
         setActiveConnectionsPost(null);
         setActiveAgentProfile(null);
         setActiveCluster(null);
+        setActiveDedicatedPost(null);
         return [];
       }
 
@@ -571,6 +588,7 @@ export default function App() {
       setActiveConnectionsPost(null);
       setActiveAgentProfile(null);
       setActiveCluster(null);
+      setActiveDedicatedPost(null);
 
       // Restore based on the previous history item
       if (prevItem.type === 'profile') {
@@ -581,6 +599,8 @@ export default function App() {
         setActiveConnectionsPost(prevItem.data);
       } else if (prevItem.type === 'cluster') {
         setActiveCluster(prevItem.data);
+      } else if (prevItem.type === 'dedicated_post') {
+        setActiveDedicatedPost(prevItem.data);
       }
 
       return newHistory;
@@ -593,6 +613,7 @@ export default function App() {
     setActiveConnectionsPost(null);
     setActiveAgentProfile(null);
     setActiveCluster(null);
+    setActiveDedicatedPost(null);
   };
 
   const sortedPosts = useMemo(() => {
@@ -1031,6 +1052,7 @@ export default function App() {
               onOpenClusterMembers={handleOpenClusterMembers}
               onOpenThread={handleOpenThread}
               onOpenConnections={handleOpenConnections}
+              onOpenPostCard={handleOpenDedicatedPost}
             />
           ) : deviceSize === 'tablet' ? (
             <TelemetryViewTablet
@@ -1041,6 +1063,7 @@ export default function App() {
               onOpenClusterMembers={handleOpenClusterMembers}
               onOpenThread={handleOpenThread}
               onOpenConnections={handleOpenConnections}
+              onOpenPostCard={handleOpenDedicatedPost}
             />
           ) : (
             <TelemetryViewMobile
@@ -1051,6 +1074,7 @@ export default function App() {
               onOpenClusterMembers={handleOpenClusterMembers}
               onOpenThread={handleOpenThread}
               onOpenConnections={handleOpenConnections}
+              onOpenPostCard={handleOpenDedicatedPost}
             />
           )
         )}
@@ -1148,6 +1172,23 @@ export default function App() {
         onAddReply={handleAddReply}
       />
 
+
+      <DedicatedPostModal
+        post={activeDedicatedPost ? (posts.find((p) => {
+          const pId = p.id || p.postId;
+          const aId = activeDedicatedPost.id || activeDedicatedPost.postId;
+          if (pId === aId) return true;
+          const normP = String(pId || '').replace(/^post[_-]/i, '');
+          const normA = String(aId || '').replace(/^post[_-]/i, '');
+          return Boolean(normP && normA && normP === normA);
+        }) || activeDedicatedPost) : null}
+        onClose={handleCloseAllModals}
+        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
+        onOpenThread={handleOpenThread}
+        onOpenConnections={handleOpenConnections}
+        onOpenAgentProfile={handleOpenAgentProfile}
+        onNavigateToPost={handleNavigateToPost}
+      />
 
       <ThreadModal
         post={activeThreadPost ? (posts.find((p) => p.id === activeThreadPost.id) || activeThreadPost) : null}

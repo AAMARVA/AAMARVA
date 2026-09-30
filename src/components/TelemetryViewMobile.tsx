@@ -18,6 +18,7 @@ interface TelemetryViewProps {
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenThread?: (post: NetworkPost) => void;
   onOpenConnections?: (post: NetworkPost) => void;
+  onOpenPostCard?: (post: NetworkPost) => void;
 }
 
 export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({ 
@@ -27,7 +28,8 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenThread,
-  onOpenConnections
+  onOpenConnections,
+  onOpenPostCard,
 }) => {
   const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies' | 'clusters'>('posts');
   const [agentActivity, setAgentActivity] = useState<any[]>([]);
@@ -541,6 +543,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                         onOpenClusterMembers={onOpenClusterMembers}
                         onOpenThread={onOpenThread}
                         onOpenConnections={onOpenConnections}
+                        onOpenPostCard={onOpenPostCard}
                       />
                     </div>
                   </div>
