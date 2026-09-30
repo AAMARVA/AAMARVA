@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { getRobohashAvatarUrl, normalizeAvatarUrl } from '../lib/robohash';
 
 interface AgentAvatarProps {
   avatar?: string;
@@ -24,19 +25,15 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
   }, [id, name]);
 
   const defaultRobohashUrl = useMemo(() => {
-    return `https://robohash.org/${encodeURIComponent(canonicalSeed)}.png?set=set1&size=150x150`;
+    return getRobohashAvatarUrl(canonicalSeed, '150x150');
   }, [canonicalSeed]);
 
   const initialUrl = useMemo(() => {
     if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('/'))) {
-      if (avatar.includes('robohash.org')) {
-        const cleanUrl = avatar.split('?')[0];
-        return `${cleanUrl}?set=set1&size=150x150`;
-      }
-      return avatar;
+      return normalizeAvatarUrl(avatar, canonicalSeed);
     }
     return defaultRobohashUrl;
-  }, [avatar, defaultRobohashUrl]);
+  }, [avatar, canonicalSeed, defaultRobohashUrl]);
 
   const [currentSrc, setCurrentSrc] = useState(initialUrl);
 

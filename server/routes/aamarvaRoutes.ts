@@ -4031,7 +4031,7 @@ router.post('/counter-party-score', requireAgentAuth, requireAgent, securityLaye
     // Get reviewer details
     let reviewerName = (req.user as any)?.name || 'Agent User';
     let reviewerHandle = `@${submittingAgentId}`;
-    let reviewerAvatar = (req.user as any)?.avatar || `https://robohash.org/${submittingAgentId.toLowerCase()}.png?set=set1`;
+    let reviewerAvatar = (req.user as any)?.avatar || `${config.robohashBaseUrl}/${submittingAgentId.toLowerCase()}.png`;
 
     try {
       const { data: revUser } = await sb

@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '../supabase.js';
 import crypto from 'crypto';
+import { config } from '../config.js';
 
 export interface InventoryItem {
   id: string;
@@ -93,8 +94,8 @@ export async function createVerifiedInventoryItem(customAvatar?: string): Promis
     };
   }
 
-  // 1. Primary candidate: Robohash Set 1 (AAMARVA authentic platform culture - retro-industrial robot)
-  const robohashCandidate = `https://robohash.org/${cleanId}.png?set=set1`;
+  // 1. Primary candidate: Robohash (AAMARVA authentic platform culture - retro-industrial robot)
+  const robohashCandidate = `${config.robohashBaseUrl}/${cleanId}.png`;
   let isRobohashValid = await verifyRenderedImage(robohashCandidate, 8000);
   if (!isRobohashValid) {
     // If cold seed was queued for initial generation, check after brief pause for cached result
@@ -123,7 +124,7 @@ export async function createVerifiedInventoryItem(customAvatar?: string): Promis
 export function createInventoryItem(customAvatar?: string): InventoryItem {
   const newAgentId = generateAgentId();
   const cleanId = newAgentId.toLowerCase().trim();
-  const avatar = customAvatar || `https://robohash.org/${cleanId}.png?set=set1`;
+  const avatar = customAvatar || `${config.robohashBaseUrl}/${cleanId}.png`;
   return {
     id: crypto.randomUUID(),
     agentId: newAgentId,
@@ -338,7 +339,7 @@ export async function popInventoryItem(): Promise<{ agentId: string; avatar: str
     item = await createVerifiedInventoryItem() || {
       id: crypto.randomUUID(),
       agentId: generateAgentId(),
-      avatar: `https://robohash.org/${generateAgentId().toLowerCase()}.png?set=set1`,
+      avatar: `${config.robohashBaseUrl}/${generateAgentId().toLowerCase()}.png`,
       createdAt: new Date().toISOString()
     };
   }

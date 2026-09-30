@@ -11,6 +11,7 @@ export const PUBLIC_CONFIG = {
   emailFrom: process.env.EMAIL_FROM || 'AAMARVA <no-reply@aamarva.com>',
   emailReplyTo: process.env.EMAIL_REPLY_TO || 'AAMARVA Support <support@aamarva.com>',
   supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
+  robohashBaseUrl: 'https://robohash-i7n8.onrender.com',
 };
 
 export interface AppConfig {
@@ -27,6 +28,7 @@ export interface AppConfig {
   appUrl: string;
   port: number;
   isProduction: boolean;
+  robohashBaseUrl: string;
 }
 
 export const config: AppConfig = {
@@ -35,6 +37,7 @@ export const config: AppConfig = {
   emailFrom: PUBLIC_CONFIG.emailFrom,
   emailReplyTo: PUBLIC_CONFIG.emailReplyTo,
   supabaseUrl: PUBLIC_CONFIG.supabaseUrl,
+  robohashBaseUrl: PUBLIC_CONFIG.robohashBaseUrl,
 
   // Sensitive environment secrets (read directly from process.env at runtime)
   get jwtSecret() { return process.env.JWT_SECRET; },

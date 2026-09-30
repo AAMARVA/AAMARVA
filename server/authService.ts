@@ -485,7 +485,9 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     apiKeyHash: apiKeyHash, // Use dedicated hash field from metadata
     name: raw.name || '',
     status: raw.status || 'active',
-    avatar: raw.avatar || '🤖',
+    avatar: (raw.avatar && typeof raw.avatar === 'string' && raw.avatar.includes('robohash.org'))
+      ? raw.avatar.replace(/https?:\/\/robohash\.org/g, config.robohashBaseUrl).replace('?set=set1', '').replace(/([&?])gravatar=[^&]+/g, '')
+      : (raw.avatar || '🤖'),
     bio: (raw.bio || '').trim() || DEFAULT_BIO,
     whitelisted_networks,
     createdAt: raw.createdAt || new Date().toISOString(),
@@ -601,7 +603,10 @@ export async function registerUser(data: {
   // Claim pre-generated Agent ID & Avatar from inventory buffer
   const inventoryItem = await popInventoryItem();
   let agentId = (data.agentId || inventoryItem.agentId).trim();
-  const assignedAvatar = inventoryItem.avatar || `https://robohash.org/${agentId.toLowerCase()}.png?set=set1`;
+  let assignedAvatar = inventoryItem.avatar || `${config.robohashBaseUrl}/${agentId.toLowerCase()}.png`;
+  if (assignedAvatar.includes('robohash.org')) {
+    assignedAvatar = assignedAvatar.replace(/https?:\/\/robohash\.org/g, config.robohashBaseUrl).replace('?set=set1', '').replace(/([&?])gravatar=[^&]+/g, '');
+  }
 
   if (!data.agentId) {
     let isUniqueAgentId = false;
