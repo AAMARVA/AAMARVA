@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert, Shield, ChevronRight, MessageCircle, Reply } from 'lucide-react';
+import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert, Shield, ChevronRight, MessageCircle, Reply, Trash2 } from 'lucide-react';
 import { NetworkPost, AgentReply, AgentConnection } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ScoreReviewCard } from './ScoreReviewCard';
@@ -40,6 +40,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   const [activeTab, setActiveTab] = useState<'posts' | 'replies' | 'connections' | 'clusters'>('posts');
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
+  const [isDeleted, setIsDeleted] = useState<boolean>(false);
 
   const loggedInAgentId = user?.agentId?.toLowerCase();
 
@@ -77,80 +78,111 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     
     // Immediately clear stale data when agent changes
     setAgentProfileData(null);
+    setIsDeleted(false);
     setActiveTab('posts');
 
     let isMounted = true;
     const targetId = agentId || inferredAgentId;
 
+    const markDeleted = () => {
+      if (!isMounted) return;
+      setIsDeleted(true);
+    };
+
     if (targetId) {
       apiFetch(`/api/agents/${encodeURIComponent(targetId)}`, { authType: 'none' })
         .then((res) => {
-          if (isMounted && res?.data) {
+          if (!isMounted) return;
+          if (res?.data) {
             setAgentProfileData(res.data);
           } else if (agentName && agentName !== targetId) {
             // Fallback by search
             apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
               .then((qRes) => {
-                if (!isMounted || !qRes?.data?.agents) return;
-                const found = qRes.data.agents.find((a: any) => 
+                if (!isMounted) return;
+                const found = qRes?.data?.agents?.find((a: any) => 
                   a.name?.toLowerCase() === agentName.toLowerCase() || 
                   a.agentId?.toLowerCase() === agentName.toLowerCase()
                 );
-                if (found && isMounted) {
+                if (found) {
                   apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType: 'none' })
                     .then((profileRes) => {
-                      if (isMounted && profileRes?.data) {
-                        setAgentProfileData(profileRes.data);
+                      if (isMounted) {
+                        if (profileRes?.data) {
+                          setAgentProfileData(profileRes.data);
+                        } else {
+                          markDeleted();
+                        }
                       }
                     })
-                    .catch(() => {});
+                    .catch(markDeleted);
+                } else {
+                  markDeleted();
                 }
               })
-              .catch(() => {});
+              .catch(markDeleted);
+          } else {
+            markDeleted();
           }
         })
         .catch(() => {
           if (agentName && agentName !== targetId) {
             apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
               .then((qRes) => {
-                if (!isMounted || !qRes?.data?.agents) return;
-                const found = qRes.data.agents.find((a: any) => 
+                if (!isMounted) return;
+                const found = qRes?.data?.agents?.find((a: any) => 
                   a.name?.toLowerCase() === agentName.toLowerCase() || 
                   a.agentId?.toLowerCase() === agentName.toLowerCase()
                 );
-                if (found && isMounted) {
+                if (found) {
                   apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType: 'none' })
                     .then((profileRes) => {
-                      if (isMounted && profileRes?.data) {
-                        setAgentProfileData(profileRes.data);
+                      if (isMounted) {
+                        if (profileRes?.data) {
+                          setAgentProfileData(profileRes.data);
+                        } else {
+                          markDeleted();
+                        }
                       }
                     })
-                    .catch(() => {});
+                    .catch(markDeleted);
+                } else {
+                  markDeleted();
                 }
               })
-              .catch(() => {});
+              .catch(markDeleted);
+          } else {
+            markDeleted();
           }
         });
     } else if (agentName) {
       // Fallback lookup by agent name
       apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
         .then((res) => {
-          if (!isMounted || !res?.data?.agents) return;
-          const found = res.data.agents.find((a: any) => 
+          if (!isMounted) return;
+          const found = res?.data?.agents?.find((a: any) => 
             a.name?.toLowerCase() === agentName.toLowerCase() || 
             a.agentId?.toLowerCase() === agentName.toLowerCase()
           );
-          if (found && isMounted) {
+          if (found) {
             apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType: 'none' })
               .then((profileRes) => {
-                if (isMounted && profileRes?.data) {
-                  setAgentProfileData(profileRes.data);
+                if (isMounted) {
+                  if (profileRes?.data) {
+                    setAgentProfileData(profileRes.data);
+                  } else {
+                    markDeleted();
+                  }
                 }
               })
-              .catch(() => {});
+              .catch(markDeleted);
+          } else {
+            markDeleted();
           }
         })
-        .catch(() => {});
+        .catch(markDeleted);
+    } else {
+      markDeleted();
     }
 
     return () => {
@@ -159,6 +191,48 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   }, [inferredAgentId, agentName, agentId]);
 
   if (!agentName && !agentId) return null;
+
+  if (isDeleted || agentProfileData?.isDecommissioned || agentProfileData?.status === 'DECOMMISSIONED') {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
+        <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[640px] my-auto overflow-hidden text-[#141414]">
+          {/* Header */}
+          <div className="px-4 py-3 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
+            <div className="flex items-center gap-2">
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-0.5 sm:mr-1 md:mr-1 lg:mr-1"
+                  title="Back"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <h3 className="font-mono font-black uppercase text-sm tracking-wider text-[#141414]">
+                Agent Record
+              </h3>
+            </div>
+            <button
+              onClick={onClose}
+              className="border border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Deleted State Display */}
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-white my-auto">
+            <Trash2 className="w-8 h-8 text-[#141414] mb-3 stroke-[1.5]" />
+            <h4 className="font-mono font-black text-sm uppercase tracking-wider text-[#141414]">
+              This agent record is deleted
+            </h4>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
 
   // 1. Gather Posts authored by this agent

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowLeft, Loader2 } from 'lucide-react';
+import { X, ArrowLeft, Loader2, Trash2 } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
@@ -23,10 +23,17 @@ export const DedicatedPostModal: React.FC<DedicatedPostModalProps> = ({
 }) => {
   const [activePost, setActivePost] = useState<NetworkPost | null>(post);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isDeleted, setIsDeleted] = useState<boolean>(false);
 
   useEffect(() => {
     setActivePost(post);
+    setIsDeleted(false);
     if (!post) return;
+
+    if (post.deleted) {
+      setIsDeleted(true);
+      return;
+    }
 
     // If the post object is incomplete (e.g. from a compact activity log), fetch full post details
     const targetId = post.id || post.postId;
@@ -51,14 +58,21 @@ export const DedicatedPostModal: React.FC<DedicatedPostModalProps> = ({
               replies: res.data.replies || prev?.replies,
               connectionsList: res.data.connections || prev?.connectionsList,
             }));
+          } else {
+            setIsDeleted(true);
           }
         })
         .catch((err) => {
           console.warn('[DedicatedPostModal] Failed to fetch full post payload:', err);
+          setIsDeleted(true);
         })
         .finally(() => {
           setIsLoading(false);
         });
+    } else {
+      if (!post.content && !post.agentName) {
+        setIsDeleted(true);
+      }
     }
   }, [post]);
 
@@ -67,6 +81,49 @@ export const DedicatedPostModal: React.FC<DedicatedPostModalProps> = ({
   const current = activePost || post!;
   const hasCategory = current.category && current.category.toUpperCase() !== 'GENERAL';
   const categoryText = hasCategory ? current.category!.toUpperCase() : '';
+
+  if (isDeleted || (!isLoading && !current.content && !current.agentName)) {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
+        <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[640px] my-auto overflow-hidden text-[#141414]">
+          {/* Modal Header */}
+          <div className="px-4 py-3 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
+            <div className="flex items-center gap-2">
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-1"
+                  title="Back"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <ActivityTypeIcon type="post" className="w-4 h-4 text-[#141414]" />
+              <h3 className="font-mono font-black uppercase text-sm tracking-wider text-[#141414]">
+                Post
+              </h3>
+            </div>
+            <button
+              onClick={onClose}
+              className="border border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Deleted State Display */}
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-white my-auto">
+            <Trash2 className="w-8 h-8 text-[#141414] mb-3 stroke-[1.5]" />
+            <h4 className="font-mono font-black text-sm uppercase tracking-wider text-[#141414]">
+              This post is deleted
+            </h4>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
