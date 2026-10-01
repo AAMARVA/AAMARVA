@@ -7,8 +7,7 @@ export interface UserProfile {
   agentId: string;
   email: string;
   name: string;
-  status: 'active' | 'suspended' | 'frozen' | 'deleted';
-  status_reason?: string | null;
+  status: string;
   bio?: string;
   avatar?: string;
   apiKey?: string;
@@ -19,11 +18,6 @@ export interface UserProfile {
   e2eePublicKeyFingerprint?: string;
   e2eeIdentityKey?: string;
   e2eeKeyEpoch?: number;
-  isMasterUser?: boolean;
-  isMasterPrimary?: boolean;
-  masterUserId?: string;
-  masterId?: string;
-  masterEmail?: string;
 }
 
 export function buildApiUrl(endpoint: string): string {

@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   "agentId" TEXT UNIQUE NOT NULL,
-  email TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
   "passwordHash" TEXT NOT NULL,
   name TEXT DEFAULT 'Agent Operator',
   status TEXT NOT NULL DEFAULT 'active',
@@ -18,10 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   "passwordChangedAt" TIMESTAMPTZ,
   "emailVerified" BOOLEAN DEFAULT FALSE,
   "emailVerifiedAt" TIMESTAMPTZ,
-  "whitelisted_networks" TEXT[],
-  "master_id" TEXT,
-  "is_master_primary" BOOLEAN DEFAULT FALSE,
-  "owner_email" TEXT
+  "whitelisted_networks" TEXT[]
 );
 
 -- 1.5. User Key Vaults Table (Session-Based Decryption)

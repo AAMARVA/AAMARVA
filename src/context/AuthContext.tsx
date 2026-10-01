@@ -31,7 +31,6 @@ export type E2EEStatus = 'initializing' | 'ready' | 'recovery_required' | 'recov
 
 interface AuthContextType {
   user: UserProfile | null;
-  activeAccount: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   e2eeStatus: E2EEStatus;
@@ -47,7 +46,6 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   rotateE2EEKeys?: (credential?: string) => Promise<void>;
-  switchActiveAccount?: (targetUserId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -63,19 +61,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (err) {
         console.warn('Failed to parse aamarva_user from localStorage:', err);
         localStorage.removeItem('aamarva_user');
-      }
-    }
-    return null;
-  });
-  const [activeAccount, setActiveAccount] = useState<UserProfile | null>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('aamarva_active_account');
-        if (stored && stored !== 'undefined') {
-          return JSON.parse(stored);
-        }
-      } catch (err) {
-        localStorage.removeItem('aamarva_active_account');
       }
     }
     return null;
@@ -366,20 +351,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const profile = await fetchCurrentProfileApi();
       if (profile) {
-        // The server returns the profile of the ACTIVE account
-        setActiveAccount(profile);
+        setUser(profile);
         if (typeof window !== 'undefined') {
-          localStorage.setItem('aamarva_active_account', JSON.stringify(profile));
+          localStorage.setItem('aamarva_user', JSON.stringify(profile));
         }
-
-        // If the active account is a Master, or if this is the first load and we don't have a Master yet, update Master as well
-        if (profile.isMasterUser) {
-           setUser(profile);
-           if (typeof window !== 'undefined') {
-             localStorage.setItem('aamarva_user', JSON.stringify(profile));
-           }
-        }
-        
         await ensureE2EEKeys(profile.agentId, false, userPassword || undefined);
       } else {
         setE2EEStatus('failed');
@@ -395,12 +370,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const handleUnauthorized = () => {
       console.warn('Unauthorized token or deleted user detected. Logging out.');
       setUser(null);
-      setActiveAccount(null);
       setUserPassword(null);
       setE2EEStatus('failed');
       if (typeof window !== 'undefined') {
         localStorage.removeItem('aamarva_user');
-        localStorage.removeItem('aamarva_active_account');
       }
     };
 
@@ -418,17 +391,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } else {
           setUser(null);
-          setActiveAccount(null);
           setE2EEStatus('failed');
-        }
-      }
-      if (e.key === 'aamarva_active_account') {
-        if (e.newValue) {
-          try {
-            setActiveAccount(JSON.parse(e.newValue));
-          } catch (err) {
-            console.warn('Failed to sync active account from storage:', err);
-          }
         }
       }
     };
@@ -484,15 +447,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setUser(userToSave || null);
-    setActiveAccount(userToSave || null);
     if (credential) setUserPassword(credential);
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_active_account', JSON.stringify(userToSave));
       } else {
         localStorage.removeItem('aamarva_user');
-        localStorage.removeItem('aamarva_active_account');
       }
     }
     if (userToSave) {
@@ -504,15 +464,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const result = await loginAgentApi({ agentId, apiKey });
     const userToSave = result.user || result.data?.user || result;
     setUser(userToSave || null);
-    setActiveAccount(userToSave || null);
     if (apiKey) setUserPassword(apiKey);
     if (typeof window !== 'undefined') {
       if (userToSave) {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_active_account', JSON.stringify(userToSave));
       } else {
         localStorage.removeItem('aamarva_user');
-        localStorage.removeItem('aamarva_active_account');
       }
     }
     if (userToSave) {
@@ -536,10 +493,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (userToSave) {
       setUser(userToSave);
-      setActiveAccount(userToSave);
       if (typeof window !== 'undefined') {
         localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_active_account', JSON.stringify(userToSave));
       }
       await ensureE2EEKeys(userToSave.agentId, false, password);
     } else {
@@ -567,24 +522,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Logout API error:', e);
     }
     setUser(null);
-    setActiveAccount(null);
     setUserPassword(null);
     setE2EEStatus('failed');
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
-      localStorage.removeItem('aamarva_active_account');
     }
   };
 
   const deleteAccount = async () => {
     await deleteAccountApi();
     setUser(null);
-    setActiveAccount(null);
     setUserPassword(null);
     setE2EEStatus('failed');
     if (typeof window !== 'undefined') {
       localStorage.removeItem('aamarva_user');
-      localStorage.removeItem('aamarva_active_account');
     }
   };
 
@@ -595,41 +546,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateProfile = async (updates: Partial<UserProfile>) => {
     try {
       const updatedUser = await updateProfileApi(updates);
-      // Update active account context
-      setActiveAccount(updatedUser);
+      setUser(updatedUser);
       if (typeof window !== 'undefined') {
-        localStorage.setItem('aamarva_active_account', JSON.stringify(updatedUser));
-      }
-      // If the updated profile is the Master, sync Master state
-      if (updatedUser.isMasterUser) {
-         setUser(updatedUser);
-         if (typeof window !== 'undefined') {
-           localStorage.setItem('aamarva_user', JSON.stringify(updatedUser));
-         }
+        localStorage.setItem('aamarva_user', JSON.stringify(updatedUser));
       }
     } catch (err) {
       console.warn('Failed to update profile:', err);
       throw err;
-    }
-  };
-
-  const switchActiveAccount = async (targetUserId: string) => {
-    const res = await apiFetch('/api/auth/master/switch', {
-      method: 'POST',
-      body: JSON.stringify({ targetUserId }),
-      authType: 'human'
-    });
-    if (res?.success && res.data?.user) {
-      const newUserProfile = res.data.user;
-      // Preserve Master identity, update active operational context
-      setActiveAccount(newUserProfile);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('aamarva_active_account', JSON.stringify(newUserProfile));
-      }
-      // Re-initialize E2EE Keys for the switched user context
-      await ensureE2EEKeys(newUserProfile.agentId, false, userPassword || undefined);
-    } else {
-      throw new Error(res?.error?.message || 'Failed to switch account.');
     }
   };
 
@@ -652,7 +575,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         refreshProfile,
         updateProfile,
         rotateE2EEKeys,
-        switchActiveAccount,
       }}
     >
       {children}

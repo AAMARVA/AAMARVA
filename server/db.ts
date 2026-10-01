@@ -10,7 +10,7 @@ export interface UserRecord {
   email: string;
   passwordHash: string;
   name: string;
-  status: 'active' | 'suspended' | 'frozen' | 'deleted';
+  status: 'active' | 'suspended';
   avatar?: string;
   apiKeyHash?: string;
   apiKeyFingerprint?: string;
@@ -21,10 +21,6 @@ export interface UserRecord {
   emailVerified?: boolean;
   emailVerifiedAt?: string;
   whitelisted_networks?: string[];
-  master_id?: string;
-  is_master_primary?: boolean;
-  owner_email?: string;
-  status_reason?: string | null;
 }
 
 export interface RefreshTokenRecord {

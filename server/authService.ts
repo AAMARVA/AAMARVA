@@ -7,13 +7,10 @@ import { sendEmailVerification, sendPasswordResetEmail, sendApiKeyRotationEmail 
 import { config } from './config.js';
 import { validateAndNormalizeWhitelist, isIpAllowed } from './utils/networkWhitelist.js';
 import { popInventoryItem, recycleAvatarToInventory } from './services/inventoryService.js';
-import { MasterAccountService, MasterAccountRecord } from './services/masterAccountService.js';
-import { applicationService } from './services/applicationService.js';
 
 
 export interface UserTokenPayload {
   id: string;
-  userId?: string;
   agentId: string;
   email: string;
   emailVerified?: boolean;
@@ -22,22 +19,14 @@ export interface UserTokenPayload {
   commandPitScopes?: string[];
   name?: string;
   avatar?: string;
-  masterId?: string;
-  masterEmail?: string;
-  masterUserId?: string;
-  activeAccountId?: string;
-  isMasterUser?: boolean;
-  status?: 'active' | 'suspended' | 'frozen' | 'deleted';
-  status_reason?: string | null;
 }
 
-export interface HumanSessionPayload extends UserTokenPayload {
+export interface HumanSessionPayload {
+  id: string;
+  agentId: string;
+  email: string;
+  emailVerified?: boolean;
   type: 'human';
-  masterId: string;
-  masterEmail: string;
-  activeAccountId: string;
-  masterUserId: string;
-  isMasterUser: boolean;
 }
 
 export interface AgentTokenPayload {
@@ -208,93 +197,13 @@ export function generateApiKey(): string {
   return `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
 }
 
-export async function getOrCreateMasterForUser(user: any, supabase: any): Promise<string> {
-  const masterService = MasterAccountService.getInstance();
-  if (user.master_id) {
-    const existing = await masterService.getMasterAccount(user.master_id);
-    if (existing) return existing.id;
-    return user.master_id;
-  }
-
-  const userEmail = normalizeEmail(user.email || '');
-  if (!userEmail) return user.id;
-
-  // 1. Check existing master account
-  const existingMaster = await masterService.getMasterAccountByEmail(userEmail);
-  if (existingMaster?.id) {
-    masterService.setUserMetadata(user.id, {
-      id: user.id,
-      master_id: existingMaster.id,
-      is_master_primary: true,
-      owner_email: userEmail,
-      status: user.status || 'active'
-    });
-    user.master_id = existingMaster.id;
-    user.is_master_primary = true;
-    return existingMaster.id;
-  }
-
-  // 2. Create brand new master account using user.id as deterministic masterId
-  const masterId = user.id || crypto.randomUUID();
-  const masterRecord: MasterAccountRecord = {
-    id: masterId,
-    email: userEmail,
-    passwordHash: user.passwordHash || user.password_hash || '',
-    plan_status: 'ACTIVE',
-    account_limit: 10,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  await masterService.saveMasterAccount(masterRecord);
-
-  masterService.setUserMetadata(user.id, {
-    id: user.id,
-    master_id: masterId,
-    is_master_primary: true,
-    owner_email: userEmail,
-    status: user.status || 'active'
-  });
-  user.master_id = masterId;
-  user.is_master_primary = true;
-  return masterId;
-}
-
-export async function createHumanSession(userId: string, activeAccountId?: string): Promise<string> {
+export async function createHumanSession(userId: string): Promise<string> {
   const sessionId = crypto.randomUUID();
   const nowSeconds = Math.floor(Date.now() / 1000);
   const expSeconds = nowSeconds + 7 * 24 * 3600; // 7 days
   
-  const supabase = getSupabaseClient();
-  const user = await findUserById(supabase, userId);
-  let masterId = user?.master_id;
-
-  if (user && !masterId) {
-    // Auto-migrate on session creation
-    try {
-      masterId = await getOrCreateMasterForUser(user, supabase);
-    } catch (e) {
-      console.error('[createHumanSession] Auto-migration error:', e);
-    }
-  }
-
-  // Determine master user's primary ID (if the given user is a sub-account, resolve their master's primary user ID)
-  let masterUserId = userId;
-  if (user && !user.is_master_primary && user.master_id) {
-    const masterUsers = await MasterAccountService.getInstance().getManagedUsersForMaster(user.master_id);
-    const mUser = masterUsers.find((u: any) => u.is_master_primary);
-    if (mUser?.id) {
-      masterUserId = mUser.id;
-    }
-  }
-
-  const resolvedActiveAccountId = activeAccountId || userId;
-
   const payload = {
-    userId: masterUserId,
-    activeAccountId: resolvedActiveAccountId,
-    masterId: masterId || masterUserId,
-    masterUserId: masterUserId,
-    isMasterUser: true,
+    userId,
     type: 'human',
     iat: nowSeconds,
     exp: expSeconds,
@@ -305,16 +214,18 @@ export async function createHumanSession(userId: string, activeAccountId?: strin
   const sessionHash = crypto.createHash('sha256').update(sessionId).digest('hex');
   const recordId = crypto.randomUUID();
   
-  try {
-    await supabase.from('human_sessions').insert({
-      id: recordId,
-      userId: masterUserId,
-      sessionHash,
-      expiresAt: new Date(expSeconds * 1000).toISOString(),
-      createdAt: new Date().toISOString()
-    });
-  } catch (e) {
-    // ignore if table does not exist
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from('human_sessions').insert({
+    id: recordId,
+    userId,
+    sessionHash,
+    expiresAt: new Date(expSeconds * 1000).toISOString(),
+    createdAt: new Date().toISOString()
+  });
+  
+  if (error) {
+    console.error('[createHumanSession] Failed to persist session to database:', error);
+    throw new Error(`Failed to create session: ${error.message}`);
   }
   
   return token;
@@ -332,72 +243,48 @@ export async function verifyHumanSession(rawSessionId: string): Promise<HumanSes
     }
 
     const supabase = getSupabaseClient();
-    const masterUser = await findUserById(supabase, decoded.userId);
-    if (!masterUser || (masterUser.status !== 'active' && masterUser.status !== 'frozen')) {
+    const user = await findUserById(supabase, decoded.userId);
+    if (!user || user.status !== 'active') {
       return null;
     }
 
-    // Invalidation check: Only revoke if Master credentials explicitly rotated after this session was issued
-    if (masterUser.passwordChangedAt && decoded.iat) {
-      const pwdChangedSeconds = Math.floor(new Date(masterUser.passwordChangedAt).getTime() / 1000);
+    // Invalidation check: Only revoke if user password/credentials were explicitly rotated after this session was issued
+    if (user.passwordChangedAt && decoded.iat) {
+      const pwdChangedSeconds = Math.floor(new Date(user.passwordChangedAt).getTime() / 1000);
       if (decoded.iat < pwdChangedSeconds) {
         return null;
       }
     }
 
-    // Database lookup check to verify the actual human session is still active (if session table exists)
+    // Database lookup check to verify the actual human session is still active
     const sessionHash = crypto.createHash('sha256').update(decoded.sessionId).digest('hex');
-    try {
-      const { data: sessionRecord, error: sessionErr } = await supabase
-        .from('human_sessions')
-        .select('*')
-        .eq('sessionHash', sessionHash)
-        .maybeSingle();
+    const { data: sessionRecord, error: sessionErr } = await supabase
+      .from('human_sessions')
+      .select('*')
+      .eq('sessionHash', sessionHash)
+      .maybeSingle();
 
-      if (!sessionErr && sessionRecord) {
-        // Verify it belongs to the authenticated user
-        if (sessionRecord.userId !== decoded.userId) {
-          return null;
-        }
+    if (sessionErr || !sessionRecord) {
+      console.error('[verifyHumanSession] Session record lookup failed:', { sessionErr, sessionRecordFound: !!sessionRecord });
+      return null; // session does not exist in database (revoked/deleted)
+    }
 
-        // Verify it has not expired
-        if (new Date(sessionRecord.expiresAt).getTime() < Date.now()) {
-          return null;
-        }
-      }
-    } catch (e) {}
-
-    // Load active operating account context
-    const activeAccountId = decoded.activeAccountId || decoded.userId;
-    const activeUser = await findUserById(supabase, activeAccountId);
-    if (!activeUser || (activeUser.status !== 'active' && activeUser.status !== 'frozen')) {
+    // Verify it belongs to the authenticated user
+    if (sessionRecord.userId !== decoded.userId) {
       return null;
     }
 
-    // Resolve or verify master ID
-    let finalMasterId = decoded.masterId || masterUser.master_id;
-    if (!finalMasterId) {
-      try {
-        finalMasterId = await getOrCreateMasterForUser(masterUser, supabase);
-      } catch (e) {}
+    // Verify it has not expired
+    if (new Date(sessionRecord.expiresAt).getTime() < Date.now()) {
+      return null;
     }
 
-    let finalMasterEmail = decoded.masterEmail || masterUser.email;
-
     return {
-      id: masterUser.id, // Human Identity ALWAYS remains the Master
-      userId: masterUser.id, // Root Master human identity ID
-      agentId: activeUser.agentId, // Active account agentId for context
-      email: masterUser.email, // Master human's email
-      emailVerified: Boolean(activeUser.emailVerified === true),
+      id: user.id,
+      agentId: user.agentId,
+      email: user.email,
+      emailVerified: Boolean(user.emailVerified === true),
       type: 'human',
-      masterId: finalMasterId || '',
-      masterEmail: finalMasterEmail,
-      activeAccountId: activeUser.id, // Selected active managed account
-      masterUserId: masterUser.id, // Root Master human identity
-      isMasterUser: true, // Master privileges ALWAYS survive switching
-      status: activeUser.status,
-      status_reason: activeUser.status_reason
     };
   } catch (err: any) {
     console.error('[verifyHumanSession catch error]', err?.message || err);
@@ -585,28 +472,19 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     ? raw.whitelistedNetworks
     : [];
 
-  const meta = MasterAccountService.getInstance().getUserMetadata(raw.id);
-  const masterId = meta?.master_id || raw.master_id || raw.masterId || undefined;
-  const isMasterPrimary = meta?.is_master_primary !== undefined
-    ? meta.is_master_primary
-    : (raw.is_master_primary === true || raw.isMasterPrimary === true || (raw.is_master_primary !== false && !raw.master_id));
-  const ownerEmail = meta?.owner_email || raw.owner_email || raw.ownerEmail || raw.email || '';
-  const status = meta?.status || raw.status || 'active';
-  const status_reason = meta?.status_reason !== undefined ? meta.status_reason : (raw.status_reason || raw.statusReason || undefined);
-
   return {
     id: raw.id,
     agentId: raw.agentId || '',
     verificationStatus: isVerified ? 'verified' : 'not verified',
     verification_status: isVerified ? 'verified' : 'not verified',
     ["verification status"]: isVerified ? 'verified' : 'not verified',
-    email: ownerEmail || raw.email || '',
+    email: raw.email || '',
     emailVerified: isVerified,
     emailVerifiedAt: raw.emailVerifiedAt || raw.email_verified_at || undefined,
     passwordHash: raw.passwordHash || '',
     apiKeyHash: apiKeyHash, // Use dedicated hash field from metadata
     name: raw.name || '',
-    status: status,
+    status: raw.status || 'active',
     avatar: (raw.avatar && typeof raw.avatar === 'string' && raw.avatar.includes('robohash.org'))
       ? raw.avatar.replace(/https?:\/\/robohash\.org/g, config.robohashBaseUrl).replace('?set=set1', '').replace(/([&?])gravatar=[^&]+/g, '')
       : (raw.avatar || '🤖'),
@@ -615,10 +493,6 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     passwordChangedAt: raw.passwordChangedAt,
-    master_id: masterId,
-    is_master_primary: isMasterPrimary,
-    owner_email: ownerEmail,
-    status_reason: status_reason,
   };
 }
 
@@ -662,25 +536,12 @@ export async function getUserById(id: string) {
 }
 
 export async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
-  // Always register in MasterAccountService memory store
-  MasterAccountService.getInstance().setUserMetadata(newUser.id, {
-    id: newUser.id,
-    master_id: newUser.master_id || newUser.id,
-    is_master_primary: newUser.is_master_primary === true,
-    owner_email: newUser.owner_email || newUser.email,
-    status: newUser.status,
-    status_reason: (newUser as any).status_reason || null,
-    apiKeyHash: newUser.apiKeyHash,
-    apiKeyFingerprint: (newUser as any).apiKeyFingerprint
-  });
-
   const camelRecord: Record<string, any> = {
     id: newUser.id,
     agentId: newUser.agentId,
     email: newUser.email,
     passwordHash: newUser.passwordHash,
     apiKeyFingerprint: (newUser as any).apiKeyFingerprint,
-    apiKeyHash: (newUser as any).apiKeyHash || newUser.apiKeyHash,
     name: newUser.name,
     status: newUser.status,
     avatar: newUser.avatar,
@@ -689,51 +550,10 @@ export async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     whitelisted_networks: (newUser as any).whitelisted_networks || [],
     createdAt: newUser.createdAt,
     updatedAt: newUser.updatedAt,
-    master_id: newUser.master_id || null,
-    is_master_primary: newUser.is_master_primary === true,
-    owner_email: newUser.owner_email || null,
   };
 
-  let { error } = await supabase.from('users').insert([camelRecord]);
+  const { error } = await supabase.from('users').insert([camelRecord]);
   if (!error) return;
-
-  // Progressive strip for missing columns in schema cache
-  const strippedRecord: Record<string, any> = {
-    id: newUser.id,
-    agentId: newUser.agentId,
-    email: newUser.email,
-    passwordHash: newUser.passwordHash,
-    apiKeyFingerprint: (newUser as any).apiKeyFingerprint,
-    apiKeyHash: (newUser as any).apiKeyHash || newUser.apiKeyHash,
-    name: newUser.name,
-    status: newUser.status,
-    avatar: newUser.avatar,
-    bio: newUser.bio || DEFAULT_BIO,
-    emailVerified: false,
-    whitelisted_networks: (newUser as any).whitelisted_networks || [],
-    createdAt: newUser.createdAt,
-    updatedAt: newUser.updatedAt,
-  };
-
-  const strippedRes = await supabase.from('users').insert([strippedRecord]);
-  if (!strippedRes.error) return;
-  error = strippedRes.error;
-
-  // If unique constraint error (e.g. email uniqueness in database for sub-account):
-  if (error?.code === '23505' && newUser.is_master_primary === false) {
-    const emailParts = (newUser.email || '').split('@');
-    const localPart = emailParts[0] || 'agent';
-    const domainPart = emailParts[1] || 'aamarva.com';
-    const uniqueStorageEmail = `${localPart}+${newUser.agentId.toLowerCase()}@${domainPart}`;
-
-    const uniqueStrippedRecord = {
-      ...strippedRecord,
-      email: uniqueStorageEmail,
-    };
-    const uniqueRes = await supabase.from('users').insert([uniqueStrippedRecord]);
-    if (!uniqueRes.error) return;
-    error = uniqueRes.error;
-  }
 
   if (error?.code === '23505') {
     throw new Error('An agent or user with this email already exists.');
@@ -761,10 +581,6 @@ export async function registerUser(data: {
   const normalizedEmail = normalizeEmail(data.email || '');
   if (!normalizedEmail || !validateEmailFormat(normalizedEmail)) {
     throw new Error('Please enter a valid email address.');
-  }
-
-  if (!applicationService.isEmailWhitelisted(normalizedEmail)) {
-    throw new Error('REGISTRATION REFUSED: Your email address is not whitelisted. Please submit an application or ask a network controller for authorization.');
   }
 
   const whitelisted_networks = validateAndNormalizeWhitelist(data.whitelisted_networks, clientIp);
@@ -825,92 +641,65 @@ export async function registerUser(data: {
   const apiKeyHash = await hashApiKey(apiKeyToUse);
   const apiKeyFingerprint = computeApiKeyFingerprint(apiKeyToUse);
 
-  let authUserId: string = crypto.randomUUID();
+  let authUserId = crypto.randomUUID();
   let authUserCreated = false;
 
   // 1. Create in Supabase Auth first if possible to satisfy foreign key constraints
   if (supabase) {
-    // Pre-check: If a Master account already exists in the database table, fail early.
-    // Managed accounts sharing this email are ignored as they are part of the same human identity context.
-    const { data: existingMaster } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', normalizedEmail)
-      .eq('is_master_primary', true)
-      .maybeSingle();
-
-    if (existingMaster) {
-      throw new Error('An AAMARVA Master account with this email already exists.');
+    // Pre-check: If user already exists in the database table, fail early with standard duplicate error
+    const { data: existingDbUser } = await supabase.from('users').select('id').eq('email', normalizedEmail).maybeSingle();
+    if (existingDbUser) {
+      throw new Error('An agent or user with this email already exists.');
     }
 
     try {
       if (supabase.auth?.admin?.createUser) {
-        let authUserIdFound: string | null = null;
+        let createdAuthUser: any = null;
+        let authCreateErr: any = null;
 
-        // First, check if the auth user already exists in Supabase Auth
-        try {
+        const attemptCreate = async () => {
+          const res = await supabase.auth.admin.createUser({
+            email: normalizedEmail,
+            password: data.password || crypto.randomBytes(32).toString('hex'),
+            email_confirm: false,
+            user_metadata: {
+              agentId,
+              name: agentName,
+              avatar: assignedAvatar,
+              bio: (data.bio || '').trim() || DEFAULT_BIO
+            },
+            app_metadata: { apiKeyHash, apiKeyFingerprint, emailVerified: false, whitelisted_networks }
+          });
+          createdAuthUser = res.data;
+          authCreateErr = res.error;
+        };
+
+        await attemptCreate();
+
+        // If auth user already exists, but we verified they do NOT exist in the users table, it's an orphaned auth user.
+        // We can safely list users, find their ID, delete them, and retry to make registration completely retry-safe.
+        if (authCreateErr && (authCreateErr.message?.toLowerCase().includes('already exists') || authCreateErr.message?.toLowerCase().includes('already registered'))) {
+          console.warn(`Auth user exists for ${normalizedEmail} but no database record exists. Cleaning up orphaned auth user to allow retry...`);
           const { data: listResult, error: listErr } = await supabase.auth.admin.listUsers({
             perPage: 1000
           });
           if (!listErr && listResult?.users) {
-            const existing = listResult.users.find((u: any) => normalizeEmail(u.email || '') === normalizedEmail);
-            if (existing) {
-              authUserIdFound = existing.id;
-              console.log(`Found existing Supabase auth user ${authUserIdFound} for ${normalizedEmail}. Reusing auth identity.`);
+            const orphaned = listResult.users.find((u: any) => normalizeEmail(u.email || '') === normalizedEmail);
+            if (orphaned) {
+              await supabase.auth.admin.deleteUser(orphaned.id);
+              console.log(`Successfully deleted orphaned auth user ${orphaned.id}`);
+              // Retry creation
+              await attemptCreate();
             }
           }
-        } catch (e) {
-          console.warn('Failed to pre-check existing auth users:', e);
         }
 
-        if (authUserIdFound) {
-          authUserId = authUserIdFound;
+        if (authCreateErr) {
+          throw new Error(`Failed to create auth user: ${authCreateErr.message}`);
+        }
+        if (createdAuthUser?.user?.id) {
+          authUserId = createdAuthUser.user.id;
           authUserCreated = true;
-        } else {
-          let createdAuthUser: any = null;
-          let authCreateErr: any = null;
-
-          const attemptCreate = async () => {
-            const res = await supabase.auth.admin.createUser({
-              email: normalizedEmail,
-              password: data.password || crypto.randomBytes(32).toString('hex'),
-              email_confirm: false,
-              user_metadata: {
-                agentId,
-                name: agentName,
-                avatar: assignedAvatar,
-                bio: (data.bio || '').trim() || DEFAULT_BIO
-              },
-              app_metadata: { apiKeyHash, apiKeyFingerprint, emailVerified: false, whitelisted_networks }
-            });
-            createdAuthUser = res.data;
-            authCreateErr = res.error;
-          };
-
-          await attemptCreate();
-
-          if (authCreateErr && (authCreateErr.message?.toLowerCase().includes('already exists') || authCreateErr.message?.toLowerCase().includes('already registered'))) {
-            const { data: listResult, error: listErr } = await supabase.auth.admin.listUsers({
-              perPage: 1000
-            });
-            if (!listErr && listResult?.users) {
-              const orphaned = listResult.users.find((u: any) => normalizeEmail(u.email || '') === normalizedEmail);
-              if (orphaned) {
-                authUserId = orphaned.id;
-                authUserCreated = true;
-                authCreateErr = null;
-                console.log(`Reused existing Supabase auth user ID ${authUserId} after conflict.`);
-              }
-            }
-          }
-
-          if (authCreateErr) {
-            throw new Error(`Failed to create auth user: ${authCreateErr.message}`);
-          }
-          if (createdAuthUser?.user?.id) {
-            authUserId = createdAuthUser.user.id;
-            authUserCreated = true;
-          }
         }
       } else if (supabase.auth?.signUp) {
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
@@ -944,18 +733,6 @@ export async function registerUser(data: {
     }
   }
 
-  const masterId = authUserId;
-  const masterRecord: MasterAccountRecord = {
-    id: masterId,
-    email: normalizedEmail,
-    passwordHash: passwordHash,
-    plan_status: 'ACTIVE',
-    account_limit: 10,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  await MasterAccountService.getInstance().saveMasterAccount(masterRecord);
-
   const newUser: UserRecord = {
     id: authUserId,
     agentId,
@@ -970,9 +747,7 @@ export async function registerUser(data: {
     emailVerified: false,
     whitelisted_networks,
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    master_id: masterId,
-    is_master_primary: true
+    updatedAt: new Date().toISOString()
   };
 
   try {
@@ -1079,21 +854,9 @@ export async function verifyHumanPasswordCredentials(data: { agentId: string; pa
     throw new Error('Please provide both Agent ID and password.');
   }
 
-  const supabase = getSupabaseClient();
-  let userRecord = await findUserByAgentId(agentId);
-  
-  // If not found by agentId, try looking up by email in users table as fallback
-  if (!userRecord && agentId.includes('@')) {
-    const { data: byEmail } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', normalizeEmail(agentId))
-      .maybeSingle();
-    userRecord = byEmail;
-  }
-
+  const userRecord = await findUserByAgentId(agentId);
   if (!userRecord) {
-    throw new Error('Authentication failed: Agent ID or email not found.');
+    throw new Error('Authentication failed: Agent ID not found.');
   }
 
   const normalizedUser = normalizeUserRecord(userRecord);
@@ -1102,39 +865,13 @@ export async function verifyHumanPasswordCredentials(data: { agentId: string; pa
     throw new Error('This account is currently inactive.');
   }
 
-  let finalPasswordHash = normalizedUser.passwordHash;
-  let hasMaster = false;
-
-  if (normalizedUser.master_id) {
-    // Lookup password in master_accounts
-    const { data: masterAccount } = await supabase
-      .from('master_accounts')
-      .select('*')
-      .eq('id', normalizedUser.master_id)
-      .maybeSingle();
-    if (masterAccount) {
-      finalPasswordHash = masterAccount.passwordHash;
-      hasMaster = true;
-    }
-  }
-
-  if (!finalPasswordHash) {
+  if (!normalizedUser.passwordHash) {
     throw new Error('Password login is not enabled for this account.');
   }
 
-  const isPasswordValid = await comparePassword(password, finalPasswordHash);
+  const isPasswordValid = await comparePassword(password, normalizedUser.passwordHash);
   if (!isPasswordValid) {
     throw new Error('Authentication failed: Invalid password.');
-  }
-
-  // Automatic Migration for legacy users who do not have a master account yet
-  if (!hasMaster) {
-    try {
-      const masterId = await getOrCreateMasterForUser(normalizedUser, supabase);
-      normalizedUser.master_id = masterId;
-    } catch (e) {
-      console.error('[verifyHumanPasswordCredentials] Migration error:', e);
-    }
   }
 
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;

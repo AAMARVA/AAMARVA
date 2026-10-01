@@ -144,16 +144,6 @@ export async function checkDatabaseConnectivity(): Promise<void> {
     if (webauthnError && (webauthnError.code === '42P01' || webauthnError.message?.includes('does not exist'))) {
       console.warn(`👉 SCHEMA NOTICE: WebAuthn tables not found. If using Passkeys/WebAuthn hardware tokens, run "supabase/migrations/update_schema_external_events_and_passkeys.sql" in Supabase SQL Editor.`);
     }
-
-    // Check master_accounts table
-    const { error: masterError } = await supabase.from('master_accounts').select('id, plan_id, plan_status').limit(1);
-    if (masterError) {
-      if (masterError.code === '42P01' || masterError.message?.includes('does not exist')) {
-        console.warn(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase/migrations/add_master_accounts.sql" in your Supabase SQL Editor to enable Multi-Account support.`);
-      } else if (masterError.message?.includes('plan_id') || masterError.message?.includes('plan_status')) {
-        console.warn(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase/migrations/add_master_billing_fields.sql" in your Supabase SQL Editor to support plan states.`);
-      }
-    }
   } catch (err: any) {
     console.warn(`⚠️ Warning connecting to Supabase: ${err?.message || err}`);
   }
