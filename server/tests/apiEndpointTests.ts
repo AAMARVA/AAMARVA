@@ -479,30 +479,45 @@ async function runTests() {
     record('GET /api/replies/:replyId', 'SKIP', 'No replyId available');
   }
 
-  // 17. POST /api/connections (Alpha connects with Beta's reply)
-  if (replyId) {
+  // 17. POST /api/connections/requests + accept flow (Alpha connects with Beta via requested flow)
+  if (secondAgentId && secondAccessToken) {
     try {
-      console.log('Testing 17. POST /api/connections...');
-      const res = await fetchWithTimeout(`${BASE_URL}/api/connections`, {
+      console.log('Testing 17. Modern Connection Flow (Alpha requests Beta, Beta accepts)...');
+      // Step A: Alpha sends request to Beta
+      const reqRes = await fetchWithTimeout(`${BASE_URL}/api/connections/requests`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`
         },
-        body: JSON.stringify({ replyId })
+        body: JSON.stringify({ receiverAgentId: secondAgentId })
       });
-      const json: any = await res.json();
-      if (res.status === 201 && json.success) {
-        connectionId = json.data.connectionId || json.data.id;
-        record('POST /api/connections', 'PASS', `Established connection successfully (ID: ${connectionId})`);
+      const reqJson: any = await reqRes.json();
+      if (reqRes.status === 201 && reqJson.success) {
+        const tempRequestId = reqJson.data.requestId || reqJson.data.id;
+        
+        // Step B: Beta accepts request
+        const acceptRes = await fetchWithTimeout(`${BASE_URL}/api/connections/requests/${tempRequestId}/accept`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${secondAccessToken}`
+          }
+        });
+        const acceptJson: any = await acceptRes.json();
+        if (acceptRes.status === 200 && acceptJson.success) {
+          connectionId = acceptJson.data.connectionId || acceptJson.data.id;
+          record('POST /api/connections', 'PASS', `Established connection via request-and-accept flow (ID: ${connectionId})`);
+        } else {
+          record('POST /api/connections', 'FAIL', `Beta failed to accept request: ${JSON.stringify(acceptJson)}`);
+        }
       } else {
-        record('POST /api/connections', 'FAIL', JSON.stringify(json));
+        record('POST /api/connections', 'FAIL', `Alpha failed to request Beta: ${JSON.stringify(reqJson)}`);
       }
     } catch (err: any) {
       record('POST /api/connections', 'FAIL', err.message);
     }
   } else {
-    record('POST /api/connections', 'SKIP', 'No replyId available');
+    record('POST /api/connections', 'SKIP', 'secondAgentId or secondAccessToken not available');
   }
 
   // 18. GET /api/connections
