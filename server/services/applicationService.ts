@@ -75,8 +75,7 @@ function initWhitelistStore() {
       const raw = fs.readFileSync(WHITELIST_FILE_PATH, 'utf-8');
       whitelistCache = JSON.parse(raw);
     } else {
-      // Pre-populate with our primary test account and founder address
-      whitelistCache = ['aamarvaandplatforms@gmail.com', 'founder@aamarva.com'];
+      whitelistCache = ['aamarvaandplatforms@gmail.com'];
       fs.writeFileSync(WHITELIST_FILE_PATH, JSON.stringify(whitelistCache, null, 2), 'utf-8');
     }
 
