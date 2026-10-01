@@ -825,7 +825,7 @@ export async function registerUser(data: {
   const apiKeyHash = await hashApiKey(apiKeyToUse);
   const apiKeyFingerprint = computeApiKeyFingerprint(apiKeyToUse);
 
-  let authUserId = crypto.randomUUID();
+  let authUserId: string = crypto.randomUUID();
   let authUserCreated = false;
 
   // 1. Create in Supabase Auth first if possible to satisfy foreign key constraints
@@ -845,52 +845,72 @@ export async function registerUser(data: {
 
     try {
       if (supabase.auth?.admin?.createUser) {
-        let createdAuthUser: any = null;
-        let authCreateErr: any = null;
+        let authUserIdFound: string | null = null;
 
-        const attemptCreate = async () => {
-          const res = await supabase.auth.admin.createUser({
-            email: normalizedEmail,
-            password: data.password || crypto.randomBytes(32).toString('hex'),
-            email_confirm: false,
-            user_metadata: {
-              agentId,
-              name: agentName,
-              avatar: assignedAvatar,
-              bio: (data.bio || '').trim() || DEFAULT_BIO
-            },
-            app_metadata: { apiKeyHash, apiKeyFingerprint, emailVerified: false, whitelisted_networks }
-          });
-          createdAuthUser = res.data;
-          authCreateErr = res.error;
-        };
-
-        await attemptCreate();
-
-        // If auth user already exists, but we verified they do NOT exist in the users table, it's an orphaned auth user.
-        // We can safely list users, find their ID, delete them, and retry to make registration completely retry-safe.
-        if (authCreateErr && (authCreateErr.message?.toLowerCase().includes('already exists') || authCreateErr.message?.toLowerCase().includes('already registered'))) {
-          console.warn(`Auth user exists for ${normalizedEmail} but no database record exists. Cleaning up orphaned auth user to allow retry...`);
+        // First, check if the auth user already exists in Supabase Auth
+        try {
           const { data: listResult, error: listErr } = await supabase.auth.admin.listUsers({
             perPage: 1000
           });
           if (!listErr && listResult?.users) {
-            const orphaned = listResult.users.find((u: any) => normalizeEmail(u.email || '') === normalizedEmail);
-            if (orphaned) {
-              await supabase.auth.admin.deleteUser(orphaned.id);
-              console.log(`Successfully deleted orphaned auth user ${orphaned.id}`);
-              // Retry creation
-              await attemptCreate();
+            const existing = listResult.users.find((u: any) => normalizeEmail(u.email || '') === normalizedEmail);
+            if (existing) {
+              authUserIdFound = existing.id;
+              console.log(`Found existing Supabase auth user ${authUserIdFound} for ${normalizedEmail}. Reusing auth identity.`);
             }
           }
+        } catch (e) {
+          console.warn('Failed to pre-check existing auth users:', e);
         }
 
-        if (authCreateErr) {
-          throw new Error(`Failed to create auth user: ${authCreateErr.message}`);
-        }
-        if (createdAuthUser?.user?.id) {
-          authUserId = createdAuthUser.user.id;
+        if (authUserIdFound) {
+          authUserId = authUserIdFound;
           authUserCreated = true;
+        } else {
+          let createdAuthUser: any = null;
+          let authCreateErr: any = null;
+
+          const attemptCreate = async () => {
+            const res = await supabase.auth.admin.createUser({
+              email: normalizedEmail,
+              password: data.password || crypto.randomBytes(32).toString('hex'),
+              email_confirm: false,
+              user_metadata: {
+                agentId,
+                name: agentName,
+                avatar: assignedAvatar,
+                bio: (data.bio || '').trim() || DEFAULT_BIO
+              },
+              app_metadata: { apiKeyHash, apiKeyFingerprint, emailVerified: false, whitelisted_networks }
+            });
+            createdAuthUser = res.data;
+            authCreateErr = res.error;
+          };
+
+          await attemptCreate();
+
+          if (authCreateErr && (authCreateErr.message?.toLowerCase().includes('already exists') || authCreateErr.message?.toLowerCase().includes('already registered'))) {
+            const { data: listResult, error: listErr } = await supabase.auth.admin.listUsers({
+              perPage: 1000
+            });
+            if (!listErr && listResult?.users) {
+              const orphaned = listResult.users.find((u: any) => normalizeEmail(u.email || '') === normalizedEmail);
+              if (orphaned) {
+                authUserId = orphaned.id;
+                authUserCreated = true;
+                authCreateErr = null;
+                console.log(`Reused existing Supabase auth user ID ${authUserId} after conflict.`);
+              }
+            }
+          }
+
+          if (authCreateErr) {
+            throw new Error(`Failed to create auth user: ${authCreateErr.message}`);
+          }
+          if (createdAuthUser?.user?.id) {
+            authUserId = createdAuthUser.user.id;
+            authUserCreated = true;
+          }
         }
       } else if (supabase.auth?.signUp) {
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
