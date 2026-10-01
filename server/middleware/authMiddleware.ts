@@ -5,6 +5,7 @@ import {
   verifyHumanSession,
   computeApiKeyFingerprint,
   compareApiKey,
+  findUserById,
   UserTokenPayload,
   HUMAN_SESSION_COOKIE_NAME,
 } from '../authService.js';
@@ -239,22 +240,67 @@ export async function requireHumanSession(req: AuthenticatedRequest, res: Respon
 
     // Priority 7: Authoritative Status Check (Banned/Suspended users cannot use existing sessions)
     const supabase = getSupabaseClient();
-    const { data: user, error: statusError } = await supabase
-      .from('users')
-      .select('status')
-      .eq('id', payload.id)
-      .maybeSingle();
+    const activeAccountId = payload.activeAccountId || payload.id;
+    const activeUser = await findUserById(supabase, activeAccountId);
 
-    if (statusError || !user || user.status !== 'active') {
+    if (!activeUser || (activeUser.status !== 'active' && activeUser.status !== 'frozen')) {
       res.status(403).json({
         success: false,
         error: {
           code: 'ACCOUNT_ENFORCEMENT',
-          message: `This account is currently ${user?.status || 'inactive'}. Access denied.`,
+          message: `This account is currently ${activeUser?.status || 'inactive'}. Access denied.`,
         },
       });
       return;
     }
+
+    // Dynamic Plan Expiration & Master User Check
+    let planStatus = 'ACTIVE';
+    const isOperatingMasterAccount = activeUser.is_master_primary === true || activeUser.id === (payload.masterUserId || payload.id);
+
+    if (payload.masterId) {
+      const { MasterAccountService } = await import('../services/masterAccountService.js');
+      const masterAcct = await MasterAccountService.getInstance().getMasterAccount(payload.masterId);
+
+      if (masterAcct) {
+        planStatus = masterAcct.plan_status || 'ACTIVE';
+
+        // Auto-expiration based on plan_expires_at
+        if (planStatus === 'ACTIVE' && masterAcct.plan_expires_at && new Date(masterAcct.plan_expires_at).getTime() <= Date.now()) {
+          planStatus = 'EXPIRED';
+          try {
+            const { BillingEntitlementService } = await import('../services/billingService.js');
+            await BillingEntitlementService.getInstance().expireMasterPlan(payload.masterId);
+          } catch (e) {
+            console.error('[requireHumanSession] Auto-expiration failed:', e);
+          }
+        }
+      }
+    }
+
+    // Enforce Frozen Restrictions (Only on sub-accounts, NEVER block the Master user identity context!)
+    if (!isOperatingMasterAccount && (activeUser.status === 'frozen' || planStatus === 'EXPIRED')) {
+      const requestedPath = req.baseUrl + req.path;
+      const isGetAgentsMe = requestedPath.endsWith('/agents/me') && req.method === 'GET';
+      const isAllowedManagementRoute = requestedPath.endsWith('/auth/master/accounts') || requestedPath.endsWith('/auth/master/switch') || requestedPath.includes('/auth/master/plan');
+
+      if (!isGetAgentsMe && !isAllowedManagementRoute) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'ACCOUNT_FROZEN',
+            message: 'This action is disabled because your Master plan is expired. Please ask the Master account owner to renew the plan.',
+          },
+        });
+        return;
+      }
+    }
+
+    // Attach active account status
+    req.user.status = activeUser.status;
+    req.user.activeAccountId = activeUser.id;
+    // IMPORTANT: req.user.isMasterUser reflects the AUTHENTICATED HUMAN, preserved from payload.
+    // It is NOT overwritten by the active account's Master status here.
 
     next();
   } catch (err: any) {
@@ -297,13 +343,22 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
       const fingerprint = computeApiKeyFingerprint(rawApiKey);
 
       // 1. Direct O(1) indexed lookup in public.users by apiKeyFingerprint
-      const { data: userRecord, error: userDbErr } = await supabase
+      let { data: userRecord, error: userDbErr } = await supabase
         .from('users')
         .select('*')
         .eq('apiKeyFingerprint', fingerprint)
         .maybeSingle();
 
-      if (userDbErr || !userRecord || userRecord.status !== 'active') {
+      if (!userRecord) {
+        const { MasterAccountService } = await import('../services/masterAccountService.js');
+        const meta = MasterAccountService.getInstance().getUserByFingerprint(fingerprint);
+        if (meta) {
+          const { findUserById } = await import('../authService.js');
+          userRecord = await findUserById(supabase, meta.id);
+        }
+      }
+
+      if (!userRecord) {
         res.status(401).json({
           success: false,
           error: {
@@ -314,22 +369,51 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
         return;
       }
 
-      // 2. Direct O(1) Auth user lookup by userRecord.id
-      const { data: authUserData, error: authErr } = await supabase.auth.admin.getUserById(userRecord.id);
-      const matchedAuthUser = authUserData?.user;
-
-      if (authErr || !matchedAuthUser) {
-        res.status(401).json({
+      if (userRecord.status === 'deleted') {
+        res.status(403).json({
           success: false,
           error: {
-            code: 'UNAUTHORIZED',
-            message: 'Invalid agent API key.',
+            code: 'ACCOUNT_DELETED',
+            message: 'Agent account has been deleted.',
           },
         });
         return;
       }
 
-      const authoritativeHash = matchedAuthUser.app_metadata?.apiKeyHash;
+      if (userRecord.status === 'frozen') {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'ACCOUNT_FROZEN',
+            message: 'Agent account is frozen.',
+          },
+        });
+        return;
+      }
+
+      if (userRecord.status !== 'active') {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'ACCOUNT_ENFORCEMENT',
+            message: `Agent account is ${userRecord.status}. Access denied.`,
+          },
+        });
+        return;
+      }
+
+      // 2. Direct O(1) Auth user lookup by userRecord.id with fallback to metadata store
+      const { MasterAccountService } = await import('../services/masterAccountService.js');
+      const masterService = MasterAccountService.getInstance();
+      const meta = masterService.getUserMetadata(userRecord.id) || await masterService.refreshUserMetadata(userRecord.id);
+      let authoritativeHash = (userRecord as any).apiKeyHash || (userRecord as any).apiKey_hash || meta?.apiKeyHash;
+      try {
+        const { data: authUserData } = await supabase.auth.admin.getUserById(userRecord.id);
+        if (authUserData?.user?.app_metadata?.apiKeyHash) {
+          authoritativeHash = authUserData.user.app_metadata.apiKeyHash;
+        }
+      } catch (e) {}
+
       if (!authoritativeHash) {
         res.status(401).json({
           success: false,
@@ -351,6 +435,28 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
           },
         });
         return;
+      }
+
+      // Check Master plan entitlement for Slaves (stale active Slave record cannot bypass expired Master plan)
+      const masterId = userRecord.master_id || meta?.master_id;
+      const isMasterPrimary = userRecord.is_master_primary === true || meta?.is_master_primary === true;
+
+      if (masterId && !isMasterPrimary) {
+        const masterAcct = await masterService.getMasterAccount(masterId);
+        if (masterAcct) {
+          const isExpired = masterAcct.plan_status === 'EXPIRED' ||
+            (masterAcct.plan_expires_at && new Date(masterAcct.plan_expires_at).getTime() <= Date.now());
+          if (isExpired) {
+            res.status(403).json({
+              success: false,
+              error: {
+                code: 'ACCOUNT_FROZEN',
+                message: 'Agent account is frozen because the Master plan is expired.',
+              },
+            });
+            return;
+          }
+        }
       }
 
       const clientIp = getClientIp(req);
@@ -422,15 +528,73 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
       .eq('id', payload.id)
       .maybeSingle();
 
-    if (error || !user || user.status !== 'active') {
+    if (error || !user) {
+      res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Invalid agent token.',
+        },
+      });
+      return;
+    }
+
+    if (user.status === 'deleted') {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_DELETED',
+          message: 'Agent account has been deleted.',
+        },
+      });
+      return;
+    }
+
+    if (user.status === 'frozen') {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_FROZEN',
+          message: 'Agent account is frozen.',
+        },
+      });
+      return;
+    }
+
+    if (user.status !== 'active') {
       res.status(403).json({
         success: false,
         error: {
           code: 'ACCOUNT_ENFORCEMENT',
-          message: `Agent account is currently ${user?.status || 'inactive'}. Access denied.`,
+          message: `Agent account is currently ${user.status}. Access denied.`,
         },
       });
       return;
+    }
+
+    // Check Master plan entitlement for Slaves (stale active Slave record cannot bypass expired Master plan)
+    const { MasterAccountService } = await import('../services/masterAccountService.js');
+    const masterService = MasterAccountService.getInstance();
+    const meta = masterService.getUserMetadata(user.id) || await masterService.refreshUserMetadata(user.id);
+    const masterId = (user as any).master_id || meta?.master_id;
+    const isMasterPrimary = (user as any).is_master_primary === true || meta?.is_master_primary === true;
+
+    if (masterId && !isMasterPrimary) {
+      const masterAcct = await masterService.getMasterAccount(masterId);
+      if (masterAcct) {
+        const isExpired = masterAcct.plan_status === 'EXPIRED' ||
+          (masterAcct.plan_expires_at && new Date(masterAcct.plan_expires_at).getTime() <= Date.now());
+        if (isExpired) {
+          res.status(403).json({
+            success: false,
+            error: {
+              code: 'ACCOUNT_FROZEN',
+              message: 'Agent account is frozen because the Master plan is expired.',
+            },
+          });
+          return;
+        }
+      }
     }
 
     const clientIp = getClientIp(req);
@@ -621,6 +785,34 @@ export async function requireHumanSecretsAuth(req: AuthenticatedRequest, res: Re
       },
     });
   }
+}
+
+export function rejectIfFrozen(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  if (req.user?.status === 'frozen') {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'ACCOUNT_FROZEN',
+        message: 'This action is disabled because the Master plan has expired. Please renew the plan to reactivate the account.',
+      },
+    });
+    return;
+  }
+  next();
+}
+
+export function requireMasterOnly(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  if (!req.user || req.authType !== 'human' || req.user.isMasterUser !== true) {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'MASTER_ONLY',
+        message: 'Access denied. This operation requires a Master Account session.'
+      }
+    });
+    return;
+  }
+  next();
 }
 
 

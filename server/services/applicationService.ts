@@ -380,11 +380,37 @@ export const applicationService = {
   },
 
   /**
-   * Check if an email is whitelisted
+   * Check if an email is whitelisted (with Supabase database fallback)
    */
-  isEmailWhitelisted(email: string): boolean {
+  async isEmailWhitelisted(email: string): Promise<boolean> {
     if (!email) return false;
-    return whitelistCache.map(e => e.toLowerCase().trim()).includes(email.toLowerCase().trim());
+    const clean = email.toLowerCase().trim();
+    if (whitelistCache.map(e => e.toLowerCase().trim()).includes(clean)) {
+      return true;
+    }
+
+    try {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('registration_whitelist')
+          .select('email')
+          .ilike('email', clean)
+          .limit(1);
+
+        if (!error && data && data.length > 0) {
+          if (!whitelistCache.includes(clean)) {
+            whitelistCache.push(clean);
+            saveWhitelistToStore();
+          }
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('[WHITELIST_SERVICE] Supabase whitelist lookup error:', e);
+    }
+
+    return false;
   },
 
   /**

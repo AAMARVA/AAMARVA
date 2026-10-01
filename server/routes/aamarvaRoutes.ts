@@ -51,6 +51,8 @@ import {
 import { getClientIp } from '../utils/networkWhitelist.js';
 import { 
   requireHumanSession,
+  rejectIfFrozen,
+  requireMasterOnly,
   rejectAgentCredentials,
   requireAgentAuth,
   requireAgent,
@@ -141,7 +143,7 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
     
     // Whitelist check
     const emailToRegister = req.body?.email;
-    if (!emailToRegister || !applicationService.isEmailWhitelisted(emailToRegister)) {
+    if (!emailToRegister || !(await applicationService.isEmailWhitelisted(emailToRegister))) {
       return res.status(403).json({
         success: false,
         error: {
@@ -188,7 +190,10 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
         verificationStatus: result.user.verificationStatus,
         apiKey: result.apiKey,
         tokens: result.tokens,
-        user: result.user,
+        user: {
+          ...result.user,
+          isMasterUser: true // Registering always creates a Master
+        },
       }
     });
   } catch (err: any) {
@@ -296,7 +301,10 @@ router.post(['/auth/webauthn/verify-setup', '/v1/auth/webauthn/verify-setup'], h
     res.json({
       success: true,
       data: {
-        user: safeUser,
+        user: {
+          ...safeUser,
+          isMasterUser: userRecord.is_master_primary === true
+        },
       }
     });
   } catch (err: any) {
@@ -328,7 +336,10 @@ router.post(['/auth/webauthn/verify-login', '/v1/auth/webauthn/verify-login'], h
     res.json({
       success: true,
       data: {
-        user: safeUser,
+        user: {
+          ...safeUser,
+          isMasterUser: userRecord.is_master_primary === true
+        },
       }
     });
   } catch (err: any) {
@@ -358,7 +369,7 @@ router.get(['/auth/webauthn/passkeys', '/v1/auth/webauthn/passkeys'], requireHum
 });
 
 // 2e. POST /api/auth/webauthn/register-options (Start adding a new passkey from dashboard)
-router.post(['/auth/webauthn/register-options', '/v1/auth/webauthn/register-options'], requireHumanSession, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/auth/webauthn/register-options', '/v1/auth/webauthn/register-options'], requireHumanSession, rejectIfFrozen, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { pendingToken, options } = await generateRegisterOptionsForUser(req.user! as any, req);
     res.json({ success: true, pendingToken, options });
@@ -368,7 +379,7 @@ router.post(['/auth/webauthn/register-options', '/v1/auth/webauthn/register-opti
 });
 
 // 2f. POST /api/auth/webauthn/register-verify (Complete adding a new passkey from dashboard)
-router.post(['/auth/webauthn/register-verify', '/v1/auth/webauthn/register-verify'], requireHumanSession, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/auth/webauthn/register-verify', '/v1/auth/webauthn/register-verify'], requireHumanSession, rejectIfFrozen, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { pendingToken, credentialResponse, friendlyName } = req.body;
     if (!pendingToken || !credentialResponse) {
@@ -383,7 +394,7 @@ router.post(['/auth/webauthn/register-verify', '/v1/auth/webauthn/register-verif
 });
 
 // 2d. DELETE /api/auth/webauthn/passkeys/:passkeyId (Delete passkey)
-router.delete(['/auth/webauthn/passkeys/:passkeyId', '/v1/auth/webauthn/passkeys/:passkeyId'], requireHumanSession, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
+router.delete(['/auth/webauthn/passkeys/:passkeyId', '/v1/auth/webauthn/passkeys/:passkeyId'], requireHumanSession, rejectIfFrozen, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const passkeyId = String(req.params.passkeyId);
     await deleteWebAuthnCredential(passkeyId, req.user!.id);
@@ -509,6 +520,10 @@ router.post(['/auth/logout', '/v1/auth/logout'], async (req: Request, res: Respo
   }
 });
 
+// ==============================================================================
+// 4b. MULTI-ACCOUNT MASTER MANAGEMENT ROUTE LAYER
+// ==============================================================================
+
 // 4c. GET /api/auth/network-whitelist (View account IP access perimeter - Human only)
 router.get(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHumanSession, securityLayer('auth_login'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -544,7 +559,7 @@ router.get(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHum
 });
 
 // 4d. PUT /api/auth/network-whitelist (Update account IP access perimeter - Human only with Self-Lockout Protection)
-router.put(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHumanSession, securityLayer('auth_login'), async (req: AuthenticatedRequest, res: Response) => {
+router.put(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHumanSession, rejectIfFrozen, securityLayer('auth_login'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const rawNetworks = req.body?.whitelisted_networks || req.body?.networks || req.body?.whitelist;
     const clientIp = getClientIp(req);
@@ -841,7 +856,7 @@ function isValidBase64(str: string): boolean {
 }
 
 // 5e. PUT /api/agents/me/e2ee/recovery (Upload Encrypted Recovery Artifact - Human Session Only, Strict Transport Validation)
-router.put('/agents/me/e2ee/recovery', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+router.put('/agents/me/e2ee/recovery', requireHumanSession, rejectIfFrozen, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { recoveryVault } = req.body;
     if (!recoveryVault || typeof recoveryVault !== 'object') {
@@ -4308,7 +4323,7 @@ router.get('/applications/check-whitelist', async (req: Request, res: Response) 
     if (!email) {
       return res.json({ success: true, whitelisted: false });
     }
-    const isWhitelisted = applicationService.isEmailWhitelisted(email);
+    const isWhitelisted = await applicationService.isEmailWhitelisted(email);
     return res.json({ success: true, whitelisted: isWhitelisted, email });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'Failed to check whitelist status.' });

@@ -1043,6 +1043,13 @@ async function runTests() {
     console.log(`${statusTag} ${r.endpoint} -> ${r.details}`);
   }
   console.log('============================================================\n');
+
+  try {
+    const { runMultiAccountTests } = await import('./multiAccountTests.js');
+    await runMultiAccountTests();
+  } catch (err: any) {
+    console.error('Failed to run Multi-Account tests:', err.message);
+  }
 }
 
 runTests();
