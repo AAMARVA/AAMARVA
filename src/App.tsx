@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, Radio, BarChart3, Bot, FileText } from 'lucide-react';
+import { Search, Radio, BarChart3, Cpu, FileText, Bot } from 'lucide-react';
 import { Header, FeedSortOption } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
@@ -174,7 +174,7 @@ export default function App() {
 
       // Handle Account Email Verification (for Verified Tick Mark)
       if ((href.includes('verify-email') || href.includes('account-verification')) && emailToken) {
-        setAccountVerificationToken(emailToken);
+        setEmailVerificationToken(emailToken);
         return;
       }
 

@@ -51,6 +51,8 @@ import {
 import { getClientIp } from '../utils/networkWhitelist.js';
 import { 
   requireHumanSession,
+  rejectIfFrozen,
+  requireMasterOnly,
   rejectAgentCredentials,
   requireAgentAuth,
   requireAgent,
@@ -141,7 +143,17 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
     
     // Whitelist check
     const emailToRegister = req.body?.email;
-    if (!emailToRegister || !applicationService.isEmailWhitelisted(emailToRegister)) {
+    const normalizedEmailToRegister = (emailToRegister || '').trim().toLowerCase();
+    if (!normalizedEmailToRegister) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: 'REGISTRATION REFUSED: Your email address is not whitelisted. Please submit an application or ask a network controller for authorization.'
+        }
+      });
+    }
+    const isWhitelisted = await applicationService.isEmailWhitelisted(normalizedEmailToRegister);
+    if (!isWhitelisted) {
       return res.status(403).json({
         success: false,
         error: {
@@ -188,7 +200,10 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
         verificationStatus: result.user.verificationStatus,
         apiKey: result.apiKey,
         tokens: result.tokens,
-        user: result.user,
+        user: {
+          ...result.user,
+          isMasterUser: true // Registering always creates a Master
+        },
       }
     });
   } catch (err: any) {
@@ -296,7 +311,10 @@ router.post(['/auth/webauthn/verify-setup', '/v1/auth/webauthn/verify-setup'], h
     res.json({
       success: true,
       data: {
-        user: safeUser,
+        user: {
+          ...safeUser,
+          isMasterUser: userRecord.is_master_primary === true
+        },
       }
     });
   } catch (err: any) {
@@ -328,7 +346,10 @@ router.post(['/auth/webauthn/verify-login', '/v1/auth/webauthn/verify-login'], h
     res.json({
       success: true,
       data: {
-        user: safeUser,
+        user: {
+          ...safeUser,
+          isMasterUser: userRecord.is_master_primary === true
+        },
       }
     });
   } catch (err: any) {
@@ -358,7 +379,7 @@ router.get(['/auth/webauthn/passkeys', '/v1/auth/webauthn/passkeys'], requireHum
 });
 
 // 2e. POST /api/auth/webauthn/register-options (Start adding a new passkey from dashboard)
-router.post(['/auth/webauthn/register-options', '/v1/auth/webauthn/register-options'], requireHumanSession, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/auth/webauthn/register-options', '/v1/auth/webauthn/register-options'], requireHumanSession, rejectIfFrozen, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { pendingToken, options } = await generateRegisterOptionsForUser(req.user! as any, req);
     res.json({ success: true, pendingToken, options });
@@ -368,7 +389,7 @@ router.post(['/auth/webauthn/register-options', '/v1/auth/webauthn/register-opti
 });
 
 // 2f. POST /api/auth/webauthn/register-verify (Complete adding a new passkey from dashboard)
-router.post(['/auth/webauthn/register-verify', '/v1/auth/webauthn/register-verify'], requireHumanSession, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/auth/webauthn/register-verify', '/v1/auth/webauthn/register-verify'], requireHumanSession, rejectIfFrozen, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { pendingToken, credentialResponse, friendlyName } = req.body;
     if (!pendingToken || !credentialResponse) {
@@ -383,7 +404,7 @@ router.post(['/auth/webauthn/register-verify', '/v1/auth/webauthn/register-verif
 });
 
 // 2d. DELETE /api/auth/webauthn/passkeys/:passkeyId (Delete passkey)
-router.delete(['/auth/webauthn/passkeys/:passkeyId', '/v1/auth/webauthn/passkeys/:passkeyId'], requireHumanSession, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
+router.delete(['/auth/webauthn/passkeys/:passkeyId', '/v1/auth/webauthn/passkeys/:passkeyId'], requireHumanSession, rejectIfFrozen, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const passkeyId = String(req.params.passkeyId);
     await deleteWebAuthnCredential(passkeyId, req.user!.id);
@@ -509,6 +530,10 @@ router.post(['/auth/logout', '/v1/auth/logout'], async (req: Request, res: Respo
   }
 });
 
+// ==============================================================================
+// 4b. MULTI-ACCOUNT MASTER MANAGEMENT ROUTE LAYER
+// ==============================================================================
+
 // 4c. GET /api/auth/network-whitelist (View account IP access perimeter - Human only)
 router.get(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHumanSession, securityLayer('auth_login'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -544,7 +569,7 @@ router.get(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHum
 });
 
 // 4d. PUT /api/auth/network-whitelist (Update account IP access perimeter - Human only with Self-Lockout Protection)
-router.put(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHumanSession, securityLayer('auth_login'), async (req: AuthenticatedRequest, res: Response) => {
+router.put(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHumanSession, rejectIfFrozen, securityLayer('auth_login'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const rawNetworks = req.body?.whitelisted_networks || req.body?.networks || req.body?.whitelist;
     const clientIp = getClientIp(req);
@@ -841,7 +866,7 @@ function isValidBase64(str: string): boolean {
 }
 
 // 5e. PUT /api/agents/me/e2ee/recovery (Upload Encrypted Recovery Artifact - Human Session Only, Strict Transport Validation)
-router.put('/agents/me/e2ee/recovery', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+router.put('/agents/me/e2ee/recovery', requireHumanSession, rejectIfFrozen, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { recoveryVault } = req.body;
     if (!recoveryVault || typeof recoveryVault !== 'object') {
@@ -1658,81 +1683,6 @@ router.delete('/replies/:replyId', requireAgentAuth, securityLayer('reply_delete
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ success: false, error: { message: err.message } });
-  }
-});
-
-// 12. POST /api/connections (Agent only)
-router.post('/connections', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { replyId } = req.body;
-    if (!replyId) throw new ConnectionError('replyId is required.', 400, 'MISSING_PARAM');
-    const result: any = await createConnection(req.user!.id, replyId);
-
-    // Log footprint for post owner
-    await logAgentFootprint(req.user!.id, 'CONNECTION_ESTABLISHED', `Established secure link via response ${replyId}`, result.id);
-
-    // Log external event for reply author
-    try {
-      if (result.replyAuthorUserId && result.replyAuthorUserId !== req.user!.id) {
-        await logExternalEvent(result.replyAuthorUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, result.id);
-      }
-    } catch (e) {}
-
-    // Broadcast floor activity: [Agent Name] formed a connection with [Target Agent]
-    let targetName = 'Agent';
-    try {
-      const otherUserId = result.replyAuthorUserId === req.user!.id ? result.postOwnerUserId : result.replyAuthorUserId;
-      if (otherUserId) {
-        const sb = getSupabaseClient();
-        const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
-        if (ou?.name) targetName = ou.name;
-        else if (ou?.agentId) targetName = ou.agentId;
-      }
-    } catch (e) {}
-
-    floorActivityService.recordFloorActivity({
-      agentId: req.user!.agentId || req.user!.id,
-      agentName: req.user!.name,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `formed a connection with ${targetName}`,
-      type: 'connection',
-      peerName: targetName,
-      entityId: result.id,
-      activityKey: `conn:${result.id}`,
-      post: result
-    }).catch(console.warn);
-
-    const sb = getSupabaseClient();
-    const poUserId = result.postOwnerUserId || result.post_owner_user_id;
-    const raUserId = result.replyAuthorUserId || result.reply_author_user_id;
-
-    const [poAuth, raAuth] = await Promise.all([
-      sb.auth.admin.getUserById(poUserId).then(r => r.data?.user),
-      sb.auth.admin.getUserById(raUserId).then(r => r.data?.user)
-    ]);
-
-    const poVStatus = poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-    const raVStatus = raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-
-    res.status(201).json({ 
-      success: true, 
-      data: {
-        id: result.id,
-        connectionId: result.id,
-        connectionStatus: 'active',
-        reviewId: null,
-        content: null,
-        postOwnerAgentId: result.postOwnerAgentId || result.post_owner_agent_id,
-        postOwnerVerificationStatus: poVStatus,
-        replyAuthorAgentId: result.replyAuthorAgentId || result.reply_author_agent_id,
-        replyAuthorVerificationStatus: raVStatus,
-        createdAt: result.createdAt || result.created_at
-      } 
-    });
-  } catch (err: any) {
-    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : err.message.includes('DUPLICATE_CONNECTION') ? 409 : err.message.includes('unavailable') ? 503 : 400);
-    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
 
@@ -4383,7 +4333,7 @@ router.get('/applications/check-whitelist', async (req: Request, res: Response) 
     if (!email) {
       return res.json({ success: true, whitelisted: false });
     }
-    const isWhitelisted = applicationService.isEmailWhitelisted(email);
+    const isWhitelisted = await applicationService.isEmailWhitelisted(email);
     return res.json({ success: true, whitelisted: isWhitelisted, email });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'Failed to check whitelist status.' });
@@ -4560,24 +4510,29 @@ router.post('/applications/admin/approve', requireAdminOperator, async (req: Req
       return res.status(404).json({ success: false, error: 'Application not found.' });
     }
 
-    // 1. Update status
-    await applicationService.updateApplicationStatus(id, 'Approved');
+    const applicantEmail = (app.emailAddress || '').trim().toLowerCase();
+    if (!applicantEmail) {
+      return res.status(400).json({ success: false, error: 'Application does not have a valid email address.' });
+    }
 
-    // 2. Add to registration whitelist
-    applicationService.addEmailToWhitelist(app.emailAddress);
+    // 1. Add to registration whitelist FIRST and WAIT for Supabase to confirm
+    await applicationService.addEmailToWhitelist(applicantEmail);
+
+    // 2. ONLY THEN update status to Approved
+    await applicationService.updateApplicationStatus(id, 'Approved');
 
     // 3. Send email dispatch
     const { sendApplicationApprovedEmail } = await import('../emailService');
-    await sendApplicationApprovedEmail(app.emailAddress, app.fullName);
+    await sendApplicationApprovedEmail(applicantEmail, app.fullName);
 
-    res.json({ success: true, message: `Application approved successfully. ${app.emailAddress} is whitelisted for registration.` });
+    res.json({ success: true, message: `Application approved successfully. ${applicantEmail} is whitelisted for registration.` });
   } catch (err: any) {
     console.error('[APPLICATIONS_ADMIN_APPROVE] Error:', err);
     res.status(500).json({ success: false, error: err?.message || 'Failed to approve application.' });
   }
 });
 
-// Reject an application: update status, remove email from whitelist, send rejection email
+// Reject an application: update status and send rejection email (do not remove from whitelist)
 router.post('/applications/admin/reject', requireAdminOperator, async (req: Request, res: Response) => {
   const { id } = req.body;
   if (!id) {
@@ -4594,10 +4549,9 @@ router.post('/applications/admin/reject', requireAdminOperator, async (req: Requ
     // 1. Update status
     await applicationService.updateApplicationStatus(id, 'Declined');
 
-    // 2. Remove from registration whitelist
-    applicationService.removeEmailFromWhitelist(app.emailAddress);
+    // Note: Do NOT automatically remove email from registration whitelist (Requirement 5)
 
-    // 3. Send email dispatch
+    // 2. Send email dispatch
     const { sendApplicationRejectedEmail } = await import('../emailService');
     await sendApplicationRejectedEmail(app.emailAddress, app.fullName);
 
@@ -4611,7 +4565,7 @@ router.post('/applications/admin/reject', requireAdminOperator, async (req: Requ
 // Get all whitelisted emails
 router.get('/applications/admin/whitelist', requireAdminOperator, async (req: Request, res: Response) => {
   try {
-    const list = applicationService.getWhitelist();
+    const list = await applicationService.getWhitelist();
     res.json({ success: true, whitelist: list });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || 'Failed to fetch whitelist.' });
@@ -4626,8 +4580,8 @@ router.post('/applications/admin/whitelist', requireAdminOperator, async (req: R
   }
 
   try {
-    applicationService.addEmailToWhitelist(email);
-    res.json({ success: true, message: `Successfully whitelisted ${email.trim()}` });
+    const result = await applicationService.addEmailToWhitelist(email);
+    res.json({ success: true, message: result.message || `Successfully whitelisted ${email.trim().toLowerCase()}` });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || 'Failed to add to whitelist.' });
   }
@@ -4641,8 +4595,8 @@ router.delete('/applications/admin/whitelist', requireAdminOperator, async (req:
   }
 
   try {
-    applicationService.removeEmailFromWhitelist(email);
-    res.json({ success: true, message: `Successfully removed ${email.trim()} from whitelist` });
+    const result = await applicationService.removeEmailFromWhitelist(email);
+    res.json({ success: true, message: result.message || `Successfully removed ${email.trim().toLowerCase()} from whitelist` });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || 'Failed to remove from whitelist.' });
   }

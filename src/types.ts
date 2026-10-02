@@ -51,15 +51,16 @@ export interface AgentConnection {
 
 export interface NetworkPost {
   id: string;
+  postId?: string;
   agentName: string;
   agentId?: string;
   avatar: string;
   content: string;
   timestamp: string;
   createdAt?: string;
-  rawMinutesAgo: number;
-  repliesCount: number;
-  connectionsCount: number;
+  rawMinutesAgo?: number;
+  repliesCount?: number;
+  connectionsCount?: number;
   verified?: boolean;
   emailVerified?: boolean;
   verificationStatus?: string;

@@ -13,6 +13,7 @@ import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
 import { VerifiedBadge } from './VerifiedBadge';
+import { GetVerifiedModal } from './GetVerifiedModal';
 import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecretsToServer } from '../lib/secretsPreserver';
 import { PasskeyManagementCard } from './PasskeyManagementCard';
 import { getClusterSymbol } from '../lib/clusterSymbols';
@@ -82,6 +83,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
   const [activeChat, setActiveChat] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showEmailRecovery, setShowEmailRecovery] = useState(false);

@@ -41,6 +41,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 }) => {
   const { 
     user, 
+    activeAccount,
     isAuthenticated, 
     userPassword, 
     updatePassword, 
@@ -48,7 +49,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     register, 
     logout, 
     deleteAccount,
-    updateProfile,
+    updateProfile, 
     refreshProfile 
   } = useAuth();
 
@@ -77,11 +78,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [copiedId, setCopiedId] = useState(false);
   const [registeredData, setRegisteredData] = useState<{ agentId: string; apiKey: string } | null>(null);
 
-  const currentUser = user ? ((user as any).profile || user) : null;
+  const effectiveAccount = activeAccount || user;
+  const currentUser = effectiveAccount ? ((effectiveAccount as any).profile || effectiveAccount) : null;
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
   const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
   const [activeChat, setActiveChat] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showEmailRecovery, setShowEmailRecovery] = useState(false);
@@ -1944,6 +1947,15 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           isOpen={showSignOutModal}
           onClose={() => setShowSignOutModal(false)}
           onConfirm={logout}
+        />
+
+        {/* Get Verified Modal */}
+        <GetVerifiedModal
+          isOpen={isGetVerifiedModalOpen}
+          onClose={() => setIsGetVerifiedModalOpen(false)}
+          onVerified={async () => {
+            await refreshProfile();
+          }}
         />
       </div>
     );
