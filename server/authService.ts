@@ -674,7 +674,18 @@ export async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     apiKeyFingerprint: (newUser as any).apiKeyFingerprint
   });
 
-  const camelRecord: Record<string, any> = {
+  const isSchemaColumnError = (err: any) => {
+    if (!err) return false;
+    return err.code === 'PGRST204' || 
+           err.code === '42703' || 
+           (typeof err.message === 'string' && (
+             err.message.includes('schema cache') || 
+             err.message.includes('Could not find') || 
+             err.message.includes('column')
+           ));
+  };
+
+  const fullRecord: Record<string, any> = {
     id: newUser.id,
     agentId: newUser.agentId,
     email: newUser.email,
@@ -694,30 +705,72 @@ export async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     owner_email: newUser.owner_email || null,
   };
 
-  let { error } = await supabase.from('users').insert([camelRecord]);
+  let { error } = await supabase.from('users').insert([fullRecord]);
   if (!error) return;
 
-  // Progressive strip for missing columns in schema cache
-  const strippedRecord: Record<string, any> = {
-    id: newUser.id,
-    agentId: newUser.agentId,
-    email: newUser.email,
-    passwordHash: newUser.passwordHash,
-    apiKeyFingerprint: (newUser as any).apiKeyFingerprint,
-    apiKeyHash: (newUser as any).apiKeyHash || newUser.apiKeyHash,
-    name: newUser.name,
-    status: newUser.status,
-    avatar: newUser.avatar,
-    bio: newUser.bio || DEFAULT_BIO,
-    emailVerified: false,
-    whitelisted_networks: (newUser as any).whitelisted_networks || [],
-    createdAt: newUser.createdAt,
-    updatedAt: newUser.updatedAt,
-  };
+  if (isSchemaColumnError(error)) {
+    // 1. Try record without apiKeyHash / apiKeyFingerprint (auth metadata holds them securely)
+    const noApiHashRecord: Record<string, any> = {
+      id: newUser.id,
+      agentId: newUser.agentId,
+      email: newUser.email,
+      passwordHash: newUser.passwordHash,
+      name: newUser.name,
+      status: newUser.status,
+      avatar: newUser.avatar,
+      bio: newUser.bio || DEFAULT_BIO,
+      emailVerified: false,
+      whitelisted_networks: (newUser as any).whitelisted_networks || [],
+      createdAt: newUser.createdAt,
+      updatedAt: newUser.updatedAt,
+      master_id: newUser.master_id || null,
+      is_master_primary: newUser.is_master_primary === true,
+      owner_email: newUser.owner_email || null,
+    };
+    const res1 = await supabase.from('users').insert([noApiHashRecord]);
+    if (!res1.error) return;
+    error = res1.error;
 
-  const strippedRes = await supabase.from('users').insert([strippedRecord]);
-  if (!strippedRes.error) return;
-  error = strippedRes.error;
+    // 2. Try snake_case column mapping
+    if (isSchemaColumnError(error)) {
+      const snakeRecord: Record<string, any> = {
+        id: newUser.id,
+        agent_id: newUser.agentId,
+        email: newUser.email,
+        password_hash: newUser.passwordHash,
+        name: newUser.name,
+        status: newUser.status,
+        avatar: newUser.avatar,
+        bio: newUser.bio || DEFAULT_BIO,
+        email_verified: false,
+        whitelisted_networks: (newUser as any).whitelisted_networks || [],
+        created_at: newUser.createdAt,
+        updated_at: newUser.updatedAt,
+      };
+      const res2 = await supabase.from('users').insert([snakeRecord]);
+      if (!res2.error) return;
+      error = res2.error;
+    }
+
+    // 3. Try standard minimal user record
+    if (isSchemaColumnError(error)) {
+      const baseRecord: Record<string, any> = {
+        id: newUser.id,
+        agentId: newUser.agentId,
+        email: newUser.email,
+        passwordHash: newUser.passwordHash,
+        name: newUser.name,
+        status: newUser.status,
+        avatar: newUser.avatar,
+        bio: newUser.bio || DEFAULT_BIO,
+        createdAt: newUser.createdAt,
+        updatedAt: newUser.updatedAt,
+      };
+      const res3 = await supabase.from('users').insert([baseRecord]);
+      if (!res3.error) return;
+      error = res3.error;
+    }
+  }
 
   // If unique constraint error (e.g. email uniqueness in database for sub-account):
   if (error?.code === '23505' && newUser.is_master_primary === false) {
@@ -726,11 +779,19 @@ export async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     const domainPart = emailParts[1] || 'aamarva.com';
     const uniqueStorageEmail = `${localPart}+${newUser.agentId.toLowerCase()}@${domainPart}`;
 
-    const uniqueStrippedRecord = {
-      ...strippedRecord,
+    const uniqueRecord = {
+      id: newUser.id,
+      agentId: newUser.agentId,
       email: uniqueStorageEmail,
+      passwordHash: newUser.passwordHash,
+      name: newUser.name,
+      status: newUser.status,
+      avatar: newUser.avatar,
+      bio: newUser.bio || DEFAULT_BIO,
+      createdAt: newUser.createdAt,
+      updatedAt: newUser.updatedAt,
     };
-    const uniqueRes = await supabase.from('users').insert([uniqueStrippedRecord]);
+    const uniqueRes = await supabase.from('users').insert([uniqueRecord]);
     if (!uniqueRes.error) return;
     error = uniqueRes.error;
   }

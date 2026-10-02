@@ -13,6 +13,7 @@ import {
   findUserById,
   insertUserToSupabase
 } from '../authService';
+import { applicationService } from '../services/applicationService';
 import { getSupabaseClient } from '../supabase';
 import { runSecurityTests } from './securityTests';
 
@@ -115,19 +116,24 @@ export async function runWhitelistSecurityTests() {
     recordResult('val_23_duplicate_normalization', dupWL.length === 1 && dupWL[0] === '198.51.100.42/32', 'Duplicates deduplicated');
 
     // Test 24: Registration with self-lockout IP rejected
+    const lockoutEmail = `lockout-${Date.now()}@example.com`;
     try {
+      await applicationService.addEmailToWhitelist(lockoutEmail).catch(() => {});
       await registerUser({
-        email: `lockout-${Date.now()}@example.com`,
+        email: lockoutEmail,
         password: 'StrongPassword123!@#',
         whitelisted_networks: ['1.1.1.1/32']
       }, '2.2.2.2');
       recordResult('val_24_self_lockout_rejected', false, 'Registration should have failed when current IP (2.2.2.2) was not whitelisted');
     } catch (err: any) {
       recordResult('val_24_self_lockout_rejected', err.message.includes('include your current IP'), `Caught expected self-lockout error: ${err.message}`);
+    } finally {
+      await applicationService.removeEmailFromWhitelist(lockoutEmail).catch(() => {});
     }
 
     // Perform actual registration or mock test
     try {
+      await applicationService.addEmailToWhitelist(testEmail).catch(() => {});
       const regResult = await registerUser({
         email: testEmail,
         password: 'StrongPassword123!@#',
@@ -272,6 +278,7 @@ export async function runWhitelistSecurityTests() {
     if (dbUserId) {
       await sb.from('users').delete().eq('id', dbUserId);
     }
+    await applicationService.removeEmailFromWhitelist(testEmail).catch(() => {});
 
   } catch (err: any) {
     console.error('[TEST SUITE ERROR]', err);
