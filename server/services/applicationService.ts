@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getSupabaseClient } from '../supabase';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabase';
 import { sendApplicationUnderReviewEmail, sendAdminOtpEmail } from '../emailService';
 
 export interface ApplicationRecord {
