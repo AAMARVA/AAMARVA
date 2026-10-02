@@ -242,17 +242,13 @@ export const applicationService = {
       console.warn('[APPLICATION_SERVICE] Supabase fetch error:', err);
     }
 
-    const combined = [...dbApps];
-    for (const cached of applicationsCache) {
-      if (!combined.some(a => a.id === cached.id)) {
-        combined.push({
-          ...cached,
-          status: cached.status || 'Under Review'
-        });
-      }
+    if (dbApps.length > 0 || isSupabaseConfigured()) {
+      applicationsCache = [...dbApps];
+      saveToLocalStore();
+      return dbApps;
     }
 
-    return combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return applicationsCache.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
   /**
@@ -323,161 +319,116 @@ export const applicationService = {
   },
 
   /**
-   * Retrieve the entire whitelist from Supabase registration_whitelist table
+   * Retrieve the entire whitelist from Supabase registration_whitelist
    */
   async getWhitelist(): Promise<string[]> {
     const supabase = getSupabaseClient();
-    if (!supabase) {
-      throw new Error('Database connection not available.');
-    }
     const { data, error } = await supabase
       .from('registration_whitelist')
-      .select('email, created_at')
+      .select('email')
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('[WHITELIST_SERVICE] Failed to fetch registration_whitelist from Supabase:', error.message);
-      throw new Error(`Failed to fetch registration whitelist: ${error.message}`);
+      console.error('[WHITELIST_SERVICE] Error fetching whitelist from Supabase:', error);
+      throw new Error(`Database error fetching registration whitelist: ${error.message}`);
     }
 
     return (data || [])
-      .map((row: any) => (row.email || '').trim().toLowerCase())
-      .filter((e: string) => e.length > 0);
+      .map((r: any) => (r.email || '').trim().toLowerCase())
+      .filter(Boolean);
   },
 
   /**
-   * Check if an email is whitelisted in Supabase registration_whitelist table
-   * Always fails closed (returns false) if email is empty or database query fails.
+   * Check if an email is whitelisted in Supabase registration_whitelist (authoritative)
    */
   async isEmailWhitelisted(email: string): Promise<boolean> {
-    if (!email) return false;
-    const clean = email.trim().toLowerCase();
+    if (!email || typeof email !== 'string') return false;
+    const clean = email.toLowerCase().trim();
     if (!clean) return false;
 
-    try {
-      const supabase = getSupabaseClient();
-      if (!supabase) {
-        console.error('[WHITELIST_SERVICE] Supabase client not available during whitelist verification');
-        return false;
-      }
-      const { data, error } = await supabase
-        .from('registration_whitelist')
-        .select('email')
-        .ilike('email', clean)
-        .maybeSingle();
-
-      if (error) {
-        console.error('[WHITELIST_SERVICE] Database error querying registration_whitelist:', error.message);
-        return false;
-      }
-
-      return !!data && (data.email || '').trim().toLowerCase() === clean;
-    } catch (err: any) {
-      console.error('[WHITELIST_SERVICE] Exception querying registration_whitelist:', err?.message || err);
-      return false;
-    }
-  },
-
-  /**
-   * Add email to Supabase registration_whitelist table
-   * Waits for Supabase result and handles duplicate gracefully.
-   */
-  async addEmailToWhitelist(email: string): Promise<{ success: boolean; message: string }> {
-    if (!email) {
-      throw new Error('Email address is required.');
-    }
-    const clean = email.trim().toLowerCase();
-    if (!clean) {
-      throw new Error('Please enter a valid email address.');
-    }
-
     const supabase = getSupabaseClient();
-    if (!supabase) {
-      throw new Error('Database connection not available.');
-    }
-
-    // Insert directly into Supabase registration_whitelist
     const { data, error } = await supabase
       .from('registration_whitelist')
-      .insert({ email: clean })
-      .select('email')
-      .maybeSingle();
+      .select('id, email')
+      .ilike('email', clean)
+      .limit(1);
 
     if (error) {
-      // If already exists (unique constraint code 23505), handle cleanly
-      if (error.code === '23505' || error.message?.includes('duplicate key') || error.message?.includes('already exists')) {
-        return { success: true, message: `Email ${clean} is already authorized on the registration whitelist.` };
-      }
-      console.error('[WHITELIST_SERVICE] Failed to insert into registration_whitelist:', error.message);
-      throw new Error(`Failed to whitelist email in database: ${error.message}`);
+      console.error('[WHITELIST_SERVICE] Database error during registration whitelist check:', error);
+      throw new Error(`Database error verifying whitelist status: ${error.message}`);
     }
 
-    return { success: true, message: `Successfully whitelisted ${clean}` };
+    return Array.isArray(data) && data.length > 0;
   },
 
   /**
-   * Remove email from Supabase registration_whitelist table
-   * Waits for Supabase delete operation.
+   * Add email to whitelist and persist to Supabase registration_whitelist
    */
-  async removeEmailFromWhitelist(email: string): Promise<{ success: boolean; message: string }> {
-    if (!email) {
-      throw new Error('Email address is required.');
+  async addEmailToWhitelist(email: string): Promise<void> {
+    if (!email || typeof email !== 'string') {
+      throw new Error('Valid email address is required.');
     }
-    const clean = email.trim().toLowerCase();
-    if (!clean) {
+    const clean = email.toLowerCase().trim();
+    if (!clean || !clean.includes('@')) {
       throw new Error('Please enter a valid email address.');
     }
 
     const supabase = getSupabaseClient();
-    if (!supabase) {
-      throw new Error('Database connection not available.');
+    const { error } = await supabase
+      .from('registration_whitelist')
+      .upsert({ email: clean }, { onConflict: 'email' });
+
+    if (error && error.code !== '23505') {
+      console.error('[WHITELIST_SERVICE] Supabase registration_whitelist write error:', error);
+      throw new Error(`Database error: Failed to whitelist email (${error.message})`);
     }
 
+    console.log(`[WHITELIST_SERVICE] Successfully persisted ${clean} to Supabase registration_whitelist.`);
+  },
+
+  /**
+   * Remove email from whitelist and persist to Supabase registration_whitelist
+   */
+  async removeEmailFromWhitelist(email: string): Promise<void> {
+    if (!email || typeof email !== 'string') return;
+    const clean = email.toLowerCase().trim();
+    if (!clean) return;
+
+    const supabase = getSupabaseClient();
     const { error } = await supabase
       .from('registration_whitelist')
       .delete()
       .ilike('email', clean);
 
     if (error) {
-      console.error('[WHITELIST_SERVICE] Failed to delete from registration_whitelist:', error.message);
-      throw new Error(`Failed to remove email from database: ${error.message}`);
+      console.error('[WHITELIST_SERVICE] Supabase registration_whitelist delete error:', error);
+      throw new Error(`Database error: Failed to remove email from registration whitelist (${error.message})`);
     }
 
-    return { success: true, message: `Successfully removed ${clean} from whitelist` };
+    console.log(`[WHITELIST_SERVICE] Successfully deleted ${clean} from Supabase registration_whitelist.`);
   },
 
   /**
    * Update the status of a specific application
    */
   async updateApplicationStatus(id: string, status: 'Under Review' | 'Approved' | 'Declined'): Promise<void> {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase
+        .from('applications')
+        .update({ status })
+        .eq('id', id);
+
+      if (error) {
+        console.error('[APPLICATION_SERVICE] Supabase status update error:', error);
+        throw new Error(`Database error: Failed to update application status (${error.message})`);
+      }
+    }
+
     const app = applicationsCache.find(a => a.id === id);
     if (app) {
       app.status = status;
       saveToLocalStore();
-    } else {
-      const list = await this.getApplications();
-      const found = list.find(a => a.id === id);
-      if (found) {
-        found.status = status;
-        applicationsCache.push(found);
-        saveToLocalStore();
-      }
-    }
-
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const { error } = await supabase
-          .from('applications')
-          .update({ status })
-          .eq('id', id);
-
-        if (error) {
-          console.warn('[APPLICATION_SERVICE] Supabase status update notice (might lack status column):', error.message);
-        }
-      }
-    } catch (err) {
-      console.warn('[APPLICATION_SERVICE] Supabase status update error:', err);
     }
   }
 };

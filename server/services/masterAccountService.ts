@@ -36,7 +36,8 @@ function isTableMissingError(error: any): boolean {
          (typeof error.message === 'string' && (
            error.message.includes('schema cache') || 
            error.message.includes('does not exist') ||
-           error.message.includes('column')
+           error.message.includes('column') ||
+           error.message.includes('relation')
          ));
 }
 
@@ -263,6 +264,16 @@ export class MasterAccountService {
 
     if (error && !isTableMissingError(error)) {
       throw new Error(`Failed to update master account ${masterId}: ${error.message}`);
+    }
+  }
+
+  public async deleteMasterAccount(masterId: string): Promise<void> {
+    masterAccountsStore.delete(masterId);
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('master_accounts').delete().eq('id', masterId);
+      } catch {}
     }
   }
 

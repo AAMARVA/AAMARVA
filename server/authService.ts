@@ -824,10 +824,13 @@ export async function registerUser(data: {
     throw new Error('Please enter a valid email address.');
   }
 
+  // STAGE 1: Whitelist Verification
   const isWhitelisted = await applicationService.isEmailWhitelisted(normalizedEmail);
   if (!isWhitelisted) {
+    console.warn(`[Registration: Stage 1 FAILED] Email is not whitelisted: ${normalizedEmail}`);
     throw new Error('REGISTRATION REFUSED: Your email address is not whitelisted. Please submit an application or ask a network controller for authorization.');
   }
+  console.log(`[Registration: Stage 1] Whitelist passed for: ${normalizedEmail}`);
 
   const whitelisted_networks = validateAndNormalizeWhitelist(data.whitelisted_networks, clientIp);
 
@@ -840,36 +843,43 @@ export async function registerUser(data: {
 
   const supabase = getSupabaseClient();
 
-  const generateId = () => {
+  // Resilient avatar & Agent ID generation (preserves avatar behavior without blocking registration)
+  let agentId = (data.agentId || '').trim();
+  let assignedAvatar = '';
+
+  try {
+    const inventoryItem = await popInventoryItem();
+    if (!agentId) agentId = inventoryItem.agentId;
+    assignedAvatar = inventoryItem.avatar || `${config.robohashBaseUrl}/${agentId.toLowerCase()}.png`;
+  } catch (invErr) {
+    console.warn('[Registration] Notice retrieving inventory avatar, using generated fallback:', invErr);
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const segment = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    return `AMR-${segment(4)}-${segment(4)}`;
-  };
+    const fallbackId = `AMR-${segment(4)}-${segment(4)}`;
+    if (!agentId) agentId = fallbackId;
+    assignedAvatar = `${config.robohashBaseUrl}/${agentId.toLowerCase()}.png`;
+  }
 
-  // Claim pre-generated Agent ID & Avatar from inventory buffer
-  const inventoryItem = await popInventoryItem();
-  let agentId = (data.agentId || inventoryItem.agentId).trim();
-  let assignedAvatar = inventoryItem.avatar || `${config.robohashBaseUrl}/${agentId.toLowerCase()}.png`;
   if (assignedAvatar.includes('robohash.org')) {
     assignedAvatar = assignedAvatar.replace(/https?:\/\/robohash\.org/g, config.robohashBaseUrl).replace('?set=set1', '').replace(/([&?])gravatar=[^&]+/g, '');
   }
 
-  if (!data.agentId) {
+  if (!data.agentId && supabase) {
     let isUniqueAgentId = false;
     let idAttempts = 0;
-    while (!isUniqueAgentId && idAttempts < 10) {
+    while (!isUniqueAgentId && idAttempts < 5) {
       let isUsed = false;
       try {
         const { data: ext1 } = await supabase.from('users').select('id').eq('agentId', agentId).limit(1);
         if (ext1 && ext1.length > 0) isUsed = true;
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
       if (!isUsed) {
         isUniqueAgentId = true;
       } else {
-        const fallbackItem = await popInventoryItem();
-        agentId = fallbackItem.agentId;
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const segment = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+        agentId = `AMR-${segment(4)}-${segment(4)}`;
+        assignedAvatar = `${config.robohashBaseUrl}/${agentId.toLowerCase()}.png`;
       }
       idAttempts++;
     }
@@ -889,11 +899,54 @@ export async function registerUser(data: {
 
   let authUserId = crypto.randomUUID();
   let authUserCreated = false;
+  let masterAccountCreated = false;
+  let usersRowCreated = false;
+  let refreshTokenCreated = false;
 
-  // 1. Create in Supabase Auth first if possible to satisfy foreign key constraints
+  // Transactional rollback helper
+  const rollbackAll = async (failedStage: string, error: any) => {
+    console.error(`[Registration: ${failedStage} FAILED] Initiating transactional cleanup... Reason:`, error?.message || error);
+    
+    // 1. Delete refresh tokens if created
+    if (refreshTokenCreated && supabase) {
+      try {
+        await supabase.from('refresh_tokens').delete().eq('userId', authUserId);
+      } catch (e) {
+        console.warn('[Cleanup] Notice deleting refresh tokens:', e);
+      }
+    }
+
+    // 2. Delete public.users row if created
+    if (usersRowCreated && supabase) {
+      try {
+        await supabase.from('users').delete().eq('id', authUserId);
+      } catch (e) {
+        console.warn('[Cleanup] Notice deleting users row:', e);
+      }
+    }
+
+    // 3. Delete master account if created
+    if (masterAccountCreated) {
+      try {
+        await MasterAccountService.getInstance().deleteMasterAccount(authUserId);
+      } catch (e) {
+        console.warn('[Cleanup] Notice deleting master account:', e);
+      }
+    }
+
+    // 4. Delete Supabase Auth user if created
+    if (authUserCreated && supabase && supabase.auth?.admin?.deleteUser) {
+      try {
+        await supabase.auth.admin.deleteUser(authUserId);
+        console.log(`[Cleanup] Deleted orphaned auth user: ${authUserId}`);
+      } catch (e) {
+        console.warn('[Cleanup] Notice deleting auth user:', e);
+      }
+    }
+  };
+
+  // STAGE 2: Supabase Auth User Creation
   if (supabase) {
-    // Pre-check: If a Master account already exists in the database table, fail early.
-    // Managed accounts sharing this email are ignored as they are part of the same human identity context.
     const { data: existingMaster } = await supabase
       .from('users')
       .select('id')
@@ -902,6 +955,7 @@ export async function registerUser(data: {
       .maybeSingle();
 
     if (existingMaster) {
+      console.warn(`[Registration: Stage 2 FAILED] Master user already exists for ${normalizedEmail}`);
       throw new Error('An AAMARVA Master account with this email already exists.');
     }
 
@@ -929,8 +983,7 @@ export async function registerUser(data: {
 
         await attemptCreate();
 
-        // If auth user already exists, but we verified they do NOT exist in the users table, it's an orphaned auth user.
-        // We can safely list users, find their ID, delete them, and retry to make registration completely retry-safe.
+        // Orphaned auth user recovery
         if (authCreateErr && (authCreateErr.message?.toLowerCase().includes('already exists') || authCreateErr.message?.toLowerCase().includes('already registered'))) {
           console.warn(`Auth user exists for ${normalizedEmail} but no database record exists. Cleaning up orphaned auth user to allow retry...`);
           const { data: listResult, error: listErr } = await supabase.auth.admin.listUsers({
@@ -941,7 +994,6 @@ export async function registerUser(data: {
             if (orphaned) {
               await supabase.auth.admin.deleteUser(orphaned.id);
               console.log(`Successfully deleted orphaned auth user ${orphaned.id}`);
-              // Retry creation
               await attemptCreate();
             }
           }
@@ -981,11 +1033,13 @@ export async function registerUser(data: {
         }
       }
     } catch (authErr: any) {
-      console.error('Auth user creation failed:', authErr);
+      console.error('[Registration: Stage 2 FAILED] Auth user creation error:', authErr);
       throw new Error(`Authentication provider error: ${authErr.message}`);
     }
   }
+  console.log(`[Registration: Stage 2] Auth user created with ID: ${authUserId}`);
 
+  // STAGE 3: Master Account Creation
   const masterId = authUserId;
   const masterRecord: MasterAccountRecord = {
     id: masterId,
@@ -996,8 +1050,17 @@ export async function registerUser(data: {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
-  await MasterAccountService.getInstance().saveMasterAccount(masterRecord);
 
+  try {
+    await MasterAccountService.getInstance().saveMasterAccount(masterRecord);
+    masterAccountCreated = true;
+    console.log(`[Registration: Stage 3] Master account created with ID: ${masterId}`);
+  } catch (masterErr: any) {
+    await rollbackAll('Stage 3 (master_accounts creation)', masterErr);
+    throw masterErr;
+  }
+
+  // STAGE 4: Public Users Row Creation
   const newUser: UserRecord = {
     id: authUserId,
     agentId,
@@ -1019,25 +1082,15 @@ export async function registerUser(data: {
 
   try {
     await insertUserToSupabase(supabase, newUser);
+    usersRowCreated = true;
+    console.log(`[Registration: Stage 4] Users row created for agentId: ${agentId}`);
   } catch (insertErr: any) {
-    console.error('Direct table insert failed:', insertErr);
-    // If we successfully created an auth user but failed to insert into the users table,
-    // we must clean up the orphaned auth user.
-    if (authUserCreated && supabase && supabase.auth?.admin?.deleteUser) {
-      try {
-        await supabase.auth.admin.deleteUser(authUserId);
-        console.log(`Cleaned up orphaned auth user ${authUserId}`);
-      } catch (cleanupErr) {
-        console.error(`Failed to clean up orphaned auth user ${authUserId}:`, cleanupErr);
-      }
-    }
-    throw insertErr; // Rethrow to fail the registration and return an error response
+    await rollbackAll('Stage 4 (public.users creation)', insertErr);
+    throw insertErr;
   }
 
   if (supabase) {
     invalidateAuthCache();
-
-    // Set initial emailVerified status to false in app_metadata
     try {
       if (supabase.auth?.admin?.updateUserById) {
         await supabase.auth.admin.updateUserById(newUser.id, {
@@ -1052,12 +1105,19 @@ export async function registerUser(data: {
       console.warn('[Registration] Notice setting initial emailVerified state:', verifErr?.message || verifErr);
     }
   }
-  
+
+  // STAGE 5: Refresh Token Creation & Persistence
   try {
     const familyId = crypto.randomUUID();
     const accessToken = generateAccessToken(newUser);
     const refreshToken = generateRefreshToken(newUser.id, familyId);
     await persistRefreshToken(newUser.id, familyId, refreshToken);
+    refreshTokenCreated = true;
+    console.log(`[Registration: Stage 5] Refresh token created & persisted for user ID: ${newUser.id}`);
+
+    // STAGE 6: Registration Completed
+    console.log(`[Registration: Stage 6] Registration completed successfully (201) for agentId: ${agentId}`);
+
     const { passwordHash: _, apiKeyHash: __, ...safeUser } = newUser;
     const returnUser = { ...safeUser };
     return {
@@ -1067,28 +1127,9 @@ export async function registerUser(data: {
       user: returnUser as any,
       sessionId: ''
     };
-  } catch (postInsertErr: any) {
-    console.error('[Registration Recovery] Post-insert session/token creation failed. Initiating cleanup...', postInsertErr);
-    
-    // 1. Delete user from DB users table
-    try {
-      await supabase.from('users').delete().eq('id', newUser.id);
-      console.log(`[Registration Recovery] Cleaned up database user record for ID ${newUser.id}`);
-    } catch (dbCleanupErr) {
-      console.error(`[Registration Recovery] Failed to clean up database user record:`, dbCleanupErr);
-    }
-
-    // 2. Delete user from Supabase Auth
-    if (authUserCreated && supabase && supabase.auth?.admin?.deleteUser) {
-      try {
-        await supabase.auth.admin.deleteUser(authUserId);
-        console.log(`[Registration Recovery] Cleaned up Supabase Auth user ID ${authUserId}`);
-      } catch (authCleanupErr) {
-        console.error(`[Registration Recovery] Failed to clean up Supabase Auth user:`, authCleanupErr);
-      }
-    }
-
-    throw postInsertErr;
+  } catch (tokenErr: any) {
+    await rollbackAll('Stage 5 (refresh token creation)', tokenErr);
+    throw tokenErr;
   }
 }
 

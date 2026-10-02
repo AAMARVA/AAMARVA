@@ -22,7 +22,6 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [whitelistStatus, setWhitelistStatus] = useState<'checking' | 'whitelisted' | 'not_whitelisted' | 'idle'>('idle');
 
   useEffect(() => {
     if (initialEmail) {
@@ -36,40 +35,6 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
       setIsSubmitting(false);
     }
   }, [isOpen]);
-
-  // Check email whitelist status in real time
-  useEffect(() => {
-    const trimmed = email.trim().toLowerCase();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!trimmed || !emailRegex.test(trimmed)) {
-      setWhitelistStatus('idle');
-      return;
-    }
-
-    let isMounted = true;
-    const checkWhitelist = async () => {
-      try {
-        setWhitelistStatus('checking');
-        const res = await fetch(`/api/applications/check-whitelist?email=${encodeURIComponent(trimmed)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted) {
-            setWhitelistStatus(data.whitelisted ? 'whitelisted' : 'not_whitelisted');
-          }
-        } else {
-          if (isMounted) setWhitelistStatus('idle');
-        }
-      } catch (err) {
-        if (isMounted) setWhitelistStatus('idle');
-      }
-    };
-
-    const timer = setTimeout(checkWhitelist, 300);
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-    };
-  }, [email]);
 
   if (!isOpen) return null;
 
@@ -160,23 +125,6 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
                   <span>Email Address</span>
                   <span className="text-red-600 font-black">*</span>
                 </label>
-                {whitelistStatus === 'whitelisted' && (
-                  <span className="text-[10px] font-black uppercase bg-[#141414] text-white px-2 py-0.5 border border-[#141414] flex items-center gap-1 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                    <CheckCircle className="w-3 h-3 text-white" />
-                    <span>Authorized</span>
-                  </span>
-                )}
-                {whitelistStatus === 'checking' && (
-                  <span className="text-[10px] font-black uppercase text-[#141414]/60 flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>Verifying</span>
-                  </span>
-                )}
-                {whitelistStatus === 'not_whitelisted' && (
-                  <span className="text-[10px] font-black uppercase bg-red-600 text-white px-2 py-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                    This email is not approved for registration
-                  </span>
-                )}
               </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#141414]/50">
