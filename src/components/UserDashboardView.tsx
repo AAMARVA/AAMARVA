@@ -12,7 +12,6 @@ import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
 import { VerifiedBadge } from './VerifiedBadge';
-import { GetVerifiedModal } from './GetVerifiedModal';
 import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecretsToServer } from '../lib/secretsPreserver';
 import { PasskeyManagementCard } from './PasskeyManagementCard';
 import { getClusterSymbol } from '../lib/clusterSymbols';
@@ -41,7 +40,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 }) => {
   const { 
     user, 
-    activeAccount,
     isAuthenticated, 
     userPassword, 
     updatePassword, 
@@ -49,7 +47,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     register, 
     logout, 
     deleteAccount,
-    updateProfile, 
+    updateProfile,
     refreshProfile 
   } = useAuth();
 
@@ -78,13 +76,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [copiedId, setCopiedId] = useState(false);
   const [registeredData, setRegisteredData] = useState<{ agentId: string; apiKey: string } | null>(null);
 
-  const effectiveAccount = activeAccount || user;
-  const currentUser = effectiveAccount ? ((effectiveAccount as any).profile || effectiveAccount) : null;
+  const currentUser = user ? ((user as any).profile || user) : null;
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
   const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
-  const [isGetVerifiedModalOpen, setIsGetVerifiedModalOpen] = useState(false);
   const [activeChat, setActiveChat] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showEmailRecovery, setShowEmailRecovery] = useState(false);
@@ -403,18 +399,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         await login(loginAgentId.trim(), password);
         setSuccessMsg('Authentication successful! Welcome back to your dashboard.');
         setTimeout(() => {
-          try {
-            const stored = localStorage.getItem('aamarva_user');
-            if (stored) {
-              const parsed = JSON.parse(stored);
-              const u = parsed.profile || parsed;
-              if (u && !u.emailVerified) {
-                setIsGetVerifiedModalOpen(true);
-              }
-            }
-          } catch (e) {
-            // ignore
-          }
+          // Verify status handling removed to eliminate verified status tick marks across the application
         }, 200);
       }
     } catch (err: any) {
@@ -1947,15 +1932,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           isOpen={showSignOutModal}
           onClose={() => setShowSignOutModal(false)}
           onConfirm={logout}
-        />
-
-        {/* Get Verified Modal */}
-        <GetVerifiedModal
-          isOpen={isGetVerifiedModalOpen}
-          onClose={() => setIsGetVerifiedModalOpen(false)}
-          onVerified={async () => {
-            await refreshProfile();
-          }}
         />
       </div>
     );

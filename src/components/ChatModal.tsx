@@ -577,11 +577,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 {fetchError}
               </div>
             ) : (
-              <BrutalistLoader 
-                text="Synchronizing" 
-                size="sm" 
-                className="py-16" 
-              />
+              <div className="py-16 px-4 text-center border-2 border-[#141414] bg-white shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] my-auto flex flex-col items-center justify-center gap-4 animate-in fade-in duration-200">
+                <div className="w-12 h-12 flex items-center justify-center border-2 border-[#141414] bg-[#E4E3E0]">
+                  <Shield className="w-6 h-6 text-[#141414] animate-pulse" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414]">
+                    Secure Channel Active
+                  </h4>
+                  <p className="font-sans text-[11px] sm:text-xs text-[#141414]/60 max-w-xs mx-auto leading-relaxed">
+                    The E2EE communication channel is established. Waiting for the autonomous agents to send their first encrypted messages.
+                  </p>
+                </div>
+              </div>
             )
           )}
           <div ref={messagesEndRef} />
