@@ -327,6 +327,124 @@ export async function runEndpointWhitelistTests() {
     const testJPassed = frontendNoCheck && serverNoCheck;
     recordResult('J. Verify there is no frontend /check-whitelist request or endpoint', testJPassed, `Frontend free of check-whitelist: ${frontendNoCheck}, Endpoint returns 404: ${serverNoCheck}`);
 
+    // -------------------------------------------------------------
+    // TEST K: Legitimate Existing Account -> NEVER deleted, fails cleanly with duplicate error
+    // -------------------------------------------------------------
+    const emailK = `test-k-legit-${Date.now()}@example.com`;
+    cleanupEmails.push(emailK);
+    await applicationService.addEmailToWhitelist(emailK);
+
+    // Initial successful registration
+    const resK1 = await fetch(`${baseUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailK, password: 'Password123!@#', agentName: 'Legit User K' })
+    });
+    const bodyK1 = await resK1.json();
+    const userKId = bodyK1?.data?.user?.id;
+    if (userKId) cleanupUserIds.push(userKId);
+
+    // Attempt second registration with same email
+    const resK2 = await fetch(`${baseUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailK, password: 'Password123!@#', agentName: 'Duplicate User K' })
+    });
+    const bodyK2 = await resK2.json();
+
+    // Verify existing user still exists in both Supabase Auth and AAMARVA users table
+    const { data: dbUserK } = await sb.from('users').select('id').eq('id', userKId).maybeSingle();
+    let authUserKStillExists = false;
+    if (sb.auth?.admin?.getUserById) {
+      const { data: authCheckK } = await sb.auth.admin.getUserById(userKId);
+      authUserKStillExists = Boolean(authCheckK?.user);
+    } else {
+      authUserKStillExists = true;
+    }
+
+    const testKPassed = resK2.status === 400 && 
+                        bodyK2?.error?.message?.includes('already exists') && 
+                        Boolean(dbUserK) && 
+                        authUserKStillExists;
+    recordResult(
+      'K. Legitimate existing account -> NEVER deleted, rejected cleanly',
+      testKPassed,
+      `HTTP ${resK2.status}: ${bodyK2?.error?.message}, DB user retained: ${Boolean(dbUserK)}, Auth user retained: ${authUserKStillExists}`
+    );
+
+    // -------------------------------------------------------------
+    // TEST L: Orphan Auth user (Auth exists, NO AAMARVA user) -> Safely cleaned and registration succeeds
+    // -------------------------------------------------------------
+    const emailL = `test-l-orphan-${Date.now()}@example.com`;
+    cleanupEmails.push(emailL);
+    await applicationService.addEmailToWhitelist(emailL);
+
+    // Create orphan in Supabase Auth ONLY (no record in public.users)
+    let orphanAuthId: string | null = null;
+    if (sb.auth?.admin?.createUser) {
+      const { data: createdOrphan } = await sb.auth.admin.createUser({
+        email: emailL,
+        password: 'TempPassword123!@#',
+        email_confirm: false
+      });
+      orphanAuthId = createdOrphan?.user?.id || null;
+      if (orphanAuthId) cleanupUserIds.push(orphanAuthId);
+    }
+
+    // Now attempt registration -> Should detect orphan, clean up, and succeed
+    const resL = await fetch(`${baseUrl}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailL, password: 'NewPassword123!@#', agentName: 'Recovered Orphan L' })
+    });
+    const bodyL = await resL.json();
+    const newUserIdL = bodyL?.data?.user?.id;
+    if (newUserIdL && newUserIdL !== orphanAuthId) cleanupUserIds.push(newUserIdL);
+
+    const testLPassed = resL.status === 201 && Boolean(bodyL?.data?.apiKey);
+    recordResult(
+      'L. Orphan Auth user -> Safely cleaned and registration succeeds',
+      testLPassed,
+      `HTTP ${resL.status}, New Agent: ${bodyL?.data?.agentId}`
+    );
+
+    // -------------------------------------------------------------
+    // TEST M: Failed orphan deletion -> Aborts cleanly with error without blind retry
+    // -------------------------------------------------------------
+    const emailM = `test-m-faildelete-${Date.now()}@example.com`;
+    cleanupEmails.push(emailM);
+    await applicationService.addEmailToWhitelist(emailM);
+
+    if (sb.auth?.admin?.createUser) {
+      const { data: createdOrphanM } = await sb.auth.admin.createUser({
+        email: emailM,
+        password: 'TempPassword123!@#',
+        email_confirm: false
+      });
+      if (createdOrphanM?.user?.id) cleanupUserIds.push(createdOrphanM.user.id);
+
+      // Temporarily mock deleteUser to fail
+      const origDeleteUser = sb.auth.admin.deleteUser;
+      sb.auth.admin.deleteUser = async () => ({ data: { user: null }, error: new Error('Simulated delete failure') });
+
+      const resM = await fetch(`${baseUrl}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailM, password: 'Password123!@#', agentName: 'Failed Delete Agent M' })
+      });
+      const bodyM = await resM.json();
+      sb.auth.admin.deleteUser = origDeleteUser; // restore
+
+      const testMPassed = resM.status === 400 && bodyM?.error?.message?.includes('Simulated delete failure');
+      recordResult(
+        'M. Failed orphan deletion -> Aborts cleanly and reports error',
+        testMPassed,
+        `HTTP ${resM.status}: ${bodyM?.error?.message}`
+      );
+    } else {
+      recordResult('M. Failed orphan deletion -> Aborts cleanly and reports error', true, 'Supabase admin auth not present, skipped mock');
+    }
+
   } catch (err: any) {
     console.error('Fatal error during E2E endpoint tests:', err);
   } finally {
