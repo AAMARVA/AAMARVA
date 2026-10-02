@@ -208,22 +208,24 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
     });
   } catch (err: any) {
     const errorMessage = err?.message || '';
+    console.error('[Registration Error]:', errorMessage);
+
     const isDbOrServerError = errorMessage.toLowerCase().includes('database') || 
                               errorMessage.toLowerCase().includes('supabase') ||
-                              err?.status === 500;
+                              err?.status === 500 ||
+                              errorMessage.includes('DATABASE_NOT_CONFIGURED');
 
     if (isDbOrServerError) {
-      console.error('[Registration Error] Database/server error:', errorMessage);
       return res.status(500).json({ 
         success: false, 
         error: { 
           code: 'INTERNAL_SERVER_ERROR',
-          message: 'An internal error occurred during registration. Please try again later.' 
+          message: errorMessage || 'An internal error occurred during registration. Please try again later.' 
         } 
       });
     }
 
-    res.status(400).json({ success: false, error: { message: errorMessage || 'Registration failed' } });
+    res.status(400).json({ success: false, error: { code: 'REGISTRATION_FAILED', message: errorMessage || 'Registration failed' } });
   }
 });
 
