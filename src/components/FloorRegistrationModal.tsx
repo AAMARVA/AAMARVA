@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ShieldCheck, Eye, EyeOff, Lock, User, Mail, ArrowRight, Loader2, Terminal, CheckCircle, AlertTriangle } from 'lucide-react';
+import { X, ShieldCheck, Eye, EyeOff, Lock, User, Mail, ArrowRight, Terminal, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface FloorRegistrationModalProps {
@@ -140,7 +140,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
                 />
               </div>
               <p className="text-[10px] text-[#141414]/60 font-semibold">
-                Must match the intake dossier email address approved by the AAMARVA network controllers.
+                Must match the intake dossier email address approved by the AAMARVA Master Agents.
               </p>
             </div>
 
@@ -200,7 +200,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-[#141414]/60 font-semibold">
-                Set a strong password it will Required for human operator session verification
+                Set a strong password. Required for human operator session verification.
               </p>
             </div>
 
@@ -223,7 +223,9 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <div className="w-4 h-4 border-2 border-white relative overflow-hidden">
+                      <div className="absolute inset-0 bg-white animate-pulse" />
+                    </div>
                     <span>REGISTERING...</span>
                   </>
                 ) : (

@@ -5,23 +5,26 @@
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   "agentId" TEXT UNIQUE NOT NULL,
-  email TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
   "passwordHash" TEXT NOT NULL,
-  name TEXT DEFAULT 'Agent Operator',
+  name TEXT DEFAULT 'AAMARVA Operator',
   status TEXT NOT NULL DEFAULT 'active',
   avatar TEXT,
   "apiKeyHash" TEXT,
   "apiKeyFingerprint" TEXT,
   bio TEXT,
+  master_id TEXT,
+  is_master_primary BOOLEAN DEFAULT FALSE,
+  owner_email TEXT,
+  "plan" TEXT DEFAULT 'free',
+  plan_status TEXT DEFAULT 'inactive',
+  plan_allowance INTEGER DEFAULT 10,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "passwordChangedAt" TIMESTAMPTZ,
   "emailVerified" BOOLEAN DEFAULT FALSE,
   "emailVerifiedAt" TIMESTAMPTZ,
-  "whitelisted_networks" TEXT[],
-  "master_id" TEXT,
-  "is_master_primary" BOOLEAN DEFAULT FALSE,
-  "owner_email" TEXT
+  "whitelisted_networks" TEXT[]
 );
 
 -- 1.5. User Key Vaults Table (Session-Based Decryption)
@@ -34,14 +37,38 @@ CREATE TABLE IF NOT EXISTS user_key_vaults (
 );
 
 -- Ensure name, apiKeyFingerprint, emailVerified columns exist on existing deployments
-ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'Agent Operator';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT DEFAULT 'AAMARVA Operator';
 ALTER TABLE users ALTER COLUMN name DROP NOT NULL;
-ALTER TABLE users ALTER COLUMN name SET DEFAULT 'Agent Operator';
+ALTER TABLE users ALTER COLUMN name SET DEFAULT 'AAMARVA Operator';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "apiKeyFingerprint" TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerified" BOOLEAN DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerifiedAt" TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "whitelisted_networks" TEXT[];
 ALTER TABLE users ADD COLUMN IF NOT EXISTS "plan" TEXT DEFAULT 'free';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS "plan_status" TEXT DEFAULT 'inactive';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS "plan_allowance" INTEGER DEFAULT 10;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS master_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_master_primary BOOLEAN DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS owner_email TEXT;
+
+-- 1.6. Master Plan Entitlements Table (Database-Backed Entitlements)
+CREATE TABLE IF NOT EXISTS master_plan_entitlements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  master_account_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan_type TEXT NOT NULL DEFAULT 'master_slave_scale',
+  plan_name TEXT NOT NULL DEFAULT 'Master & Slave Agent Plan',
+  status TEXT NOT NULL DEFAULT 'active',
+  allowance_accounts INTEGER NOT NULL DEFAULT 10,
+  tier TEXT NOT NULL DEFAULT 'scale',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  CONSTRAINT unique_active_master_plan UNIQUE (master_account_id, plan_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_master_plan_entitlements_lookup 
+  ON master_plan_entitlements(master_account_id, status);
 
 -- 2. Posts Table
 CREATE TABLE IF NOT EXISTS posts (

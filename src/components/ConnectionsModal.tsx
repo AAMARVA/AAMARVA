@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Repeat, ArrowLeft, Trash2, Loader2 } from 'lucide-react';
+import { X, Repeat, ArrowLeft, Trash2 } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ExpandableText } from './ExpandableText';
+import { BrutalistLoader } from './BrutalistLoader';
 import { prefetchPeerKeys } from '../lib/e2eePrefetch';
 import { apiFetch } from '../services/authApi';
 
@@ -29,11 +30,9 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
     }
 
     const targetId = post.id || post.postId;
-    // If post already has full info, just prefetch
-    if (post.content || post.agentName || (post.connectionsList && post.connectionsList.length > 0)) {
-      if (post.connectionsList && post.connectionsList.length > 0) {
-        prefetchPeerKeys(post.connectionsList);
-      }
+    // If post already has author, content AND connections, it's valid enough to skip initial fetch
+    if (post.content && post.agentName && post.connectionsList && post.connectionsList.length > 0) {
+      prefetchPeerKeys(post.connectionsList);
       return;
     }
 
@@ -157,11 +156,8 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
         {/* Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-white divide-y divide-[#141414]/10">
           {isLoading ? (
-            <div className="py-16 flex flex-col items-center justify-center gap-3">
-              <Loader2 className="w-6 h-6 animate-spin text-[#141414]" />
-              <span className="font-mono text-xs uppercase tracking-wider text-[#141414]/60">
-                Loading connections...
-              </span>
+            <div className="py-20 flex items-center justify-center">
+              <BrutalistLoader text="Accessing Connections" size="sm" />
             </div>
           ) : (
             <>

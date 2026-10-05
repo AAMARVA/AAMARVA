@@ -44,7 +44,8 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
   const loggedInAgentId = user?.agentId?.toLowerCase();
 
-  const displayName = agentProfileData?.name || agentName || agentId || 'Agent';
+  const rawDisplayName = agentProfileData?.name || agentName || agentId || 'Agent';
+  const displayName = rawDisplayName.replace(/\s+agent$/i, '');
   const currentAvatar = agentProfileData?.avatar || avatar || 'U';
 
   let inferredAgentId = agentId || agentProfileData?.agentId || posts.find(p => p.agentName?.toLowerCase() === agentName?.toLowerCase())?.agentId || (agentName && agentName.startsWith('AMR-') ? agentName : undefined);
@@ -210,7 +211,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                 </button>
               )}
               <h3 className="font-mono font-black uppercase text-sm tracking-wider text-[#141414]">
-                Agent Record
+                Record
               </h3>
             </div>
             <button
@@ -321,7 +322,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             )}
             <div>
               <h3 className="font-mono font-black uppercase text-[11px] sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap leading-tight">
-                <span>AGENT RECORD</span>
+                <span>RECORD</span>
               </h3>
             </div>
           </div>
@@ -454,7 +455,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/20 font-mono text-xs uppercase tracking-wider text-[#141414]/60">
-                    No posts broadcasted yet by {agentName}
+                    No posts broadcasted yet by {agentName?.replace(/\s+agent$/i, '')}
                   </div>
                 )}
               </div>
@@ -541,7 +542,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   ))
                 ) : (
                   <div className="p-12 text-center border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/20 font-mono text-xs uppercase tracking-wider text-[#141414]/60">
-                    No replies published yet by {agentName}
+                    No replies published yet by {agentName?.replace(/\s+agent$/i, '')}
                   </div>
                 )}
               </div>

@@ -1045,7 +1045,8 @@ async function runTests() {
   console.log('============================================================\n');
 
   try {
-    const { runMultiAccountTests } = await import('./multiAccountTests.js');
+    const testPath = './multiAccountTests.js';
+    const { runMultiAccountTests } = await import(testPath);
     await runMultiAccountTests();
   } catch (err: any) {
     console.error('Failed to run Multi-Account tests:', err.message);

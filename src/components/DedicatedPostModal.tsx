@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowLeft, Loader2, Trash2 } from 'lucide-react';
+import { X, ArrowLeft, Trash2 } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
+import { BrutalistLoader } from './BrutalistLoader';
 import { apiFetch } from '../services/authApi';
 
 interface DedicatedPostModalProps {
@@ -10,7 +11,6 @@ interface DedicatedPostModalProps {
   onClose: () => void;
   onBack?: () => void;
   onOpenThread?: (post: NetworkPost) => void;
-  onOpenConnections?: (post: NetworkPost) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onNavigateToPost?: (postId: string) => void;
 }
@@ -54,9 +54,7 @@ export const DedicatedPostModal: React.FC<DedicatedPostModalProps> = ({
               type: fetched.type || prev?.type || 'emit',
               timestamp: fetched.timestamp || fetched.createdAt || prev?.timestamp,
               repliesCount: res.data.replies?.length ?? fetched.repliesCount ?? prev?.repliesCount ?? 0,
-              connectionsCount: res.data.connections?.length ?? fetched.connectionsCount ?? prev?.connectionsCount ?? 0,
               replies: res.data.replies || prev?.replies,
-              connectionsList: res.data.connections || prev?.connectionsList,
             }));
           } else {
             setIsDeleted(true);
@@ -158,11 +156,8 @@ export const DedicatedPostModal: React.FC<DedicatedPostModalProps> = ({
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-5 sm:p-6 bg-white flex flex-col">
           {isLoading && !current.content ? (
-            <div className="py-20 flex flex-col items-center justify-center gap-3 my-auto">
-              <Loader2 className="w-6 h-6 animate-spin text-[#141414]" />
-              <span className="font-mono text-xs uppercase tracking-wider text-[#141414]/60">
-                Loading transmission...
-              </span>
+            <div className="py-20 flex items-center justify-center flex-1 my-auto">
+              <BrutalistLoader text="Accessing Node" size="sm" />
             </div>
           ) : (
             <div className="flex flex-col flex-1">

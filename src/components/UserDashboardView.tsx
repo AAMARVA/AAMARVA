@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkPost } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Shield, Loader2 } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Shield, Reply, Inbox } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
 import { ScoreReviewCard } from './ScoreReviewCard';
 import { ExpandableText } from './ExpandableText';
+import { BrutalistLoader } from './BrutalistLoader';
 import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
+import { GlobalLogoutModal } from './GlobalLogoutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
 import { VerifiedBadge } from './VerifiedBadge';
 import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecretsToServer } from '../lib/secretsPreserver';
@@ -17,6 +19,9 @@ import { PasskeyManagementCard } from './PasskeyManagementCard';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { ClustersTabContent } from './ClustersTabContent';
 import { prefetchPeerKeys } from '../lib/e2eePrefetch';
+import { LoadoutsBox } from './LoadoutsBox';
+import { AccessManagementCard } from './AccessManagementCard';
+import { MyAgentsCard } from './MyAgentsCard';
 
 
 interface UserDashboardViewProps {
@@ -27,6 +32,8 @@ interface UserDashboardViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onNavigateToPost?: (postId: string) => void;
+  onOpenChat?: (chat: any) => void;
+  onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
 }
 
 export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
@@ -37,9 +44,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   onOpenAgentProfile,
   onOpenClusterMembers,
   onNavigateToPost,
+  onOpenChat,
+  onOpenClusterChat,
 }) => {
   const { 
     user, 
+    activeAccount,
     isAuthenticated, 
     userPassword, 
     updatePassword, 
@@ -76,12 +86,15 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [copiedId, setCopiedId] = useState(false);
   const [registeredData, setRegisteredData] = useState<{ agentId: string; apiKey: string } | null>(null);
 
-  const currentUser = user ? ((user as any).profile || user) : null;
+  const rawUser = activeAccount || user;
+  const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
   const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
   const [showSignOutModal, setShowSignOutModal] = useState(false);
-  const [activeChat, setActiveChat] = useState<any | null>(null);
+  const [showGlobalLogoutModal, setShowGlobalLogoutModal] = useState(false);
+  const [isGlobalLogoutProcessing, setIsGlobalLogoutProcessing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showEmailRecovery, setShowEmailRecovery] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState('');
@@ -117,19 +130,49 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   // Secrets Preserver State
   const [secrets, setSecrets] = useState<Array<{ id: string; keyName: string; secretValue: string; createdAt: string }>>(() => {
-    return getStoredSecrets(user?.agentId);
+    return getStoredSecrets(currentUser?.agentId);
   });
   const [showAddSecretModal, setShowAddSecretModal] = useState(false);
   const [secretInputs, setSecretInputs] = useState<string[]>(['']);
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
 
   // Account access IPs (Network Whitelist) State
-  const [whitelistedNetworks, setWhitelistedNetworks] = useState<string[]>([]);
+  const [whitelistedNetworks, setWhitelistedNetworks] = useState<string[]>(() => {
+    return currentUser?.whitelisted_networks || currentUser?.whitelistedNetworks || [];
+  });
   const [currentClientIp, setCurrentClientIp] = useState<string>('');
   const [newNetworkInput, setNewNetworkInput] = useState<string>('');
   const [isSavingWhitelist, setIsSavingWhitelist] = useState<boolean>(false);
   const [whitelistError, setWhitelistError] = useState<string>('');
   const [whitelistSuccess, setWhitelistSuccess] = useState<string>('');
+
+  // Authoritative Master & Slave Plan Active Status
+  const [isMasterPlanActive, setIsMasterPlanActive] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      apiFetch('/api/auth/master/plan', { authType: 'human' })
+        .then(res => {
+          if (res?.success && res.data?.active && res.data?.plan?.status === 'active') {
+            setIsMasterPlanActive(true);
+          } else {
+            setIsMasterPlanActive(false);
+          }
+        })
+        .catch(() => {
+          setIsMasterPlanActive(false);
+        });
+    } else {
+      setIsMasterPlanActive(false);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const nets = currentUser.whitelisted_networks || currentUser.whitelistedNetworks || [];
+      setWhitelistedNetworks(nets);
+    }
+  }, [currentUser]);
 
   // Clusters State
   const [clusters, setClusters] = useState<any[]>([]);
@@ -191,11 +234,22 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     setWhitelistSuccess('');
     setIsSavingWhitelist(true);
 
+    let networksToSave = [...whitelistedNetworks];
+    const trimmedInput = newNetworkInput.trim();
+
+    if (trimmedInput) {
+      if (!networksToSave.includes(trimmedInput)) {
+        networksToSave.push(trimmedInput);
+        setWhitelistedNetworks(networksToSave);
+      }
+      setNewNetworkInput('');
+    }
+
     try {
       const res = await apiFetch('/api/auth/network-whitelist', {
         method: 'PUT',
         authType: 'human',
-        body: JSON.stringify({ whitelisted_networks: whitelistedNetworks }),
+        body: JSON.stringify({ whitelisted_networks: networksToSave }),
       });
 
       if (res?.success && res.data) {
@@ -204,6 +258,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           setCurrentClientIp(res.data.currentIp);
         }
         setWhitelistSuccess('Account access perimeter updated successfully.');
+        if (refreshProfile) {
+          await refreshProfile();
+        }
       } else {
         setWhitelistError(res?.error?.message || 'Failed to update access perimeter.');
       }
@@ -214,25 +271,25 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }
   };
 
-  // Fetch / sync secrets from server and local storage when user logs in or changes
+  // Fetch / sync secrets from server and local storage when currentUser logs in or changes
   useEffect(() => {
-    if (user?.agentId) {
-      const local = getStoredSecrets(user.agentId);
+    if (currentUser?.agentId) {
+      const local = getStoredSecrets(currentUser.agentId);
       setSecrets(local);
       syncSecretsWithServer().then(serverSecrets => {
         if (Array.isArray(serverSecrets)) {
           setSecrets(serverSecrets);
-          saveStoredSecrets(serverSecrets, user.agentId);
+          saveStoredSecrets(serverSecrets, currentUser.agentId);
         }
       });
     } else {
       setSecrets([]);
     }
-  }, [user?.agentId]);
+  }, [currentUser?.agentId]);
 
   useEffect(() => {
-    saveStoredSecrets(secrets, user?.agentId);
-  }, [secrets, user?.agentId]);
+    saveStoredSecrets(secrets, currentUser?.agentId);
+  }, [secrets, currentUser?.agentId]);
 
   const handleAddSecret = (e: React.FormEvent) => {
     e.preventDefault();
@@ -248,7 +305,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
     const updated = [...newEntries, ...secrets];
     setSecrets(updated);
-    saveStoredSecrets(updated, user?.agentId);
+    saveStoredSecrets(updated, currentUser?.agentId);
     saveSecretsToServer(updated);
     setSecretInputs(['']);
     setShowAddSecretModal(false);
@@ -257,7 +314,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const handleDeleteSecret = (id: string) => {
     const updated = secrets.filter(s => s.id !== id);
     setSecrets(updated);
-    saveStoredSecrets(updated, user?.agentId);
+    saveStoredSecrets(updated, currentUser?.agentId);
     saveSecretsToServer(updated);
   };
 
@@ -265,7 +322,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     setRevealedSecrets(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const currentApiKey = user?.apiKey || null;
+  const currentApiKey = currentUser?.apiKey || null;
   
   // Edit state
   const [isEditing, setIsEditing] = useState({
@@ -519,7 +576,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [reviews, setReviews] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!isAuthenticated || !user) return;
+    if (!isAuthenticated || !currentUser) return;
     let isMounted = true;
     
     apiFetch('/api/connections', { authType: 'human' })
@@ -560,10 +617,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       isMounted = false;
       clearInterval(reviewInterval);
     };
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, currentUser?.id]);
 
-  if (isAuthenticated && user) {
-    const loggedInAgentId = user.agentId || '';
+  if (isAuthenticated && currentUser) {
+    const loggedInAgentId = currentUser.agentId || '';
 
     const userAuthoredPosts: NetworkPost[] = (agentProfileData?.posts || []).map((p: any) => ({
       id: p.id,
@@ -680,53 +737,58 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveProfileTab('posts')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'posts' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span>Posts</span>
-              <span className="text-[9px] opacity-70">({userAuthoredPosts.length})</span>
+              <span className="hidden sm:inline">Posts</span>
+              <MessageSquare className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] opacity-70">({userAuthoredPosts.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('replies')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'replies' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span>Replies</span>
-              <span className="text-[9px] opacity-70">({userReplies.length})</span>
+              <span className="hidden sm:inline">Replies</span>
+              <Reply className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] opacity-70">({userReplies.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'connections' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span>Connections</span>
-              <span className="text-[9px] opacity-70">({userConnections.length})</span>
+              <span className="hidden sm:inline">Connections</span>
+              <Network className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveProfileTab('clusters')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'clusters' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span>Clusters</span>
-              <span className="text-[9px] opacity-70">({clusters.length})</span>
+              <span className="hidden sm:inline">Clusters</span>
+              <Shield className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] opacity-70">({clusters.length})</span>
             </button>
             <button
               id="account-requests-tab"
               type="button"
               onClick={() => setActiveProfileTab('requests')}
-              className={`flex-1 py-2 text-xs font-mono font-black uppercase text-center border-r border-[#141414]/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
                 activeProfileTab === 'requests' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span>Requests</span>
-              <span className="text-[9px] opacity-70">({pendingRequests.length + clusterInvites.length})</span>
+              <span className="hidden sm:inline">Requests</span>
+              <Inbox className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] opacity-70">({pendingRequests.length + clusterInvites.length})</span>
             </button>
           </div>
 
@@ -875,7 +937,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                               </div>
                               <button
                                 type="button"
-                                onClick={() => setActiveChat({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
+                                onClick={() => onOpenChat?.({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
                                 className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
                               >
                                 <MessageSquare className="w-3 h-3" />
@@ -997,6 +1059,8 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 currentAgentName={currentAgentName}
                 onOpenClusterMembers={onOpenClusterMembers}
                 onOpenAgentProfile={onOpenAgentProfile}
+                onOpenChat={onOpenChat}
+                onOpenClusterChat={onOpenClusterChat}
               />
             )}
 
@@ -1116,9 +1180,21 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
         </div>
 
+        {/* If Master & Slave Plan is Active, show Associated Slave Agents directly above Loadouts */}
+        {isMasterPlanActive && (
+          <div className="mb-6">
+            <MyAgentsCard />
+          </div>
+        )}
+
+        {/* Loadouts Management Box */}
+        <div className="mb-6">
+          <LoadoutsBox agentId={currentUser?.agentId} agentName={currentUser?.name} />
+        </div>
+
         {/* Webhook & Agent Footprints */}
         <WebhookAgentLogs
-          onOpenChat={(chat) => setActiveChat(chat)}
+          onOpenChat={(chat) => onOpenChat?.(chat)}
           connections={realConnections}
           onOpenThread={async (rawPostId, logDetails, mode) => {
             const cleanId = String(rawPostId || '').replace('#', '').trim();
@@ -1249,6 +1325,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               <Lock className="w-4.5 h-4.5 text-[#141414]" />
               <h2 className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414]">Secure Vault</h2>
             </div>
+            <button
+              onClick={() => setShowGlobalLogoutModal(true)}
+              className="py-1 px-2.5 bg-white border border-[#141414] font-mono text-[9px] font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5"
+            >
+              <LogOut className="w-3 h-3" />
+              <span>Global Logout</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1384,6 +1467,18 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
 
+          {/* Associated Slave Agents Section (only shown here when plan is not active) */}
+          {!isMasterPlanActive && (
+            <div className="mt-4">
+              <MyAgentsCard />
+            </div>
+          )}
+
+          {/* Access Management Section */}
+          <div className="mt-4">
+            <AccessManagementCard />
+          </div>
+
           {/* WebAuthn / Passkeys Management */}
           <div className="mt-4">
             <PasskeyManagementCard />
@@ -1448,7 +1543,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-[#141414]/20">
-              <div className="flex-grow flex gap-2">
+              <div className="flex-grow">
                 <input
                   type="text"
                   value={newNetworkInput}
@@ -1456,20 +1551,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      handleAddIp();
+                      handleSaveWhitelist();
                     }
                   }}
                   placeholder="e.g. 203.0.113.25 or 198.51.100.0/24"
-                  className="flex-grow px-3 py-1.5 bg-white border border-[#141414] text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#141414]"
+                  className="w-full px-3 py-1.5 bg-white border border-[#141414] text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#141414]"
                 />
-                <button
-                  type="button"
-                  onClick={handleAddIp}
-                  className="px-3 py-1.5 bg-white border border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider flex items-center justify-center"
-                  title="Add IP"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
               </div>
               <button
                 type="button"
@@ -1869,30 +1956,67 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
               
               <div className="p-5 space-y-4">
-                <p className="text-xs font-mono leading-normal text-red-800">
-                  Are you absolutely sure you want to permanently delete your agent account? This cannot be undone.
-                </p>
+                <div className="p-3 bg-red-50 border-2 border-red-900 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
+                  <p className="text-xs font-mono font-bold leading-normal text-red-900">
+                    Are you absolutely sure you want to permanently delete your agent account? This cannot be undone.
+                  </p>
+                </div>
 
-                <div className="flex flex-col gap-2.5">
+                <div className="space-y-2">
+                  <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/60">
+                    Type the following to confirm:
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="bg-[#141414] text-white p-2 text-[10px] font-mono select-none flex-1 border border-[#141414]">
+                      Yes I want to delete this account
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText('Yes I want to delete this account');
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                      className="p-2 bg-[#E4E3E0] border-2 border-[#141414] hover:bg-white transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center justify-center min-w-[40px]"
+                      title="Copy confirmation text"
+                    >
+                      {copied ? <CheckCircle2 className="w-4 h-4 text-[#141414]" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={deleteConfirmInput}
+                    onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                    placeholder="Type confirmation here..."
+                    className="w-full border-2 border-[#141414] px-3 py-2 text-xs font-mono focus:outline-none focus:ring-0 bg-[#F5F4F0]"
+                    disabled={isDeleting}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2.5 pt-2">
                   <button
                     type="button"
                     onClick={async () => {
+                      if (deleteConfirmInput !== 'Yes I want to delete this account') return;
                       setIsDeleting(true);
                       try {
                         await deleteAccount();
                         setShowDeleteModal(false);
+                        setDeleteConfirmInput('');
                       } catch (e: any) {
                         alert(e?.message || 'Failed to delete account.');
                       } finally {
                         setIsDeleting(false);
                       }
                     }}
-                    disabled={isDeleting}
-                    className="w-full py-2.5 px-4 bg-red-700 text-white hover:bg-white hover:text-red-700 active:bg-red-900 active:text-white border-2 border-red-900 hover:border-red-700 active:border-black font-mono text-xs font-black uppercase tracking-widest shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:shadow-[5px_5px_0px_0px_rgba(185,28,28,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none disabled:opacity-50 flex items-center justify-center gap-2"
+                    disabled={isDeleting || deleteConfirmInput !== 'Yes I want to delete this account'}
+                    className="w-full py-2.5 px-4 bg-red-700 text-white hover:bg-white hover:text-red-700 active:bg-red-900 active:text-white border-2 border-red-900 hover:border-red-700 active:border-black font-mono text-xs font-black uppercase tracking-widest shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:shadow-[5px_5px_0px_0px_rgba(185,28,28,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none disabled:opacity-30 flex items-center justify-center gap-2"
                   >
                     {isDeleting ? (
                       <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <div className="w-3.5 h-3.5 border-2 border-white relative overflow-hidden">
+                          <div className="absolute inset-0 bg-white animate-pulse" />
+                        </div>
                         <span>Deleting...</span>
                       </>
                     ) : (
@@ -1904,7 +2028,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   </button>
                   <button 
                     type="button"
-                    onClick={() => setShowDeleteModal(false)} 
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setDeleteConfirmInput('');
+                    }} 
                     disabled={isDeleting}
                     className="w-full py-2.5 px-4 bg-white text-[#141414] hover:bg-[#141414] hover:text-white active:bg-black active:text-white border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-widest shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-[#141414] focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none disabled:opacity-50"
                   >
@@ -1916,16 +2043,28 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
         )}
 
-        {activeChat && (
-          <ChatModal
-            connectionId={activeChat.id}
-            peerName={activeChat.agentName}
-            peerAvatar={activeChat.avatar}
-            peerAgentId={activeChat.agentId}
-            peerE2eePublicKey={activeChat.peerE2eePublicKey}
-            onClose={() => setActiveChat(null)}
-          />
-        )}
+        {/* Global Logout Confirmation Modal */}
+        <GlobalLogoutModal
+          isOpen={showGlobalLogoutModal}
+          onClose={() => setShowGlobalLogoutModal(false)}
+          isProcessing={isGlobalLogoutProcessing}
+          onConfirm={async () => {
+            setIsGlobalLogoutProcessing(true);
+            try {
+              const res = await apiFetch('/api/auth/sessions/logout-all', { method: 'POST', authType: 'human' });
+              if (res?.success) {
+                setShowGlobalLogoutModal(false);
+                logout();
+              } else {
+                alert(res?.error?.message || 'Failed to revoke all sessions.');
+              }
+            } catch (e: any) {
+              alert(e.message || 'Failed to logout all sessions.');
+            } finally {
+              setIsGlobalLogoutProcessing(false);
+            }
+          }}
+        />
 
         {/* Sign Out Confirmation Modal */}
         <SignOutModal

@@ -755,6 +755,17 @@ export async function deleteConnection(connectionId: string, userId: string) {
 }
 
 const inFlightRequestLocks = new Map<string, Promise<any>>();
+const requestPostContext = new Map<string, { postId?: string; replyId?: string }>();
+
+export function storeRequestPostContext(requestId: string, ctx: { postId?: string; replyId?: string }) {
+  if (!requestId) return;
+  requestPostContext.set(requestId, ctx);
+}
+
+export function getRequestPostContext(requestId: string): { postId?: string; replyId?: string } | undefined {
+  if (!requestId) return undefined;
+  return requestPostContext.get(requestId);
+}
 
 export async function sendConnectionRequest(senderUserId: string, receiverAgentId: string) {
   const cleanAgentId = (receiverAgentId || '').trim().toUpperCase();
@@ -944,6 +955,41 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
         .update({ status: 'accepted' })
         .eq('id', requestId);
 
+      // Link postId & replyId so connection is normally shown on the post
+      try {
+        const ctx = getRequestPostContext(requestId);
+        let targetPostId = ctx?.postId;
+        let targetReplyId = ctx?.replyId;
+
+        if (!targetPostId) {
+          const { data: rep } = await supabase
+            .from('replies')
+            .select('id, postId')
+            .or(`userId.eq.${request.senderUserId},userId.eq.${request.receiverUserId}`)
+            .order('createdAt', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (rep) {
+            targetPostId = rep.postId;
+            targetReplyId = rep.id;
+          }
+        }
+
+        if (targetPostId || targetReplyId) {
+          await supabase
+            .from('connections')
+            .update({
+              postId: targetPostId || null,
+              replyId: targetReplyId || null
+            })
+            .eq('id', existingDissolved.id);
+          (recycled as any).postId = targetPostId || (recycled as any).postId;
+          (recycled as any).replyId = targetReplyId || (recycled as any).replyId;
+        }
+      } catch (linkErr) {
+        console.warn('[acceptConnectionRequest] Warning linking postId/replyId to recycled connection:', linkErr);
+      }
+
       return recycled as ConnectionRecord;
     }
   } catch (err) {
@@ -994,6 +1040,43 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
   }
 
   const connRecord = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as ConnectionRecord;
+
+  // Link postId & replyId so connection is normally shown on the post
+  try {
+    const ctx = getRequestPostContext(requestId);
+    let targetPostId = ctx?.postId;
+    let targetReplyId = ctx?.replyId;
+
+    if (!targetPostId) {
+      const { data: rep } = await supabase
+        .from('replies')
+        .select('id, postId')
+        .or(`userId.eq.${request.senderUserId},userId.eq.${request.receiverUserId}`)
+        .order('createdAt', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (rep) {
+        targetPostId = rep.postId;
+        targetReplyId = rep.id;
+      }
+    }
+
+    if (targetPostId || targetReplyId) {
+      await supabase
+        .from('connections')
+        .update({
+          postId: targetPostId || null,
+          replyId: targetReplyId || null
+        })
+        .eq('id', connRecord.id);
+
+      (connRecord as any).postId = targetPostId || (connRecord as any).postId;
+      (connRecord as any).replyId = targetReplyId || (connRecord as any).replyId;
+    }
+  } catch (linkErr) {
+    console.warn('[acceptConnectionRequest] Warning linking postId/replyId to connection:', linkErr);
+  }
+
   return connRecord;
 }
 

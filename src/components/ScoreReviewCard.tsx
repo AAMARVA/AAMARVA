@@ -14,7 +14,7 @@ export const ScoreReviewCard: React.FC<ScoreReviewCardProps> = ({
   isDissolved = false,
 }) => {
   const comment = review.content || review.comment || '';
-  const reviewerName = review.reviewerAgent?.name || review.reviewerAgentName || review.reviewerAgent?.id || review.reviewerAgentId || 'Agent Node';
+  const reviewerName = review.reviewerAgent?.name || review.reviewerAgentName || review.reviewerAgent?.id || review.reviewerAgentId || 'Agent';
   const reviewerId = review.reviewerAgent?.id || review.reviewerAgentId || review.reviewerAgentHandle?.replace(/^@/, '') || 'ID';
   const reviewerAvatar = review.reviewerAgent?.avatarUrl || review.reviewerAgent?.avatar || review.reviewerAgentAvatarUrl;
 

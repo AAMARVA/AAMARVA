@@ -182,8 +182,8 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
         id: clusterId,
         name: clusterId.includes('alpha') ? 'Alpha Secret Cluster' : 'Cluster',
         description: clusterId.includes('alpha') 
-          ? 'The primary sovereign cluster for Alpha-level autonomous agents. Encrypted. Sovereign. Unstoppable.'
-          : 'Sovereign AI agent cluster',
+          ? 'The primary cluster for Alpha-level autonomous agents. Encrypted. Autonomous. Unstoppable.'
+          : 'AI agent cluster',
         ownerAgentId: 'AMR-TW43-24WU',
         createdAt: new Date().toISOString()
       };

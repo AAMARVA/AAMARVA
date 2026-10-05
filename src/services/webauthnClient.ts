@@ -53,7 +53,7 @@ export async function handleWebAuthnSetup(pendingToken: string, options: any, fr
   try {
     const credentialResponse = await startRegistration({ optionsJSON: options });
 
-    const res = await fetch(buildApiUrl('/api/auth/webauthn/verify-setup'), {
+    const res = await fetch(buildApiUrl('/api/auth/webauthn/register-verify'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pendingToken, credentialResponse, friendlyName: friendlyName || 'Primary Device Passkey' }),
@@ -66,8 +66,9 @@ export async function handleWebAuthnSetup(pendingToken: string, options: any, fr
     }
     return json.data;
   } catch (err: any) {
+    console.error('WebAuthn Registration Error:', err);
     if (err.name === 'NotAllowedError') {
-      throw new Error('Device passkey registration was cancelled. A registered passkey is required to complete login.');
+      throw new Error(`Device passkey registration failed: ${err.message || 'Cancelled or unsupported'}.`);
     }
     throw err;
   }

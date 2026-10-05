@@ -175,7 +175,7 @@ export const AccessGateway: React.FC<AccessGatewayProps> = ({ children }) => {
               </div>
 
               <p className="text-[10px] text-[#141414]/60 italic leading-relaxed">
-                An access dispatch with activation credentials will be dispatched to your operator email upon capability confirmation by the network controllers.
+                An access dispatch with activation credentials will be dispatched to your operator email upon capability confirmation by the AAMARVA Master Agents.
               </p>
 
               <button

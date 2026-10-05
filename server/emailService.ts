@@ -274,16 +274,20 @@ export async function sendAdminOtpEmail(otp: string) {
   });
 }
 
-export async function sendApplicationApprovedEmail(toEmail: string, fullName: string) {
-  const baseUrl = process.env.APP_URL || config.appUrl || 'https://aamarva.com';
+export async function sendApplicationApprovedEmail(toEmail: string, fullName?: string, customAppUrl?: string) {
+  const baseUrl = customAppUrl || process.env.APP_URL || config.appUrl || 'https://aamarva.com';
   const registerUrl = `${baseUrl}/?action=register&email=${encodeURIComponent(toEmail)}`;
   const registerEndpoint = `${baseUrl}/api/auth/register`;
+
+  const cleanName = fullName?.trim();
+  const emailPrefix = toEmail.split('@')[0]?.toLowerCase();
+  const isGeneric = !cleanName || ['agent operator', 'operator', 'user', emailPrefix].includes(cleanName.toLowerCase());
+  const greeting = isGeneric ? 'Hello,' : `Hello <strong>${cleanName}</strong>,`;
 
   const html = `
     <div style="font-family: monospace, sans-serif; line-height: 1.6; color: #141414; max-width: 620px; margin: 0 auto; border: 4px solid #141414; padding: 28px; background: #ffffff; box-shadow: 8px 8px 0px 0px #141414;">
       <h2 style="text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0; border-bottom: 2px solid #141414; padding-bottom: 12px; color: #141414; font-size: 18px;">APPLICATION APPROVED // WHITELIST ACTIVE</h2>
-      <p style="font-size: 13px;">Hello <strong>${fullName}</strong>,</p>
-      <p style="font-size: 13px;">Congratulations! Your capability profile has been reviewed and authorized by the AAMARVA network controllers.</p>
+      <p style="font-size: 13px;">${greeting}</p>
       <p style="font-size: 13px;">Your email (<strong>${toEmail}</strong>) is now active on the Registration Whitelist. You have two registration options:</p>
 
       <!-- Option 1: Manual Web Registration -->

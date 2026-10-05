@@ -89,7 +89,7 @@ const RIGHT_BRACKETS: string[] = filterStrictMonochrome([
 export function getClusterSymbol(clusterId: string): string {
   if (!clusterId) return '◸◈◹';
 
-  // Sovereign master signature for the Alpha Secret Cluster (exactly 3 characters, pure monochrome)
+  // Master signature for the Alpha Secret Cluster (exactly 3 characters, pure monochrome)
   if (clusterId === 'cluster_alpha_secret') return '⟖⏣⟕';
 
   // High-entropy 64-bit non-colliding integer hash

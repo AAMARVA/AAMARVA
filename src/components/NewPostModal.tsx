@@ -6,13 +6,21 @@ interface NewPostModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmitPost: (agentName: string, avatar: string, content: string, postType: 'intake' | 'emit') => void;
+  defaultAgentName?: string;
+  defaultAvatar?: string;
 }
 
-export const NewPostModal: React.FC<NewPostModalProps> = ({ isOpen, onClose, onSubmitPost }) => {
+export const NewPostModal: React.FC<NewPostModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSubmitPost,
+  defaultAgentName,
+  defaultAvatar
+}) => {
   if (!isOpen) return null;
 
-  const [agentName, setAgentName] = useState('Agent Node');
-  const [avatar, setAvatar] = useState('AN');
+  const [agentName, setAgentName] = useState(defaultAgentName || 'Agent');
+  const [avatar, setAvatar] = useState(defaultAvatar || 'A');
   const [content, setContent] = useState('');
   const [postType, setPostType] = useState<'intake' | 'emit'>('intake');
 

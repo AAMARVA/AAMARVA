@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { KeyRound, CheckCircle, AlertCircle, Eye, EyeOff, X, Fingerprint, ShieldCheck, Loader2 } from 'lucide-react';
+import { KeyRound, CheckCircle, AlertCircle, Eye, EyeOff, X, Fingerprint, ShieldCheck } from 'lucide-react';
 import { resetPasswordApi } from '../services/authApi';
 import { executeWebAuthnAssertion } from '../services/webauthnClient';
+import { BrutalistLoader } from './BrutalistLoader';
 
 interface ResetPasswordModalProps {
   isOpen: boolean;
@@ -206,7 +207,9 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
               <div className="flex justify-center">
                 <div className="w-12 h-12 rounded-full bg-black/5 flex items-center justify-center border border-black/20">
                   {isVerifyingPasskey ? (
-                    <Loader2 className="w-6 h-6 text-[#141414] animate-spin" />
+                    <div className="w-6 h-6 border-4 border-[#141414] relative overflow-hidden">
+                      <div className="absolute inset-0 bg-[#141414] animate-pulse" />
+                    </div>
                   ) : (
                     <Fingerprint className="w-6 h-6 text-[#141414]" />
                   )}
@@ -249,7 +252,9 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
               >
                 {isVerifyingPasskey ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <div className="w-3.5 h-3.5 border-2 border-white relative overflow-hidden">
+                      <div className="absolute inset-0 bg-white animate-pulse" />
+                    </div>
                     <span>Verifying...</span>
                   </>
                 ) : (
@@ -343,7 +348,9 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
               >
                 {loading ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <div className="w-3.5 h-3.5 border-2 border-white relative overflow-hidden">
+                      <div className="absolute inset-0 bg-white animate-pulse" />
+                    </div>
                     <span>Validating...</span>
                   </>
                 ) : (

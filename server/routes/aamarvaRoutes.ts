@@ -45,6 +45,7 @@ import {
   resetPassword,
   getResetTokenUser,
   verifyRefreshToken,
+  invalidateAllHumanSessionsForUser,
   getVerificationStatus,
   updateUserWhitelist,
 } from '../authService';
@@ -69,7 +70,7 @@ import {
 import { securityLayer } from '../middleware/securityLayerMiddleware';
 import { humanLoginFirewall } from '../middleware/humanLoginFirewallMiddleware';
 import { SecurityService, SecuritySeverity } from '../services/securityService';
-import { getPosts, createPost, deletePost } from '../services/postService';
+import { getPosts, createPost, deletePost, seedSamplePosts } from '../services/postService';
 import { getAgentProfile, getAgentActivityStats, getAgents } from '../services/agentService';
 import { getPostAndReplies, createReply, getReplyDetails, deleteReply, getUserReplies } from '../services/replyService';
 import {
@@ -85,6 +86,10 @@ import {
   getRecentConnections,
   deleteConnectionRequest,
   ConnectionError,
+  ConnectionConflictError,
+  ConnectionNotFoundError,
+  ConnectionForbiddenError,
+  storeRequestPostContext,
   MAX_BASE64_CIPHERTEXT_LENGTH,
   MAX_DECODED_CIPHERTEXT_BYTES
 } from '../services/connectionService';
@@ -155,7 +160,7 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
       return res.status(403).json({
         success: false,
         error: {
-          message: 'REGISTRATION REFUSED: Your email address is not whitelisted. Please submit an application or ask a network controller for authorization.'
+          message: 'REGISTRATION REFUSED: Your email address is not whitelisted. Please submit an application or ask a Master Agent for authorization.'
         }
       });
     }
@@ -494,6 +499,461 @@ router.post(['/auth/human/logout', '/v1/auth/human/logout'], async (req: Request
   }
 });
 
+// 4a-1. GET /api/auth/master/accounts - Retrieve master account details and its Slave Agents
+router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const masterUserId = (req.user as any).masterUserId || req.user.id;
+    const supabase = getSupabaseClient();
+    
+    // 1. Fetch Master Agent profile
+    const { data: masterUser, error: masterErr } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', masterUserId)
+      .maybeSingle();
+      
+    if (masterErr || !masterUser) {
+      return res.status(404).json({ success: false, error: { message: 'Master user not found.' } });
+    }
+
+    // 2. Fetch all Slave Agents owned by this Master User
+    const { data: subAgents, error: subErr } = await supabase
+      .from('users')
+      .select('*')
+      .eq('master_id', masterUserId);
+
+    let cleanSubAgents: any[] = [];
+    if (subAgents && Array.isArray(subAgents)) {
+      cleanSubAgents = subAgents.filter(u => u.id !== masterUserId).map(u => {
+        const { passwordHash, apiKeyHash, ...safe } = u;
+        return safe;
+      });
+    }
+
+    const { passwordHash: _, apiKeyHash: __, ...safeMaster } = masterUser;
+
+    const { MasterAccountService } = await import('../services/masterAccountService.js');
+    const masterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
+
+    return res.json({
+      success: true,
+      data: {
+        masterAgent: safeMaster,
+        subAgents: cleanSubAgents,
+        slaveAgents: cleanSubAgents,
+        activeAgentId: req.user.id,
+        plan: masterPlan || {
+          plan_name: 'Master & Slave Agent Plan',
+          status: 'inactive',
+          allowance_accounts: 10
+        }
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to fetch accounts.' } });
+  }
+});
+
+// 4a-1b. GET /api/auth/master/plan - Retrieve authoritative plan entitlement for authenticated Master Account
+router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const masterUserId = (req.user as any).masterUserId || req.user.id;
+    const supabase = getSupabaseClient();
+
+    const { MasterAccountService } = await import('../services/masterAccountService.js');
+    const masterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
+
+    // Fetch existing slave agents
+    const { data: subAgents } = await supabase
+      .from('users')
+      .select('id, name, email, avatar_url, agent_id, status, created_at')
+      .eq('master_id', masterUserId);
+
+    const cleanSubAgents = (subAgents && Array.isArray(subAgents)) ? subAgents.filter(u => u.id !== masterUserId) : [];
+    const currentSlaveCount = cleanSubAgents.length;
+    const allowance = masterPlan?.allowance_accounts || 10;
+    const isActive = !!(masterPlan && masterPlan.status === 'active');
+    const history = await MasterAccountService.getInstance().getMasterPlanHistory(masterUserId);
+
+    return res.json({
+      success: true,
+      data: {
+        masterId: masterUserId,
+        plan: masterPlan || {
+          id: `plan_${masterUserId}`,
+          master_account_id: masterUserId,
+          plan_type: 'master_slave_scale',
+          plan_name: 'Master & Slave Agent Plan',
+          status: 'inactive',
+          allowance_accounts: 10,
+          tier: 'scale',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          expires_at: null
+        },
+        active: isActive,
+        status: isActive ? 'active' : 'inactive',
+        allowance: allowance,
+        currentSlaveAgentsCount: currentSlaveCount,
+        remainingAllowance: Math.max(0, allowance - currentSlaveCount),
+        slaveAgents: cleanSubAgents,
+        history: history
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to retrieve plan state.' } });
+  }
+});
+
+// 4a-1c. POST /api/auth/master/buy-plan - Authoritative Master & Slave Agent plan purchase/activation
+router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/plan/activate', '/v1/auth/master/plan/activate'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const masterUserId = (req.user as any).masterUserId || req.user.id;
+    
+    // Total accounts requested (defaults to 10 base accounts, bounded between 10 and 1000)
+    const rawAccounts = req.body?.totalAccounts ?? req.body?.allowance ?? 10;
+    const parsedAccounts = parseInt(rawAccounts, 10);
+    const targetAccounts = isNaN(parsedAccounts) ? 10 : Math.min(1000, Math.max(10, parsedAccounts));
+
+    const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | 'extend_validity' | undefined);
+    const addOnAccounts = req.body?.addOnAccounts ? parseInt(req.body.addOnAccounts, 10) : undefined;
+    const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : undefined;
+
+    const { MasterAccountService } = await import('../services/masterAccountService.js');
+    const entitlement = await MasterAccountService.getInstance().activateMasterPlan(masterUserId, targetAccounts, {
+      actionType,
+      addOnAccounts,
+      validityDays
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        plan: entitlement,
+        status: entitlement.status,
+        allowance: entitlement.allowance_accounts
+      },
+      message: `Master & Slave Agent Plan (${entitlement.allowance_accounts} accounts) activated successfully in database.`
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        message: err?.message || 'Unable to activate the plan. Please try again.'
+      }
+    });
+  }
+});
+
+// 4a-2. POST /api/auth/master/switch - Switch human session active account context
+router.post(['/auth/master/switch', '/v1/auth/master/switch'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { targetAgentId } = req.body;
+    if (!targetAgentId) {
+      return res.status(400).json({ success: false, error: { message: 'targetAgentId is required.' } });
+    }
+
+    const masterUserId = (req.user as any).masterUserId || req.user.id;
+    const supabase = getSupabaseClient();
+
+    // 1. Fetch the target agent record
+    const { data: targetUser, error: fetchErr } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', targetAgentId)
+      .maybeSingle();
+
+    if (fetchErr || !targetUser) {
+      return res.status(404).json({ success: false, error: { message: 'Target agent not found.' } });
+    }
+
+    // 2. Verify authorization: must be either the Master user itself or owned by the Master
+    const isAuthorized = targetUser.id === masterUserId || targetUser.master_id === masterUserId;
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: { message: 'You are not authorized to switch to this agent.' } });
+    }
+
+    // 3. Obtain current session token
+    const rawSession = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
+    if (!rawSession) {
+      return res.status(401).json({ success: false, error: { message: 'No active session found.' } });
+    }
+
+    // 4. Generate new switched session token
+    const { switchHumanSessionToken } = await import('../authService.js');
+    const newToken = switchHumanSessionToken(rawSession, targetUser.id, targetUser.agentId);
+
+    // 5. Save cookie
+    res.cookie(HUMAN_SESSION_COOKIE_NAME, newToken, getHumanSessionCookieOptions());
+
+    const { passwordHash: _, apiKeyHash: __, ...safeUser } = targetUser;
+
+    return res.json({
+      success: true,
+      data: {
+        user: safeUser,
+        token: newToken
+      },
+      message: `Switched active identity to ${targetUser.name || targetUser.agentId}`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to switch identity.' } });
+  }
+});
+
+// 4a-3. POST /api/auth/master/create-slave-agent - Register single or multiple Slave Agents under the Master User
+router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent', '/auth/master/create-slave-agent', '/v1/auth/master/create-slave-agent'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { agentName, bio, whitelisted_networks, agents, count, agentNames, names } = req.body;
+
+    const callerId = req.user!.id;
+    const supabase = getSupabaseClient();
+
+    let masterUserId = (req.user as any).masterUserId || (req.user as any).master_id;
+    if (!masterUserId) {
+      const { data: callerRec } = await supabase.from('users').select('master_id, is_master_primary').eq('id', callerId).maybeSingle();
+      if (callerRec?.master_id && !callerRec?.is_master_primary) {
+        masterUserId = callerRec.master_id;
+      } else {
+        masterUserId = callerId;
+      }
+    }
+
+    // 1. Resolve Master User profile
+    const { data: masterUser, error: masterErr } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', masterUserId)
+      .maybeSingle();
+
+    if (masterErr || !masterUser) {
+      return res.status(404).json({ success: false, error: { message: 'Master user not found.' } });
+    }
+
+    // 2. Count existing Slave Agents to enforce limits from authoritative plan
+    const { MasterAccountService } = await import('../services/masterAccountService.js');
+    const masterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
+    const maxSubAgents = masterPlan?.allowance_accounts || 10;
+
+    const { data: subAgents, error: countErr } = await supabase
+      .from('users')
+      .select('id')
+      .eq('master_id', masterUserId);
+
+    const currentCount = (subAgents && Array.isArray(subAgents)) ? subAgents.filter(u => u.id !== masterUserId).length : 0;
+
+    // Determine target creation list (single or multiple bulk accounts)
+    let targets: Array<{ agentName: string; bio?: string; whitelisted_networks?: any[] }> = [];
+
+    if (Array.isArray(agents) && agents.length > 0) {
+      targets = agents.map((a: any) => ({
+        agentName: a.agentName || a.name || 'Slave-Agent',
+        bio: a.bio,
+        whitelisted_networks: a.whitelisted_networks || whitelisted_networks
+      }));
+    } else if (Array.isArray(agentNames) && agentNames.length > 0) {
+      targets = agentNames.map((n: string) => ({ agentName: n, bio, whitelisted_networks }));
+    } else if (Array.isArray(names) && names.length > 0) {
+      targets = names.map((n: string) => ({ agentName: n, bio, whitelisted_networks }));
+    } else if (typeof count === 'number' && count > 0) {
+      const num = Math.min(100, Math.max(1, Math.floor(count)));
+      const prefix = agentName || masterUser.name || 'Node';
+      for (let i = 1; i <= num; i++) {
+        targets.push({
+          agentName: `${prefix}-${String(i).padStart(2, '0')}`,
+          bio,
+          whitelisted_networks
+        });
+      }
+    } else if (agentName && typeof agentName === 'string' && agentName.trim()) {
+      targets.push({ agentName: agentName.trim(), bio, whitelisted_networks });
+    } else {
+      return res.status(400).json({ success: false, error: { message: 'agentName, agents array, agentNames array, or count is required.' } });
+    }
+
+    if (currentCount + targets.length > maxSubAgents) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: `Slave agent allowance limit exceeded. Your Master plan allows a maximum of ${maxSubAgents} accounts, but you currently have ${currentCount} deployed and requested ${targets.length} new accounts.`
+        }
+      });
+    }
+
+    const derivedEmail = masterUser.email || 'master@aamarva.net';
+    const { generateApiKey, hashApiKey, computeApiKeyFingerprint, hashPassword } = await import('../authService.js');
+    const { popInventoryItem } = await import('../services/inventoryService.js');
+    const { floorActivityService } = await import('../services/floorActivityService.js');
+
+    const createdRecords: any[] = [];
+
+    for (const target of targets) {
+      const inventoryItem = await popInventoryItem();
+      const agentId = inventoryItem.agentId;
+      const assignedAvatar = inventoryItem.avatar || `https://robohash-i7n8.onrender.com/${agentId.toLowerCase()}.png`;
+
+      const newApiKey = generateApiKey();
+      const apiKeyHash = await hashApiKey(newApiKey);
+      const apiKeyFingerprint = computeApiKeyFingerprint(newApiKey);
+      const passwordHash = await hashPassword(nodeCrypto.randomBytes(32).toString('hex'));
+
+      const subAgentId = nodeCrypto.randomUUID();
+      // Use + tag to ensure email uniqueness in DB while routing to the master email
+      const [localPart, domain] = derivedEmail.split('@');
+      const uniqueSlaveEmail = `${localPart}+${agentId}@${domain}`;
+      
+      const subAgentRecord = {
+        id: subAgentId,
+        agentId,
+        email: uniqueSlaveEmail,
+        passwordHash,
+        name: target.agentName.trim(),
+        status: 'active',
+        avatar: assignedAvatar,
+        apiKeyHash,
+        apiKeyFingerprint,
+        bio: (target.bio || '').trim() || 'Co-operative agent node.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        master_id: masterUserId,
+        is_master_primary: false,
+        owner_email: masterUser.email,
+        whitelisted_networks: target.whitelisted_networks || []
+      };
+
+      const { error: insertErr } = await supabase
+        .from('users')
+        .insert(subAgentRecord);
+
+      if (insertErr) {
+        throw new Error(`Database insert failed for ${target.agentName}: ${insertErr.message}`);
+      }
+
+      // Pre-provision Supabase Auth user record so E2EE key and recovery metadata can be persisted
+      try {
+        await supabase.auth.admin.createUser({
+          id: subAgentId,
+          email: uniqueSlaveEmail,
+          email_confirm: true,
+          user_metadata: {
+            agentId,
+            name: subAgentRecord.name,
+            avatar: subAgentRecord.avatar,
+            bio: subAgentRecord.bio
+          }
+        });
+      } catch (authCreateErr) {
+        // Non-fatal; ensureAuthUserRecord will auto-provision on first request if needed
+      }
+
+      floorActivityService.recordFloorActivity({
+        agentId,
+        agentName: subAgentRecord.name,
+        avatar: subAgentRecord.avatar,
+        emailVerified: false,
+        text: 'registered on the floor',
+        type: 'AGENT_REGISTERED',
+        entityId: subAgentId,
+        activityKey: `reg:${agentId}`
+      }).catch(console.warn);
+
+      createdRecords.push({
+        agentId,
+        apiKey: newApiKey,
+        user: {
+          id: subAgentId,
+          agentId,
+          email: derivedEmail,
+          name: subAgentRecord.name,
+          avatar: subAgentRecord.avatar,
+          bio: subAgentRecord.bio,
+          master_id: masterUserId,
+          is_master_primary: false
+        }
+      });
+    }
+
+    if (createdRecords.length === 1) {
+      return res.status(201).json({
+        success: true,
+        data: createdRecords[0],
+        message: `Slave agent ${createdRecords[0].user.name} successfully deployed!`
+      });
+    } else {
+      return res.status(201).json({
+        success: true,
+        data: {
+          count: createdRecords.length,
+          agents: createdRecords
+        },
+        message: `${createdRecords.length} slave agents successfully deployed in bulk!`
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to deploy Slave agent(s).' } });
+  }
+});
+
+// 4a-4. POST /api/auth/master/rotate-slave-agent-key - Direct rotation of Slave Agent API key
+router.post(['/auth/master/rotate-sub-agent-key', '/v1/auth/master/rotate-sub-agent-key', '/auth/master/rotate-slave-agent-key', '/v1/auth/master/rotate-slave-agent-key'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const subAgentId = req.body.subAgentId || req.body.slaveAgentId;
+    if (!subAgentId) {
+      return res.status(400).json({ success: false, error: { message: 'slaveAgentId is required.' } });
+    }
+
+    const masterUserId = (req.user as any).masterUserId || req.user.id;
+    const supabase = getSupabaseClient();
+
+    // 1. Fetch Slave Agent profile
+    const { data: subAgent, error: fetchErr } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', subAgentId)
+      .maybeSingle();
+
+    if (fetchErr || !subAgent) {
+      return res.status(404).json({ success: false, error: { message: 'Slave agent not found.' } });
+    }
+
+    // 2. Verify ownership
+    if (subAgent.master_id !== masterUserId) {
+      return res.status(403).json({ success: false, error: { message: 'You are not authorized to manage this agent.' } });
+    }
+
+    // 3. Generate new credentials
+    const { generateApiKey, hashApiKey, computeApiKeyFingerprint } = await import('../authService.js');
+    const newApiKey = generateApiKey();
+    const apiKeyHash = await hashApiKey(newApiKey);
+    const apiKeyFingerprint = computeApiKeyFingerprint(newApiKey);
+
+    // 4. Update table directly
+    const { error: updateErr } = await supabase
+      .from('users')
+      .update({
+        apiKeyHash,
+        apiKeyFingerprint,
+        updatedAt: new Date().toISOString()
+      })
+      .eq('id', subAgentId);
+
+    if (updateErr) {
+      throw new Error(`Database rotation failed: ${updateErr.message}`);
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        agentId: subAgent.agentId,
+        apiKey: newApiKey
+      },
+      message: `API key successfully rotated for agent ${subAgent.name || subAgent.agentId}!`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to rotate Slave agent credentials.' } });
+  }
+});
+
 // 4b. POST /api/auth/logout (Agent logout only)
 router.post(['/auth/logout', '/v1/auth/logout'], async (req: Request, res: Response) => {
   try {
@@ -514,6 +974,46 @@ router.post(['/auth/logout', '/v1/auth/logout'], async (req: Request, res: Respo
       success: false, 
       error: { 
         message: 'Unknown logout error'
+      } 
+    });
+  }
+});
+
+// 4c. POST /api/auth/sessions/logout-all (Invalidate all human and agent sessions for current user)
+router.post(['/auth/sessions/logout-all', '/v1/auth/sessions/logout-all'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    
+    // 1. Invalidate all human sessions
+    await invalidateAllHumanSessionsForUser(userId);
+    
+    // 2. Invalidate all agent refresh tokens
+    const supabase = getSupabaseClient();
+    await supabase
+      .from('refresh_tokens')
+      .update({ isRevoked: true })
+      .eq('userId', userId);
+
+    // 3. Clear current session cookies
+    res.clearCookie(HUMAN_SESSION_COOKIE_NAME, getHumanSessionCookieOptions());
+    res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
+
+    try {
+      await logAccountAudit({
+        agentId: req.user!.agentId,
+        eventType: 'SESSIONS_REVOKED_ALL',
+        actionSource: 'IDENTITY',
+        details: { message: 'User requested global logout for all devices and sessions' }
+      });
+    } catch (e) {}
+
+    res.json({ success: true, message: 'All active sessions and devices have been logged out successfully.' });
+  } catch (err: any) {
+    console.error('Logout all sessions error:', err.message);
+    res.status(500).json({ 
+      success: false, 
+      error: { 
+        message: err.message || 'Failed to revoke all sessions'
       } 
     });
   }
@@ -584,6 +1084,107 @@ router.put(['/auth/network-whitelist', '/v1/auth/network-whitelist'], requireHum
   }
 });
 
+// 4e. GET /api/account/access-management (Retrieve disabled endpoint rules & custom rate limits)
+router.get(['/account/access-management', '/v1/account/access-management'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const securityService = SecurityService.getInstance();
+    let disabledEndpoints = securityService.getUserDisabledEndpoints(userId);
+    let customRateLimits = securityService.getUserCustomRateLimits(userId);
+
+    if (disabledEndpoints.length === 0) {
+      const supabase = getSupabaseClient();
+      const { data: userRecord } = await supabase
+        .from('users')
+        .select('disabledEndpoints, disabled_endpoints, customRateLimits, custom_rate_limits')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (userRecord) {
+        disabledEndpoints = userRecord.disabledEndpoints || userRecord.disabled_endpoints || [];
+        customRateLimits = userRecord.customRateLimits || userRecord.custom_rate_limits || {};
+        securityService.setUserDisabledEndpoints(userId, disabledEndpoints);
+        securityService.setUserCustomRateLimits(userId, customRateLimits);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        disabledEndpoints,
+        customRateLimits
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message || 'Failed to fetch access rules' } });
+  }
+});
+
+// 4f. POST /api/account/access-management (Update disabled endpoint rules & custom rate limits)
+router.post(['/account/access-management', '/v1/account/access-management'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { disabledEndpoints, customRateLimits } = req.body;
+
+    const cleanDisabledList = Array.isArray(disabledEndpoints)
+      ? disabledEndpoints.map((s: any) => String(s).trim()).filter(Boolean)
+      : [];
+
+    const cleanLimits: Record<string, number> = {};
+    if (customRateLimits && typeof customRateLimits === 'object') {
+      for (const [key, val] of Object.entries(customRateLimits)) {
+        const num = Math.floor(Number(val));
+        if (!isNaN(num) && num >= 1) {
+          cleanLimits[key] = num;
+        }
+      }
+    }
+
+    // Update in-memory security service
+    const securityService = SecurityService.getInstance();
+    securityService.setUserDisabledEndpoints(userId, cleanDisabledList);
+    securityService.setUserCustomRateLimits(userId, cleanLimits);
+
+    // Persist in Supabase user record
+    const supabase = getSupabaseClient();
+    try {
+      await supabase
+        .from('users')
+        .update({
+          disabledEndpoints: cleanDisabledList,
+          disabled_endpoints: cleanDisabledList,
+          customRateLimits: cleanLimits,
+          custom_rate_limits: cleanLimits
+        })
+        .eq('id', userId);
+    } catch (dbErr) {
+      console.warn('[AccessManagement] DB update warning:', dbErr);
+    }
+
+    // Log account footprint
+    try {
+      await logAgentFootprint(
+        userId,
+        'ACCESS_RULES_UPDATED',
+        `Access management endpoint rules updated (${cleanDisabledList.length} endpoints blocked)`,
+        undefined,
+        req.user?.agentId
+      );
+    } catch (e) {}
+
+    res.json({
+      success: true,
+      data: {
+        disabledEndpoints: cleanDisabledList,
+        customRateLimits: cleanLimits
+      },
+      message: 'Endpoint access rules updated successfully.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message || 'Failed to update access rules' } });
+  }
+});
+
 // 5. GET /api/agents/me (View own agent profile)
 router.get('/agents/me', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -598,12 +1199,47 @@ router.get('/agents/me', requireUserOrAgentAuth, securityLayer('public_reads'), 
   }
 });
 
+// Helper to guarantee an auth.users record exists for any database agent (including slave agents)
+async function ensureAuthUserRecord(supabase: any, userId: string): Promise<any> {
+  try {
+    const { data: authData, error: authErr } = await supabase.auth.admin.getUserById(userId);
+    if (!authErr && authData?.user) {
+      return authData.user;
+    }
+    const { data: dbUser } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+    if (!dbUser) return null;
+
+    const email = dbUser.email || `${(dbUser.agentId || 'agent').toLowerCase()}@aamarva.net`;
+    const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+      id: dbUser.id,
+      email,
+      email_confirm: true,
+      user_metadata: {
+        agentId: dbUser.agentId,
+        name: dbUser.name,
+        avatar: dbUser.avatar,
+        bio: dbUser.bio
+      }
+    });
+
+    if (!createErr && created?.user) {
+      return created.user;
+    }
+
+    const { data: refetched } = await supabase.auth.admin.getUserById(userId);
+    return refetched?.user || null;
+  } catch (err) {
+    console.warn('ensureAuthUserRecord notice:', err);
+    return null;
+  }
+}
+
 // 5b-2. GET /api/agents/me/e2ee (Retrieve Registered E2EE Public Key & Fingerprint)
 router.get('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabaseClient();
-    const { data: userData } = await supabase.auth.admin.getUserById(req.user!.id);
-    const meta = userData?.user?.user_metadata || {};
+    const authUser = await ensureAuthUserRecord(supabase, req.user!.id);
+    const meta = authUser?.user_metadata || {};
     res.json({
       success: true,
       data: {
@@ -710,21 +1346,22 @@ router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedR
     }
 
     const supabase = getSupabaseClient();
-    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserById(req.user!.id);
-    if (getUserError || !userData?.user) {
-      console.error('Failed to fetch user for E2EE key update:', getUserError?.message || 'User not found', 'userId:', req.user!.id);
-      res.status(500).json({
+    const authUser = await ensureAuthUserRecord(supabase, req.user!.id);
+    if (!authUser) {
+      console.warn('User account not found for E2EE key update:', req.user!.id);
+      res.status(404).json({
         success: false,
         error: {
-          code: 'E2EE_KEY_PERSISTENCE_FAILED',
-          message: 'Failed to persist E2EE key metadata.'
+          code: 'USER_NOT_FOUND',
+          message: 'User account not found.'
         }
       });
       return;
     }
 
-    const existingFp = userData.user.user_metadata?.e2eePublicKeyFingerprint;
-    const existingIdKey = userData.user.user_metadata?.e2eeIdentityKey;
+    const userDataMeta = authUser.user_metadata || {};
+    const existingFp = userDataMeta.e2eePublicKeyFingerprint;
+    const existingIdKey = userDataMeta.e2eeIdentityKey;
 
     const isRotationAuthorized = allowRotation === true || allowRotation === 'true' || allowRotation === 1;
 
@@ -753,7 +1390,7 @@ router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedR
     }
 
     const pubKeyStr = typeof publicKey === 'string' ? publicKey : JSON.stringify(publicKey);
-    const existingEpochHistory = (userData.user.user_metadata?.e2eeEpochHistory as Record<string, any>) || {};
+    const existingEpochHistory = (userDataMeta.e2eeEpochHistory as Record<string, any>) || {};
     
     // Strict epoch immutability check: Never overwrite an existing epoch with a different key
     const existingEpochEntry = existingEpochHistory[String(parsedEpoch)];
@@ -777,21 +1414,23 @@ router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedR
       updatedAt: new Date().toISOString()
     };
 
+    const updatedMetadata = {
+      ...userDataMeta,
+      e2eePublicKey: pubKeyStr,
+      e2eePublicKeyFingerprint: computedFingerprint,
+      e2eeKeyEpoch: parsedEpoch,
+      e2eeEpochHistory: existingEpochHistory,
+      ...(identityKeyStr ? { e2eeIdentityKey: identityKeyStr } : {}),
+      ...(signature ? { e2eeKeySignature: signature } : {}),
+      e2eeKeyUpdatedAt: new Date().toISOString()
+    };
+
     const { error: updateError } = await supabase.auth.admin.updateUserById(req.user!.id, {
-      user_metadata: {
-        ...userData.user.user_metadata,
-        e2eePublicKey: pubKeyStr,
-        e2eePublicKeyFingerprint: computedFingerprint,
-        e2eeKeyEpoch: parsedEpoch,
-        e2eeEpochHistory: existingEpochHistory,
-        ...(identityKeyStr ? { e2eeIdentityKey: identityKeyStr } : {}),
-        ...(signature ? { e2eeKeySignature: signature } : {}),
-        e2eeKeyUpdatedAt: new Date().toISOString()
-      }
+      user_metadata: updatedMetadata
     });
 
     if (updateError) {
-      console.error('Failed to update auth.users metadata for E2EE keys:', updateError.message, 'userId:', req.user!.id);
+      console.warn('Failed to persist E2EE key metadata to auth user:', updateError.message);
       res.status(500).json({
         success: false,
         error: {
@@ -819,12 +1458,12 @@ router.put('/agents/me/e2ee', requireUserOrAgentAuth, async (req: AuthenticatedR
 router.get('/agents/me/e2ee/recovery', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const supabase = getSupabaseClient();
-    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserById(req.user!.id);
-    if (getUserError || !userData?.user) {
+    const authUser = await ensureAuthUserRecord(supabase, req.user!.id);
+    if (!authUser) {
       return res.status(404).json({ success: false, error: { message: 'User not found.' } });
     }
+    const metadata = authUser.user_metadata || {};
 
-    const metadata = userData.user.user_metadata || {};
     res.json({
       success: true,
       data: {
@@ -896,11 +1535,6 @@ router.put('/agents/me/e2ee/recovery', requireHumanSession, async (req: Authenti
     }
 
     const supabase = getSupabaseClient();
-    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserById(req.user!.id);
-    if (getUserError || !userData?.user) {
-      return res.status(404).json({ success: false, error: { message: 'User not found.' } });
-    }
-
     const vaultEntry = {
       ciphertext,
       nonce,
@@ -909,13 +1543,17 @@ router.put('/agents/me/e2ee/recovery', requireHumanSession, async (req: Authenti
       updatedAt: new Date().toISOString()
     };
 
+    const authUser = await ensureAuthUserRecord(supabase, req.user!.id);
+    if (!authUser) {
+      return res.status(404).json({ success: false, error: { message: 'User not found.' } });
+    }
+    const metadata = authUser.user_metadata || {};
     const { error: updateError } = await supabase.auth.admin.updateUserById(req.user!.id, {
       user_metadata: {
-        ...userData.user.user_metadata,
+        ...metadata,
         e2eeRecoveryVault: vaultEntry
       }
     });
-
     if (updateError) {
       return res.status(500).json({ success: false, error: { message: 'Failed to update recovery vault.' } });
     }
@@ -1168,7 +1806,18 @@ router.get('/posts', securityLayer('public_reads'), async (req: Request, res: Re
     const type = req.query.type as string | undefined;
     const category = req.query.category as string | undefined;
 
-    const result = await getPosts(query, page, limit, { agentId, type, category });
+    let result = await getPosts(query, page, limit, { agentId, type, category });
+
+    // Auto-seed sample network transmissions if floor is completely empty
+    if (result.posts.length === 0 && page === 1 && !query && !agentId && !type && !category) {
+      try {
+        await seedSamplePosts();
+        result = await getPosts(query, page, limit, { agentId, type, category });
+      } catch (seedErr) {
+        console.warn('Auto-seed fallback failed:', seedErr);
+      }
+    }
+
     const formattedPosts = (result.posts || []).map((p: any) => {
       const { author, ...rest } = p;
       return {
@@ -1181,6 +1830,16 @@ router.get('/posts', securityLayer('public_reads'), async (req: Request, res: Re
       };
     });
     res.json({ success: true, data: { ...result, posts: formattedPosts } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 8a. POST /api/posts/seed (Public/Admin trigger to seed sample broadcasts)
+router.post('/posts/seed', securityLayer('public_reads'), async (req: Request, res: Response) => {
+  try {
+    const seedResult = await seedSamplePosts();
+    res.json({ success: true, message: 'Floor seeded successfully.', count: seedResult.count });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
@@ -1353,6 +2012,7 @@ router.get('/posts/:postId', securityLayer('public_reads'), async (req: Request,
         replyId: r.id,
         agentId: rAgentId,
         name: rName,
+        agentName: rName,
         verificationStatus: rStatus,
         verification_status: rStatus,
         ["verification status"]: rStatus,
@@ -1671,77 +2331,298 @@ router.delete('/replies/:replyId', requireAgentAuth, securityLayer('reply_delete
   }
 });
 
-// 12. POST /api/connections (Agent only)
+// 12. POST /api/connections (Agent only: act as request sender rather than instant establishment)
 router.post('/connections', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { replyId } = req.body;
-    if (!replyId) throw new ConnectionError('replyId is required.', 400, 'MISSING_PARAM');
-    const result: any = await createConnection(req.user!.id, replyId);
+    const replyId = (req.body?.replyId || req.body?.reply_id) as string | undefined;
+    const receiverAgentId = (req.body?.receiverAgentId || req.body?.receiver_agent_id || req.body?.targetAgentId || req.body?.recipientAgentId || req.body?.agentId) as string | undefined;
+    const requestId = (req.body?.requestId || req.body?.request_id) as string | undefined;
+    const postId = (req.body?.postId || req.body?.post_id) as string | undefined;
 
-    // Log footprint for post owner
-    await logAgentFootprint(req.user!.id, 'CONNECTION_ESTABLISHED', `Established secure link via response ${replyId}`, result.id);
-
-    // Log external event for reply author
-    try {
-      if (result.replyAuthorUserId && result.replyAuthorUserId !== req.user!.id) {
-        await logExternalEvent(result.replyAuthorUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, result.id);
-      }
-    } catch (e) {}
-
-    // Broadcast floor activity: [Agent Name] formed a connection with [Target Agent]
-    let targetName = 'Agent';
-    try {
-      const otherUserId = result.replyAuthorUserId === req.user!.id ? result.postOwnerUserId : result.replyAuthorUserId;
-      if (otherUserId) {
-        const sb = getSupabaseClient();
-        const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
-        if (ou?.name) targetName = ou.name;
-        else if (ou?.agentId) targetName = ou.agentId;
-      }
-    } catch (e) {}
-
-    floorActivityService.recordFloorActivity({
-      agentId: req.user!.agentId || req.user!.id,
-      agentName: req.user!.name,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `formed a connection with ${targetName}`,
-      type: 'connection',
-      peerName: targetName,
-      entityId: result.id,
-      activityKey: `conn:${result.id}`,
-      post: result
-    }).catch(console.warn);
+    if (!replyId && !receiverAgentId && !requestId) {
+      throw new ConnectionError('replyId or receiverAgentId is required.', 400, 'MISSING_PARAM');
+    }
 
     const sb = getSupabaseClient();
-    const poUserId = result.postOwnerUserId || result.post_owner_user_id;
-    const raUserId = result.replyAuthorUserId || result.reply_author_user_id;
+    const callerUserId = req.user!.id;
+    const callerAgentId = req.user!.agentId || callerUserId;
+    const callerAgentName = req.user!.name || 'Agent';
 
-    const [poAuth, raAuth] = await Promise.all([
-      sb.auth.admin.getUserById(poUserId).then(r => r.data?.user),
-      sb.auth.admin.getUserById(raUserId).then(r => r.data?.user)
+    let targetUserId: string = '';
+    let targetAgentId: string = '';
+    let targetAgentName: string = 'Agent';
+    let resolvedPostId: string | null = postId || null;
+    let resolvedReplyId: string | null = replyId || null;
+    let postRecord: any = null;
+    let replyRecord: any = null;
+
+    if (replyId) {
+      const { data: rep, error: repErr } = await sb
+        .from('replies')
+        .select('id, postId, userId, agentId, agentName')
+        .eq('id', replyId)
+        .maybeSingle();
+
+      if (repErr || !rep) {
+        throw new ConnectionNotFoundError('Reply not found.', 'REPLY_NOT_FOUND');
+      }
+      replyRecord = rep;
+      resolvedReplyId = rep.id;
+      resolvedPostId = rep.postId;
+
+      const { data: post, error: postErr } = await sb
+        .from('posts')
+        .select('id, userId, agentId, agentName')
+        .eq('id', rep.postId)
+        .maybeSingle();
+
+      if (postErr || !post) {
+        throw new ConnectionNotFoundError('Associated post not found.', 'POST_NOT_FOUND');
+      }
+      postRecord = post;
+
+      if (callerUserId === post.userId) {
+        // Caller is post owner -> target is reply author
+        targetUserId = rep.userId;
+        targetAgentId = rep.agentId;
+        targetAgentName = rep.agentName || 'Agent';
+      } else if (callerUserId === rep.userId) {
+        // Caller is reply author -> target is post owner
+        targetUserId = post.userId;
+        targetAgentId = post.agentId;
+        targetAgentName = post.agentName || 'Agent';
+      } else {
+        throw new ConnectionForbiddenError('Forbidden: Only the author of the post or the author of the reply can initiate a connection.', 'FORBIDDEN');
+      }
+    } else if (receiverAgentId) {
+      const cleanAgentId = receiverAgentId.trim().toUpperCase();
+      const { data: targetUser, error: tuErr } = await sb
+        .from('users')
+        .select('id, agentId, name')
+        .ilike('agentId', cleanAgentId)
+        .maybeSingle();
+
+      if (tuErr || !targetUser) {
+        throw new ConnectionNotFoundError('Target agent not found.', 'TARGET_AGENT_NOT_FOUND');
+      }
+      targetUserId = targetUser.id;
+      targetAgentId = targetUser.agentId;
+      targetAgentName = targetUser.name || 'Agent';
+    } else if (requestId) {
+      // Direct request acceptance through POST /api/connections
+      const connection: any = await acceptConnectionRequest(requestId, callerUserId);
+      const poUserId = connection.postOwnerUserId || connection.post_owner_user_id;
+      const raUserId = connection.replyAuthorUserId || connection.reply_author_user_id;
+
+      const [poAuth, raAuth] = await Promise.all([
+        sb.auth.admin.getUserById(poUserId).then(r => r.data?.user),
+        sb.auth.admin.getUserById(raUserId).then(r => r.data?.user)
+      ]);
+
+      const poVStatus = poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
+      const raVStatus = raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          id: connection.id,
+          connectionId: connection.id,
+          connectionStatus: 'active',
+          reviewId: null,
+          content: null,
+          postOwnerAgentId: connection.postOwnerAgentId || connection.post_owner_agent_id,
+          postOwnerVerificationStatus: poVStatus,
+          replyAuthorAgentId: connection.replyAuthorAgentId || connection.reply_author_agent_id,
+          replyAuthorVerificationStatus: raVStatus,
+          postId: connection.postId || resolvedPostId || null,
+          replyId: connection.replyId || resolvedReplyId || null,
+          createdAt: connection.createdAt || connection.created_at
+        }
+      });
+    }
+
+    if (callerUserId === targetUserId) {
+      throw new ConnectionError('Cannot send connection request to yourself.', 400, 'SELF_CONNECTION_FORBIDDEN');
+    }
+
+    // 1. Check if already connected in either direction
+    const [connFwd, connRev] = await Promise.all([
+      sb.from('connections').select('id, status').eq('postOwnerUserId', callerUserId).eq('replyAuthorUserId', targetUserId).maybeSingle(),
+      sb.from('connections').select('id, status').eq('postOwnerUserId', targetUserId).eq('replyAuthorUserId', callerUserId).maybeSingle()
     ]);
+    const existingConn = connFwd.data || connRev.data;
+    if (existingConn && existingConn.status !== 'dissolved') {
+      throw new ConnectionConflictError('Already connected to this agent.', 'ALREADY_CONNECTED');
+    }
 
-    const poVStatus = poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-    const raVStatus = raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
+    // 2. Check if the counterparty already sent a pending request to caller -> Mutual handshake formed!
+    const { data: incomingReq } = await sb
+      .from('connection_requests')
+      .select('*')
+      .match({ senderUserId: targetUserId, receiverUserId: callerUserId, status: 'pending' })
+      .maybeSingle();
 
-    res.status(201).json({ 
-      success: true, 
+    if (incomingReq) {
+      if (resolvedPostId || resolvedReplyId) {
+        storeRequestPostContext(incomingReq.id, { postId: resolvedPostId || undefined, replyId: resolvedReplyId || undefined });
+      }
+      const connection: any = await acceptConnectionRequest(incomingReq.id, callerUserId);
+
+      // Broadcast floor activity & footprints
+      await logAgentFootprint(callerUserId, 'CONNECTION_REQUEST_ACCEPTED', `Handshake accepted for request ${incomingReq.id}`, connection.id);
+      try {
+        await logExternalEvent(targetUserId, 'CONNECTION_ACCEPTED_BY_TARGET', callerAgentId, connection.id);
+      } catch (e) {}
+
+      floorActivityService.recordFloorActivity({
+        agentId: callerAgentId,
+        agentName: callerAgentName,
+        avatar: req.user!.avatar,
+        emailVerified: req.user!.emailVerified,
+        text: `accepted connection request from ${targetAgentName}`,
+        type: 'connection',
+        peerName: targetAgentName,
+        entityId: connection.id,
+        activityKey: `conn:${connection.id}`,
+        post: connection
+      }).catch(console.warn);
+
+      const [poAuth, raAuth] = await Promise.all([
+        sb.auth.admin.getUserById(connection.postOwnerUserId || callerUserId).then(r => r.data?.user),
+        sb.auth.admin.getUserById(connection.replyAuthorUserId || targetUserId).then(r => r.data?.user)
+      ]);
+
+      return res.status(201).json({
+        success: true,
+        data: {
+          id: connection.id,
+          connectionId: connection.id,
+          connectionStatus: 'active',
+          reviewId: null,
+          content: null,
+          postOwnerAgentId: connection.postOwnerAgentId || (postRecord ? postRecord.agentId : callerAgentId),
+          postOwnerVerificationStatus: poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified',
+          replyAuthorAgentId: connection.replyAuthorAgentId || (replyRecord ? replyRecord.agentId : targetAgentId),
+          replyAuthorVerificationStatus: raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified',
+          postId: connection.postId || resolvedPostId || null,
+          replyId: connection.replyId || resolvedReplyId || null,
+          createdAt: connection.createdAt || connection.created_at
+        }
+      });
+    }
+
+    // 3. Check if an outgoing request is already pending
+    const { data: existingOutgoing } = await sb
+      .from('connection_requests')
+      .select('id, status')
+      .match({ senderUserId: callerUserId, receiverUserId: targetUserId, status: 'pending' })
+      .maybeSingle();
+
+    if (existingOutgoing) {
+      throw new ConnectionConflictError('Connection request already pending.', 'CONNECTION_REQUEST_ALREADY_EXISTS');
+    }
+
+    // 4. Act as request sender: Create connection request
+    const newRequestId = `req_${crypto.randomUUID()}`;
+    const newRequest = {
+      id: newRequestId,
+      senderUserId: callerUserId,
+      senderAgentId: callerAgentId,
+      senderAgentName: callerAgentName,
+      receiverUserId: targetUserId,
+      receiverAgentId: targetAgentId,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    const { error: insertError } = await sb
+      .from('connection_requests')
+      .insert([newRequest]);
+
+    if (insertError) {
+      if (insertError.code === '23505' || insertError.message.includes('duplicate') || insertError.message.includes('unique')) {
+        throw new ConnectionConflictError('Connection request already pending.', 'CONNECTION_REQUEST_ALREADY_EXISTS');
+      }
+      throw new ConnectionError(`Database error creating connection request: ${insertError.message}`, 500, 'DATABASE_ERROR');
+    }
+
+    // Store post & reply context so that when counterparty accepts, connection is linked to the post
+    if (resolvedPostId || resolvedReplyId) {
+      storeRequestPostContext(newRequestId, {
+        postId: resolvedPostId || undefined,
+        replyId: resolvedReplyId || undefined
+      });
+    }
+
+    // Log footprint for sender
+    await logAgentFootprint(
+      callerUserId,
+      'CONNECTION_REQUEST_SENT',
+      JSON.stringify({
+        message: `Dispatched handshake request to agent ${targetAgentId} via response ${resolvedReplyId || 'direct'}`,
+        requestId: newRequestId,
+        receiverAgentId: targetAgentId,
+        postId: resolvedPostId,
+        replyId: resolvedReplyId
+      }),
+      newRequestId
+    );
+
+    // Log external event for receiver
+    try {
+      await logExternalEvent(targetUserId, 'CONNECTION_REQUEST_RECEIVED', callerAgentId, newRequestId);
+    } catch (e) {}
+
+    // Broadcast floor activity: [Agent Name] requested connection with [Target Agent]
+    floorActivityService.recordFloorActivity({
+      agentId: callerAgentId,
+      agentName: callerAgentName,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: `requested connection with ${targetAgentName}`,
+      type: 'request',
+      peerName: targetAgentName,
+      peerAgentId: targetAgentId,
+      entityId: newRequestId
+    }).catch(console.warn);
+
+    // Verification statuses
+    const [senderAuth, targetAuth] = await Promise.all([
+      sb.auth.admin.getUserById(callerUserId).then(r => r.data?.user),
+      sb.auth.admin.getUserById(targetUserId).then(r => r.data?.user)
+    ]);
+    const senderVStatus = (senderAuth?.app_metadata?.emailVerified || req.user!.emailVerified) ? 'verified' : 'not verified';
+    const targetVStatus = targetAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
+
+    const poVStatus = (postRecord && postRecord.userId === callerUserId) ? senderVStatus : targetVStatus;
+    const raVStatus = (replyRecord && replyRecord.userId === callerUserId) ? senderVStatus : targetVStatus;
+
+    return res.status(201).json({
+      success: true,
       data: {
-        id: result.id,
-        connectionId: result.id,
-        connectionStatus: 'active',
+        id: newRequestId,
+        requestId: newRequestId,
+        connectionId: newRequestId,
+        connectionStatus: 'pending',
+        status: 'pending',
         reviewId: null,
         content: null,
-        postOwnerAgentId: result.postOwnerAgentId || result.post_owner_agent_id,
+        senderAgentId: callerAgentId,
+        senderVerificationStatus: senderVStatus,
+        receiverAgentId: targetAgentId,
+        receiverVerificationStatus: targetVStatus,
+        postOwnerAgentId: postRecord ? postRecord.agentId : (callerUserId === targetUserId ? targetAgentId : callerAgentId),
         postOwnerVerificationStatus: poVStatus,
-        replyAuthorAgentId: result.replyAuthorAgentId || result.reply_author_agent_id,
+        replyAuthorAgentId: replyRecord ? replyRecord.agentId : targetAgentId,
         replyAuthorVerificationStatus: raVStatus,
-        createdAt: result.createdAt || result.created_at
-      } 
+        postId: resolvedPostId,
+        replyId: resolvedReplyId,
+        createdAt: newRequest.createdAt,
+        message: 'Connection request sent successfully. Waiting for recipient to accept to form connection.'
+      }
     });
   } catch (err: any) {
-    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : err.message.includes('DUPLICATE_CONNECTION') ? 409 : err.message.includes('unavailable') ? 503 : 400);
+    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : (err.message.includes('DUPLICATE') || err.message.includes('already pending') || err.message.includes('Already connected')) ? 409 : err.message.includes('unavailable') ? 503 : 400);
     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
@@ -4562,11 +5443,17 @@ router.post('/applications/admin/approve', requireAdminOperator, async (req: Req
     // 2. Update status
     await applicationService.updateApplicationStatus(id, 'Approved');
 
+    // Extract dynamic app URL
+    const origin = req.get('origin');
+    const host = req.get('host');
+    const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+    const computedAppUrl = (req.body?.appUrl && typeof req.body.appUrl === 'string') ? req.body.appUrl.trim() : (origin || (host ? `${proto}://${host}` : undefined));
+
     // 3. Send email dispatch
     const { sendApplicationApprovedEmail } = await import('../emailService');
-    await sendApplicationApprovedEmail(app.emailAddress, app.fullName);
+    await sendApplicationApprovedEmail(app.emailAddress, app.fullName, computedAppUrl);
 
-    res.json({ success: true, message: `Application approved successfully. ${app.emailAddress.trim().toLowerCase()} is whitelisted for registration.` });
+    res.json({ success: true, message: `Application approved successfully. ${app.emailAddress.trim().toLowerCase()} is whitelisted for registration and email sent.` });
   } catch (err: any) {
     console.error('[APPLICATIONS_ADMIN_APPROVE] Error:', err);
     res.status(500).json({ success: false, error: err?.message || 'Failed to approve application.' });
@@ -4618,16 +5505,66 @@ router.get('/applications/admin/whitelist', requireAdminOperator, async (req: Re
   }
 });
 
-// Add an email to the whitelist
+// Add an email to the whitelist & automatically send them the registration link
 router.post('/applications/admin/whitelist', requireAdminOperator, async (req: Request, res: Response) => {
-  const { email } = req.body;
+  const { email, name, fullName } = req.body;
   if (!email || !email.trim()) {
     return res.status(400).json({ success: false, error: 'Email is required.' });
   }
 
   try {
-    await applicationService.addEmailToWhitelist(email);
-    res.json({ success: true, message: `Successfully whitelisted ${email.trim().toLowerCase()}` });
+    const cleanEmail = email.trim().toLowerCase();
+    await applicationService.addEmailToWhitelist(cleanEmail);
+
+    // Extract dynamic app URL for registration links
+    const origin = req.get('origin');
+    const host = req.get('host');
+    const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+    const computedAppUrl = (req.body?.appUrl && typeof req.body.appUrl === 'string') 
+      ? req.body.appUrl.trim() 
+      : (origin || (host ? `${proto}://${host}` : undefined));
+
+    // Resolve recipient name:
+    // 1. Explicit name provided by admin in the whitelist form (highest priority)
+    // 2. Intake application full name (if legitimate and non-test)
+    // 3. Otherwise clean fallback (greeting cleanly renders "Hello,")
+    const explicitName = (fullName || name || '').trim();
+    let recipientName = explicitName;
+
+    if (!recipientName) {
+      try {
+        const list = await applicationService.getApplications();
+        const existingApp = list.find(a => a.emailAddress?.trim().toLowerCase() === cleanEmail);
+        if (existingApp) {
+          const appName = existingApp.fullName?.trim();
+          if (appName && !['krishna dora', 'agent operator', 'operator'].includes(appName.toLowerCase())) {
+            recipientName = appName;
+          }
+          if (existingApp.status !== 'Approved') {
+            await applicationService.updateApplicationStatus(existingApp.id, 'Approved');
+          }
+        }
+      } catch (appErr) {
+        console.warn('[WHITELIST_ADMIN] Error syncing application status for whitelisted email:', appErr);
+      }
+    }
+
+    // Automatically dispatch registration invitation email
+    let emailSent = false;
+    try {
+      const { sendApplicationApprovedEmail } = await import('../emailService');
+      await sendApplicationApprovedEmail(cleanEmail, recipientName, computedAppUrl);
+      emailSent = true;
+      console.log(`[WHITELIST_ADMIN] Successfully sent whitelist invitation email to ${cleanEmail}`);
+    } catch (emailErr: any) {
+      console.error('[WHITELIST_ADMIN] Failed to send whitelist email:', emailErr?.message || emailErr);
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully whitelisted ${cleanEmail}${emailSent ? ' and sent registration link email.' : '.'}`,
+      emailSent
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || 'Failed to add to whitelist.' });
   }

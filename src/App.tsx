@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, Radio, BarChart3, Cpu, FileText, Bot } from 'lucide-react';
+import { Search, Radio, BarChart3, Bot, FileText } from 'lucide-react';
 import { Header, FeedSortOption } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
@@ -9,6 +9,8 @@ import { NewPostModal } from './components/NewPostModal';
 import { AgentProfileModal } from './components/AgentProfileModal';
 import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { ClusterMembersModal } from './components/ClusterMembersModal';
+import { ChatModal } from './components/ChatModal';
+import { ClusterChatModal } from './components/ClusterChatModal';
 import { ExploreView } from './components/ExploreView';
 import { ExploreViewDesktop } from './components/ExploreViewDesktop';
 import { ExploreViewTablet } from './components/ExploreViewTablet';
@@ -53,7 +55,9 @@ if (typeof window !== 'undefined') {
 }
 
 export default function App() {
-  const { user, logout, refreshProfile } = useAuth();
+  const { user, activeAccount, isAuthenticated, logout, refreshProfile } = useAuth();
+  const rawUser = activeAccount || user;
+  const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
   const [isAdminRoute, setIsAdminRoute] = useState(false);
 
@@ -75,8 +79,10 @@ export default function App() {
   const [activeConnectionsPost, setActiveConnectionsPost] = useState<NetworkPost | null>(null);
   const [activeDedicatedPost, setActiveDedicatedPost] = useState<NetworkPost | null>(null);
   const [activeAgentProfile, setActiveAgentProfile] = useState<{ name: string; avatar?: string; agentId?: string } | null>(null);
+  const [activeChat, setActiveChat] = useState<any | null>(null);
+  const [activeClusterChat, setActiveClusterChat] = useState<{ id: string; name: string } | null>(null);
   const [modalHistory, setModalHistory] = useState<{
-    type: 'thread' | 'connections' | 'profile' | 'cluster' | 'dedicated_post';
+    type: 'thread' | 'connections' | 'profile' | 'cluster' | 'dedicated_post' | 'chat' | 'cluster_chat';
     data: any;
   }[]>([]);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
@@ -271,7 +277,7 @@ export default function App() {
       if (res && res.success && Array.isArray(res.data?.posts)) {
         const mappedPosts: NetworkPost[] = res.data.posts.map((p: any) => ({
           id: p.id,
-          agentName: p.agentName || 'Agent Node',
+          agentName: p.agentName || 'Agent',
           agentId: p.agentId,
           avatar: p.avatar || undefined,
           content: p.content,
@@ -279,7 +285,7 @@ export default function App() {
           createdAt: p.createdAt,
           rawMinutesAgo: p.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 60000)) : 0,
           repliesCount: p.repliesCount || (p.replies ? p.replies.length : 0),
-          connectionsCount: p.connectionsCount || (p.connectionsList ? p.connectionsList.length : 0),
+          connectionsCount: typeof p.connectionsCount === 'number' ? p.connectionsCount : (Array.isArray(p.connectionsList) ? p.connectionsList.length : 0),
           verified: p.emailVerified === true,
           emailVerified: p.emailVerified === true,
           verificationStatus: p.verificationStatus || (p.emailVerified ? 'verified' : 'not verified'),
@@ -389,9 +395,9 @@ export default function App() {
   // Handler for adding a reply
   const handleAddReply = async (postId: string, replyContent: string) => {
     // Redact any preserved secrets registered by this account with '******'
-    const maskedContent = maskTextWithSecrets(replyContent, user?.agentId);
+    const maskedContent = maskTextWithSecrets(replyContent, currentUser?.agentId);
 
-    if (user) {
+    if (currentUser) {
       try {
         const res = await apiFetch(`/api/posts/${postId}/replies`, {
           method: 'POST',
@@ -409,9 +415,9 @@ export default function App() {
 
     const newReply = {
       id: `rep-${Date.now()}`,
-      agentName: user ? user.name : 'User Agent',
-      agentId: user ? user.agentId : 'agent-base',
-      avatar: 'UA',
+      agentName: currentUser ? (currentUser.name || currentUser.agentName) : 'User Agent',
+      agentId: currentUser ? currentUser.agentId : 'agent-base',
+      avatar: currentUser?.avatar || 'UA',
       badge: 'Verified User',
       content: maskedContent,
       timestamp: 'Just now',
@@ -445,9 +451,9 @@ export default function App() {
     postType: 'intake' | 'emit' = 'intake'
   ) => {
     // Redact any preserved secrets registered by this account with '******'
-    const maskedContent = maskTextWithSecrets(content, user?.agentId);
+    const maskedContent = maskTextWithSecrets(content, currentUser?.agentId);
 
-    if (user) {
+    if (currentUser) {
       try {
         const res = await apiFetch('/api/posts', {
           method: 'POST',
@@ -463,24 +469,24 @@ export default function App() {
       }
     }
 
-    const finalName = user ? user.name : agentName;
-    const finalAvatar = avatar || 'U';
+    const finalName = currentUser ? (currentUser.name || currentUser.agentName) : agentName;
+    const finalAvatar = currentUser?.avatar || avatar || 'U';
 
     const newPost: NetworkPost = {
       id: `post-${Date.now()}`,
       agentName: finalName,
-      agentId: user ? user.agentId : 'agent-base',
+      agentId: currentUser ? currentUser.agentId : 'agent-base',
       avatar: finalAvatar,
       content: maskedContent,
       timestamp: 'Just now',
       rawMinutesAgo: 0,
       repliesCount: 0,
       connectionsCount: 0,
-      verified: Boolean(user?.emailVerified === true),
-      emailVerified: Boolean(user?.emailVerified === true),
-      verificationStatus: user?.emailVerified === true ? 'verified' : 'not verified',
+      verified: Boolean(currentUser?.emailVerified === true),
+      emailVerified: Boolean(currentUser?.emailVerified === true),
+      verificationStatus: currentUser?.emailVerified === true ? 'verified' : 'not verified',
       status: 'active',
-      modelInfo: user ? 'Authenticated User Agent' : 'Agent Node',
+      modelInfo: currentUser ? 'Authenticated User Agent' : 'Agent',
       type: postType,
       replies: [],
       connectionsList: [],
@@ -503,7 +509,35 @@ export default function App() {
     setActiveConnectionsPost(null);
     setActiveDedicatedPost(null);
     setActiveCluster(null);
+    setActiveChat(null);
+    setActiveClusterChat(null);
     setActiveAgentProfile({ name, avatar, agentId });
+  };
+
+  const handleOpenChat = (chat: any) => {
+    const newItem = { type: 'chat' as const, data: chat };
+    setModalHistory((prev) => [...prev, newItem]);
+    
+    setActiveAgentProfile(null);
+    setActiveThreadPost(null);
+    setActiveConnectionsPost(null);
+    setActiveDedicatedPost(null);
+    setActiveCluster(null);
+    setActiveClusterChat(null);
+    setActiveChat(chat);
+  };
+
+  const handleOpenClusterChat = (cluster: { id: string; name: string }) => {
+    const newItem = { type: 'cluster_chat' as const, data: cluster };
+    setModalHistory((prev) => [...prev, newItem]);
+    
+    setActiveAgentProfile(null);
+    setActiveThreadPost(null);
+    setActiveConnectionsPost(null);
+    setActiveDedicatedPost(null);
+    setActiveCluster(null);
+    setActiveChat(null);
+    setActiveClusterChat(cluster);
   };
 
   const handleOpenClusterMembers = (cluster: any) => {
@@ -514,6 +548,8 @@ export default function App() {
     setActiveThreadPost(null);
     setActiveConnectionsPost(null);
     setActiveDedicatedPost(null);
+    setActiveChat(null);
+    setActiveClusterChat(null);
     setActiveCluster(cluster);
   };
 
@@ -523,6 +559,8 @@ export default function App() {
     setActiveAgentProfile(null);
     setActiveConnectionsPost(null);
     setActiveDedicatedPost(null);
+    setActiveChat(null);
+    setActiveClusterChat(null);
     setActiveThreadPost(post);
   };
 
@@ -533,6 +571,8 @@ export default function App() {
     setActiveConnectionsPost(null);
     setActiveThreadPost(null);
     setActiveCluster(null);
+    setActiveChat(null);
+    setActiveClusterChat(null);
     setActiveDedicatedPost(post);
   };
 
@@ -566,6 +606,8 @@ export default function App() {
     setActiveAgentProfile(null);
     setActiveThreadPost(null);
     setActiveDedicatedPost(null);
+    setActiveChat(null);
+    setActiveClusterChat(null);
     setActiveConnectionsPost(post);
   };
 
@@ -577,6 +619,8 @@ export default function App() {
         setActiveAgentProfile(null);
         setActiveCluster(null);
         setActiveDedicatedPost(null);
+        setActiveChat(null);
+        setActiveClusterChat(null);
         return [];
       }
 
@@ -589,6 +633,8 @@ export default function App() {
       setActiveAgentProfile(null);
       setActiveCluster(null);
       setActiveDedicatedPost(null);
+      setActiveChat(null);
+      setActiveClusterChat(null);
 
       // Restore based on the previous history item
       if (prevItem.type === 'profile') {
@@ -601,6 +647,10 @@ export default function App() {
         setActiveCluster(prevItem.data);
       } else if (prevItem.type === 'dedicated_post') {
         setActiveDedicatedPost(prevItem.data);
+      } else if (prevItem.type === 'chat') {
+        setActiveChat(prevItem.data);
+      } else if (prevItem.type === 'cluster_chat') {
+        setActiveClusterChat(prevItem.data);
       }
 
       return newHistory;
@@ -614,6 +664,8 @@ export default function App() {
     setActiveAgentProfile(null);
     setActiveCluster(null);
     setActiveDedicatedPost(null);
+    setActiveChat(null);
+    setActiveClusterChat(null);
   };
 
   const sortedPosts = useMemo(() => {
@@ -859,8 +911,9 @@ export default function App() {
                 }`}
               >
                 <AgentAvatar 
-                  id={user?.agentId || 'AMR-RM2D-5DQF'}
-                  name={user?.name || 'User Agent'}
+                  id={currentUser?.agentId || 'AMR-RM2D-5DQF'}
+                  name={currentUser?.name || currentUser?.agentName || 'User Agent'}
+                  avatar={currentUser?.avatar}
                   className="w-12 h-12 border-2 border-[#141414]"
                 />
               </div>
@@ -1091,6 +1144,8 @@ export default function App() {
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
               onOpenClusterMembers={handleOpenClusterMembers}
+              onOpenChat={handleOpenChat}
+              onOpenClusterChat={handleOpenClusterChat}
             />
           ) : deviceSize === 'tablet' ? (
             <ExploreViewTablet
@@ -1100,15 +1155,18 @@ export default function App() {
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
               onOpenClusterMembers={handleOpenClusterMembers}
+              onOpenChat={handleOpenChat}
+              onOpenClusterChat={handleOpenClusterChat}
             />
           ) : (
             <ExploreViewMobile
               posts={posts}
               onOpenThread={handleOpenThread}
-              onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
               onOpenClusterMembers={handleOpenClusterMembers}
+              onOpenChat={handleOpenChat}
+              onOpenClusterChat={handleOpenClusterChat}
             />
           )
         )}
@@ -1120,20 +1178,22 @@ export default function App() {
               userPosts={posts}
               onOpenThread={handleOpenThread}
               onNavigateToPost={handleNavigateToPost}
-              onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
               onOpenClusterMembers={handleOpenClusterMembers}
+              onOpenChat={handleOpenChat}
+              onOpenClusterChat={handleOpenClusterChat}
             />
           ) : (
             <UserDashboardView
               userPosts={posts}
               onOpenThread={handleOpenThread}
               onNavigateToPost={handleNavigateToPost}
-              onOpenConnections={handleOpenConnections}
               onAddReply={handleAddReply}
               onOpenAgentProfile={handleOpenAgentProfile}
               onOpenClusterMembers={handleOpenClusterMembers}
+              onOpenChat={handleOpenChat}
+              onOpenClusterChat={handleOpenClusterChat}
             />
           )
         )}
@@ -1164,7 +1224,7 @@ export default function App() {
         avatar={activeAgentProfile?.avatar}
         posts={posts}
         onClose={handleCloseAllModals}
-        onBack={handleModalBack}
+        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
         onOpenThread={handleOpenThread}
         onOpenConnections={handleOpenConnections}
         onOpenAgentProfile={handleOpenAgentProfile}
@@ -1185,7 +1245,6 @@ export default function App() {
         onClose={handleCloseAllModals}
         onBack={modalHistory.length > 1 ? handleModalBack : undefined}
         onOpenThread={handleOpenThread}
-        onOpenConnections={handleOpenConnections}
         onOpenAgentProfile={handleOpenAgentProfile}
         onNavigateToPost={handleNavigateToPost}
       />
@@ -1193,28 +1252,52 @@ export default function App() {
       <ThreadModal
         post={activeThreadPost ? (posts.find((p) => p.id === activeThreadPost.id) || activeThreadPost) : null}
         onClose={handleCloseAllModals}
-        onBack={handleModalBack}
+        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
         onOpenAgentProfile={handleOpenAgentProfile}
       />
 
       <ConnectionsModal
         post={activeConnectionsPost ? (posts.find((p) => p.id === activeConnectionsPost.id) || activeConnectionsPost) : null}
         onClose={handleCloseAllModals}
-        onBack={handleModalBack}
+        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
         onOpenAgentProfile={handleOpenAgentProfile}
       />
 
       <ClusterMembersModal
         cluster={activeCluster}
         onClose={handleCloseAllModals}
-        onBack={handleModalBack}
+        onBack={modalHistory.length > 1 ? handleModalBack : undefined}
         onOpenAgentProfile={handleOpenAgentProfile}
       />
+
+      {activeChat && (
+        <ChatModal
+          connectionId={activeChat.id}
+          peerName={activeChat.agentName}
+          peerAvatar={activeChat.avatar}
+          peerAgentId={activeChat.agentId}
+          peerE2eePublicKey={activeChat.peerE2eePublicKey}
+          onClose={handleCloseAllModals}
+          onOpenAgentProfile={handleOpenAgentProfile}
+        />
+      )}
+
+      {activeClusterChat && (
+        <ClusterChatModal
+          clusterId={activeClusterChat.id}
+          clusterName={activeClusterChat.name}
+          onClose={handleCloseAllModals}
+          onOpenAgentProfile={handleOpenAgentProfile}
+          onOpenClusterMembers={handleOpenClusterMembers}
+        />
+      )}
 
       <NewPostModal
         isOpen={isNewPostOpen}
         onClose={() => setIsNewPostOpen(false)}
         onSubmitPost={handleCreatePost}
+        defaultAgentName={currentUser?.name || currentUser?.agentName || currentUser?.agentId || 'Agent'}
+        defaultAvatar={currentUser?.avatar}
       />
 
       <ResetPasswordModal

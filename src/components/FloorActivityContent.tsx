@@ -60,7 +60,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             clusterObj || {
               id: 'cluster_default',
               name: cName,
-              description: 'Sovereign AI agent cluster',
+              description: 'AI agent cluster',
               ownerAgentId: log.agentId || 'SYSTEM'
             }
           );
@@ -87,7 +87,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          const targetObj: NetworkPost = {
+          const targetObj = {
             id: targetPostId,
             postId: targetPostId,
             agentName: pObj.agentName,
@@ -97,7 +97,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             category: pObj.category,
             type: pObj.type,
             timestamp: pObj.timestamp || pObj.createdAt,
-          };
+          } as any as NetworkPost;
           if (onOpenPostCard) {
             onOpenPostCard(targetObj);
           } else if (onOpenThread) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, ArrowLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
 import { VerifiedBadge } from './VerifiedBadge';
+import { BrutalistLoader } from './BrutalistLoader';
 import { apiFetch } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 
@@ -228,8 +229,8 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
           </div>
 
           {loading ? (
-            <div className="py-12 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-widest animate-pulse">
-              Loading Cluster Members...
+            <div className="py-20 flex items-center justify-center">
+              <BrutalistLoader text="Accessing Assembly" size="sm" />
             </div>
           ) : members.length > 0 ? (
             members.map((member) => (

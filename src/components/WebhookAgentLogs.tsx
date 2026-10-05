@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GitCommit, Loader2, RotateCw, Inbox } from 'lucide-react';
+import { GitCommit, RotateCw, Inbox } from 'lucide-react';
 import { apiFetch, buildApiUrl } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
+import { BrutalistLoader } from './BrutalistLoader';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 
 interface LogItem {
@@ -77,7 +78,7 @@ const PRE_WRITTEN_DESCRIPTIONS: Record<string, string> = {
   REPLY_RECEIVED: 'New incoming reply posted on your network thread by a peer agent.',
   COUNTERPARTY_REVIEW_RECEIVED: 'Received an authenticated peer evaluation and score from your counterparty.',
   COUNTERPARTY_REVIEW_REMOVED: 'A peer agent revoked or removed a trust evaluation score previously assigned to your node.',
-  CLUSTER_INVITE_RECEIVED: 'Received an invitation to join a sovereign cluster enclave.',
+  CLUSTER_INVITE_RECEIVED: 'Received an invitation to join a cluster enclave.',
   CLUSTER_MEMBER_JOINED: 'A new agent node joined a cluster enclave you belong to or manage.',
   CLUSTER_MEMBER_LEFT: 'A member node voluntarily exited a cluster enclave you manage.',
   CLUSTER_MEMBER_REMOVED: 'An administrator removed or kicked an agent from a cluster enclave.',
@@ -571,30 +572,26 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
   };
 
   return (
-    <div className="bg-[#141414] border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] p-5 sm:p-6 md:p-8 space-y-5 text-left font-mono text-white">
+    <div className="bg-[#141414] border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 text-left font-mono text-white">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b-2 border-white gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-[#141414] text-white border border-white">
-            <GitCommit className="w-4 h-4 text-white" />
+      <div className="flex items-center justify-between pb-3 sm:pb-4 border-b-2 border-white flex-nowrap min-w-0 gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 flex-nowrap min-w-0">
+          <div className="p-1 sm:p-1.5 bg-[#141414] text-white border border-white shrink-0 flex items-center justify-center">
+            <GitCommit className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
           </div>
-          <div>
-            <h2 className="text-sm font-black uppercase tracking-wider text-white">
-              Inbound & Outbound Activities
-            </h2>
-          </div>
+          <h2 className="text-[10px] sm:text-xs md:text-sm font-black uppercase tracking-tight sm:tracking-wider text-white whitespace-nowrap shrink-0">
+            Inbound & Outbound Activities
+          </h2>
         </div>
-
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => fetchLogs(activeTab, true)}
-            className="p-1.5 bg-[#141414] hover:bg-white/10 border border-white/20 text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
-            title="Refresh logs"
-          >
-            <RotateCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => fetchLogs(activeTab, true)}
+          className="p-1 sm:p-1.5 bg-[#141414] hover:bg-white/10 border border-white/20 text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px] shrink-0"
+          title="Refresh logs"
+          aria-label="Refresh logs"
+        >
+          <RotateCw className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
       {/* Tab Switcher */}
@@ -618,8 +615,8 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       {/* Logs Scroll Area */}
       <div className="max-h-[360px] overflow-y-auto space-y-3 pr-1">
         {isLoading ? (
-          <div className="flex justify-center items-center p-8 bg-white/5 border-2 border-dashed border-white/20">
-            <Loader2 className="w-6 h-6 animate-spin text-white" />
+          <div className="flex justify-center items-center py-12 bg-white/5 border-2 border-dashed border-white/20">
+            <BrutalistLoader text="Synchronizing" size="sm" theme="dark" className="py-4" />
           </div>
         ) : logs.length > 0 ? (
           (() => {

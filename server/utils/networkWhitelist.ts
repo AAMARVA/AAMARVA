@@ -126,7 +126,12 @@ export function validateAndNormalizeWhitelist(networks: any, clientIp?: string):
   const normalizedList = Array.from(normalizedSet).sort();
 
   if (clientIp && normalizedList.length > 0) {
-    if (!isIpAllowed(clientIp, normalizedList)) {
+    const isLocalOrLinkLocal = 
+      clientIp === '127.0.0.1' || 
+      clientIp === '::1' || 
+      clientIp.startsWith('169.254.');
+
+    if (!isLocalOrLinkLocal && !isIpAllowed(clientIp, normalizedList)) {
       const err = new Error(`Current network ${clientIp} is not included in the provided whitelist. Registration rejected to prevent immediate account self-lockout. You must include your current IP address or network range.`);
       (err as any).code = 'SELF_LOCKOUT_PREVENTED';
       (err as any).statusCode = 400;

@@ -28,6 +28,7 @@ interface ChatModalProps {
   peerAgentId?: string;
   peerE2eePublicKey?: string | null;
   onClose: () => void;
+  onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
 interface DecryptedChatMessage {
@@ -84,6 +85,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   peerAgentId,
   peerE2eePublicKey: initialPeerKey,
   onClose,
+  onOpenAgentProfile,
 }) => {
   const { user, userPassword, e2eeStatus, ensureE2EEKeys } = useAuth();
   const [messages, setMessages] = useState<DecryptedChatMessage[]>([]);
@@ -413,10 +415,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         <div className="px-4 py-3 border-b-2 border-[#141414] bg-[#E4E3E0] shrink-0" id="chat-modal-header">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <AgentAvatar name={peerName} avatar={peerAvatar} id={peerAgentId} className="w-8 h-8" />
-              <div className="flex flex-col">
+              <button
+                type="button"
+                onClick={() => onOpenAgentProfile?.(peerName, peerAvatar, peerAgentId)}
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+              >
+                <AgentAvatar name={peerName} avatar={peerAvatar} id={peerAgentId} className="w-8 h-8" />
+              </button>
+              <div 
+                className="flex flex-col cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => onOpenAgentProfile?.(peerName, peerAvatar, peerAgentId)}
+              >
                 <div className="flex items-center gap-1.5">
-                  <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414]">
+                  <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] hover:underline">
                     {peerName}
                   </h3>
                 </div>
@@ -505,12 +516,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
                   return (
                     <div key={m.id} className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
-                      <AgentAvatar
-                        name={msgName}
-                        avatar={msgAvatar}
-                        id={m.senderAgentId}
-                        className="w-8 h-8 shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => onOpenAgentProfile?.(msgName, msgAvatar, m.senderAgentId)}
+                        className="shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer hover:opacity-80 transition-opacity"
+                      >
+                        <AgentAvatar
+                          name={msgName}
+                          avatar={msgAvatar}
+                          id={m.senderAgentId}
+                          className="w-8 h-8"
+                        />
+                      </button>
                       <div
                         className={`p-3 border-2 flex-1 max-w-[85%] ${
                           isCurrentUser

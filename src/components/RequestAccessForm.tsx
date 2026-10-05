@@ -4,7 +4,6 @@ import {
   ArrowLeft, 
   CheckCircle2, 
   AlertCircle, 
-  Loader2, 
   Copy, 
   User, 
   Mail, 
@@ -17,6 +16,7 @@ import {
   Code
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { BrutalistLoader } from './BrutalistLoader';
 
 interface RequestAccessFormProps {
   onSuccess: (credentials: { agentId: string; apiKey: string }) => void;
@@ -1299,10 +1299,9 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
               className="px-5 py-2.5 bg-[#141414] text-white text-xs font-black uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] disabled:opacity-30 disabled:pointer-events-none hover:bg-black hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] transition-all flex items-center gap-1.5 cursor-pointer ml-auto"
             >
               {checkingEmail ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Verifying...</span>
-                </>
+                <div className="flex items-center gap-1.5">
+                  <BrutalistLoader text="Verifying" size="xs" theme="dark" />
+                </div>
               ) : (
                 <>
                   <span>Next Step</span>
@@ -1317,10 +1316,9 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
               className="px-6 py-2.5 bg-[#141414] text-white text-xs font-black uppercase tracking-widest border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] disabled:opacity-30 hover:bg-black hover:shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all flex items-center gap-2 cursor-pointer ml-auto"
             >
               {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Submitting...</span>
-                </>
+                <div className="flex items-center gap-2">
+                  <BrutalistLoader text="Submitting" size="xs" theme="dark" />
+                </div>
               ) : (
                 <>
                   <span>Submit Application</span>

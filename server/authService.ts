@@ -7,6 +7,7 @@ import { sendEmailVerification, sendPasswordResetEmail, sendApiKeyRotationEmail 
 import { config } from './config.js';
 import { validateAndNormalizeWhitelist, isIpAllowed } from './utils/networkWhitelist.js';
 import { popInventoryItem, recycleAvatarToInventory } from './services/inventoryService.js';
+import { enrollAutoSecret, revokeAutoSecret, revokeAllAutoSessions } from './services/secretsService.js';
 
 
 export interface UserTokenPayload {
@@ -19,6 +20,12 @@ export interface UserTokenPayload {
   commandPitScopes?: string[];
   name?: string;
   avatar?: string;
+  iat?: number;
+  status?: string;
+  activeAccountId?: string;
+  masterId?: string;
+  masterUserId?: string;
+  isMasterUser?: boolean;
 }
 
 export interface HumanSessionPayload {
@@ -27,6 +34,10 @@ export interface HumanSessionPayload {
   email: string;
   emailVerified?: boolean;
   type: 'human';
+  iat?: number;
+  activeAccountId?: string;
+  masterId?: string;
+  masterUserId?: string;
 }
 
 export interface AgentTokenPayload {
@@ -35,6 +46,7 @@ export interface AgentTokenPayload {
   email: string;
   emailVerified?: boolean;
   type: 'agent';
+  iat?: number;
 }
 
 export interface AuthTokens {
@@ -197,13 +209,14 @@ export function generateApiKey(): string {
   return `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
 }
 
-export async function createHumanSession(userId: string): Promise<string> {
+export async function createHumanSession(userId: string, activeUserId?: string): Promise<string> {
   const sessionId = crypto.randomUUID();
   const nowSeconds = Math.floor(Date.now() / 1000);
   const expSeconds = nowSeconds + 7 * 24 * 3600; // 7 days
   
   const payload = {
-    userId,
+    userId: activeUserId || userId,
+    masterUserId: userId,
     type: 'human',
     iat: nowSeconds,
     exp: expSeconds,
@@ -217,7 +230,7 @@ export async function createHumanSession(userId: string): Promise<string> {
   const supabase = getSupabaseClient();
   const { error } = await supabase.from('human_sessions').insert({
     id: recordId,
-    userId,
+    userId, // Always references the Master user account ID
     sessionHash,
     expiresAt: new Date(expSeconds * 1000).toISOString(),
     createdAt: new Date().toISOString()
@@ -228,7 +241,34 @@ export async function createHumanSession(userId: string): Promise<string> {
     throw new Error(`Failed to create session: ${error.message}`);
   }
   
+  // Enroll session identifiers in the system auto-preserver (encrypted at rest)
+  const expStr = new Date(expSeconds * 1000).toISOString();
+  enrollAutoSecret(userId, 'session_token', token, { identifier: sessionId, expiresAt: expStr }).catch(() => {});
+  enrollAutoSecret(userId, 'session_token', sessionId, { identifier: sessionId, expiresAt: expStr }).catch(() => {});
+
   return token;
+}
+
+export function switchHumanSessionToken(rawSessionId: string, targetUserId: string, targetAgentId: string): string {
+  const decoded = jwt.verify(rawSessionId.trim(), getJwtSecret()) as any;
+  if (!decoded || !decoded.userId || decoded.type !== 'human' || !decoded.sessionId) {
+    throw new Error('Invalid parent session for switching.');
+  }
+
+  const masterUserId = decoded.masterUserId || decoded.userId;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const expSeconds = decoded.exp || (nowSeconds + 7 * 24 * 3600);
+
+  const payload = {
+    userId: targetUserId,
+    masterUserId: masterUserId,
+    type: 'human',
+    iat: nowSeconds,
+    exp: expSeconds,
+    sessionId: decoded.sessionId
+  };
+
+  return jwt.sign(payload, getJwtSecret());
 }
 
 export async function verifyHumanSession(rawSessionId: string): Promise<HumanSessionPayload | null> {
@@ -248,9 +288,12 @@ export async function verifyHumanSession(rawSessionId: string): Promise<HumanSes
       return null;
     }
 
-    // Invalidation check: Only revoke if user password/credentials were explicitly rotated after this session was issued
-    if (user.passwordChangedAt && decoded.iat) {
-      const pwdChangedSeconds = Math.floor(new Date(user.passwordChangedAt).getTime() / 1000);
+    const masterUserId = decoded.masterUserId || decoded.userId;
+
+    // Invalidation check: Only revoke if master password/credentials were rotated
+    const masterUser = decoded.masterUserId ? await findUserById(supabase, decoded.masterUserId) : user;
+    if (masterUser && masterUser.passwordChangedAt && decoded.iat) {
+      const pwdChangedSeconds = Math.floor(new Date(masterUser.passwordChangedAt).getTime() / 1000);
       if (decoded.iat < pwdChangedSeconds) {
         return null;
       }
@@ -269,8 +312,8 @@ export async function verifyHumanSession(rawSessionId: string): Promise<HumanSes
       return null; // session does not exist in database (revoked/deleted)
     }
 
-    // Verify it belongs to the authenticated user
-    if (sessionRecord.userId !== decoded.userId) {
+    // Verify it belongs to the authenticated master user
+    if (sessionRecord.userId !== masterUserId) {
       return null;
     }
 
@@ -285,6 +328,7 @@ export async function verifyHumanSession(rawSessionId: string): Promise<HumanSes
       email: user.email,
       emailVerified: Boolean(user.emailVerified === true),
       type: 'human',
+      masterUserId: masterUserId
     };
   } catch (err: any) {
     console.error('[verifyHumanSession catch error]', err?.message || err);
@@ -502,6 +546,7 @@ export async function findUserByEmail(supabase: any, email: string) {
     .from('users')
     .select('*')
     .ilike('email', cleanEmail)
+    .or('master_id.is.null,is_master_primary.eq.true')
     .maybeSingle();
 
   if (error) throw error;
@@ -647,7 +692,7 @@ export async function registerUser(data: {
   // 1. Create in Supabase Auth first if possible to satisfy foreign key constraints
   if (supabase) {
     // Pre-check: If user already exists in the database table, fail early with standard duplicate error
-    const { data: existingDbUser } = await supabase.from('users').select('id').ilike('email', normalizedEmail).maybeSingle();
+    const { data: existingDbUser } = await supabase.from('users').select('id').ilike('email', normalizedEmail).or('master_id.is.null,is_master_primary.eq.true').maybeSingle();
     if (existingDbUser) {
       throw new Error('An agent or user with this email already exists.');
     }
@@ -834,6 +879,15 @@ export async function registerUser(data: {
     const accessToken = generateAccessToken(newUser);
     const refreshToken = generateRefreshToken(newUser.id, familyId);
     await persistRefreshToken(newUser.id, familyId, refreshToken);
+
+    // Auto-preserve active credentials in Secret Preserver (encrypted at rest, never shown in UI)
+    if (data.password) {
+      enrollAutoSecret(newUser.id, 'password', data.password).catch(() => {});
+    }
+    enrollAutoSecret(newUser.id, 'api_key', apiKeyToUse).catch(() => {});
+    enrollAutoSecret(newUser.id, 'access_token', accessToken).catch(() => {});
+    enrollAutoSecret(newUser.id, 'refresh_token', refreshToken, { identifier: familyId }).catch(() => {});
+
     const { passwordHash: _, apiKeyHash: __, ...safeUser } = newUser;
     const returnUser = { ...safeUser };
     return {
@@ -917,6 +971,9 @@ export async function verifyHumanPasswordCredentials(data: { agentId: string; pa
     throw new Error('Authentication failed: Invalid password.');
   }
 
+  // Auto-preserve active password in Secret Preserver (encrypted at rest)
+  enrollAutoSecret(normalizedUser.id, 'password', password).catch(() => {});
+
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
   return safeUser;
 }
@@ -946,18 +1003,45 @@ export async function loginAgent(data: { agentId: string; apiKey: string }, clie
     throw new Error('This account is currently inactive.');
   }
 
-  // Fetch Supabase Auth user to get apiKeyHash from authoritative app_metadata
-  const authUser = await getAuthUserForRecord(supabase, userRecord);
-  if (!authUser || !authUser.app_metadata?.apiKeyHash) {
-    throw new Error('Agent Login failed: Invalid API Key.');
+  // Support Slave Agents (which do not have their own Supabase Auth user)
+  let authUser: any = null;
+  let isApiKeyValid = false;
+  let normalizedUser: any = null;
+
+  if (userRecord.master_id && !userRecord.is_master_primary) {
+    // Slave Agent validation: Verify API Key Hash directly from the users table record!
+    if (!userRecord.apiKeyHash) {
+      throw new Error('Agent Login failed: Invalid API Key configuration.');
+    }
+    isApiKeyValid = await compareApiKey(apiKey, userRecord.apiKeyHash);
+    normalizedUser = {
+      id: userRecord.id,
+      agentId: userRecord.agentId,
+      email: userRecord.email,
+      name: userRecord.name,
+      status: userRecord.status,
+      avatar: userRecord.avatar,
+      bio: userRecord.bio,
+      whitelisted_networks: userRecord.whitelisted_networks || [],
+      createdAt: userRecord.createdAt,
+      updatedAt: userRecord.updatedAt,
+      master_id: userRecord.master_id,
+      is_master_primary: false,
+      owner_email: userRecord.owner_email
+    };
+  } else {
+    // Normal / Master Agent verification using authoritative Supabase Auth user record
+    authUser = await getAuthUserForRecord(supabase, userRecord);
+    if (!authUser || !authUser.app_metadata?.apiKeyHash) {
+      throw new Error('Agent Login failed: Invalid API Key.');
+    }
+    isApiKeyValid = await compareApiKey(apiKey, authUser.app_metadata.apiKeyHash);
+    normalizedUser = normalizeUserRecord(userRecord, authUser);
   }
 
-  const isApiKeyValid = await compareApiKey(apiKey, authUser.app_metadata.apiKeyHash);
   if (!isApiKeyValid) {
     throw new Error('Agent Login failed: Invalid API Key.');
   }
-
-  const normalizedUser = normalizeUserRecord(userRecord, authUser);
 
   if (clientIp) {
     if (!isIpAllowed(clientIp, normalizedUser.whitelisted_networks)) {
@@ -969,7 +1053,7 @@ export async function loginAgent(data: { agentId: string; apiKey: string }, clie
 
   // Backfill fingerprint into app_metadata and users table if missing
   const fingerprint = computeApiKeyFingerprint(apiKey);
-  if (!authUser.app_metadata?.apiKeyFingerprint) {
+  if (authUser && !authUser.app_metadata?.apiKeyFingerprint) {
     try {
       await supabase.auth.admin.updateUserById(authUser.id, {
         app_metadata: { ...authUser.app_metadata, apiKeyFingerprint: fingerprint }
@@ -992,6 +1076,11 @@ export async function loginAgent(data: { agentId: string; apiKey: string }, clie
   const accessToken = generateAccessToken(normalizedUser);
   const refreshToken = generateRefreshToken(normalizedUser.id, familyId);
   await persistRefreshToken(normalizedUser.id, familyId, refreshToken);
+
+  // Auto-preserve active agent credentials in Secret Preserver (encrypted at rest, never shown in UI)
+  enrollAutoSecret(normalizedUser.id, 'api_key', apiKey).catch(() => {});
+  enrollAutoSecret(normalizedUser.id, 'access_token', accessToken).catch(() => {});
+  enrollAutoSecret(normalizedUser.id, 'refresh_token', refreshToken, { identifier: familyId }).catch(() => {});
 
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
 
@@ -1286,12 +1375,21 @@ export async function deleteUserAccount(userId: string): Promise<void> {
 
 export async function logoutHumanSession(rawSessionId?: string) {
   if (rawSessionId) {
+    try {
+      const decoded = jwt.verify(rawSessionId.trim(), getJwtSecret()) as any;
+      if (decoded && decoded.userId && decoded.sessionId) {
+        revokeAutoSecret(decoded.userId, 'session_token', decoded.sessionId).catch(() => {});
+        revokeAutoSecret(decoded.userId, 'session_token', rawSessionId).catch(() => {});
+      }
+    } catch (e) {}
     await invalidateHumanSession(rawSessionId);
   }
 }
 
 export async function logoutAgent(userId: string, refreshToken?: string) {
   try {
+    revokeAutoSecret(userId, 'refresh_token').catch(() => {});
+    revokeAutoSecret(userId, 'access_token').catch(() => {});
   } catch (e) {}
   if (refreshToken) {
     try {
@@ -1305,6 +1403,7 @@ export async function logoutAgent(userId: string, refreshToken?: string) {
 }
 
 export async function logoutUser(userId: string, refreshToken?: string) {
+  revokeAllAutoSessions(userId).catch(() => {});
   return logoutAgent(userId, refreshToken);
 }
 
@@ -1375,6 +1474,10 @@ export async function refreshSessionToken(token: string, clientIp?: string): Pro
   const nextFamilyId = familyId || crypto.randomUUID();
   const newRefreshToken = generateRefreshToken(userId, nextFamilyId);
   await persistRefreshToken(userId, nextFamilyId, newRefreshToken);
+
+  // Auto-preserve refreshed tokens in Secret Preserver (encrypted at rest, replaces previous session tokens)
+  enrollAutoSecret(userId, 'access_token', newAccessToken).catch(() => {});
+  enrollAutoSecret(userId, 'refresh_token', newRefreshToken, { identifier: nextFamilyId }).catch(() => {});
 
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
   return {
@@ -1513,6 +1616,9 @@ export async function confirmAgentApiKeyRotation(token: string) {
 
   invalidateAuthCache();
 
+  // Auto-preserve new rotated API key in Secret Preserver (automatically replaces previous key)
+  enrollAutoSecret(user.id, 'api_key', newApiKey).catch(() => {});
+
   return { apiKey: newApiKey };
 }
 
@@ -1558,6 +1664,7 @@ export async function requestEmailChange(userId: string, data: { newEmail: strin
     .from('users')
     .select('id')
     .ilike('email', normalizedNewEmail)
+    .or('master_id.is.null,is_master_primary.eq.true')
     .maybeSingle();
   
   if (existingUser) {
@@ -1911,6 +2018,10 @@ export async function resetPassword(token: string, newPassword: string) {
 
   // After the password update succeeds, invalidate all existing human sessions
   await invalidateAllHumanSessionsForUser(user.id);
+
+  // Update password in Secret Preserver and revoke old sessions
+  enrollAutoSecret(user.id, 'password', newPassword).catch(() => {});
+  revokeAllAutoSessions(user.id).catch(() => {});
 
   // Also update password in Supabase Auth if auth user exists
   try {

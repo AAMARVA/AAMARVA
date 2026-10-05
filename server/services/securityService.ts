@@ -584,8 +584,30 @@ export class SecurityService {
   private localViolationsMap = new Map<string, { identifier: string; endpoint: string; violationCount: number; suspensionCount: number; isPermanentlyBanned: boolean; suspendedUntil?: string; lastViolationAt: string }>();
   private localIpReputationsMap = new Map<string, { score: number; isBlacklisted: boolean }>();
   private localBehavioralSignals: Array<{ identifier: string; score: number; timestamp: number }> = [];
+  private userDisabledEndpointsMap = new Map<string, string[]>();
+  private userCustomRateLimitsMap = new Map<string, Record<string, number>>();
 
   private constructor() {}
+
+  public setUserDisabledEndpoints(userId: string, disabledEndpoints: string[]): void {
+    if (!userId) return;
+    this.userDisabledEndpointsMap.set(userId, disabledEndpoints);
+  }
+
+  public getUserDisabledEndpoints(userId: string): string[] {
+    if (!userId) return [];
+    return this.userDisabledEndpointsMap.get(userId) || [];
+  }
+
+  public setUserCustomRateLimits(userId: string, customLimits: Record<string, number>): void {
+    if (!userId) return;
+    this.userCustomRateLimitsMap.set(userId, customLimits);
+  }
+
+  public getUserCustomRateLimits(userId: string): Record<string, number> {
+    if (!userId) return {};
+    return this.userCustomRateLimitsMap.get(userId) || {};
+  }
 
   public static getInstance(): SecurityService {
     if (!SecurityService.instance) {
@@ -623,6 +645,18 @@ export class SecurityService {
     // Attempt to extract from authenticated request if not provided
     if (!effectiveUserId && (req as any).user?.id) {
       effectiveUserId = (req as any).user.id;
+    }
+
+    // Check account Access Management endpoint toggles
+    if (effectiveUserId) {
+      let disabledList = this.getUserDisabledEndpoints(effectiveUserId);
+      const reqUserDisabled = (req as any).user?.disabledEndpoints || (req as any).user?.disabled_endpoints;
+      if (Array.isArray(reqUserDisabled) && reqUserDisabled.length > 0) {
+        disabledList = Array.from(new Set([...disabledList, ...reqUserDisabled]));
+      }
+      if (disabledList && disabledList.includes(policyName)) {
+        throw new SecurityError('FORBIDDEN', `Access to endpoint policy '${policyName}' has been disabled by the account owner in Access Management.`);
+      }
     }
     
     if (!effectiveUserId && (policyName === 'auth_login' || policyName === 'auth_register')) {
@@ -814,7 +848,18 @@ export class SecurityService {
       return;
     }
     const policy = GLOBAL_SECURITY_POLICIES[policyName];
-    const limit = customLimit || (policy ? policy.rateLimit : { windowMs: 60000, max: 100 });
+    let limit = customLimit || (policy ? { ...policy.rateLimit } : { windowMs: 60000, max: 100 });
+
+    // Enforce user custom reduced rate limit if set (strictly <= default policy max)
+    if (identifier && policy) {
+      const userCustomLimits = this.getUserCustomRateLimits(identifier);
+      if (userCustomLimits && typeof userCustomLimits[policyName] === 'number') {
+        const customMax = Math.floor(userCustomLimits[policyName]);
+        if (customMax >= 1 && customMax < policy.rateLimit.max) {
+          limit = { windowMs: policy.rateLimit.windowMs, max: customMax };
+        }
+      }
+    }
     const now = Date.now();
     const windowStartMs = Math.floor(now / limit.windowMs) * limit.windowMs;
 

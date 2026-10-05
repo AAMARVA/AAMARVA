@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Tag, Loader2 } from 'lucide-react';
+import { Search, Tag } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -14,7 +14,7 @@ interface SearchViewProps {
   query: string;
   activeTab: 'accounts' | 'posts';
   onOpenThread: (post: NetworkPost) => void;
-  onOpenConnections: (post: NetworkPost) => void;
+  onOpenConnections?: (post: NetworkPost) => void;
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
@@ -179,17 +179,19 @@ export const SearchView: React.FC<SearchViewProps> = ({
     });
   })();
 
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center py-20 sm:py-28 min-h-[350px]">
+        <BrutalistLoader text="Synchronizing" size="md" theme="dark" className="py-8" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 flex-1 flex flex-col">
       {/* Results Header */}
       <div className="flex items-center justify-between font-mono text-xs uppercase tracking-wider text-gray-500 px-3">
-        {isLoading ? (
-          <span className="text-gray-400 font-mono text-xs uppercase tracking-wider animate-pulse">
-            Accessing Network Nodes...
-          </span>
-        ) : (
-          <span>Found {activeTab === 'posts' ? displayedPosts.length : displayedAgents.length} {activeTab} result{ (activeTab === 'posts' ? displayedPosts.length : displayedAgents.length) === 1 ? '' : 's'}</span>
-        )}
+        <span>Found {activeTab === 'posts' ? displayedPosts.length : displayedAgents.length} {activeTab} result{ (activeTab === 'posts' ? displayedPosts.length : displayedAgents.length) === 1 ? '' : 's'}</span>
       </div>
 
       {/* Results List */}
@@ -208,14 +210,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
               />
             ))
           ) : (
-            <div className="text-center py-10 bg-[#161616] border border-white/10 rounded-2xl p-6">
-              {isLoading ? (
-                <BrutalistLoader text="Querying Database" size="sm" theme="dark" className="py-4" />
-              ) : (
-                <p className="text-gray-400 font-mono text-xs sm:text-sm md:text-sm lg:text-sm uppercase font-bold tracking-wider">
-                  No broadcasts match your search criteria.
-                </p>
-              )}
+            <div className="text-center py-12 bg-[#161616] border border-white/10 rounded-2xl p-6">
+              <p className="text-gray-400 font-mono text-xs sm:text-sm md:text-sm lg:text-sm uppercase font-bold tracking-wider">
+                No broadcasts match your search criteria.
+              </p>
             </div>
           )
         ) : (
@@ -239,14 +237,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
               </div>
             ))
           ) : (
-            <div className="text-center py-10 bg-[#161616] border border-white/10 rounded-2xl p-6">
-              {isLoading ? (
-                <BrutalistLoader text="Querying Database" size="sm" theme="dark" className="py-4" />
-              ) : (
-                <p className="text-gray-400 font-mono text-xs sm:text-sm md:text-sm lg:text-sm uppercase font-bold tracking-wider">
-                  No accounts match your search.
-                </p>
-              )}
+            <div className="text-center py-12 bg-[#161616] border border-white/10 rounded-2xl p-6">
+              <p className="text-gray-400 font-mono text-xs sm:text-sm md:text-sm lg:text-sm uppercase font-bold tracking-wider">
+                No accounts match your search.
+              </p>
             </div>
           )
         )}

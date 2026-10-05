@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, AlertCircle, X } from 'lucide-react';
+import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, Blocks, AlertCircle, X } from 'lucide-react';
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,8 @@ interface ExploreViewProps {
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
+  onOpenChat?: (chat: any) => void;
+  onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
 }
 
 export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
@@ -25,6 +27,8 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
   onAddReply,
   onOpenAgentProfile,
   onOpenClusterMembers,
+  onOpenChat,
+  onOpenClusterChat,
 }) => {
   const { login, register, isAuthenticated, user, logout, refreshProfile } = useAuth();
   const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
@@ -62,9 +66,10 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
 
   const [copied, setCopied] = useState(false);
   const [copiedPlatform, setCopiedPlatform] = useState(false);
+  const [copiedFrameworks, setCopiedFrameworks] = useState(false);
   const [adkSpecText, setAdkSpecText] = useState('');
   const [isLoadingAdk, setIsLoadingAdk] = useState(false);
-  const [adkSubTab, setAdkSubTab] = useState<'endpoints' | 'platform'>('endpoints');
+  const [adkSubTab, setAdkSubTab] = useState<'endpoints' | 'platform' | 'frameworks'>('endpoints');
 
   useEffect(() => {
     if (hubTab === 'adk') {
@@ -88,26 +93,39 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
 
   const getPlatformSpecOnly = (fullText: string) => {
     if (!fullText) return '';
-    const delimiter = "AAMARVA ADK SPECIFICATION & API ENDPOINTS";
-    const index = fullText.indexOf(delimiter);
-    if (index !== -1) {
-      return fullText.substring(0, index).trim();
+    const endpointStart = fullText.indexOf("# POST /api/auth/register");
+    if (endpointStart !== -1) {
+      return fullText.substring(0, endpointStart).trim();
+    }
+    const frameworkIdx = fullText.indexOf("# Framework Integrations");
+    if (frameworkIdx !== -1) {
+      return fullText.substring(0, frameworkIdx).trim();
     }
     return fullText.trim();
   };
 
   const getEndpointsOnly = (fullText: string) => {
     if (!fullText) return '';
-    const delimiter = "AAMARVA ADK SPECIFICATION & API ENDPOINTS";
+    let text = fullText;
+    const endpointStart = fullText.indexOf("# POST /api/auth/register");
+    if (endpointStart !== -1) {
+      text = fullText.substring(endpointStart);
+    }
+    const frameworkIdx = text.indexOf("# Framework Integrations");
+    if (frameworkIdx !== -1) {
+      text = text.substring(0, frameworkIdx).trim();
+    }
+    return text.trim();
+  };
+
+  const getFrameworkIntegrationsOnly = (fullText: string) => {
+    if (!fullText) return '';
+    const delimiter = "# Framework Integrations";
     const index = fullText.indexOf(delimiter);
     if (index !== -1) {
-      const bannerStartIdx = fullText.lastIndexOf("==================================================", index);
-      if (bannerStartIdx !== -1) {
-        return fullText.substring(bannerStartIdx);
-      }
-      return fullText.substring(index);
+      return fullText.substring(index).trim();
     }
-    return fullText;
+    return '';
   };
 
   const copyAdkCode = () => {
@@ -119,12 +137,16 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
 
   const copyPlatformSpec = () => {
     if (!adkSpecText) return;
-    const delimiter = "AAMARVA ADK SPECIFICATION & API ENDPOINTS";
-    const index = adkSpecText.indexOf(delimiter);
-    const platformText = index !== -1 ? adkSpecText.substring(0, index).trim() : adkSpecText;
-    navigator.clipboard.writeText(platformText);
+    navigator.clipboard.writeText(getPlatformSpecOnly(adkSpecText));
     setCopiedPlatform(true);
     setTimeout(() => setCopiedPlatform(false), 2000);
+  };
+
+  const copyFrameworksSpec = () => {
+    if (!adkSpecText) return;
+    navigator.clipboard.writeText(getFrameworkIntegrationsOnly(adkSpecText));
+    setCopiedFrameworks(true);
+    setTimeout(() => setCopiedFrameworks(false), 2000);
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -263,6 +285,8 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
             onAddReply={onAddReply}
             onOpenAgentProfile={onOpenAgentProfile}
             onOpenClusterMembers={onOpenClusterMembers}
+            onOpenChat={onOpenChat}
+            onOpenClusterChat={onOpenClusterChat}
           />
         )}
 
@@ -433,10 +457,10 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
 
         {hubTab === 'adk' && (
           <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-3 border-b-2 border-[#141414]/20 pb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b-2 border-[#141414]/20 pb-3">
               <button
                 onClick={() => setAdkSubTab('endpoints')}
-                className={`py-2 px-2.5 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1 ${
+                className={`py-2 px-2.5 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   adkSubTab === 'endpoints'
                     ? 'bg-[#141414] text-white'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
@@ -448,7 +472,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
 
               <button
                 onClick={() => setAdkSubTab('platform')}
-                className={`py-2 px-2.5 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1 ${
+                className={`py-2 px-2.5 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   adkSubTab === 'platform'
                     ? 'bg-[#141414] text-white'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
@@ -456,6 +480,18 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
               >
                 <Server className="w-3.5 h-3.5 shrink-0" />
                 <span>Platform Spec</span>
+              </button>
+
+              <button
+                onClick={() => setAdkSubTab('frameworks')}
+                className={`py-2 px-2.5 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  adkSubTab === 'frameworks'
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <Blocks className="w-3.5 h-3.5 shrink-0" />
+                <span>Framework Integrations</span>
               </button>
             </div>
 
@@ -486,11 +522,11 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
                   </div>
                 )}
               </div>
-            ) : (
+            ) : adkSubTab === 'platform' ? (
               <div className="bg-[#141414] text-gray-100 p-6 border-2 border-[#141414] font-mono text-sm leading-relaxed overflow-x-auto relative">
                 <button 
                   onClick={copyPlatformSpec}
-                  className="absolute right-2 top-2 p-1 bg-[#141414] border border-white/20 text-white/70 hover:text-white rounded"
+                  className="absolute right-2 top-2 p-1 bg-[#141414] border border-white/20 text-white/70 hover:text-white rounded cursor-pointer"
                 >
                   {copiedPlatform ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 </button>
@@ -498,6 +534,20 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
                   <BrutalistLoader text="Accessing Platform Spec..." size="sm" className="py-10" />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-[11px] text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
+                )}
+              </div>
+            ) : (
+              <div className="bg-[#141414] text-gray-100 p-6 border-2 border-[#141414] font-mono text-sm leading-relaxed overflow-x-auto relative">
+                <button 
+                  onClick={copyFrameworksSpec}
+                  className="absolute right-2 top-2 p-1 bg-[#141414] border border-white/20 text-white/70 hover:text-white rounded cursor-pointer"
+                >
+                  {copiedFrameworks ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                </button>
+                {isLoadingAdk ? (
+                  <BrutalistLoader text="Accessing Framework Integrations..." size="sm" className="py-10" />
+                ) : (
+                  <pre className="whitespace-pre-wrap font-mono text-[11px] text-gray-200">{getFrameworkIntegrationsOnly(adkSpecText)}</pre>
                 )}
               </div>
             )}

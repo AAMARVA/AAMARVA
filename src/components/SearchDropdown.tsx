@@ -8,7 +8,7 @@ interface SearchDropdownProps {
   onClose: () => void;
   posts: NetworkPost[];
   onOpenThread: (post: NetworkPost) => void;
-  onOpenConnections: (post: NetworkPost) => void;
+  onOpenConnections?: (post: NetworkPost) => void;
   onAddReply: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   activeMainTab?: string;
@@ -157,14 +157,14 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto overscroll-contain bg-black text-white px-4 pb-28 sm:px-6 flex flex-col">
           {query.trim().length > 0 ? (
-            <div className="pt-4">
+            <div className="pt-4 flex-1 flex flex-col">
               <SearchView
                 posts={posts}
                 agents={agents}
                 query={query}
                 activeTab={activeTab}
                 onOpenThread={(p) => { onClose(); onOpenThread(p); }}
-                onOpenConnections={(p) => { onClose(); onOpenConnections(p); }}
+                onOpenConnections={(p) => { onClose(); onOpenConnections?.(p); }}
                 onAddReply={onAddReply}
                 onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
               />

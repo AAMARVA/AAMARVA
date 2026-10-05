@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Fingerprint, ShieldCheck, Trash2, Plus, Smartphone, Laptop, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Fingerprint, ShieldCheck, Trash2, Plus, Smartphone, Laptop, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { fetchUserPasskeys, deletePasskeyApi, WebAuthnPasskey, handleWebAuthnSetup } from '../services/webauthnClient';
 import { buildApiUrl } from '../services/authApi';
+import { BrutalistLoader } from './BrutalistLoader';
 
 export const PasskeyManagementCard: React.FC = () => {
   const [passkeys, setPasskeys] = useState<WebAuthnPasskey[]>([]);
@@ -140,9 +141,8 @@ export const PasskeyManagementCard: React.FC = () => {
 
       {/* Loading & Main Passkeys List */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-12 text-zinc-500 text-xs space-y-2">
-          <Loader2 className="w-5 h-5 animate-spin text-black" />
-          <span className="uppercase font-bold tracking-wider text-[10px]">QUERYING ENROLLED KEY STORAGE...</span>
+        <div className="py-10 flex items-center justify-center">
+          <BrutalistLoader text="Accessing Keys" size="sm" />
         </div>
       ) : passkeys.length === 0 ? (
         <div className="p-4 bg-zinc-50 border border-zinc-200 text-zinc-600 text-xs flex items-center justify-between">
@@ -189,7 +189,9 @@ export const PasskeyManagementCard: React.FC = () => {
                 title="REVOKE DEVICE PASSKEY"
               >
                 {deletingId === pk.id ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-black" />
+                  <div className="w-4 h-4 border-2 border-black relative overflow-hidden">
+                    <div className="absolute inset-0 bg-black animate-pulse" />
+                  </div>
                 ) : (
                   <Trash2 className="w-4 h-4" />
                 )}
@@ -203,9 +205,18 @@ export const PasskeyManagementCard: React.FC = () => {
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white border-2 border-black max-w-md w-full p-6 space-y-6 text-black font-mono shadow-none relative">
-            <div className="flex items-center space-x-3 text-black">
-              <ShieldCheck className="w-6 h-6" />
-              <h3 className="text-sm font-black uppercase tracking-wider">REGISTER DEVICE PASSKEY</h3>
+            <div className="flex items-center justify-between text-black">
+              <div className="flex items-center space-x-3">
+                <ShieldCheck className="w-6 h-6" />
+                <h3 className="text-sm font-black uppercase tracking-wider">REGISTER DEVICE PASSKEY</h3>
+              </div>
+              <button 
+                onClick={() => setShowAddModal(false)}
+                className="text-black hover:text-zinc-500 transition-colors"
+                title="CLOSE"
+              >
+                ✕
+              </button>
             </div>
             
             <p className="text-xs text-zinc-600 leading-relaxed">
@@ -243,7 +254,9 @@ export const PasskeyManagementCard: React.FC = () => {
               >
                 {isRegistering ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <div className="w-4 h-4 border-2 border-white relative overflow-hidden">
+                      <div className="absolute inset-0 bg-white animate-pulse" />
+                    </div>
                     <span>PROMPTING DEVICE...</span>
                   </>
                 ) : (

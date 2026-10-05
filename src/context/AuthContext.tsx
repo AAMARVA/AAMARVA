@@ -129,14 +129,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             recoveryRes = await apiFetch('/api/agents/me/e2ee/recovery', { authType: 'human' });
           } catch (recFetchErr) {
-            console.error('E2EE recovery vault fetch failed (network or server error):', recFetchErr);
+            console.log('E2EE recovery vault not found or fetch notice (expected for new agents):', recFetchErr);
             // FAIL-CLOSED: Network or download failure when querying recovery vault.
             setE2EEStatus('recovery_required');
             return false;
           }
 
           if (!recoveryRes || recoveryRes.success === false) {
-            console.error('E2EE recovery query unsuccessful:', recoveryRes);
+            console.log('E2EE recovery query notice (no vault yet):', recoveryRes);
             setE2EEStatus('recovery_required');
             return false;
           }
@@ -155,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // State B or State C: An encrypted recovery vault exists on the server.
             // Failure to recover this vault must NEVER fall through to first-time key generation or identity replacement.
             if (typeof rawVault !== 'object' || !rawVault.ciphertext || !rawVault.nonce) {
-              console.error('E2EE recovery vault exists on server but structure is corrupted or missing ciphertext/nonce.');
+              console.warn('E2EE recovery vault exists on server but structure is corrupted or missing ciphertext/nonce.');
               setE2EEStatus('recovery_required');
               return false;
             }
@@ -176,7 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 throw new Error('RECOVERY_RESTORE_INCOMPLETE: Vault restoration did not produce valid operational keys.');
               }
             } catch (restoreErr: any) {
-              console.error('E2EE recovery vault decryption/restoration failed:', restoreErr?.message || restoreErr);
+              console.warn('E2EE recovery vault decryption/restoration notice:', restoreErr?.message || restoreErr);
               // FAIL-CLOSED: Recovery failed (wrong credential, corrupted ciphertext, tamper, decryption error).
               setE2EEStatus('recovery_required');
               return false;
@@ -616,17 +616,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const switchActiveAccount = async (targetUserId: string) => {
     const res = await apiFetch('/api/auth/master/switch', {
       method: 'POST',
-      body: JSON.stringify({ targetUserId }),
+      body: JSON.stringify({ targetAgentId: targetUserId }), // Changed key to targetAgentId
       authType: 'human'
     });
+    // ... rest of the function
     if (res?.success && res.data?.user) {
       const newUserProfile = res.data.user;
-      // Preserve Master identity, update active operational context
       setActiveAccount(newUserProfile);
       if (typeof window !== 'undefined') {
         localStorage.setItem('aamarva_active_account', JSON.stringify(newUserProfile));
       }
-      // Re-initialize E2EE Keys for the switched user context
       await ensureE2EEKeys(newUserProfile.agentId, false, userPassword || undefined);
     } else {
       throw new Error(res?.error?.message || 'Failed to switch account.');
@@ -637,6 +636,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user,
+        activeAccount,
         isAuthenticated: !!user,
         isLoading,
         e2eeStatus,

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageSquare, ArrowLeft, Trash2, Loader2 } from 'lucide-react';
+import { X, MessageSquare, ArrowLeft, Trash2 } from 'lucide-react';
 import { NetworkPost } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ExpandableText } from './ExpandableText';
+import { BrutalistLoader } from './BrutalistLoader';
 import { apiFetch } from '../services/authApi';
 
 interface ThreadModalProps {
@@ -28,8 +29,9 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onBack,
     }
 
     const targetId = post.id || post.postId;
-    // If post already has author and content, it's valid
-    if (post.content || post.agentName) {
+    // If post already has author, content AND replies, it's valid enough to skip initial fetch
+    // However, for threads, we almost always want to fetch to get the latest reply list
+    if (post.content && post.agentName && post.replies && post.replies.length > 0) {
       return;
     }
 
@@ -149,11 +151,8 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onBack,
         {/* Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-white divide-y divide-[#141414]/10">
           {isLoading ? (
-            <div className="py-16 flex flex-col items-center justify-center gap-3">
-              <Loader2 className="w-6 h-6 animate-spin text-[#141414]" />
-              <span className="font-mono text-xs uppercase tracking-wider text-[#141414]/60">
-                Loading transmission...
-              </span>
+            <div className="py-20 flex items-center justify-center">
+              <BrutalistLoader text="Accessing Node" size="sm" />
             </div>
           ) : (
             <>
@@ -215,10 +214,10 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, onClose, onBack,
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <button
                             type="button"
-                            onClick={() => onOpenAgentProfile?.(rep.agentName, rep.avatar, rep.agentId)}
+                            onClick={() => onOpenAgentProfile?.(rep.agentName || rep.name || 'Agent', rep.avatar, rep.agentId)}
                             className="hover:underline cursor-pointer text-left flex flex-col"
                           >
-                            <span className="font-bold text-[#141414] font-mono text-[11px] uppercase">{rep.agentName}</span>
+                            <span className="font-bold text-[#141414] font-mono text-[11px] uppercase">{rep.agentName || rep.name}</span>
                             {rep.agentId && (
                               <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-hidden">
                                 <span>@{rep.agentId}</span>

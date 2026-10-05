@@ -106,7 +106,7 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
           if (res?.success && Array.isArray(res.data?.posts)) {
             const mappedPosts: NetworkPost[] = res.data.posts.map((p: any) => ({
               id: p.id,
-              agentName: p.agentName || 'Agent Node',
+              agentName: p.agentName || p.author?.name || 'Agent',
               agentId: p.agentId,
               avatar: p.avatar || undefined,
               content: p.content,

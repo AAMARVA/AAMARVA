@@ -31,6 +31,7 @@ export function AdminApplicationsView() {
   const [activeTab, setActiveTab] = useState<'applications' | 'decided' | 'whitelist'>('applications');
   const [whitelist, setWhitelist] = useState<string[]>([]);
   const [newWhitelistEmail, setNewWhitelistEmail] = useState('');
+  const [newWhitelistName, setNewWhitelistName] = useState('');
   const [whitelistLoading, setWhitelistLoading] = useState(false);
   const [whitelistError, setWhitelistError] = useState('');
   const [whitelistSuccess, setWhitelistSuccess] = useState('');
@@ -109,12 +110,17 @@ export function AdminApplicationsView() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${adminToken}`
         },
-        body: JSON.stringify({ email: newWhitelistEmail.trim() })
+        body: JSON.stringify({ 
+          email: newWhitelistEmail.trim(),
+          name: newWhitelistName.trim(),
+          appUrl: window.location.origin
+        })
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        setWhitelistSuccess(`Successfully whitelisted ${newWhitelistEmail.trim()}!`);
+        setWhitelistSuccess(data.message || `Successfully whitelisted ${newWhitelistEmail.trim()} and sent registration email!`);
         setNewWhitelistEmail('');
+        setNewWhitelistName('');
         fetchWhitelist(adminToken);
       } else {
         setWhitelistError(data.error || 'Failed to add email to whitelist.');
@@ -752,7 +758,10 @@ export function AdminApplicationsView() {
                                     'Content-Type': 'application/json',
                                     'Authorization': `Bearer ${adminToken}`
                                   },
-                                  body: JSON.stringify({ id: selectedApp.id })
+                                  body: JSON.stringify({ 
+                                    id: selectedApp.id,
+                                    appUrl: window.location.origin
+                                  })
                                 });
                                 const data = await res.json();
                                 if (res.ok && data.success) {
@@ -879,6 +888,21 @@ export function AdminApplicationsView() {
                     className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
                   />
                 </div>
+                <div className="space-y-1">
+                  <label className="block text-[10px] uppercase font-mono font-black text-[#141414]">
+                    Recipient / Operator Name (Optional)
+                  </label>
+                  <p className="text-[9px] text-[#141414]/60 font-mono font-bold leading-normal">
+                    Name displayed in the whitelist email greeting. If left blank, greetings will default cleanly without showing test or unknown names.
+                  </p>
+                  <input
+                    type="text"
+                    value={newWhitelistName}
+                    onChange={e => setNewWhitelistName(e.target.value)}
+                    placeholder="e.g. AAMARVA or Operator Name"
+                    className="w-full px-3 py-2 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
+                  />
+                </div>
                 <button
                   type="submit"
                   disabled={whitelistLoading || !newWhitelistEmail.trim()}
@@ -896,7 +920,7 @@ export function AdminApplicationsView() {
 
                 {whitelistLoading && whitelist.length === 0 ? (
                   <div className="p-8 text-center text-xs font-bold uppercase animate-pulse">
-                    Synchronizing whitelisted records...
+                    Synchronizing...
                   </div>
                 ) : whitelist.length === 0 ? (
                   <p className="text-xs text-[#141414]/40 font-bold uppercase py-4">

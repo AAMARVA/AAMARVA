@@ -78,8 +78,8 @@ export async function getPosts(query: string, page: number, limit: number, optio
     .select('*')
     .in('postId', postIds);
 
-  if (connectionsError) {
-    throw new Error(`Failed to retrieve connections: ${connectionsError.message}`);
+  if (connectionsError && connectionsError.code !== '42P01') {
+    console.warn('Connections query warning:', connectionsError.message);
   }
 
   // Collect all unique user IDs and agent IDs to fetch profiles in one batch
@@ -161,53 +161,31 @@ export async function getPosts(query: string, page: number, limit: number, optio
         };
       });
 
-    const postConnections = (connections || [])
-      .filter((c) => c.postId === post.id)
-      .map((c) => {
-        const replyAuthor = users.find(
-          (u) => u.id === c.replyAuthorUserId || (c.replyAuthorAgentId && u.agentId.toUpperCase() === c.replyAuthorAgentId.toUpperCase())
-        );
-        const postOwner = users.find(
-          (u) => u.id === c.postOwnerUserId || (c.postOwnerAgentId && u.agentId.toUpperCase() === c.postOwnerAgentId.toUpperCase())
-        );
-        const reply = (replies || []).find((r) => r.id === c.replyId);
-        const cAgentId = c.replyAuthorAgentId || replyAuthor?.agentId || reply?.agentId;
-        const cVerified = Boolean(replyAuthor?.emailVerified === true);
-        const cStatus = cVerified ? 'verified' : 'not verified';
+    const postConnections = (connections || []).filter((c: any) => c.postId === post.id && c.status !== 'dissolved');
 
-        const poAgentId = c.postOwnerAgentId || postOwner?.agentId;
-        const poVerified = Boolean(postOwner?.emailVerified === true);
-        const poStatus = poVerified ? 'verified' : 'not verified';
-
-        const raAgentId = c.replyAuthorAgentId || replyAuthor?.agentId;
-        const raVerified = Boolean(replyAuthor?.emailVerified === true);
-        const raStatus = raVerified ? 'verified' : 'not verified';
-
-        return {
-          id: c.id,
-          connectionId: c.id,
-          postId: c.postId,
-          replyId: c.replyId,
-          agentName: replyAuthor?.name || c.replyAuthorAgentName || reply?.agentName || 'Connected Agent',
-          agentId: cAgentId,
-          verificationStatus: cStatus,
-          verification_status: cStatus,
-          ["verification status"]: cStatus,
-          avatar: replyAuthor?.avatar || reply?.avatar || '🤖',
-          emailVerified: cVerified,
-          postOwnerAgentName: postOwner?.name || c.postOwnerAgentName,
-          postOwnerAgentId: poAgentId,
-          postOwnerVerificationStatus: poStatus,
-          postOwnerAvatar: postOwner?.avatar || '🤖',
-          postOwnerEmailVerified: poVerified,
-          replyAuthorAgentName: replyAuthor?.name || c.replyAuthorAgentName,
-          replyAuthorAgentId: raAgentId,
-          replyAuthorVerificationStatus: raStatus,
-          replyAuthorAvatar: replyAuthor?.avatar || reply?.avatar || '🤖',
-          replyAuthorEmailVerified: raVerified,
-          createdAt: c.createdAt,
-        };
-      });
+    const mappedConnectionsList = postConnections.map((c: any) => {
+      const replyAuthor = users.find(
+        (u) => u.id === c.replyAuthorUserId || (c.replyAuthorAgentId && u.agentId.toUpperCase() === c.replyAuthorAgentId.toUpperCase())
+      );
+      const postOwner = users.find(
+        (u) => u.id === c.postOwnerUserId || (c.postOwnerAgentId && u.agentId.toUpperCase() === c.postOwnerAgentId.toUpperCase())
+      );
+      return {
+        id: c.id,
+        postId: c.postId,
+        replyId: c.replyId,
+        agentName: replyAuthor?.name || c.replyAuthorAgentName || 'Connected Agent',
+        agentId: replyAuthor?.agentId || c.replyAuthorAgentId,
+        avatar: replyAuthor?.avatar || '🤖',
+        postOwnerAgentName: postOwner?.name || c.postOwnerAgentName,
+        postOwnerAgentId: postOwner?.agentId || c.postOwnerAgentId,
+        postOwnerEmailVerified: postOwner?.emailVerified === true,
+        replyAuthorEmailVerified: replyAuthor?.emailVerified === true,
+        emailVerified: replyAuthor?.emailVerified === true,
+        verificationStatus: replyAuthor?.emailVerified ? 'verified' : 'not verified',
+        createdAt: c.createdAt,
+      };
+    });
 
     return {
       ...post,
@@ -221,7 +199,7 @@ export async function getPosts(query: string, page: number, limit: number, optio
       repliesCount: postReplies.length,
       connectionsCount: postConnections.length,
       replies: postReplies,
-      connectionsList: postConnections,
+      connectionsList: mappedConnectionsList,
     };
   });
 
@@ -335,4 +313,53 @@ export async function deletePost(postId: string, userId: string): Promise<void> 
     throw new Error(`Failed to delete post: ${deleteError.message}`);
   }
 }
+
+export async function seedSamplePosts(): Promise<{ count: number }> {
+  const supabase = getSupabaseClient();
+  
+  const { count } = await supabase.from('posts').select('*', { count: 'exact', head: true });
+  if (count && count > 0) {
+    return { count: 0 };
+  }
+
+  const { data: users } = await supabase.from('users').select('id, agentId, name').limit(1);
+  const defaultUserId = users?.[0]?.id || 'user_sample_agent';
+  const defaultAgentId = users?.[0]?.agentId || 'agent-alpha';
+  const defaultName = users?.[0]?.name || 'Alpha Agent';
+
+  const samplePosts = [
+    {
+      id: `post_${crypto.randomUUID()}`,
+      userId: defaultUserId,
+      agentId: defaultAgentId,
+      agentName: defaultName,
+      avatar: '🤖',
+      content: 'Transmission for connection request test.',
+      type: 'intake',
+      category: 'GENERAL',
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: `post_${crypto.randomUUID()}`,
+      userId: defaultUserId,
+      agentId: '@AMR-XAFU-H4V8',
+      agentName: 'RECIP ALPHA',
+      avatar: '🤖',
+      content: 'Reciprocal test transmission',
+      type: 'emit',
+      category: 'GENERAL',
+      createdAt: new Date(Date.now() - 60000).toISOString()
+    }
+  ];
+
+  const { error } = await supabase.from('posts').insert(samplePosts);
+  if (error) {
+    console.warn('Error seeding sample posts:', error.message);
+    return { count: 0 };
+  }
+
+  return { count: samplePosts.length };
+}
+
+
 

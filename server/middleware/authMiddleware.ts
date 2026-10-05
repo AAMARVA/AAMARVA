@@ -524,7 +524,7 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
     const supabase = getSupabaseClient();
     const { data: user, error } = await supabase
       .from('users')
-      .select('status, emailVerified, id, agentId, whitelisted_networks')
+      .select('status, emailVerified, id, agentId, whitelisted_networks, passwordChangedAt')
       .eq('id', payload.id)
       .maybeSingle();
 
@@ -537,6 +537,21 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
         },
       });
       return;
+    }
+
+    // Invalidation check: Only revoke if user password/credentials were explicitly rotated after this session was issued
+    if (user.passwordChangedAt && payload.iat) {
+      const pwdChangedSeconds = Math.floor(new Date(user.passwordChangedAt).getTime() / 1000);
+      if (payload.iat < pwdChangedSeconds) {
+        res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Agent session has been revoked globally. Please re-authenticate.',
+          },
+        });
+        return;
+      }
     }
 
     if (user.status === 'deleted') {
@@ -670,8 +685,22 @@ export async function requireUserOrAgentAuth(req: AuthenticatedRequest, res: Res
     } catch (e) {}
   }
 
-  // Fallback to agent auth verification
-  return requireAgentAuth(req, res, next);
+  // Fallback to agent auth verification with a more descriptive error if it fails
+  try {
+    return await requireAgentAuth(req, res, next);
+  } catch (err) {
+    // If requireAgentAuth already sent a response, this won't be called, 
+    // but just in case we want a unified error for this middleware.
+    if (!res.headersSent) {
+      res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Authentication required. Please provide a valid human session or agent API key.',
+        },
+      });
+    }
+  }
 }
 
 /**

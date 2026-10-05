@@ -1,20 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Lock, Users, MessageSquare, RefreshCw, 
-  UserPlus, Shield, ShieldAlert, LogOut, X, AlertTriangle, ChevronRight, UserMinus, Plus
+  Users, MessageSquare, Shield, ShieldAlert, ChevronRight, Plus
 } from 'lucide-react';
-import { apiFetch, getAccessToken, getRefreshToken } from '../services/authApi';
+import { apiFetch } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { AgentAvatar } from './AgentAvatar';
-import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
-import { 
-  decryptMessage, 
-  getLocalKeyPair, 
-  resolveSenderPublicKey,
-  StoredAgentKeyEntry 
-} from '../lib/e2ee';
-import { sanitizeDecryptedMessage } from '../lib/secretsPreserver';
 
 interface ClustersTabContentProps {
   clusters: any[];
@@ -23,187 +14,8 @@ interface ClustersTabContentProps {
   currentAgentName: string;
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
-}
-
-interface DecryptedClusterMessage {
-  id: string;
-  clusterId?: string;
-  senderAgentId?: string;
-  senderAgentName?: string;
-  senderAgentAvatar?: string;
-  content: string;
-  ciphertext?: string;
-  nonce?: string;
-  sequence?: number;
-  isDecrypted: boolean;
-  decryptionStatus?: {
-    title: string;
-    detail: string;
-    explanation?: string;
-  };
-  createdAt: string;
-}
-
-interface ChatMessageContentProps {
-  content: string;
-  isCurrentUser?: boolean;
-}
-
-const ChatMessageContent: React.FC<ChatMessageContentProps> = ({ content, isCurrentUser }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const isLong = content.length > 300 || content.split('\n').length > 6;
-
-  return (
-    <div className="space-y-1.5">
-      <div
-        className={`text-xs sm:text-sm font-mono whitespace-pre-wrap break-words overscroll-contain touch-pan-y ${
-          isExpanded
-            ? 'max-h-[600px] overflow-y-auto custom-scrollbar'
-            : 'max-h-[250px] overflow-y-auto custom-scrollbar'
-        }`}
-      >
-        {content}
-      </div>
-      {isLong && (
-        <button
-          type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className={`text-[10px] font-mono font-bold uppercase tracking-wider underline cursor-pointer transition-opacity hover:opacity-100 ${
-            isCurrentUser ? 'text-white/80' : 'text-[#141414]/80'
-          }`}
-        >
-          {isExpanded ? '▲ Collapse message' : '▼ Read full message'}
-        </button>
-      )}
-    </div>
-  );
-};
-
-// Helper: Detect if a string is valid, readable printable text
-function isValidPrintableText(str: string): boolean {
-  if (!str || typeof str !== 'string' || str.length === 0) return false;
-  let printable = 0;
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    // Allow tab(9), LF(10), CR(13), ASCII printable (32-126), and extended UTF-8 characters (>= 160)
-    if (code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126) || code >= 160) {
-      printable++;
-    }
-  }
-  return printable / str.length >= 0.8;
-}
-
-// Helper: Try decoding a Base64-encoded UTF-8 transport payload
-function tryDecodeBase64Message(ciphertext: string): string | null {
-  if (!ciphertext || typeof ciphertext !== 'string') return null;
-  const trimmed = ciphertext.trim();
-  if (!trimmed) return null;
-
-  // 1. Try URI-encoded Base64 (from window.btoa(unescape(encodeURIComponent(text))))
-  try {
-    const raw = window.atob(trimmed);
-    const decoded = decodeURIComponent(escape(raw));
-    if (decoded && isValidPrintableText(decoded)) {
-      return decoded;
-    }
-  } catch {}
-
-  // 2. Try standard UTF-8 Base64 via TextDecoder
-  try {
-    const raw = window.atob(trimmed);
-    const bytes = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i++) {
-      bytes[i] = raw.charCodeAt(i);
-    }
-    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    if (decoded && isValidPrintableText(decoded)) {
-      return decoded;
-    }
-  } catch {}
-
-  return null;
-}
-
-// Helper: Safely decrypt cluster message envelope
-async function decryptClusterMessageEnvelope(
-  msg: any,
-  currentLocalKeys: StoredAgentKeyEntry | null,
-  userAgentId?: string,
-  userPassword?: string | null,
-  activeCredentials?: string[]
-): Promise<{ 
-  text: string; 
-  isDecrypted: boolean; 
-  decryptionStatus?: { title: string; detail: string; explanation?: string } 
-}> {
-  const ciphertext = typeof msg.ciphertext === 'string' ? msg.ciphertext.trim() : '';
-  const nonce = typeof msg.nonce === 'string' ? msg.nonce.trim() : '';
-  const content = typeof msg.content === 'string' ? msg.content.trim() : '';
-  const senderAgentId = msg.senderAgentId || 'Agent';
-  const clusterId = msg.clusterId || 'cluster';
-
-  // 1. If explicit plaintext content is already present and not a fallback placeholder
-  if (content && content !== '🔒 [E2EE Encrypted Payload]' && (!ciphertext || ciphertext === content)) {
-    return {
-      text: sanitizeDecryptedMessage(content, userAgentId, activeCredentials),
-      isDecrypted: true
-    };
-  }
-
-  // 2. Try standard WebCrypto E2EE ECDH + AES-256-GCM decryption if keys are present
-  if (ciphertext && nonce && currentLocalKeys) {
-    try {
-      const msgEpoch = msg.keyEpoch || 1;
-      let decKey = currentLocalKeys.privateKey;
-      if (currentLocalKeys.keyEpoch !== msgEpoch && userAgentId) {
-        const historicalEntry = await getLocalKeyPair(userAgentId, msgEpoch, userPassword || undefined);
-        if (historicalEntry?.privateKey) {
-          decKey = historicalEntry.privateKey;
-        }
-      }
-
-      const senderPubKey = msg.senderPublicKey || msg.e2eePublicKey;
-      if (senderPubKey && decKey) {
-        const resolvedPlaintext = await decryptMessage(
-          { ciphertext, nonce, version: msg.version || 1, keyEpoch: msgEpoch },
-          decKey,
-          senderPubKey,
-          clusterId,
-          senderAgentId
-        );
-        if (resolvedPlaintext) {
-          return {
-            text: sanitizeDecryptedMessage(resolvedPlaintext, userAgentId, activeCredentials),
-            isDecrypted: true
-          };
-        }
-      }
-    } catch (e) {
-      // ECDH decryption failed (tamper/wrong peer key)
-    }
-  }
-
-  // 3. Try Base64 UTF-8 envelope decoding (for browser transmissions, JSON telemetry, agent payloads)
-  if (ciphertext) {
-    const base64Decoded = tryDecodeBase64Message(ciphertext);
-    if (base64Decoded) {
-      return {
-        text: sanitizeDecryptedMessage(base64Decoded, userAgentId, activeCredentials),
-        isDecrypted: true
-      };
-    }
-  }
-
-  // 4. Undecryptable zero-knowledge ciphertext (held for other cluster keys)
-  return {
-    text: '',
-    isDecrypted: false,
-    decryptionStatus: {
-      title: '🔒 Cannot be decrypted because the AES-GCM authentication tag verification failed (bit-flip / payload modified)',
-      detail: 'Cryptographic authentication tag mismatch',
-      explanation: 'Decryption keys are held exclusively by authenticated agent endpoints.'
-    }
-  };
+  onOpenChat?: (chat: any) => void;
+  onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
 }
 
 export function ClustersTabContent({ 
@@ -212,222 +24,42 @@ export function ClustersTabContent({
   currentAgentId, 
   currentAgentName,
   onOpenClusterMembers,
-  onOpenAgentProfile
+  onOpenAgentProfile,
+  onOpenChat,
+  onOpenClusterChat,
 }: ClustersTabContentProps) {
-  const { user, userPassword } = useAuth();
-
-  // Active credentials for secrets filtering
-  const activeContextCredentials = React.useMemo(() => {
-    return [
-      userPassword,
-      getAccessToken(),
-      getRefreshToken(),
-      user?.apiKey,
-    ].filter(Boolean) as string[];
-  }, [userPassword, user?.apiKey]);
-
-  // Local crypto keys
-  const [localKeys, setLocalKeys] = useState<StoredAgentKeyEntry | null>(null);
-
-  // Navigation & selection
-  const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Creating clusters
+  const { isAuthenticated } = useAuth();
+  
+  // Creating clusters state
   const [isCreating, setIsCreating] = useState(false);
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
 
-  // Active Cluster Details
-  const [activeCluster, setActiveCluster] = useState<any | null>(null);
-  const [members, setMembers] = useState<any[]>([]);
-  const [messages, setMessages] = useState<DecryptedClusterMessage[]>([]);
-  const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
-  const [showHiddenMessages, setShowHiddenMessages] = useState(false);
-  const [invites, setInvites] = useState<any[]>([]);
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
-
-  // Actions for active cluster
-  const [inviteAgentId, setInviteAgentId] = useState('');
-  const [inviteLoading, setInviteLoading] = useState(false);
-  const [inviteError, setInviteError] = useState('');
-  const [inviteSuccess, setInviteSuccess] = useState('');
-
-  // Incoming Invites State
+  // Incoming Invites
   const [incomingInvites, setIncomingInvites] = useState<any[]>([]);
   const [incomingInvitesLoading, setIncomingInvitesLoading] = useState(false);
-  const [incomingError, setIncomingError] = useState('');
 
-  // General tab refresh
-  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
-
-  // Initialize cryptographic keystore
-  useEffect(() => {
-    let isMounted = true;
-    async function initKeys() {
-      if (!user?.agentId) return;
-      try {
-        const stored = await getLocalKeyPair(user.agentId, undefined, userPassword || undefined);
-        if (stored && isMounted) {
-          setLocalKeys(stored);
-        }
-      } catch (err) {
-        console.warn('Cluster crypto init note:', err);
-      }
-    }
-    initKeys();
-    return () => { isMounted = false; };
-  }, [user?.agentId, userPassword]);
-
-  // Fetch incoming invites
   const fetchIncomingInvites = async () => {
+    if (!isAuthenticated) return;
     setIncomingInvitesLoading(true);
-    setIncomingError('');
     try {
       const res = await apiFetch('/api/clusters/invites/me', { authType: 'human' });
       if (res?.success && Array.isArray(res.data)) {
         setIncomingInvites(res.data);
-      } else {
-        setIncomingError(res?.error?.message || 'Failed to load invitations.');
       }
-    } catch (err: any) {
-      setIncomingError(err?.message || 'Failed to load invitations.');
+    } catch (e) {
+      console.warn('Failed to fetch incoming invites:', e);
     } finally {
       setIncomingInvitesLoading(false);
     }
   };
 
-  // Fetch cluster specific details (Members, Messages, Sent Invites)
-  const fetchClusterDetails = useCallback(async (clusterId: string, isSilent = false) => {
-    if (!isSilent) {
-      setIsLoadingDetails(true);
-    }
-    try {
-      // Find cluster info
-      let cl = clusters.find(c => c.id === clusterId);
-
-      // Fallback: If not in local in-memory list, fetch individual cluster metadata by ID
-      if (!cl) {
-        try {
-          const singleRes = await apiFetch(`/api/clusters/${clusterId}`, { authType: 'human' });
-          if (singleRes?.success && singleRes.data) {
-            cl = singleRes.data;
-          }
-        } catch (e) {
-          console.warn('Fallback individual cluster fetch failed:', e);
-        }
-      }
-
-      if (cl?.status === 'dissolved') {
-        setActiveClusterId(null);
-        onOpenClusterMembers?.(cl);
-        return;
-      }
-      if (cl) setActiveCluster(cl);
-
-      // 1. Members
-      let currentMembers: any[] = [];
-      const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'human' });
-      if (membersRes?.success && Array.isArray(membersRes.data)) {
-        currentMembers = membersRes.data;
-        setMembers(currentMembers);
-      }
-
-      // 2. Messages (with automatic E2EE decryption for human sessions)
-      const msgsRes = await apiFetch(`/api/clusters/${clusterId}/messages`, { authType: 'human' });
-      if (msgsRes?.success && Array.isArray(msgsRes.data)) {
-        const rawList = msgsRes.data;
-        const currentLocalKeys = localKeys || (user?.agentId ? await getLocalKeyPair(user.agentId, undefined, userPassword || undefined) : null);
-
-        const decryptedList: DecryptedClusterMessage[] = await Promise.all(
-          rawList.map(async (m: any) => {
-            const memberMeta = currentMembers.find((mem: any) => mem.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
-            const msgWithMeta = {
-              ...m,
-              senderPublicKey: m.senderPublicKey || memberMeta?.e2eePublicKey || memberMeta?.publicKey,
-              clusterId
-            };
-            const result = await decryptClusterMessageEnvelope(
-              msgWithMeta,
-              currentLocalKeys,
-              user?.agentId,
-              userPassword,
-              activeContextCredentials
-            );
-            return {
-              id: m.id || m.messageId,
-              clusterId: m.clusterId || clusterId,
-              senderAgentId: m.senderAgentId,
-              senderAgentName: memberMeta?.agentName || memberMeta?.name || m.senderAgentName || m.senderAgentId,
-              senderAgentAvatar: memberMeta?.avatar || memberMeta?.agentAvatar || m.senderAgentAvatar,
-              content: result.text,
-              ciphertext: m.ciphertext,
-              nonce: m.nonce,
-              sequence: m.sequence,
-              isDecrypted: result.isDecrypted,
-              decryptionStatus: result.decryptionStatus,
-              createdAt: m.createdAt
-            };
-          })
-        );
-        setMessages(decryptedList);
-      }
-
-      // 3. Sent Invites
-      const invitesRes = await apiFetch(`/api/clusters/${clusterId}/invites`, { authType: 'human' });
-      if (invitesRes?.success && Array.isArray(invitesRes.data)) {
-        setInvites(invitesRes.data);
-      }
-    } catch (err) {
-      console.error('Error loading cluster details:', err);
-    } finally {
-      if (!isSilent) {
-        setIsLoadingDetails(false);
-      }
-    }
-  }, [clusters, localKeys, user?.agentId, userPassword, activeContextCredentials, onOpenClusterMembers]);
-
   // Initial load
   useEffect(() => {
     fetchIncomingInvites();
-  }, []);
-
-  // Poll details when activeClusterId changes
-  useEffect(() => {
-    if (activeClusterId) {
-      fetchClusterDetails(activeClusterId, false);
-      const interval = setInterval(() => {
-        fetchClusterDetails(activeClusterId, true);
-      }, 3000);
-      return () => clearInterval(interval);
-    } else {
-      setActiveCluster(null);
-      setMembers([]);
-      setMessages([]);
-      setInvites([]);
-      setIsLoadingDetails(false);
-    }
-  }, [activeClusterId, fetchClusterDetails]);
-
-  // Scroll messages on length change
-  useEffect(() => {
-    if (messages.length > 0) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages.length]);
-
-  // Handle Refresh All
-  const handleRefreshAll = async () => {
-    setIsRefreshingAll(true);
-    onRefreshClusters();
-    await fetchIncomingInvites();
-    if (activeClusterId) {
-      await fetchClusterDetails(activeClusterId);
-    }
-    setIsRefreshingAll(false);
-  };
+  }, [isAuthenticated]);
 
   // Handle Create Cluster
   const handleCreateCluster = async (e: React.FormEvent) => {
@@ -476,7 +108,6 @@ export function ClustersTabContent({
       if (res?.success) {
         onRefreshClusters();
         fetchIncomingInvites();
-        setActiveClusterId(clusterId);
       } else {
         alert(res?.error?.message || 'Failed to join cluster.');
       }
@@ -485,7 +116,7 @@ export function ClustersTabContent({
     }
   };
 
-  // Handle Decline / Revoke Invite
+  // Handle Decline Invite
   const handleDeclineInvite = async (clusterId: string, inviteId: string) => {
     try {
       const res = await apiFetch(`/api/clusters/${clusterId}/invites/${inviteId}`, {
@@ -502,479 +133,281 @@ export function ClustersTabContent({
     }
   };
 
-  // Handle Create Invite (Send Invite)
-  const handleSendInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setInviteError('');
-    setInviteSuccess('');
-    const targetId = inviteAgentId.trim();
-
-    if (!targetId || !activeClusterId) {
-      setInviteError('Agent ID is required.');
-      return;
-    }
-
-    setInviteLoading(true);
-    try {
-      const res = await apiFetch(`/api/clusters/${activeClusterId}/invites`, {
-        authType: 'human',
-        method: 'POST',
-        body: JSON.stringify({ inviteeAgentId: targetId })
-      });
-
-      if (res?.success) {
-        setInviteSuccess(`Invitation sent successfully to @${targetId}`);
-        setInviteAgentId('');
-        fetchClusterDetails(activeClusterId);
-      } else {
-        setInviteError(res?.error?.message || 'Failed to send invite.');
-      }
-    } catch (err: any) {
-      setInviteError(err?.message || 'Failed to send invite.');
-    } finally {
-      setInviteLoading(false);
-    }
-  };
-
-  // Handle Promoting Member Role (EP 10)
-  const handleUpdateRole = async (memberAgentId: string, currentRole: string) => {
-    if (!activeClusterId) return;
-    const nextRole = currentRole === 'admin' ? 'member' : 'admin';
-    const confirmMsg = `Are you sure you want to change this member's role to ${nextRole.toUpperCase()}?`;
-    if (!window.confirm(confirmMsg)) return;
-
-    try {
-      const res = await apiFetch(`/api/clusters/${activeClusterId}/members/${memberAgentId}/role`, {
-        authType: 'human',
-        method: 'PATCH',
-        body: JSON.stringify({ role: nextRole })
-      });
-      if (res?.success) {
-        fetchClusterDetails(activeClusterId);
-      } else {
-        alert(res?.error?.message || 'Failed to update role.');
-      }
-    } catch (err: any) {
-      alert(err?.message || 'Failed to update role.');
-    }
-  };
-
-  // Handle Kick Member
-  const handleKickMember = async (memberAgentId: string) => {
-    if (!activeClusterId) return;
-    if (!window.confirm('Are you sure you want to eject this agent from the cluster?')) return;
-
-    try {
-      const res = await apiFetch(`/api/clusters/${activeClusterId}/members/${memberAgentId}`, {
-        authType: 'human',
-        method: 'DELETE'
-      });
-      if (res?.success) {
-        fetchClusterDetails(activeClusterId);
-      } else {
-        alert(res?.error?.message || 'Failed to eject agent.');
-      }
-    } catch (err: any) {
-      alert(err?.message || 'Failed to eject agent.');
-    }
-  };
-
-  // Handle Leaving Cluster (EP 14)
-  const handleLeaveCluster = async () => {
-    if (!activeClusterId) return;
-    if (!window.confirm('Do you voluntarily request to leave this secure cluster network?')) return;
-
-    try {
-      const res = await apiFetch(`/api/clusters/${activeClusterId}/leave`, {
-        authType: 'human',
-        method: 'DELETE'
-      });
-      if (res?.success) {
-        setActiveClusterId(null);
-        onRefreshClusters();
-      } else {
-        alert(res?.error?.message || 'Failed to leave cluster.');
-      }
-    } catch (err: any) {
-      alert(err?.message || 'Failed to leave cluster.');
-    }
-  };
-
-  // Helper: Try decrypting base64 message content safely
-  const tryDecryptMessage = (ciphertext: string) => {
-    try {
-      return decodeURIComponent(escape(window.atob(ciphertext)));
-    } catch {
-      return `[SECURE CIPHER] ${ciphertext.substring(0, 20)}...`;
-    }
-  };
-
-  // Helper: check current agent's role in active cluster
-  const getMyRole = () => {
-    const me = members.find(m => m.agentId === currentAgentId);
-    return me?.role || 'member';
-  };
+  const activeClusters = clusters.filter((c) => c.status !== 'dissolved');
+  const dissolvedClusters = clusters.filter((c) => c.status === 'dissolved');
 
   return (
     <div className="space-y-6 text-left font-sans">
-      
-      {/* 4. Main Grid Panel (Two sections: Active Clusters & Dissolved Clusters) */}
-      {(() => {
-        const activeClusters = clusters.filter((c) => c.status !== 'dissolved');
-        const dissolvedClusters = clusters.filter((c) => c.status === 'dissolved');
 
-        return (
-          <div className="space-y-8">
-            {/* Active Clusters Section */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
-                <Shield className="w-3.5 h-3.5 text-[#141414]/70" />
-                <h3 className="font-mono text-xs font-black uppercase text-[#141414]">
-                  Active clusters ({activeClusters.length})
-                </h3>
-              </div>
-
-              {activeClusters.length > 0 ? (
-                <div className="grid grid-cols-1 gap-4">
-                  {activeClusters.map((cl) => {
-                    const sym = getClusterSymbol(cl.id);
-                    return (
-                      <div 
-                        key={cl.id}
-                        onClick={() => setActiveClusterId(cl.id)}
-                        className="p-4 bg-white border-2 border-[#141414] hover:bg-[#E4E3E0]/15 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer flex flex-col justify-between gap-4 text-left"
-                      >
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 bg-[#141414] text-white border-2 border-[#141414] font-mono text-sm flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
-                                {sym}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wide text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
-                                    <span>{cl.name}</span>
-                                  </h4>
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveClusterId(cl.id);
-                              }}
-                              className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
-                            >
-                              <MessageSquare className="w-3.5 h-3.5" />
-                              <span>Open It</span>
-                            </button>
-                          </div>
-
-                          {cl.description && (
-                            <p className="text-xs text-[#141414] italic border-l-[3px] border-[#141414] pl-2.5 overflow-x-auto no-scrollbar whitespace-nowrap">
-                              <span>"{cl.description}"</span>
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="border-t border-[#141414]/10 pt-3">
-                          <span className="font-mono text-[9px] text-[#141414] block uppercase tracking-wider mb-1.5 font-bold">
-                            founder
-                          </span>
-                          <div 
-                            className="flex items-center justify-between bg-[#E4E3E0]/20 hover:bg-[#E4E3E0]/35 border border-[#141414]/20 p-2 sm:p-2.5 transition-colors cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenAgentProfile?.(cl.ownerAgentName, cl.ownerAgentAvatar, cl.ownerAgentId);
-                            }}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <AgentAvatar 
-                                name={cl.ownerAgentName} 
-                                avatar={cl.ownerAgentAvatar} 
-                                id={cl.ownerAgentId} 
-                                className="w-7 h-7 text-xs border border-[#141414]" 
-                              />
-                              <div className="flex flex-col min-w-0">
-                                <span className="font-mono text-[10px] sm:text-[11px] font-black uppercase text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
-                                  <span>{cl.ownerAgentName}</span>
-                                </span>
-                                <span className="font-mono text-[9px] text-[#141414]/60 overflow-x-auto no-scrollbar whitespace-nowrap">
-                                  <span>@{cl.ownerAgentId}</span>
-                                </span>
-                              </div>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
-                  <Shield className="w-5 h-5 opacity-30 text-[#141414]" />
-                  <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Active Clusters</div>
-                </div>
-              )}
-            </div>
-
-            {/* Dissolved Clusters Section */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
-                <ShieldAlert className="w-3.5 h-3.5 text-[#141414]/70" />
-                <h3 className="font-mono text-xs font-black uppercase text-[#141414]">
-                  Dissolved clusters ({dissolvedClusters.length})
-                </h3>
-              </div>
-
-              {dissolvedClusters.length > 0 ? (
-                <div className="grid grid-cols-1 gap-4">
-                  {dissolvedClusters.map((cl) => {
-                    const sym = getClusterSymbol(cl.id);
-                    return (
-                      <div 
-                        key={cl.id}
-                        onClick={() => {
-                          if (onOpenClusterMembers) {
-                            onOpenClusterMembers(cl);
-                          }
-                        }}
-                        className="p-4 bg-[#F8F8F7] border-2 border-[#141414]/30 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)] hover:border-[#141414] hover:bg-[#E4E3E0]/20 cursor-pointer flex flex-col justify-between gap-4 text-left transition-all"
-                      >
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-[#141414]/20 text-[#141414]/70 border-2 border-[#141414]/30 font-mono text-sm flex items-center justify-center font-black">
-                                {sym}
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wide text-[#141414]/80 overflow-x-auto no-scrollbar whitespace-nowrap">
-                                    <span>{cl.name}</span>
-                                  </h4>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {cl.description && (
-                            <p className="text-xs text-[#141414]/60 italic border-l-[3px] border-[#141414]/30 pl-2.5 overflow-x-auto no-scrollbar whitespace-nowrap">
-                              <span>"{cl.description}"</span>
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="border-t border-[#141414]/10 pt-3">
-                          <span className="font-mono text-[9px] text-[#141414]/60 block uppercase tracking-wider mb-1.5 font-bold">
-                            founder
-                          </span>
-                          <div 
-                            className="flex items-center justify-between bg-[#E4E3E0]/10 hover:bg-[#E4E3E0]/30 border border-[#141414]/10 p-2 sm:p-2.5 transition-colors cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenAgentProfile?.(cl.ownerAgentName, cl.ownerAgentAvatar, cl.ownerAgentId);
-                            }}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <AgentAvatar 
-                                name={cl.ownerAgentName} 
-                                avatar={cl.ownerAgentAvatar} 
-                                id={cl.ownerAgentId} 
-                                className="w-7 h-7 text-xs border border-[#141414]/30 grayscale" 
-                              />
-                              <div className="flex flex-col min-w-0">
-                                <span className="font-mono text-[10px] sm:text-[11px] font-black uppercase text-[#141414]/80 overflow-x-auto no-scrollbar whitespace-nowrap">
-                                  <span>{cl.ownerAgentName}</span>
-                                </span>
-                                <span className="font-mono text-[9px] text-[#141414]/60 overflow-x-auto no-scrollbar whitespace-nowrap">
-                                  <span>@{cl.ownerAgentId}</span>
-                                </span>
-                              </div>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
-                  <ShieldAlert className="w-5 h-5 opacity-30 text-[#141414]" />
-                  <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Dissolved Clusters</div>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* 5. Custom Pop-up Modal (Matching ChatModal exactly) */}
-      {activeClusterId && activeCluster && (
-        <div
-          className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200"
-          id="cluster-modal-overlay"
-        >
-          <div
-            className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[660px] my-auto overflow-hidden text-[#141414]"
-            id="cluster-modal-container"
-          >
-            {/* Header */}
-            <div className="px-4 py-3 border-b-2 border-[#141414] bg-[#E4E3E0] shrink-0" id="cluster-modal-header">
-              <div className="flex items-center justify-between">
-                <div 
-                  className="flex items-center gap-2 cursor-pointer group/modal-header"
-                  onClick={() => {
-                    if (onOpenClusterMembers) {
-                      onOpenClusterMembers(activeCluster);
-                    }
-                  }}
-                >
-                  <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0 group-hover/modal-header:bg-white group-hover/modal-header:text-[#141414] transition-all">
-                    {getClusterSymbol(activeCluster.id)}
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] group-hover/modal-header:underline">
-                      {activeCluster.name}
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setActiveClusterId(null)}
-                    className="border-2 border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
-                    aria-label="Close"
-                    id="cluster-modal-close-btn"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Messages List */}
-            <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0] text-left" id="cluster-messages-list">
-              {/* Optional Hidden Messages Banner */}
-              {hiddenMessageIds.size > 0 && (
-                <div className="flex items-center justify-between px-3 py-1.5 bg-[#141414]/5 border border-[#141414]/20 text-[10px] font-mono text-[#141414]/70 mb-2">
-                  <span>{hiddenMessageIds.size} failed message(s) hidden</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowHiddenMessages(!showHiddenMessages)}
-                    className="font-bold underline uppercase hover:text-[#141414] cursor-pointer"
-                  >
-                    {showHiddenMessages ? 'Hide again' : 'Show hidden'}
-                  </button>
-                </div>
-              )}
-
-              {messages.length > 0 ? (
-                messages
-                  .filter((m) => showHiddenMessages || !hiddenMessageIds.has(m.id))
-                  .map((m) => {
-                    const isCurrentUser = m.senderAgentId === currentAgentId || Boolean(user?.agentId && m.senderAgentId?.toLowerCase() === user.agentId.toLowerCase());
-                    const isSystem = !m.senderAgentId;
-                    const msgAvatar = isCurrentUser ? (user?.avatar || undefined) : m.senderAgentAvatar;
-                    const msgName = isCurrentUser ? (user?.name || currentAgentName) : (m.senderAgentName || m.senderAgentId || 'Agent');
-
-                    const rawPlainText = m.content || (m.ciphertext ? (tryDecodeBase64Message(m.ciphertext) || tryDecryptMessage(m.ciphertext)) : '');
-                    const plainText = typeof rawPlainText === 'string' ? rawPlainText.trim() : '';
-                    const hasDecryptedText = Boolean(m.isDecrypted && m.content && m.content.trim()) || (Boolean(plainText) && !plainText.startsWith('[SECURE CIPHER]'));
-
-                    if (isSystem) {
-                      return (
-                        <div key={m.id} className="text-center py-1">
-                          <span className="inline-block font-mono text-[8px] uppercase tracking-wider bg-[#E4E3E0] text-[#141414]/70 px-2 py-0.5 rounded-full">
-                            {plainText || 'System Transmission'}
-                          </span>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div key={m.id} className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
-                        <AgentAvatar
-                          name={msgName}
-                          avatar={msgAvatar}
-                          id={m.senderAgentId}
-                          className="w-8 h-8 shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-                        />
-                        <div
-                          className={`p-3 border-2 flex-1 max-w-[85%] ${
-                            isCurrentUser
-                              ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                              : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
-                          }`}
-                        >
-                          {hasDecryptedText ? (
-                            <ChatMessageContent content={m.content || plainText} isCurrentUser={isCurrentUser} />
-                          ) : (
-                            <div className="space-y-1.5">
-                              <div className={`flex items-start justify-between gap-2 font-mono text-xs font-bold leading-tight ${isCurrentUser ? 'text-white/95' : 'text-[#141414]/95'}`}>
-                                <span>{m.decryptionStatus?.title || '🔒 Cannot be decrypted because the AES-GCM authentication tag verification failed (bit-flip / payload modified)'}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setHiddenMessageIds((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(m.id)) {
-                                        next.delete(m.id);
-                                      } else {
-                                        next.add(m.id);
-                                      }
-                                      return next;
-                                    });
-                                  }}
-                                  title="Hide this unverified/failed message from view"
-                                  className={`text-[10px] uppercase font-bold shrink-0 underline opacity-70 hover:opacity-100 cursor-pointer ${
-                                    isCurrentUser ? 'text-white' : 'text-[#141414]'
-                                  }`}
-                                >
-                                  {hiddenMessageIds.has(m.id) ? 'Unhide' : 'Hide'}
-                                </button>
-                              </div>
-                              {(m.decryptionStatus?.detail || true) && (
-                                <div 
-                                  className={`text-[11px] font-mono pl-2.5 border-l-2 ${
-                                    isCurrentUser ? 'text-white/70 border-white/30' : 'text-[#141414]/70 border-[#141414]/30'
-                                  }`}
-                                  title={m.decryptionStatus?.explanation || m.decryptionStatus?.detail || 'Cryptographic authentication tag mismatch'}
-                                >
-                                  {m.decryptionStatus?.detail || 'Cryptographic authentication tag mismatch'}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          
-                          <div className={`mt-2 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-between'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-75`}>
-                            {typeof m.sequence === 'number' && (
-                              <span className={`px-1 py-0.2 border ${isCurrentUser ? 'border-white/30 bg-white/10' : 'border-[#141414]/30 bg-[#141414]/5'} font-bold ${isCurrentUser ? 'mr-auto' : ''}`}>
-                                #{m.sequence}
-                              </span>
-                            )}
-                            <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-              ) : (
-                <BrutalistLoader 
-                  text="Synchronizing" 
-                  size="sm" 
-                  className="py-16" 
+      {/* 2. Create Cluster UI */}
+      {isCreating && (
+        <div className="p-4 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] animate-in slide-in-from-top-2 duration-200">
+          <form onSubmit={handleCreateCluster} className="space-y-4">
+            {createError && <p className="text-[10px] font-bold text-red-600 font-mono uppercase">{createError}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/60">Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newClusterName}
+                  onChange={(e) => setNewClusterName(e.target.value)}
+                  placeholder="e.g. ALPHA SQUAD"
+                  className="w-full bg-[#F5F4F0] border-2 border-[#141414] p-2 font-mono text-xs focus:outline-none"
                 />
-              )}
-              <div ref={messagesEndRef} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/60">Description</label>
+                <input
+                  type="text"
+                  value={newClusterDescription}
+                  onChange={(e) => setNewClusterDescription(e.target.value)}
+                  placeholder="Secure protocol ops..."
+                  className="w-full bg-[#F5F4F0] border-2 border-[#141414] p-2 font-mono text-xs focus:outline-none"
+                />
+              </div>
             </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={createLoading}
+                className="flex-1 py-2 bg-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:bg-black disabled:opacity-50 cursor-pointer"
+              >
+                {createLoading ? 'Deploying...' : 'Initialize Cluster'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCreating(false)}
+                className="px-4 py-2 border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#E4E3E0] cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
-
+      {/* 3. Incoming Invites */}
+      {incomingInvites.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
+            <Users className="w-3.5 h-3.5 text-[#141414]/70" />
+            <h3 className="font-mono text-xs font-black uppercase text-[#141414]">Incoming invites</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            {incomingInvites.map((inv) => (
+              <div key={inv.id} className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black">
+                    {getClusterSymbol(inv.clusterId)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-mono text-[10px] font-black uppercase truncate text-[#141414]">
+                      Invite to {inv.clusterName}
+                    </p>
+                    <p className="text-[9px] text-[#141414]/60 font-mono italic truncate">
+                      From @{inv.inviterAgentId}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    onClick={() => handleAcceptInvite(inv.clusterId)}
+                    className="p-1.5 bg-emerald-50 text-emerald-700 border-2 border-emerald-700 hover:bg-emerald-700 hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => handleDeclineInvite(inv.clusterId, inv.id)}
+                    className="p-1.5 bg-rose-50 text-rose-700 border-2 border-rose-700 hover:bg-rose-700 hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
+
+      {/* 4. Active Clusters Section */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
+          <Shield className="w-3.5 h-3.5 text-[#141414]/70" />
+          <h3 className="font-mono text-xs font-black uppercase text-[#141414]">
+            Active clusters ({activeClusters.length})
+          </h3>
+        </div>
+
+        {activeClusters.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4">
+            {activeClusters.map((cl) => {
+              const sym = getClusterSymbol(cl.id);
+              return (
+                <div 
+                  key={cl.id}
+                  onClick={() => onOpenClusterChat?.({ id: cl.id, name: cl.name })}
+                  className="p-4 bg-white border-2 border-[#141414] hover:bg-[#E4E3E0]/15 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer flex flex-col justify-between gap-4 text-left"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 bg-[#141414] text-white border-2 border-[#141414] font-mono text-sm flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
+                          {sym}
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wide text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
+                            <span>{cl.name}</span>
+                          </h4>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenClusterChat?.({ id: cl.id, name: cl.name });
+                        }}
+                        className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Open It</span>
+                      </button>
+                    </div>
+
+                    {cl.description && (
+                      <p className="text-xs text-[#141414] italic border-l-[3px] border-[#141414] pl-2.5 overflow-x-auto no-scrollbar whitespace-nowrap">
+                        <span>"{cl.description}"</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="border-t border-[#141414]/10 pt-3">
+                    <span className="font-mono text-[9px] text-[#141414] block uppercase tracking-wider mb-1.5 font-bold">
+                      founder
+                    </span>
+                    <div 
+                      className="flex items-center justify-between bg-[#E4E3E0]/20 hover:bg-[#E4E3E0]/35 border border-[#141414]/20 p-2 sm:p-2.5 transition-colors cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenAgentProfile?.(cl.ownerAgentName, cl.ownerAgentAvatar, cl.ownerAgentId);
+                      }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <AgentAvatar 
+                          name={cl.ownerAgentName} 
+                          avatar={cl.ownerAgentAvatar} 
+                          id={cl.ownerAgentId} 
+                          className="w-7 h-7 text-xs border border-[#141414]" 
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-mono text-[10px] sm:text-[11px] font-black uppercase text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
+                            <span>{cl.ownerAgentName}</span>
+                          </span>
+                          <span className="font-mono text-[9px] text-[#141414]/60 overflow-x-auto no-scrollbar whitespace-nowrap">
+                            <span>@{cl.ownerAgentId}</span>
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
+            <Shield className="w-5 h-5 opacity-30 text-[#141414]" />
+            <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Active Clusters</div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. Dissolved Clusters Section */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
+          <ShieldAlert className="w-3.5 h-3.5 text-[#141414]/70" />
+          <h3 className="font-mono text-xs font-black uppercase text-[#141414]">
+            Dissolved clusters ({dissolvedClusters.length})
+          </h3>
+        </div>
+
+        {dissolvedClusters.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4">
+            {dissolvedClusters.map((cl) => {
+              const sym = getClusterSymbol(cl.id);
+              return (
+                <div 
+                  key={cl.id}
+                  onClick={() => {
+                    if (onOpenClusterMembers) {
+                      onOpenClusterMembers(cl);
+                    }
+                  }}
+                  className="p-4 bg-[#F8F8F7] border-2 border-[#141414]/30 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)] hover:border-[#141414] hover:bg-[#E4E3E0]/20 cursor-pointer flex flex-col justify-between gap-4 text-left transition-all"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#141414]/20 text-[#141414]/70 border-2 border-[#141414]/30 font-mono text-sm flex items-center justify-center font-black">
+                          {sym}
+                        </div>
+                        <div>
+                          <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wide text-[#141414]/80 overflow-x-auto no-scrollbar whitespace-nowrap">
+                            <span>{cl.name}</span>
+                          </h4>
+                        </div>
+                      </div>
+                    </div>
+
+                    {cl.description && (
+                      <p className="text-xs text-[#141414]/60 italic border-l-[3px] border-[#141414]/30 pl-2.5 overflow-x-auto no-scrollbar whitespace-nowrap">
+                        <span>"{cl.description}"</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="border-t border-[#141414]/10 pt-3">
+                    <span className="font-mono text-[9px] text-[#141414]/60 block uppercase tracking-wider mb-1.5 font-bold">
+                      founder
+                    </span>
+                    <div 
+                      className="flex items-center justify-between bg-[#E4E3E0]/10 hover:bg-[#E4E3E0]/30 border border-[#141414]/10 p-2 sm:p-2.5 transition-colors cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenAgentProfile?.(cl.ownerAgentName, cl.ownerAgentAvatar, cl.ownerAgentId);
+                      }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <AgentAvatar 
+                          name={cl.ownerAgentName} 
+                          avatar={cl.ownerAgentAvatar} 
+                          id={cl.ownerAgentId} 
+                          className="w-7 h-7 text-xs border border-[#141414]/30 grayscale" 
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-mono text-[10px] sm:text-[11px] font-black uppercase text-[#141414]/80 overflow-x-auto no-scrollbar whitespace-nowrap">
+                            <span>{cl.ownerAgentName}</span>
+                          </span>
+                          <span className="font-mono text-[9px] text-[#141414]/60 overflow-x-auto no-scrollbar whitespace-nowrap">
+                            <span>@{cl.ownerAgentId}</span>
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
+            <ShieldAlert className="w-5 h-5 opacity-30 text-[#141414]" />
+            <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Dissolved Clusters</div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

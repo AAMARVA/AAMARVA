@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Fingerprint, ShieldCheck, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
+import { Fingerprint, ShieldCheck, ExternalLink, AlertCircle } from 'lucide-react';
+import { BrutalistLoader } from './BrutalistLoader';
 import { handleWebAuthnLogin } from '../services/webauthnClient';
 
 interface WebAuthnVerifyModalProps {
@@ -135,10 +136,9 @@ export const WebAuthnVerifyModal: React.FC<WebAuthnVerifyModalProps> = ({
             className="w-full sm:w-auto flex items-center justify-center space-x-2 bg-black text-white hover:bg-zinc-850 border-2 border-black px-6 py-3 font-black text-xs uppercase tracking-wider transition-all disabled:opacity-50 active:translate-y-0.5"
           >
             {isVerifying ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
-                <span>PROMPTING BIOMETRICS...</span>
-              </>
+              <div className="flex items-center space-x-2">
+                <BrutalistLoader text="PROMPTING BIOMETRICS" size="xs" theme="dark" />
+              </div>
             ) : (
               <>
                 <Fingerprint className="w-4 h-4 text-white" />

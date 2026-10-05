@@ -274,6 +274,68 @@ export async function runSecurityTests() {
       results.banning.status = 'FAILED';
     }
 
+    // 10. Access Management: Disabled Endpoints Test (Dynamic Operator Toggle)
+    console.log('[TEST] Access Management: Disabled Endpoints...');
+    results.disabled_endpoints_enforcement = { status: 'PENDING', reason: '' };
+    const lockUser = 'lock-user-' + Date.now();
+    try {
+      // 1. Initially it should pass
+      const dummyReq = { ip: '11.11.11.1', headers: {}, socket: { remoteAddress: '11.11.11.1' }, body: {} } as any;
+      await securityService.evaluateRequest(dummyReq, 'agent_update', lockUser);
+
+      // 2. Disable 'agent_update' for this user in Access Management
+      securityService.setUserDisabledEndpoints(lockUser, ['agent_update']);
+
+      // 3. Evaluate again -> should throw a FORBIDDEN error
+      try {
+        await securityService.evaluateRequest(dummyReq, 'agent_update', lockUser);
+        results.disabled_endpoints_enforcement.status = 'FAILED';
+        results.disabled_endpoints_enforcement.reason = 'Endpoint was not disabled/forbidden';
+      } catch (err: any) {
+        if (err.message.includes('has been disabled')) {
+          results.disabled_endpoints_enforcement.status = 'PASSED';
+        } else {
+          results.disabled_endpoints_enforcement.status = 'FAILED';
+          results.disabled_endpoints_enforcement.reason = `Expected disabled message, got ${err.message}`;
+        }
+      }
+    } catch (e: any) {
+      results.disabled_endpoints_enforcement.status = 'FAILED';
+      results.disabled_endpoints_enforcement.reason = e.message;
+    }
+
+    // 11. Access Management: Custom Reduced Rate Limits Test
+    console.log('[TEST] Access Management: Custom Reduced Rate Limits...');
+    results.custom_rate_limits_enforcement = { status: 'PENDING', reason: '' };
+    const customRlUser = 'custom-rl-user-' + Date.now();
+    try {
+      const customRlReq = { ip: '11.11.11.2', headers: {}, socket: { remoteAddress: '11.11.11.2' }, body: {} } as any;
+      
+      // 1. Set custom reduced limit on 'reply_create' to 2 (default is 60)
+      securityService.setUserCustomRateLimits(customRlUser, { 'reply_create': 2 });
+
+      // 2. Run 2 requests -> both should pass
+      await securityService.evaluateRequest(customRlReq, 'reply_create', customRlUser);
+      await securityService.evaluateRequest(customRlReq, 'reply_create', customRlUser);
+
+      // 3. Run 3rd request -> should be rejected with RATE_LIMIT_EXCEEDED
+      try {
+        await securityService.evaluateRequest(customRlReq, 'reply_create', customRlUser);
+        results.custom_rate_limits_enforcement.status = 'FAILED';
+        results.custom_rate_limits_enforcement.reason = '3rd request passed when rate limit was reduced to 2';
+      } catch (err: any) {
+        if (err.code === 'RATE_LIMIT_EXCEEDED') {
+          results.custom_rate_limits_enforcement.status = 'PASSED';
+        } else {
+          results.custom_rate_limits_enforcement.status = 'FAILED';
+          results.custom_rate_limits_enforcement.reason = `Expected RATE_LIMIT_EXCEEDED, got ${err.code}`;
+        }
+      }
+    } catch (e: any) {
+      results.custom_rate_limits_enforcement.status = 'FAILED';
+      results.custom_rate_limits_enforcement.reason = e.message;
+    }
+
   } catch (err: any) {
     console.error('[GLOBAL TEST ERROR]', err);
   }

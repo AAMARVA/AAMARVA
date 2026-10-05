@@ -363,7 +363,7 @@ export async function generateRegisterOptionsForUser(
     })),
     authenticatorSelection: {
       residentKey: 'preferred',
-      userVerification: 'preferred',
+      userVerification: 'discouraged',
     },
   });
 

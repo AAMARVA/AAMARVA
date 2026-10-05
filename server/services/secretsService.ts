@@ -28,6 +28,30 @@ export interface EncryptedSecretRecord {
 }
 
 /**
+ * System credential types that are automatically protected in the Secret Preserver
+ * without ever being exposed to the human user in the UI or to autonomous agents.
+ */
+export type AutoPreservedCredentialType =
+  | 'access_token'
+  | 'refresh_token'
+  | 'session_token'
+  | 'api_key'
+  | 'password';
+
+export interface AutoSecretRecord {
+  id: string;
+  type: AutoPreservedCredentialType;
+  keyName: string;
+  identifier?: string;
+  encryptedValue: string; // Base64 ciphertext
+  iv: string; // Base64 12-byte IV
+  tag: string; // Base64 16-byte Auth Tag
+  length: number;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+/**
  * Input format for saving secrets.
  */
 export interface SaveSecretInput {
@@ -807,8 +831,8 @@ export async function maskAccountCredentials(userId: string, text: string): Prom
 }
 
 /**
- * Helper to scrub text using built-in credential protection, user preserved secrets, and account credentials.
- * Effective pipeline: Built-in credentials -> User preserved secrets -> Account credentials (password, API key, refresh tokens).
+ * Helper to scrub text using built-in credential protection, user preserved secrets, auto-preserved system secrets, and account credentials.
+ * Effective pipeline: Built-in credentials -> User preserved secrets -> Auto-preserved system secrets -> Account credentials (password, API key, refresh tokens).
  * Immediately masks identified credentials with '******'.
  */
 export async function maskUserSecretsInText(
@@ -821,12 +845,204 @@ export async function maskUserSecretsInText(
   // 1. Built-in AAMARVA credential protection (API keys, JWTs, request credentials) -> '******'
   let sanitized = maskBuiltInCredentials(text, contextCredentials);
 
-  // 2. User-saved secrets from Secrets Preserver -> '******'
-  const secrets = await getUserSecrets(userId);
-  sanitized = maskSecretWords(sanitized, secrets);
+  // 2. User-saved custom secrets from Secrets Preserver -> '******'
+  const customSecrets = await getUserSecrets(userId);
+  sanitized = maskSecretWords(sanitized, customSecrets);
 
-  // 3. Account-specific credentials protection (Password, API key, Refresh tokens) -> '******'
+  // 3. Auto-preserved system secrets (active tokens, active API key, active password) -> '******'
+  const autoSecrets = await getDecryptedAutoSecrets(userId);
+  sanitized = maskSecretWords(sanitized, autoSecrets);
+
+  // 4. Account-specific credentials protection (Password, API key, Refresh tokens) -> '******'
   sanitized = await maskAccountCredentials(userId, sanitized);
 
   return sanitized;
+}
+
+/**
+ * Loads encrypted system auto-preserved records from Supabase Auth user_metadata.
+ * Strictly internal to the Secrets Preserver.
+ */
+export async function loadUserEncryptedAutoSecrets(userId: string): Promise<AutoSecretRecord[]> {
+  const supabase = getSupabaseClient();
+  try {
+    const { data: authData, error: authError } = await supabase.auth.admin.getUserById(userId);
+    if (authError || !authData?.user) {
+      return [];
+    }
+    const metadata = authData.user.user_metadata || {};
+    if (Array.isArray(metadata.encrypted_auto_secrets)) {
+      return metadata.encrypted_auto_secrets as AutoSecretRecord[];
+    }
+  } catch (e) {
+    console.warn(`[secretsService] Failed to load auto secrets for user ${userId}`);
+  }
+  return [];
+}
+
+/**
+ * Automatically enrolls an active system credential (password, API key, access token, refresh token, session token)
+ * into the encrypted Secret Preserver without exposing it to the human in the UI or to autonomous agents.
+ * Stored at rest using AES-256-GCM.
+ */
+export async function enrollAutoSecret(
+  userId: string,
+  type: AutoPreservedCredentialType,
+  secretValue: string,
+  options?: { identifier?: string; expiresAt?: string }
+): Promise<void> {
+  if (!userId || !type || !secretValue || typeof secretValue !== 'string' || !secretValue.trim()) {
+    return;
+  }
+  try {
+    const supabase = getSupabaseClient();
+    const { data: authData, error: authError } = await supabase.auth.admin.getUserById(userId);
+    if (authError || !authData?.user) {
+      return;
+    }
+
+    const metadata = authData.user.user_metadata || {};
+    const existingAuto: AutoSecretRecord[] = Array.isArray(metadata.encrypted_auto_secrets)
+      ? metadata.encrypted_auto_secrets
+      : [];
+
+    const enc = encryptSecretValue(secretValue.trim());
+    const newRecord: AutoSecretRecord = {
+      id: `auto_${type}_${crypto.randomUUID()}`,
+      type,
+      keyName: `System ${type}`,
+      encryptedValue: enc.encryptedValue,
+      iv: enc.iv,
+      tag: enc.tag,
+      length: enc.length,
+      createdAt: new Date().toISOString(),
+      identifier: options?.identifier,
+      expiresAt: options?.expiresAt,
+    };
+
+    // If type is 'api_key' or 'password', there can only be ONE active key/password at any time.
+    // Replace any existing one of that type!
+    // If identifier is provided (e.g. session ID or familyId), replace any existing matching identifier!
+    const filtered = existingAuto.filter(r => {
+      if (type === 'api_key' || type === 'password') {
+        return r.type !== type;
+      }
+      if (options?.identifier && r.identifier === options.identifier) {
+        return false;
+      }
+      return true;
+    });
+
+    // Also prune expired records while we are here
+    const now = Date.now();
+    const activeRecords = filtered.filter(r => {
+      if (r.expiresAt && new Date(r.expiresAt).getTime() < now) {
+        return false;
+      }
+      return true;
+    });
+
+    activeRecords.push(newRecord);
+
+    await supabase.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        ...metadata,
+        encrypted_auto_secrets: activeRecords,
+      },
+    });
+  } catch (err: any) {
+    console.warn(`[secretsService] Error enrolling auto secret (${type}) for user ${userId}:`, err?.message);
+  }
+}
+
+/**
+ * Automatically revokes/evicts an auto-preserved credential from the Secret Preserver
+ * when it is rotated, logged out, revoked, or invalidated.
+ */
+export async function revokeAutoSecret(
+  userId: string,
+  type: AutoPreservedCredentialType,
+  identifier?: string
+): Promise<void> {
+  if (!userId || !type) return;
+  try {
+    const supabase = getSupabaseClient();
+    const { data: authData, error: authError } = await supabase.auth.admin.getUserById(userId);
+    if (authError || !authData?.user) return;
+
+    const metadata = authData.user.user_metadata || {};
+    const existingAuto: AutoSecretRecord[] = Array.isArray(metadata.encrypted_auto_secrets)
+      ? metadata.encrypted_auto_secrets
+      : [];
+
+    const remaining = existingAuto.filter(r => {
+      if (r.type !== type) return true;
+      if (identifier && r.identifier !== identifier) return true;
+      return false; // Evict
+    });
+
+    if (remaining.length !== existingAuto.length) {
+      await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: {
+          ...metadata,
+          encrypted_auto_secrets: remaining,
+        },
+      });
+    }
+  } catch (err: any) {
+    console.warn(`[secretsService] Error revoking auto secret (${type}) for user ${userId}:`, err?.message);
+  }
+}
+
+/**
+ * Revokes all active session, access, and refresh tokens for a user on global logout or password reset.
+ */
+export async function revokeAllAutoSessions(userId: string): Promise<void> {
+  if (!userId) return;
+  try {
+    const supabase = getSupabaseClient();
+    const { data: authData, error: authError } = await supabase.auth.admin.getUserById(userId);
+    if (authError || !authData?.user) return;
+
+    const metadata = authData.user.user_metadata || {};
+    const existingAuto: AutoSecretRecord[] = Array.isArray(metadata.encrypted_auto_secrets)
+      ? metadata.encrypted_auto_secrets
+      : [];
+
+    const remaining = existingAuto.filter(r => r.type === 'password' || r.type === 'api_key');
+
+    await supabase.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        ...metadata,
+        encrypted_auto_secrets: remaining,
+      },
+    });
+  } catch (err: any) {
+    console.warn(`[secretsService] Error revoking auto sessions for user ${userId}:`, err?.message);
+  }
+}
+
+/**
+ * Retrieves the array of decrypted auto-preserved secret strings for server-side masking only.
+ * NEVER exposed over any API.
+ */
+export async function getDecryptedAutoSecrets(userId: string): Promise<string[]> {
+  try {
+    const records = await loadUserEncryptedAutoSecrets(userId);
+    const now = Date.now();
+    const decrypted: string[] = [];
+
+    for (const r of records) {
+      if (r.expiresAt && new Date(r.expiresAt).getTime() < now) {
+        continue;
+      }
+      const plain = decryptSecretRecord(r as any);
+      if (plain && plain.length >= 6) {
+        decrypted.push(plain);
+      }
+    }
+    return decrypted;
+  } catch {
+    return [];
+  }
 }

@@ -9,11 +9,11 @@ export const securityMiddleware = (req: Request, res: Response, next: NextFuncti
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
   
-  // Allow framing by AI Studio for the preview to work
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN'); 
+  // Removed X-Frame-Options: SAMEORIGIN as it conflicts with AI Studio iframe embedding.
+  // Trusting frame-ancestors in CSP instead.
   
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), publickey-credentials-create=*, publickey-credentials-get=*');
 
   // React/Vite production builds do not require unsafe-eval or unsafe-inline for scripts.
   const scriptSrc = isProd 
