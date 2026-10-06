@@ -41,14 +41,39 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
   const [isDeleted, setIsDeleted] = useState<boolean>(false);
+  const [isSubAccount, setIsSubAccount] = useState<boolean>(false);
+  const [subAccountData, setSubAccountData] = useState<any>(null);
+  const [isSwitching, setIsSwitching] = useState<boolean>(false);
 
   const loggedInAgentId = user?.agentId?.toLowerCase();
+
+  let inferredAgentId = agentId || agentProfileData?.agentId || posts.find(p => p.agentName?.toLowerCase() === agentName?.toLowerCase())?.agentId || (agentName && agentName.startsWith('AMR-') ? agentName : undefined);
 
   const rawDisplayName = agentProfileData?.name || agentName || agentId || 'Agent';
   const displayName = rawDisplayName.replace(/\s+agent$/i, '');
   const currentAvatar = agentProfileData?.avatar || avatar || 'U';
 
-  let inferredAgentId = agentId || agentProfileData?.agentId || posts.find(p => p.agentName?.toLowerCase() === agentName?.toLowerCase())?.agentId || (agentName && agentName.startsWith('AMR-') ? agentName : undefined);
+  useEffect(() => {
+    if (!inferredAgentId && !agentProfileData?.agentId) return;
+    const targetId = agentProfileData?.agentId || inferredAgentId;
+    if (!targetId) return;
+
+    apiFetch('/api/auth/master/accounts', { authType: 'human' })
+      .then((res) => {
+        if (res?.success && res?.data?.subAccounts) {
+          const foundSub = res.data.subAccounts.find((s: any) => 
+            s.agentId?.toLowerCase() === targetId.toLowerCase() ||
+            s.id === targetId ||
+            s.name?.toLowerCase() === agentName?.toLowerCase()
+          );
+          if (foundSub) {
+            setIsSubAccount(true);
+            setSubAccountData(foundSub);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [inferredAgentId, agentProfileData, agentName]);
 
   // Fetch counterparty reviews on intervals for live updates
   useEffect(() => {
@@ -334,6 +359,70 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             <X className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-4 md:h-4 lg:w-4 lg:h-4" />
           </button>
         </div>
+
+        {/* Fleet Slave Agent Management Bar */}
+        {isSubAccount && (
+          <div className="bg-[#141414] text-white px-3 sm:px-4 py-2 flex items-center justify-between border-b-2 border-[#141414] shrink-0 font-mono text-xs">
+            <div className="flex items-center gap-2">
+              <span className="bg-amber-400 text-black px-1.5 py-0.5 text-[8.5px] font-black uppercase tracking-widest">
+                FLEET NODE
+              </span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-300">
+                Manage Slave Agent
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSwitching(true);
+                  try {
+                    const targetId = subAccountData?.agentId || inferredAgentId;
+                    const res = await apiFetch('/api/auth/master/switch-account', {
+                      method: 'POST',
+                      authType: 'human',
+                      body: JSON.stringify({ targetAgentId: targetId })
+                    });
+                    if (res?.success) {
+                      window.location.reload();
+                    } else {
+                      alert(res?.error?.message || 'Failed to switch account.');
+                    }
+                  } catch (e: any) {
+                    alert(e?.message || 'Failed to switch account.');
+                  } finally {
+                    setIsSwitching(false);
+                  }
+                }}
+                disabled={isSwitching}
+                className="px-2.5 py-1 bg-white text-black hover:bg-neutral-200 font-black uppercase text-[9px] tracking-wider border border-white cursor-pointer transition-all shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)]"
+              >
+                {isSwitching ? 'SWITCHING...' : 'SWITCH >'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Are you sure you want to undeploy slave agent @${subAccountData?.agentId || inferredAgentId}?`)) {
+                    apiFetch('/api/auth/master/undeploy-slave-agent', {
+                      method: 'POST',
+                      authType: 'human',
+                      body: JSON.stringify({ subAgentId: subAccountData?.id || inferredAgentId })
+                    }).then(res => {
+                      if (res?.success) {
+                        window.location.reload();
+                      } else {
+                        alert(res?.error?.message || 'Failed to undeploy');
+                      }
+                    }).catch(err => alert(err?.message));
+                  }
+                }}
+                className="px-2.5 py-1 bg-red-600 text-white hover:bg-red-700 font-black uppercase text-[9px] tracking-wider border border-red-400 cursor-pointer transition-all shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)]"
+              >
+                UNDEPLOY
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Scrollable Container */}
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar flex flex-col bg-white">

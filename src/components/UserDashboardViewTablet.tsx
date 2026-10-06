@@ -89,6 +89,17 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
+  const primaryMasterId = user?.id;
+  const primaryMasterAgentId = user?.agentId;
+  const isSlaveAccount = !!(
+    (activeAccount && user && (activeAccount.id !== primaryMasterId || activeAccount.agentId !== primaryMasterAgentId)) ||
+    (currentUser?.master_id && currentUser.master_id !== currentUser.id) ||
+    (currentUser?.masterUserId && currentUser.masterUserId !== currentUser.id) ||
+    currentUser?.isMasterUser === false ||
+    currentUser?.is_master_primary === false ||
+    currentUser?.isMasterPrimary === false ||
+    (currentUser?.email && currentUser.email.includes('+AMR-'))
+  );
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
   const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -1474,7 +1485,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${isSlaveAccount ? 'lg:grid-cols-2' : 'lg:grid-cols-4'} gap-4`}>
             {/* Email Address */}
             <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
               <div className="flex justify-between items-center">
@@ -1499,48 +1510,52 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   <button type="button" onClick={() => toggleField('email')} className="text-[#141414]/60 hover:text-black">
                     {revealed.email ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
-                  <button 
-                    type="button" 
-                    onClick={() => {
-                      setEmailChangeError('');
-                      setEmailChangeSuccess('');
-                      setEmailChangeNewEmail('');
-                      setShowEmailChangeModal(true);
-                    }} 
-                    className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
-                  >
-                    Change Email
-                  </button>
+                  {!isSlaveAccount && (
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setEmailChangeError('');
+                        setEmailChangeSuccess('');
+                        setEmailChangeNewEmail('');
+                        setShowEmailChangeModal(true);
+                      }} 
+                      className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
+                    >
+                      Change Email
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Password */}
-            <div className="p-3 bg-[#f0eee8] border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Password</span>
-              </div>
-              <div className="flex flex-col gap-4 flex-grow">
-                <div className="flex-grow flex items-center">
-                  <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
-                    <span>••••••••••••••••</span>
-                  </span>
+            {!isSlaveAccount && (
+              <div className="p-3 bg-[#f0eee8] border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Password</span>
                 </div>
-                <div className="flex justify-end items-center gap-2 border-t pt-2 border-[#141414]/20">
-                  <button 
-                    type="button" 
-                    onClick={() => {
-                      setPasswordResetError('');
-                      setPasswordResetSuccess('');
-                      setShowPasswordChangeModal(true);
-                    }}
-                    className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
-                  >
-                    Change Password
-                  </button>
+                <div className="flex flex-col gap-4 flex-grow">
+                  <div className="flex-grow flex items-center">
+                    <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                      <span>••••••••••••••••</span>
+                    </span>
+                  </div>
+                  <div className="flex justify-end items-center gap-2 border-t pt-2 border-[#141414]/20">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setPasswordResetError('');
+                        setPasswordResetSuccess('');
+                        setShowPasswordChangeModal(true);
+                      }}
+                      className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
+                    >
+                      Change Password
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Agent API Key */}
             <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
@@ -1567,7 +1582,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             </div>
 
             {/* Secrets Preserver Box */}
-            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col justify-between">
+            <div className={`p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col justify-between ${isSlaveAccount ? 'col-span-full md:col-span-2 lg:col-span-2' : ''}`}>
               <div className="flex justify-between items-center">
                 <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Secrets Preserver</span>
                 <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[9px] font-bold">{secrets.length}</span>

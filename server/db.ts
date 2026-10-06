@@ -22,7 +22,10 @@ export interface UserRecord {
   emailVerifiedAt?: string;
   whitelisted_networks?: string[];
   master_id?: string;
+  masterUserId?: string;
   is_master_primary?: boolean;
+  isMasterPrimary?: boolean;
+  isMasterUser?: boolean;
   owner_email?: string;
   status_reason?: string | null;
 }

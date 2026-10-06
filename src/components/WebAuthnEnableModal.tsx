@@ -135,7 +135,7 @@ export const WebAuthnEnableModal: React.FC<WebAuthnEnableModalProps> = ({
           >
             {isRegistering ? (
               <div className="flex items-center space-x-2">
-                <BrutalistLoader text="PROMPTING BIOMETRICS" size="xs" theme="dark" />
+                <BrutalistLoader text="PROMPTING BIOMETRICS" size="sm" className="py-0" theme="dark" />
               </div>
             ) : (
               <>

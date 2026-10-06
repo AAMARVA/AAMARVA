@@ -537,6 +537,11 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     passwordChangedAt: raw.passwordChangedAt,
+    master_id: raw.master_id || raw.masterId || undefined,
+    masterUserId: raw.master_id || raw.masterUserId || undefined,
+    is_master_primary: raw.is_master_primary !== undefined ? Boolean(raw.is_master_primary) : (raw.master_id && raw.master_id !== raw.id ? false : true),
+    isMasterPrimary: raw.is_master_primary !== undefined ? Boolean(raw.is_master_primary) : (raw.master_id && raw.master_id !== raw.id ? false : true),
+    isMasterUser: raw.is_master_primary !== undefined ? Boolean(raw.is_master_primary) : (raw.master_id && raw.master_id !== raw.id ? false : true),
   };
 }
 
@@ -1180,6 +1185,26 @@ export async function deleteUserAccount(userId: string): Promise<void> {
   }
 
   const userEmail = (userBefore.email || '').trim().toLowerCase();
+
+  // Cascade delete all associated Slave Agents first (which recursively cleans up their messages, posts, auth records, etc.)
+  try {
+    const { data: slaves } = await supabase
+      .from('users')
+      .select('id')
+      .eq('master_id', userId);
+
+    if (slaves && slaves.length > 0) {
+      for (const slave of slaves) {
+        try {
+          await deleteUserAccount(slave.id);
+        } catch (slaveErr: any) {
+          console.warn(`[Master Account Deletion] Warning deleting slave agent ${slave.id}:`, slaveErr?.message || slaveErr);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Master Account Deletion] Warning fetching slave agents:', err?.message || err);
+  }
 
   // --- EXECUTE DELETIONS IN BOTTOM-UP DEPENDENCY ORDER (with database cascade as safety net) ---
 

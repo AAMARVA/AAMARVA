@@ -545,7 +545,7 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
         plan: masterPlan || {
           plan_name: 'Master & Slave Agent Plan',
           status: 'inactive',
-          allowance_accounts: 10
+          allowance_accounts: 20
         }
       }
     });
@@ -577,8 +577,8 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
       });
     }
     const currentSlaveCount = cleanSubAgents.length;
-    const allowance = masterPlan?.allowance_accounts || 10;
     const isActive = !!(masterPlan && masterPlan.status === 'active');
+    const allowance = isActive ? (masterPlan?.allowance_accounts || 0) : 0;
     const history = await MasterAccountService.getInstance().getMasterPlanHistory(masterUserId);
 
     return res.json({
@@ -591,7 +591,7 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
           plan_type: 'master_slave_scale',
           plan_name: 'Master & Slave Agent Plan',
           status: 'inactive',
-          allowance_accounts: 10,
+          allowance_accounts: 0,
           tier: 'scale',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -622,7 +622,7 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     const targetAccounts = isNaN(parsedAccounts) ? 10 : Math.min(1000, Math.max(10, parsedAccounts));
 
     const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | 'extend_validity' | undefined);
-    const addOnAccounts = req.body?.addOnAccounts ? parseInt(req.body.addOnAccounts, 10) : undefined;
+    const addOnAccounts = req.body?.addOnAccounts ? Math.max(10, parseInt(req.body.addOnAccounts, 10)) : undefined;
     const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : undefined;
 
     const { MasterAccountService } = await import('../services/masterAccountService.js');
@@ -686,13 +686,13 @@ router.post(['/auth/master/switch', '/v1/auth/master/switch'], requireHumanSessi
     }
 
     // 4. Generate new switched session token
-    const { switchHumanSessionToken } = await import('../authService.js');
+    const { switchHumanSessionToken, normalizeUserRecord } = await import('../authService.js');
     const newToken = switchHumanSessionToken(rawSession, targetUser.id, targetUser.agentId);
 
     // 5. Save cookie
     res.cookie(HUMAN_SESSION_COOKIE_NAME, newToken, getHumanSessionCookieOptions());
 
-    const { passwordHash: _, apiKeyHash: __, ...safeUser } = targetUser;
+    const safeUser = normalizeUserRecord(targetUser);
 
     return res.json({
       success: true,
@@ -787,7 +787,7 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
     }
 
     const derivedEmail = masterUser.email || 'master@aamarva.net';
-    const { generateApiKey, hashApiKey, computeApiKeyFingerprint, hashPassword } = await import('../authService.js');
+    const { generateApiKey, hashApiKey, computeApiKeyFingerprint, hashPassword, DEFAULT_BIO } = await import('../authService.js');
     const { popInventoryItem } = await import('../services/inventoryService.js');
     const { floorActivityService } = await import('../services/floorActivityService.js');
 
@@ -818,7 +818,7 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
         avatar: assignedAvatar,
         apiKeyHash,
         apiKeyFingerprint,
-        bio: (target.bio || '').trim() || 'Co-operative agent node.',
+        bio: (target.bio || '').trim() || DEFAULT_BIO || 'hello world',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         master_id: masterUserId,
@@ -960,6 +960,101 @@ router.post(['/auth/master/rotate-sub-agent-key', '/v1/auth/master/rotate-sub-ag
   }
 });
 
+// 4a-5. POST /api/auth/master/undeploy-slave-agent - Remove a Slave Agent and release its allowance slot
+router.post(['/auth/master/undeploy-slave-agent', '/v1/auth/master/undeploy-slave-agent', '/auth/master/delete-slave-agent', '/v1/auth/master/delete-slave-agent'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const subAgentId = req.body.subAgentId || req.body.slaveAgentId || req.body.agentId;
+    if (!subAgentId) {
+      return res.status(400).json({ success: false, error: { message: 'slaveAgentId is required.' } });
+    }
+
+    const masterUserId = (req.user as any).masterUserId || req.user.id;
+    const supabase = getSupabaseClient();
+
+    // 1. Fetch Slave Agent record
+    const { data: subAgent, error: fetchErr } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', subAgentId)
+      .maybeSingle();
+
+    if (fetchErr || !subAgent) {
+      return res.status(404).json({ success: false, error: { message: 'Slave agent not found.' } });
+    }
+
+    // 2. Verify ownership
+    if (subAgent.master_id !== masterUserId) {
+      return res.status(403).json({ success: false, error: { message: 'You are not authorized to undeploy this agent.' } });
+    }
+
+    // 3. Delete from Supabase Auth admin to completely wipe credentials & user account
+    try {
+      await supabase.auth.admin.deleteUser(subAgentId);
+    } catch (authErr: any) {
+      console.warn('Non-fatal Auth user delete failure:', authErr?.message || authErr);
+    }
+
+    // 4. Delete from users table (cascading and deleting all dependent database details in child tables like user_key_vaults, connection_requests, connections, messages, clusters, reviews, posts, replies, footprints, audit logs, etc.)
+    const { error: delErr } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', subAgentId);
+
+    if (delErr) {
+      throw new Error(`Failed to remove agent: ${delErr.message}`);
+    }
+
+    return res.json({
+      success: true,
+      message: `Slave agent ${subAgent.name || subAgent.agentId} undeployed successfully. Allowance slot has been restored.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to undeploy Slave agent.' } });
+  }
+});
+
+// 4a-6. POST /api/auth/master/logout-slave-agent - Force global logout for a specific slave agent
+router.post(['/auth/master/logout-slave-agent', '/v1/auth/master/logout-slave-agent'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const slaveAgentId = req.body.slaveAgentId || req.body.subAgentId || req.body.agentId;
+    if (!slaveAgentId) {
+      return res.status(400).json({ success: false, error: { message: 'slaveAgentId is required.' } });
+    }
+
+    const masterUserId = (req.user as any).masterUserId || req.user.id;
+    const supabase = getSupabaseClient();
+
+    // 1. Fetch Slave Agent record to verify ownership
+    const { data: subAgent, error: fetchErr } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', slaveAgentId)
+      .maybeSingle();
+
+    if (fetchErr || !subAgent) {
+      return res.status(404).json({ success: false, error: { message: 'Slave agent not found.' } });
+    }
+
+    if (subAgent.master_id !== masterUserId) {
+      return res.status(403).json({ success: false, error: { message: 'Not authorized to log out this agent.' } });
+    }
+
+    // 2. Invalidate all sessions for this slave agent
+    await invalidateAllHumanSessionsForUser(slaveAgentId);
+    await supabase
+      .from('refresh_tokens')
+      .update({ isRevoked: true })
+      .eq('userId', slaveAgentId);
+
+    return res.json({
+      success: true,
+      message: `Slave agent ${subAgent.name || subAgent.agentId} has been successfully logged out globally.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to log out slave agent.' } });
+  }
+});
+
 // 4b. POST /api/auth/logout (Agent logout only)
 router.post(['/auth/logout', '/v1/auth/logout'], async (req: Request, res: Response) => {
   try {
@@ -990,10 +1085,10 @@ router.post(['/auth/sessions/logout-all', '/v1/auth/sessions/logout-all'], requi
   try {
     const userId = req.user!.id;
     
-    // 1. Invalidate all human sessions
+    // 1. Invalidate all human sessions for current user
     await invalidateAllHumanSessionsForUser(userId);
     
-    // 2. Invalidate all agent refresh tokens
+    // 2. Invalidate all agent refresh tokens for current user
     const supabase = getSupabaseClient();
     await supabase
       .from('refresh_tokens')
