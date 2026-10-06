@@ -357,25 +357,23 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
           {/* Bespoke AAMARVA Autonomous Enclave Sigil (Never Seen Before) */}
           <div className="relative mx-auto w-28 h-28 flex items-center justify-center mb-3 select-none">
             {/* Outer Subtle Emerald Ambient Pulse */}
-            <div className="absolute inset-0 bg-emerald-500/15 rounded-full blur-xl animate-pulse" />
-
             {/* Brutalist Hard-Framed Enclave Core */}
-            <div className="relative w-24 h-24 bg-[#141414] border-2 border-[#141414] shadow-[5px_5px_0px_0px_rgba(16,185,129,1)] flex items-center justify-center overflow-hidden">
+            <div className="relative w-24 h-24 bg-[#141414] border-2 border-[#141414] shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] flex items-center justify-center overflow-hidden">
               {/* Raster Grid Texture */}
               <div 
                 className="absolute inset-0 opacity-20 pointer-events-none"
                 style={{
-                  backgroundImage: 'radial-gradient(#10B981 1px, transparent 1px)',
+                  backgroundImage: 'radial-gradient(#FFFFFF 1px, transparent 1px)',
                   backgroundSize: '6px 6px'
                 }}
               />
 
               {/* Laser Scanning Sweep Line */}
-              <div className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-hud-scan pointer-events-none z-20" />
+              <div className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-white to-transparent animate-hud-scan pointer-events-none z-20" />
 
               {/* Custom Multi-Layered Cryptographic Node Insignia */}
               <svg 
-                className="w-20 h-20 relative z-10 text-emerald-400" 
+                className="w-20 h-20 relative z-10 text-white" 
                 viewBox="0 0 100 100" 
                 fill="none" 
                 xmlns="http://www.w3.org/2000/svg"
@@ -383,7 +381,7 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                 {/* Outer Rotating Hex-Shield Reticle */}
                 <polygon
                   points="50,6 88,28 88,72 50,94 12,72 12,28"
-                  stroke="#10B981"
+                  stroke="#FFFFFF"
                   strokeWidth="1.5"
                   strokeDasharray="6 3"
                   className="opacity-60 animate-[spin_24s_linear_infinite]"
@@ -395,7 +393,7 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   cx="50"
                   cy="50"
                   r="35"
-                  stroke="#34D399"
+                  stroke="#FFFFFF"
                   strokeWidth="1"
                   strokeDasharray="2 4"
                   className="opacity-70 animate-[spin_14s_linear_infinite_reverse]"
@@ -403,16 +401,16 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                 />
 
                 {/* Precision Cardinal Targeting Lines */}
-                <line x1="50" y1="10" x2="50" y2="22" stroke="#10B981" strokeWidth="2" strokeLinecap="square" />
-                <line x1="50" y1="78" x2="50" y2="90" stroke="#10B981" strokeWidth="2" strokeLinecap="square" />
-                <line x1="10" y1="50" x2="22" y2="50" stroke="#10B981" strokeWidth="2" strokeLinecap="square" />
-                <line x1="78" y1="50" x2="90" y2="50" stroke="#10B981" strokeWidth="2" strokeLinecap="square" />
+                <line x1="50" y1="10" x2="50" y2="22" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="square" />
+                <line x1="50" y1="78" x2="50" y2="90" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="square" />
+                <line x1="10" y1="50" x2="22" y2="50" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="square" />
+                <line x1="78" y1="50" x2="90" y2="50" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="square" />
 
                 {/* Cardinal Telemetry Micro-Ticks */}
-                <circle cx="50" cy="16" r="1.5" fill="#34D399" />
-                <circle cx="50" cy="84" r="1.5" fill="#34D399" />
-                <circle cx="16" cy="50" r="1.5" fill="#34D399" />
-                <circle cx="84" cy="50" r="1.5" fill="#34D399" />
+                <circle cx="50" cy="16" r="1.5" fill="#FFFFFF" />
+                <circle cx="50" cy="84" r="1.5" fill="#FFFFFF" />
+                <circle cx="16" cy="50" r="1.5" fill="#FFFFFF" />
+                <circle cx="84" cy="50" r="1.5" fill="#FFFFFF" />
 
                 {/* Outer Rotated Tesseract Prism */}
                 <rect
@@ -421,23 +419,23 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   width="44"
                   height="44"
                   transform="rotate(45 50 50)"
-                  stroke="#059669"
+                  stroke="#FFFFFF"
                   strokeWidth="1.5"
-                  fill="#064E3B"
-                  fillOpacity="0.4"
+                  fill="#262626"
+                  fillOpacity="0.6"
                 />
 
                 {/* Inner Cryptographic Diamond / Quantum Core */}
                 <polygon
                   points="50,29 71,50 50,71 29,50"
-                  fill="#047857"
-                  stroke="#34D399"
+                  fill="#404040"
+                  stroke="#FFFFFF"
                   strokeWidth="2"
                 />
 
                 {/* Interlocking Quantum Facet Geometry */}
-                <line x1="50" y1="29" x2="50" y2="71" stroke="#A7F3D0" strokeWidth="1" strokeDasharray="2 2" />
-                <line x1="29" y1="50" x2="71" y2="50" stroke="#A7F3D0" strokeWidth="1" strokeDasharray="2 2" />
+                <line x1="50" y1="29" x2="50" y2="71" stroke="#FFFFFF" strokeWidth="1" strokeDasharray="2 2" />
+                <line x1="29" y1="50" x2="71" y2="50" stroke="#FFFFFF" strokeWidth="1" strokeDasharray="2 2" />
 
                 {/* Pulsing Autonomous Agent Micro-Nucleus */}
                 <rect
@@ -446,22 +444,22 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   width="10"
                   height="10"
                   transform="rotate(45 50 50)"
-                  fill="#6EE7B7"
+                  fill="#FFFFFF"
                   className="animate-pulse"
                 />
                 <circle cx="50" cy="50" r="1.5" fill="#141414" />
               </svg>
 
               {/* Corner Telemetry Framing Brackets */}
-              <div className="absolute top-1 left-1 w-2 h-2 border-t-2 border-l-2 border-emerald-400 pointer-events-none" />
-              <div className="absolute top-1 right-1 w-2 h-2 border-t-2 border-r-2 border-emerald-400 pointer-events-none" />
-              <div className="absolute bottom-1 left-1 w-2 h-2 border-b-2 border-l-2 border-emerald-400 pointer-events-none" />
-              <div className="absolute bottom-1 right-1 w-2 h-2 border-b-2 border-r-2 border-emerald-400 pointer-events-none" />
+              <div className="absolute top-1 left-1 w-2 h-2 border-t-2 border-l-2 border-white pointer-events-none" />
+              <div className="absolute top-1 right-1 w-2 h-2 border-t-2 border-r-2 border-white pointer-events-none" />
+              <div className="absolute bottom-1 left-1 w-2 h-2 border-b-2 border-l-2 border-white pointer-events-none" />
+              <div className="absolute bottom-1 right-1 w-2 h-2 border-b-2 border-r-2 border-white pointer-events-none" />
             </div>
 
             {/* Bottom Cryptographic Telemetry Badge */}
-            <div className="absolute -bottom-2 px-2 py-0.5 bg-[#141414] border border-emerald-400 text-[8px] font-mono font-black text-emerald-400 tracking-widest uppercase shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] z-30">
-              SEAL // 0xAA-ENCLAVE
+            <div className="absolute -bottom-2 px-2 py-0.5 bg-[#141414] border border-white text-[8px] font-mono font-black text-white tracking-widest uppercase shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] z-30">
+              SEAL // ENCLAVE
             </div>
           </div>
 

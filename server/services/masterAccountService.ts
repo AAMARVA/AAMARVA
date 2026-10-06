@@ -396,7 +396,7 @@ export class MasterAccountService {
 
       if (error || !data) return [];
 
-      return data.map((ev: any) => {
+      return data.map((ev: any, idx: number) => {
         let details = ev.details;
         if (typeof details === 'string') {
           try {
@@ -406,20 +406,46 @@ export class MasterAccountService {
           }
         }
         const allowance = details?.allowance_accounts || 10;
-        const addon = Math.max(0, allowance - 10);
-        const amount = 50 + Math.round(addon * 2.5);
+        const meta = details?.metadata || {};
+        const actionType = meta.action_type || (details?.plan_name?.includes('Validity') ? 'extend_validity' : (idx === 0 && data.length > 1 ? 'extend_validity' : (allowance > 10 ? 'add_accounts' : 'new_plan')));
+        
+        let planTitle = 'Master & Slave Agent Plan';
+        let planSubtitle = 'Base Fleet Roster';
+        let amount = 50;
+
+        if (actionType === 'extend_validity' || meta.validity_days_extended) {
+          const days = meta.validity_days_extended || 30;
+          const extAccounts = meta.accounts_extended || allowance;
+          const baseFee = days === 30 ? 50 : days === 90 ? 140 : 500;
+          const extraAccounts = Math.max(0, extAccounts - 10);
+          const multiplier = days === 30 ? 1 : days === 90 ? 2.8 : 10;
+          amount = baseFee + Math.round(extraAccounts * 2.5 * multiplier);
+          planTitle = 'Master & Slave Agent Plan';
+          planSubtitle = `Validity Extension (+${days} Days)`;
+        } else if (actionType === 'add_accounts' || meta.added_accounts > 0) {
+          const added = meta.added_accounts || Math.max(0, allowance - 10);
+          amount = Math.round(added * 2.5);
+          planTitle = 'Master & Slave Agent Plan';
+          planSubtitle = `Capacity Add-On (+${added} Accounts)`;
+        } else {
+          planTitle = 'Master & Slave Agent Plan';
+          planSubtitle = 'Base Fleet Roster (10 Accounts)';
+          amount = 50;
+        }
 
         return {
           id: ev.id,
-          plan_name: details?.plan_name || 'Master & Slave Agent Plan',
+          plan_name: planTitle,
+          plan_subtitle: planSubtitle,
           plan_type: details?.plan_type || 'master_slave_scale',
+          action_type: actionType,
           allowance_accounts: allowance,
           tier: details?.tier || 'scale',
           status: details?.status || 'active',
           amount: amount,
           currency: 'USD',
           created_at: ev.created_at,
-          metadata: details?.metadata || {}
+          metadata: meta
         };
       });
     } catch (e) {

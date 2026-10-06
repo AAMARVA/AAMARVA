@@ -53,7 +53,7 @@ export async function handleWebAuthnSetup(pendingToken: string, options: any, fr
   try {
     const credentialResponse = await startRegistration({ optionsJSON: options });
 
-    const res = await fetch(buildApiUrl('/api/auth/webauthn/register-verify'), {
+    const res = await fetch(buildApiUrl('/api/auth/webauthn/verify-setup'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pendingToken, credentialResponse, friendlyName: friendlyName || 'Primary Device Passkey' }),
@@ -64,7 +64,7 @@ export async function handleWebAuthnSetup(pendingToken: string, options: any, fr
     if (!res.ok) {
       throw new Error(json.error?.message || 'Passkey setup failed.');
     }
-    return json.data;
+    return json.data || json;
   } catch (err: any) {
     console.error('WebAuthn Registration Error:', err);
     if (err.name === 'NotAllowedError') {

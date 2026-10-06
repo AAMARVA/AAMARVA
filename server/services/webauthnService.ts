@@ -35,21 +35,49 @@ const memoryCredentials = new Map<string, WebAuthnCredentialRecord>();
 const memoryChallenges = new Map<string, WebAuthnChallengeRecord>();
 
 export function getExpectedRPID(req: Request): string {
+  const origin = req.get('origin') || req.get('referer');
+  if (origin) {
+    try {
+      const parsed = new URL(origin);
+      if (parsed.hostname) {
+        return parsed.hostname;
+      }
+    } catch (e) {}
+  }
   const hostHeader = req.get('x-forwarded-host') || req.get('host') || 'localhost';
-  const hostname = hostHeader.split(':')[0]; // strip port
+  const firstHost = hostHeader.split(',')[0].trim();
+  const hostname = firstHost.split(':')[0]; // strip port
   return hostname;
 }
 
 export function getExpectedOrigin(req: Request): string[] {
-  const hostHeader = req.get('x-forwarded-host') || req.get('host') || 'localhost';
-  const proto = req.get('x-forwarded-proto') || req.protocol || 'http';
-  const originFromReq = req.get('origin');
-
   const origins = new Set<string>();
+
+  const originFromReq = req.get('origin');
   if (originFromReq) {
-    origins.add(originFromReq.replace(/\/$/, ''));
+    try {
+      const u = new URL(originFromReq);
+      origins.add(u.origin);
+    } catch (e) {
+      origins.add(originFromReq.replace(/\/$/, ''));
+    }
   }
-  origins.add(`${proto}://${hostHeader}`.replace(/\/$/, ''));
+
+  const referer = req.get('referer');
+  if (referer) {
+    try {
+      const u = new URL(referer);
+      origins.add(u.origin);
+    } catch (e) {}
+  }
+
+  const hostHeader = req.get('x-forwarded-host') || req.get('host') || 'localhost';
+  const firstHost = hostHeader.split(',')[0].trim();
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'http';
+
+  origins.add(`${proto}://${firstHost}`.replace(/\/$/, ''));
+  origins.add(`http://${firstHost}`.replace(/\/$/, ''));
+  origins.add(`https://${firstHost}`.replace(/\/$/, ''));
 
   // Common development / preview URLs
   if (process.env.APP_URL) {
@@ -257,7 +285,7 @@ export async function generateLoginChallenge(
       rpID,
       allowCredentials: userCredentials.map((c) => ({
         id: c.id,
-        transports: (c.transports || ['internal']) as any,
+        transports: c.transports && c.transports.length > 0 ? (c.transports as any) : undefined,
       })),
       userVerification: 'preferred',
     });

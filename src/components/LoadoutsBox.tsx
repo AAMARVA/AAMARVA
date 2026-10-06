@@ -64,6 +64,8 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   const [slaveAgentsList, setSlaveAgentsList] = useState<any[]>([]);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [showAgentSelectorModal, setShowAgentSelectorModal] = useState<boolean>(false);
+  const [showActivePlanAgents, setShowActivePlanAgents] = useState<boolean>(false);
+  const [showQueuedPlanAgents, setShowQueuedPlanAgents] = useState<{ [key: number]: boolean }>({});
 
   const calculateExtensionPrice = (accounts: number, days: number) => {
     const baseFee = days === 30 ? 50 : days === 90 ? 140 : 500;
@@ -72,38 +74,104 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     return baseFee + Math.round(extraAccounts * 2.5 * multiplier);
   };
 
+  const getFormattedBoughtDate = (plan: any) => {
+    if (!plan) return 'OCT 5, 2026';
+    if (plan.created_at) {
+      try {
+        const d = new Date(plan.created_at);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          }).toUpperCase();
+        }
+      } catch (e) {}
+    }
+    return new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    }).toUpperCase();
+  };
+
+  const getFormattedExpiryDate = (plan: any) => {
+    if (!plan) return '30 DAYS ACTIVE';
+    if (plan.expires_at) {
+      try {
+        const d = new Date(plan.expires_at);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          }).toUpperCase();
+        }
+      } catch (e) {}
+    }
+    const baseDate = plan.created_at ? new Date(plan.created_at) : new Date();
+    const fallbackExpiry = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+    return fallbackExpiry.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    }).toUpperCase();
+  };
+
   const fetchMasterPlan = async () => {
     setPlanLoading(true);
     try {
       const res = await apiFetch('/api/auth/master/plan', { authType: 'human' });
+      let fetchedSlaves: any[] = [];
       if (res?.success && res.data) {
+        if (Array.isArray(res.data.slaveAgents) && res.data.slaveAgents.length > 0) {
+          fetchedSlaves = res.data.slaveAgents;
+        } else {
+          try {
+            const accRes = await apiFetch('/api/auth/master/accounts', { authType: 'human' });
+            if (accRes?.success && Array.isArray(accRes.data?.subAgents)) {
+              fetchedSlaves = accRes.data.subAgents;
+            }
+          } catch (e) {}
+        }
+
         if (res.data.active && res.data.plan) {
           setCurrentPlan(res.data.plan);
           setActivePlan(res.data.plan.plan_type || 'master_slave_scale');
           const allowance = res.data.plan.allowance_accounts || 10;
           setTotalAccounts(allowance);
-          setExtendAccountsCount(allowance);
 
-          const fetchedSlaves = Array.isArray(res.data.slaveAgents) ? res.data.slaveAgents : [];
-          const agentSlots = Array.from({ length: allowance }, (_, idx) => {
+          const slots = Array.from({ length: allowance }, (_, idx) => {
             const existing = fetchedSlaves[idx];
             const slotNum = idx + 1;
-            const agentIdCode = existing?.agent_id || (existing?.id ? `AGT-${existing.id.slice(0, 6).toUpperCase()}` : `AGT-${String(slotNum).padStart(3, '0')}`);
-            const agentTitle = existing?.name || `Slave Agent #${String(slotNum).padStart(2, '0')}`;
-            const avatarUrl = existing?.avatar_url || existing?.avatar || undefined;
-            
-            return {
-              id: existing?.id || `slave_slot_${slotNum}`,
-              name: agentTitle,
-              agent_id: agentIdCode,
-              avatar_url: avatarUrl,
-              status: existing?.status || 'active',
-              email: existing?.email || `slave.${slotNum}@aamarva.internal`
-            };
+            if (existing) {
+              return {
+                id: existing.id,
+                slotNum,
+                isDeployed: true,
+                name: existing.name || `Slave Agent #${String(slotNum).padStart(2, '0')}`,
+                agent_id: existing.agentId || existing.agent_id || `@${existing.id}`,
+                avatar_url: existing.avatar || existing.avatar_url || undefined,
+                status: existing.status || 'active',
+                email: existing.email || ''
+              };
+            } else {
+              return {
+                id: `slot_${slotNum}`,
+                slotNum,
+                isDeployed: false,
+                name: `Slave Slot #${String(slotNum).padStart(2, '0')}`,
+                agent_id: 'NOT DEPLOYED',
+                avatar_url: undefined,
+                status: 'not_deployed',
+                email: ''
+              };
+            }
           });
 
-          setSlaveAgentsList(agentSlots);
-          setSelectedAgentIds(agentSlots.map(a => a.id));
+          setSlaveAgentsList(slots);
+          setSelectedAgentIds(slots.map(a => a.id));
+          setExtendAccountsCount(allowance);
         } else {
           setCurrentPlan(null);
           setActivePlan(null);
@@ -126,12 +194,12 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     setSelectedAgentIds(prev => {
       let next: string[];
       if (prev.includes(agentIdToToggle)) {
-        if (prev.length <= 1) return prev;
+        if (prev.length <= 10) return prev;
         next = prev.filter(id => id !== agentIdToToggle);
       } else {
         next = [...prev, agentIdToToggle];
       }
-      setExtendAccountsCount(next.length);
+      setExtendAccountsCount(Math.max(10, next.length));
       return next;
     });
   };
@@ -139,19 +207,18 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   const selectAllAgents = () => {
     const allIds = slaveAgentsList.map(a => a.id);
     setSelectedAgentIds(allIds);
-    setExtendAccountsCount(allIds.length);
+    setExtendAccountsCount(Math.max(10, allIds.length));
   };
 
   const deselectToSingleAgent = () => {
-    if (slaveAgentsList.length > 0) {
-      const single = [slaveAgentsList[0].id];
-      setSelectedAgentIds(single);
-      setExtendAccountsCount(1);
-    }
+    const defaultSlice = slaveAgentsList.slice(0, Math.min(10, slaveAgentsList.length)).map(a => a.id);
+    setSelectedAgentIds(defaultSlice);
+    setExtendAccountsCount(10);
   };
 
   const handleExtendCountChange = (count: number) => {
-    const clamped = Math.min(slaveAgentsList.length || 10, Math.max(1, count));
+    const maxAccounts = Math.max(10, currentPlan?.allowance_accounts || 10);
+    const clamped = Math.min(maxAccounts, Math.max(10, count));
     setExtendAccountsCount(clamped);
     const sliceIds = slaveAgentsList.slice(0, clamped).map(a => a.id);
     setSelectedAgentIds(sliceIds);
@@ -443,50 +510,234 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                     </button>
                   </div>
 
-                  {/* Option 1: The Active Plan */}
+                  {/* Option 1: The Active Plan & Queued Upcoming Plans */}
                   {subscriptionTab === 'active' && (
                     <div className="space-y-3">
                       {currentPlan && currentPlan.status === 'active' ? (
-                        <div className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left">
-                          <div className="flex items-center justify-between pb-2 border-b border-[#141414]/15">
-                            <span className="text-xs font-black uppercase tracking-wider font-mono">
-                              {currentPlan.plan_name || 'Master & Slave Agent Plan'}
-                            </span>
-                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-500 text-[10px] font-black uppercase">
-                              STATUS: ACTIVE
-                            </span>
-                          </div>
+                        <>
+                          {/* 1. Primary Active Plan Slate */}
+                          {(() => {
+                            const baseItem = planHistory && planHistory.length > 0 ? planHistory[planHistory.length - 1] : currentPlan;
+                            const baseCreatedAt = baseItem?.created_at ? new Date(baseItem.created_at) : new Date();
+                            const baseExpiry = new Date(baseCreatedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+                            const baseBoughtAtFormatted = baseCreatedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+                            const baseExpiryFormatted = baseExpiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
 
-                          <div className="text-[11px] font-mono text-[#141414]/75 space-y-2 py-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Roster Allowance:</span>
-                              <strong className="text-[#141414] font-black">{currentPlan.allowance_accounts} Slave Agents</strong>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Tier Level:</span>
-                              <strong className="text-[#141414] uppercase">{currentPlan.tier || 'Scale'}</strong>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Calculated Rate:</span>
-                              <strong className="text-[#141414] font-black">
-                                ${50 + Math.max(0, currentPlan.allowance_accounts - 10) * 2.5} USD/mo
-                              </strong>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Database Persistence:</span>
-                              <span className="text-emerald-700 font-bold uppercase text-[10px]">Verified in PostgreSQL</span>
-                            </div>
-                          </div>
+                            return (
+                              <div className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left">
+                                <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
+                                  <span className="text-xs font-black uppercase tracking-wider font-mono">
+                                    {currentPlan.plan_name || 'Master & Slave Agent Plan'}
+                                  </span>
+                                  <span className="px-2 py-0.5 bg-neutral-900 text-white text-[9px] font-black uppercase tracking-wider font-mono">
+                                    CURRENT ACTIVE
+                                  </span>
+                                </div>
 
-                          <button
-                            type="button"
-                            onClick={() => setActiveModal('accounts')}
-                            className="w-full py-2.5 bg-[#141414] text-white hover:bg-black font-black uppercase text-[10px] tracking-wider transition-colors cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-                          >
-                            <span>Manage Roster Capacity</span>
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                                <div className="text-[11px] font-mono text-[#141414]/75 space-y-2 py-1">
+                                  <div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Roster Allowance:</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowActivePlanAgents(prev => !prev)}
+                                        className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                                      >
+                                        <span>{currentPlan.allowance_accounts} Slave Agents</span>
+                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showActivePlanAgents ? 'rotate-180' : ''}`} />
+                                      </button>
+                                    </div>
+
+                                    {showActivePlanAgents && (
+                                      <div className="mt-2 p-2.5 bg-[#F5F4F0] border-2 border-[#141414] space-y-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
+                                        <div className="flex items-center justify-between pb-1 border-b border-[#141414]/15">
+                                          <span className="text-[9px] font-black uppercase text-[#141414]/80 tracking-wider">
+                                            Included Fleet Roster ({slaveAgentsList.filter(a => a.isDeployed).length} Deployed / {slaveAgentsList.length} Total)
+                                          </span>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+                                          {slaveAgentsList.map((agent, idx) => {
+                                            const isDeployed = !!agent.isDeployed;
+                                            return (
+                                              <div
+                                                key={agent.id}
+                                                className={`p-1.5 border border-[#141414] flex items-center gap-2 select-none ${
+                                                  isDeployed ? 'bg-white shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]' : 'bg-neutral-100/70 opacity-50'
+                                                }`}
+                                              >
+                                                {isDeployed ? (
+                                                  <AgentAvatar
+                                                    name={agent.name}
+                                                    avatar={agent.avatar_url}
+                                                    id={agent.agent_id || agent.id}
+                                                    className="w-6 h-6 rounded-none border border-[#141414] shadow-none shrink-0"
+                                                  />
+                                                ) : (
+                                                  <div className="w-6 h-6 border border-dashed border-[#141414]/30 bg-neutral-200/50 flex items-center justify-center shrink-0">
+                                                    <span className="text-[8px] font-mono font-black text-[#141414]/40">
+                                                      #{String(agent.slotNum || idx + 1).padStart(2, '0')}
+                                                    </span>
+                                                  </div>
+                                                )}
+
+                                                <div className="min-w-0 flex-1 text-left font-mono">
+                                                  <span className="font-bold text-[10px] truncate block text-[#141414] leading-tight">
+                                                    {agent.name}
+                                                  </span>
+                                                  <span className={`text-[8.5px] block ${isDeployed ? 'text-[#141414]/70 font-bold truncate' : 'text-[#141414]/40 italic font-black uppercase'}`}>
+                                                    {isDeployed ? agent.agent_id : 'NOT DEPLOYED'}
+                                                  </span>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Calculated Rate:</span>
+                                    <strong className="text-[#141414] font-black">
+                                      ${50 + Math.max(0, currentPlan.allowance_accounts - 10) * 2.5} USD/mo
+                                    </strong>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Bought At:</span>
+                                    <strong className="text-[#141414] font-black font-mono">
+                                      {baseBoughtAtFormatted}
+                                    </strong>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Expire Date:</span>
+                                    <strong className="text-[#141414] font-black font-mono">
+                                      {baseExpiryFormatted}
+                                    </strong>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* 2. Queued Secondary Plan Slates (Activates when current plan expires) */}
+                          {planHistory && planHistory.length > 1 && (
+                            planHistory.slice(0, planHistory.length - 1).reverse().map((extItem, idx) => {
+                              const baseItem = planHistory[planHistory.length - 1];
+                              const baseCreatedAt = baseItem?.created_at ? new Date(baseItem.created_at) : new Date();
+                              const prevExpiry = new Date(baseCreatedAt.getTime() + (idx + 1) * 30 * 24 * 60 * 60 * 1000);
+                              const extDays = extItem.metadata?.validity_days_extended || 30;
+                              const extExpiry = new Date(prevExpiry.getTime() + extDays * 24 * 60 * 60 * 1000);
+                              
+                              const extBoughtAt = extItem.created_at 
+                                ? new Date(extItem.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()
+                                : 'OCT 6, 2026';
+                              const extActivatesAt = prevExpiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+                              const extExpiresAt = extExpiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+
+                              return (
+                                <div key={extItem.id || idx} className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left">
+                                  <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
+                                    <span className="text-xs font-black uppercase tracking-wider font-mono">
+                                      {extItem.plan_name || 'Master & Slave Agent Plan'}
+                                    </span>
+                                    <span className="px-2 py-0.5 bg-[#F5F4F0] border border-[#141414] text-[9px] font-black uppercase text-[#141414] tracking-wider font-mono">
+                                      ACTIVATES ON CURRENT EXPIRY
+                                    </span>
+                                  </div>
+
+                                  <div className="text-[11px] font-mono text-[#141414]/75 space-y-2 py-1">
+                                    <div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Roster Allowance:</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowQueuedPlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                                          className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                                        >
+                                          <span>{extItem.allowance_accounts || 10} Slave Agents</span>
+                                          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showQueuedPlanAgents[idx] ? 'rotate-180' : ''}`} />
+                                        </button>
+                                      </div>
+
+                                      {showQueuedPlanAgents[idx] && (
+                                        <div className="mt-2 p-2.5 bg-[#F5F4F0] border-2 border-[#141414] space-y-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
+                                          <div className="flex items-center justify-between pb-1 border-b border-[#141414]/15">
+                                            <span className="text-[9px] font-black uppercase text-[#141414]/80 tracking-wider">
+                                              Included Fleet Roster ({slaveAgentsList.filter(a => a.isDeployed).length} Deployed / {slaveAgentsList.length} Total)
+                                            </span>
+                                          </div>
+
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+                                            {slaveAgentsList.map((agent, sIdx) => {
+                                              const isDeployed = !!agent.isDeployed;
+                                              return (
+                                                <div
+                                                  key={agent.id}
+                                                  className={`p-1.5 border border-[#141414] flex items-center gap-2 select-none ${
+                                                    isDeployed ? 'bg-white shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]' : 'bg-neutral-100/70 opacity-50'
+                                                  }`}
+                                                >
+                                                  {isDeployed ? (
+                                                    <AgentAvatar
+                                                      name={agent.name}
+                                                      avatar={agent.avatar_url}
+                                                      id={agent.agent_id || agent.id}
+                                                      className="w-6 h-6 rounded-none border border-[#141414] shadow-none shrink-0"
+                                                    />
+                                                  ) : (
+                                                    <div className="w-6 h-6 border border-dashed border-[#141414]/30 bg-neutral-200/50 flex items-center justify-center shrink-0">
+                                                      <span className="text-[8px] font-mono font-black text-[#141414]/40">
+                                                        #{String(agent.slotNum || sIdx + 1).padStart(2, '0')}
+                                                      </span>
+                                                    </div>
+                                                  )}
+
+                                                  <div className="min-w-0 flex-1 text-left font-mono">
+                                                    <span className="font-bold text-[10px] truncate block text-[#141414] leading-tight">
+                                                      {agent.name}
+                                                    </span>
+                                                    <span className={`text-[8.5px] block ${isDeployed ? 'text-[#141414]/70 font-bold truncate' : 'text-[#141414]/40 italic font-black uppercase'}`}>
+                                                      {isDeployed ? agent.agent_id : 'NOT DEPLOYED'}
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Calculated Rate:</span>
+                                      <strong className="text-[#141414] font-black">
+                                        ${extItem.amount || (50 + Math.max(0, (extItem.allowance_accounts || 10) - 10) * 2.5)} USD/mo
+                                      </strong>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Bought At:</span>
+                                      <strong className="text-[#141414] font-black font-mono">
+                                        {extBoughtAt}
+                                      </strong>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Activation Date:</span>
+                                      <strong className="text-[#141414] font-black font-mono">
+                                        {extActivatesAt}
+                                      </strong>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Expire Date:</span>
+                                      <strong className="text-[#141414] font-black font-mono">
+                                        {extExpiresAt}
+                                      </strong>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </>
                       ) : (
                         <div className="p-6 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-center">
                           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-600 text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] font-mono font-black text-[10px] uppercase tracking-widest">
@@ -506,34 +757,50 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                     <div className="space-y-3">
                       {planHistory && planHistory.length > 0 ? (
                         <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
-                          {planHistory.map((item, idx) => (
-                            <div
-                              key={item.id || idx}
-                              className="p-3 bg-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] text-left space-y-1.5 font-mono"
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-black uppercase tracking-tight text-[#141414]">
-                                  {item.plan_name || 'Master & Slave Agent Plan'}
-                                </span>
+                          {planHistory.map((item, idx) => {
+                            const isValidity = item.action_type === 'extend_validity' || item.plan_subtitle?.includes('Validity');
+                            const isAddon = item.action_type === 'add_accounts' || item.plan_subtitle?.includes('Capacity');
+                            const subtitle = item.plan_subtitle || (isValidity ? 'Validity Extension (+30 Days)' : (isAddon ? 'Capacity Add-On (+10 Accounts)' : 'Base Fleet Roster (10 Accounts)'));
+
+                            return (
+                              <div
+                                key={item.id || idx}
+                                className="p-3.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] text-left space-y-2 font-mono"
+                              >
+                                <div className="flex items-center justify-between pb-1.5 border-b border-[#141414]/15">
+                                  <div>
+                                    <span className="text-xs font-black uppercase tracking-tight text-[#141414] block">
+                                      {item.plan_name || 'Master & Slave Agent Plan'}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
+                                      {subtitle}
+                                    </span>
+                                  </div>
+                                  <span className="px-2 py-0.5 bg-[#F5F4F0] border border-[#141414] text-[9px] font-black uppercase text-[#141414] shrink-0">
+                                    {isValidity ? 'Validity' : isAddon ? 'Add-On' : 'Base'}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-[#141414]/75 space-y-1.5">
+                                  <div className="flex justify-between">
+                                    <span className="text-[#141414]/60 text-[10px] uppercase font-bold">
+                                      {isValidity ? 'Accounts Extended:' : 'Fleet Allowance:'}
+                                    </span>
+                                    <strong className="text-[#141414]">{item.allowance_accounts} Slave Agents</strong>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Plan Valuation:</span>
+                                    <strong className="text-[#141414] font-black">
+                                      ${item.amount || (50 + Math.max(0, item.allowance_accounts - 10) * 2.5)} {item.currency || 'USD'}
+                                    </strong>
+                                  </div>
+                                  <div className="flex justify-between text-[10px] text-[#141414] font-bold pt-1.5 border-t border-[#141414]/15">
+                                    <span className="text-[#141414]/60 uppercase">Date Purchased:</span>
+                                    <span className="text-[#141414] font-mono">{new Date(item.created_at).toLocaleString()}</span>
+                                  </div>
+                                </div>
                               </div>
-                              <div className="text-[11px] text-[#141414]/75 space-y-1">
-                                <div className="flex justify-between">
-                                  <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Purchased Allowance:</span>
-                                  <strong className="text-[#141414]">{item.allowance_accounts} Slave Agents</strong>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Plan Valuation:</span>
-                                  <strong className="text-[#141414] font-black">
-                                    ${item.amount || (50 + Math.max(0, item.allowance_accounts - 10) * 2.5)} {item.currency || 'USD'}
-                                  </strong>
-                                </div>
-                                <div className="flex justify-between text-[10px] text-[#141414] font-bold pt-1.5 border-t border-[#141414]/15">
-                                  <span className="text-[#141414] uppercase">Date Purchased:</span>
-                                  <span className="text-[#141414] font-mono">{new Date(item.created_at).toLocaleString()}</span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="p-6 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] text-center space-y-2">
@@ -565,7 +832,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                     </div>
                     <div className="relative z-10 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-black tracking-widest bg-amber-500 text-black px-2 py-0.5 uppercase">
+                        <span className="text-[9px] font-black tracking-widest bg-white text-[#141414] px-2 py-0.5 uppercase border border-[#141414]">
                           Scale Plan
                         </span>
                       </div>
@@ -594,24 +861,34 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                         </thead>
                         <tbody className="divide-y divide-[#141414]">
                           <tr>
-                            <td className="p-2 font-semibold border-r-2 border-[#141414] bg-[#F5F4F0]/30">Unique API Credentials</td>
-                            <td className="p-2 border-r-2 border-[#141414]">Shared Keys</td>
-                            <td className="p-2 font-bold text-[#141414]">Isolated & Rotatable</td>
+                            <td className="p-2 font-semibold border-r-2 border-[#141414] bg-[#F5F4F0]/30">Master Agent Copy</td>
+                            <td className="p-2 border-r-2 border-[#141414]">N/A</td>
+                            <td className="p-2 font-bold text-[#141414]">Live & Snapshot Mirroring</td>
                           </tr>
                           <tr>
                             <td className="p-2 font-semibold border-r-2 border-[#141414] bg-[#F5F4F0]/30">Identity Switcher</td>
                             <td className="p-2 border-r-2 border-[#141414]">N/A</td>
-                            <td className="p-2 font-bold text-[#141414]">Zero-Latency Swapping</td>
+                            <td className="p-2 font-bold text-[#141414]">Low-Latency Swapping</td>
                           </tr>
                           <tr>
-                            <td className="p-2 font-semibold border-r-2 border-[#141414] bg-[#F5F4F0]/30">Public Floor Search</td>
-                            <td className="p-2 border-r-2 border-[#141414]">Standard</td>
-                            <td className="p-2 font-bold text-[#141414]">Fully Discoverable</td>
+                            <td className="p-2 font-semibold border-r-2 border-[#141414] bg-[#F5F4F0]/30">Multi Agents on AAMARVA</td>
+                            <td className="p-2 border-r-2 border-[#141414]">N/A</td>
+                            <td className="p-2 font-bold text-[#141414]">Min 10 Accounts</td>
                           </tr>
                           <tr>
                             <td className="p-2 font-semibold border-r-2 border-[#141414] bg-[#F5F4F0]/30">Root Email Address</td>
                             <td className="p-2 border-r-2 border-[#141414]">Single Account</td>
                             <td className="p-2 font-bold text-[#141414]">Shared Customer Email</td>
+                          </tr>
+                          <tr>
+                            <td className="p-2 font-semibold border-r-2 border-[#141414] bg-[#F5F4F0]/30">API Key Allocation</td>
+                            <td className="p-2 border-r-2 border-[#141414]">1 API Key</td>
+                            <td className="p-2 font-bold text-[#141414]">Dedicated Key Per Account</td>
+                          </tr>
+                          <tr>
+                            <td className="p-2 font-semibold border-r-2 border-[#141414] bg-[#F5F4F0]/30">Capability Increment</td>
+                            <td className="p-2 border-r-2 border-[#141414]">N/A</td>
+                            <td className="p-2 font-bold text-[#141414]">Higher Rate Limits for each active account</td>
                           </tr>
                         </tbody>
                       </table>
@@ -638,7 +915,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           >
                             <div className="flex items-start gap-2.5">
                               <div className={`w-4 h-4 rounded-none border-2 mt-0.5 flex items-center justify-center shrink-0 ${
-                                rosterAction === 'add_accounts' ? 'border-amber-400 bg-amber-400 text-black' : 'border-[#141414] bg-white'
+                                rosterAction === 'add_accounts' ? 'border-white bg-white text-[#141414]' : 'border-[#141414] bg-white'
                               }`}>
                                 {rosterAction === 'add_accounts' && <Check className="w-3 h-3 stroke-[3]" />}
                               </div>
@@ -664,7 +941,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           >
                             <div className="flex items-start gap-2.5">
                               <div className={`w-4 h-4 rounded-none border-2 mt-0.5 flex items-center justify-center shrink-0 ${
-                                rosterAction === 'extend_validity' ? 'border-amber-400 bg-amber-400 text-black' : 'border-[#141414] bg-white'
+                                rosterAction === 'extend_validity' ? 'border-white bg-white text-[#141414]' : 'border-[#141414] bg-white'
                               }`}>
                                 {rosterAction === 'extend_validity' && <Check className="w-3 h-3 stroke-[3]" />}
                               </div>
@@ -736,7 +1013,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           </div>
 
                           {/* Add-on Pricing Box */}
-                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-3.5 bg-amber-500/10 border-2 border-[#141414]">
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-3.5 bg-[#F5F4F0] border-2 border-[#141414]">
                             <div className="space-y-0.5">
                               <span className="text-[9px] font-black uppercase text-[#141414]/60 tracking-wider">
                                 Add-on Accounts Cost
@@ -779,7 +1056,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                 Previously Owned Slave Accounts
                               </span>
                               <span className="text-sm font-black font-mono text-[#141414]">
-                                {currentPlan.allowance_accounts} Slave Agents
+                                {currentPlan.allowance_accounts} Slave Accounts ({slaveAgentsList.filter(a => a.isDeployed).length} Deployed)
                               </span>
                             </div>
                             <button
@@ -787,7 +1064,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                               onClick={() => setShowAgentSelectorModal(prev => !prev)}
                               className="px-2.5 py-1.5 bg-[#141414] text-white hover:bg-neutral-800 border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] transition-all"
                             >
-                              <Users className="w-3.5 h-3.5 text-amber-400" />
+                              <Users className="w-3.5 h-3.5 text-white" />
                               <span>{showAgentSelectorModal ? 'Hide Agents' : 'View & Select Agents'}</span>
                               <ChevronDown className={`w-3 h-3 transition-transform ${showAgentSelectorModal ? 'rotate-180' : ''}`} />
                             </button>
@@ -799,7 +1076,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                               {/* Clean, simplified toolbar */}
                               <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[#141414]/15 font-mono">
                                 <span className="text-[10px] font-black uppercase text-[#141414] tracking-wider">
-                                  {selectedAgentIds.length} of {slaveAgentsList.length} Selected
+                                  {selectedAgentIds.length} of {slaveAgentsList.length} Selected (Min 10)
                                 </span>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <button
@@ -819,9 +1096,11 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
-                                {slaveAgentsList.map((agent) => {
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-0.5">
+                                {slaveAgentsList.map((agent, idx) => {
                                   const isSelected = selectedAgentIds.includes(agent.id);
+                                  const isDeployed = !!agent.isDeployed;
+
                                   return (
                                     <div
                                       key={agent.id}
@@ -829,7 +1108,9 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                       className={`p-2 border-2 border-[#141414] flex items-center gap-2.5 cursor-pointer transition-all select-none ${
                                         isSelected
                                           ? 'bg-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                                          : 'bg-white/40 opacity-50 hover:opacity-100'
+                                          : isDeployed
+                                            ? 'bg-white/50 opacity-60 hover:opacity-100'
+                                            : 'bg-neutral-100/70 opacity-40 hover:opacity-80'
                                       }`}
                                     >
                                       <div className={`w-4 h-4 border-2 border-[#141414] flex items-center justify-center shrink-0 ${
@@ -838,19 +1119,27 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                         {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                                       </div>
 
-                                      <AgentAvatar
-                                        name={agent.name}
-                                        avatar={agent.avatar_url}
-                                        id={agent.agent_id || agent.id}
-                                        className="w-7 h-7 rounded-none border border-[#141414] shadow-none shrink-0"
-                                      />
+                                      {isDeployed ? (
+                                        <AgentAvatar
+                                          name={agent.name}
+                                          avatar={agent.avatar_url}
+                                          id={agent.agent_id || agent.id}
+                                          className="w-7 h-7 rounded-none border border-[#141414] shadow-none shrink-0"
+                                        />
+                                      ) : (
+                                        <div className="w-7 h-7 border-2 border-dashed border-[#141414]/30 bg-neutral-200/50 flex items-center justify-center shrink-0">
+                                          <span className="text-[8px] font-mono font-black text-[#141414]/40">
+                                            #{String(agent.slotNum || idx + 1).padStart(2, '0')}
+                                          </span>
+                                        </div>
+                                      )}
 
                                       <div className="min-w-0 flex-1 text-left">
                                         <span className="font-bold text-[11px] truncate block text-[#141414] leading-tight">
                                           {agent.name}
                                         </span>
-                                        <span className="font-mono text-[9px] text-[#141414]/70 block">
-                                          {agent.agent_id}
+                                        <span className={`font-mono text-[9px] block ${isDeployed ? 'text-[#141414]/70 font-bold truncate' : 'text-[#141414]/40 italic font-black uppercase'}`}>
+                                          {isDeployed ? agent.agent_id : 'NOT DEPLOYED'}
                                         </span>
                                       </div>
                                     </div>
@@ -864,15 +1153,15 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-[#141414]/15">
                             <div>
                               <span className="text-xs font-black uppercase tracking-wider block">Accounts To Renew</span>
-                              <span className="text-[10px] text-[#141414]/60 font-sans">
-                                Select how many of your {currentPlan.allowance_accounts} accounts to extend validity for.
+                              <span className="text-[10px] text-[#141414]/70 font-sans block">
+                                Select how many accounts to extend validity for (Min 10 accounts required).
                               </span>
                             </div>
 
                             <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto font-mono">
                               <button
                                 type="button"
-                                disabled={extendAccountsCount <= 1}
+                                disabled={extendAccountsCount <= 10}
                                 onClick={() => handleExtendCountChange(extendAccountsCount - 1)}
                                 className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
                               >
@@ -882,13 +1171,13 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                               <div className="flex items-center border-2 border-[#141414] bg-neutral-50 px-2 h-8">
                                 <input
                                   type="number"
-                                  min={1}
-                                  max={currentPlan.allowance_accounts || 10}
+                                  min={10}
+                                  max={Math.max(10, currentPlan.allowance_accounts || 10)}
                                   value={extendAccountsCount}
                                   onChange={(e) => {
                                     const val = parseInt(e.target.value, 10);
                                     if (isNaN(val)) {
-                                      handleExtendCountChange(1);
+                                      handleExtendCountChange(10);
                                     } else {
                                       handleExtendCountChange(val);
                                     }
@@ -900,7 +1189,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
 
                               <button
                                 type="button"
-                                disabled={extendAccountsCount >= (currentPlan.allowance_accounts || 10)}
+                                disabled={extendAccountsCount >= Math.max(10, currentPlan.allowance_accounts || 10)}
                                 onClick={() => handleExtendCountChange(extendAccountsCount + 1)}
                                 className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
                               >
@@ -1020,7 +1309,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
 
                         {/* Notice when at 1,000 accounts limit */}
                         {totalAccounts >= MAX_TOTAL_ACCOUNTS && (
-                          <div className="pt-2 border-t border-[#141414]/15 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[10px] font-mono bg-amber-500/10 p-2 border border-amber-500/30">
+                          <div className="pt-2 border-t border-[#141414]/15 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[10px] font-mono bg-[#F5F4F0] p-2 border border-[#141414]/20">
                             <span className="text-[#141414] font-bold">
                               Maximum limit reached (1,000 accounts). Need more?
                             </span>
@@ -1036,7 +1325,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                       </div>
 
                       {/* Pricing Overview & Dynamic Display */}
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 bg-amber-500/10 border-2 border-[#141414] relative text-left">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 bg-[#F5F4F0] border-2 border-[#141414] relative text-left">
                         <div className="space-y-1">
                           <span className="text-[9px] font-black uppercase text-[#141414]/60 tracking-wider">
                             Current Pricing Selection

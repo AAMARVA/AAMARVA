@@ -570,37 +570,6 @@ export function MyAgentsCard() {
           setTimeout(() => setSyncSuccessMsg(null), 4000);
         };
 
-        const handleCopyMasterDetails = () => {
-          const selectedModules = [];
-          if (copySecretsPreserver) selectedModules.push(`Secrets Preserver (${storedSecrets.length} Vault Keys)`);
-          if (copyAccessManagement) selectedModules.push(`Access Management (WebAuthn Passkeys & Operator Authority)`);
-          if (copyAccountIps) selectedModules.push(`Account Access IPs (${whitelistedIps.join(', ')})`);
-
-          if (selectedModules.length === 0) {
-            setCopiedFeedback('Please select at least one configuration module.');
-            setTimeout(() => setCopiedFeedback(null), 3000);
-            return;
-          }
-
-          const masterConfigText = [
-            `=========================================`,
-            ` AAMARVA MASTER AGENT CONFIGURATION`,
-            `=========================================`,
-            `Master Name: ${masterAgent.name || 'Master Agent'}`,
-            `Master Handle: @${masterAgent.agentId}`,
-            `Sync Strategy: ${syncPolicy === 'forever' ? 'Copy Forever (Live Auto-Sync)' : 'One-Time Snapshot'}`,
-            ``,
-            `COPIED CONFIGURATIONS:`,
-            ...selectedModules.map(m => ` - ${m}`),
-            ``,
-            `Timestamp: ${new Date().toLocaleString()}`,
-            `=========================================`,
-          ].join('\n');
-
-          handleCopyText(masterConfigText, 'Master Details Copied to Clipboard!');
-          localStorage.setItem('aamarva_master_config_snapshot', masterConfigText);
-        };
-
         return (
           <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
             <div className="relative w-full max-w-md max-h-[88vh] bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] text-[#141414] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 font-mono">
@@ -888,30 +857,12 @@ export function MyAgentsCard() {
                   </div>
                 )}
 
-                {/* Toast Feedback */}
-                {copiedFeedback && (
-                  <div className="p-2 bg-[#141414] text-white text-[10px] font-bold uppercase text-center flex items-center justify-center gap-1">
-                    <Check className="w-3.5 h-3.5 text-white" />
-                    <span>{copiedFeedback}</span>
-                  </div>
-                )}
-
                 {syncSuccessMsg && (
                   <div className="p-2 bg-[#141414] text-white text-[10px] font-bold uppercase text-center flex items-center justify-center gap-1">
                     <Check className="w-3.5 h-3.5 text-white" />
                     <span>{syncSuccessMsg}</span>
                   </div>
                 )}
-
-                {/* Main Action Button */}
-                <button
-                  type="button"
-                  onClick={handleCopyMasterDetails}
-                  className="w-full py-3 bg-[#141414] text-white hover:bg-black text-xs font-black uppercase tracking-wider border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)] active:translate-x-[1px] active:translate-y-[1px] flex items-center justify-center gap-2 transition-all cursor-pointer"
-                >
-                  <Copy className="w-4 h-4" />
-                  <span>Copy Master Details</span>
-                </button>
 
               </div>
 

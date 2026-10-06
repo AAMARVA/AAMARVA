@@ -483,21 +483,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       userToSave = result.user || result.data?.user || result;
     }
 
-    setUser(userToSave || null);
-    setActiveAccount(userToSave || null);
+    let rawUser = userToSave;
+    if (rawUser && typeof rawUser === 'object') {
+      if ('user' in rawUser && rawUser.user) rawUser = rawUser.user;
+      else if ('data' in rawUser && rawUser.data?.user) rawUser = rawUser.data.user;
+    }
+    const finalUser = rawUser || null;
+
+    setUser(finalUser);
+    setActiveAccount(finalUser);
     if (credential) setUserPassword(credential);
     if (typeof window !== 'undefined') {
-      if (userToSave) {
-        localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_active_account', JSON.stringify(userToSave));
+      if (finalUser) {
+        localStorage.setItem('aamarva_user', JSON.stringify(finalUser));
+        localStorage.setItem('aamarva_active_account', JSON.stringify(finalUser));
       } else {
         localStorage.removeItem('aamarva_user');
         localStorage.removeItem('aamarva_active_account');
       }
     }
-    if (userToSave) {
-      await ensureE2EEKeys(userToSave.agentId, false, credential);
+    if (finalUser?.agentId) {
+      await ensureE2EEKeys(finalUser.agentId, false, credential);
     }
+    await refreshProfile();
   };
 
   const loginAgent = async (agentId: string, apiKey: string) => {

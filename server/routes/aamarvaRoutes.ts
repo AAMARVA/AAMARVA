@@ -564,12 +564,18 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     const masterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
 
     // Fetch existing slave agents
-    const { data: subAgents } = await supabase
+    const { data: subAgents, error: subErr } = await supabase
       .from('users')
-      .select('id, name, email, avatar_url, agent_id, status, created_at')
+      .select('*')
       .eq('master_id', masterUserId);
 
-    const cleanSubAgents = (subAgents && Array.isArray(subAgents)) ? subAgents.filter(u => u.id !== masterUserId) : [];
+    let cleanSubAgents: any[] = [];
+    if (subAgents && Array.isArray(subAgents)) {
+      cleanSubAgents = subAgents.filter(u => u.id !== masterUserId).map(u => {
+        const { passwordHash, apiKeyHash, ...safe } = u;
+        return safe;
+      });
+    }
     const currentSlaveCount = cleanSubAgents.length;
     const allowance = masterPlan?.allowance_accounts || 10;
     const isActive = !!(masterPlan && masterPlan.status === 'active');

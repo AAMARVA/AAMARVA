@@ -206,7 +206,7 @@ export function generateAgentId(): string {
 }
 
 export function generateApiKey(): string {
-  return `sk_amr_${crypto.randomBytes(24).toString('hex')}`;
+  return `amr_live_${crypto.randomBytes(32).toString('hex')}`;
 }
 
 export async function createHumanSession(userId: string, activeUserId?: string): Promise<string> {

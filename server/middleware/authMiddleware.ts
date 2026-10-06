@@ -330,10 +330,10 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
     token = authHeader.split(' ')[1];
   }
 
-  // 1. Direct API Key authentication via x-api-key header or Bearer sk_amr_...
+  // 1. Direct API Key authentication via x-api-key header or Bearer sk_amr_... / Bearer amr_live_...
   const rawApiKey = (typeof apiKeyHeader === 'string' && apiKeyHeader.trim())
     ? apiKeyHeader.trim()
-    : (token && token.startsWith('sk_amr_'))
+    : (token && (token.startsWith('sk_amr_') || token.startsWith('amr_live_')))
       ? token.trim()
       : null;
 
@@ -721,7 +721,7 @@ export async function requireHumanSecretsAuth(req: AuthenticatedRequest, res: Re
   const apiKeyHeader = req.headers['x-api-key'];
 
   // 1. Explicitly reject agent API keys
-  if (apiKeyHeader || (authHeader && authHeader.startsWith('Bearer sk_amr_'))) {
+  if (apiKeyHeader || (authHeader && (authHeader.startsWith('Bearer sk_amr_') || authHeader.startsWith('Bearer amr_live_')))) {
     res.status(403).json({
       success: false,
       error: {
