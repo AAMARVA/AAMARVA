@@ -963,42 +963,81 @@ router.post(['/auth/master/rotate-sub-agent-key', '/v1/auth/master/rotate-sub-ag
 // 4a-5. POST /api/auth/master/undeploy-slave-agent - Remove a Slave Agent and release its allowance slot
 router.post(['/auth/master/undeploy-slave-agent', '/v1/auth/master/undeploy-slave-agent', '/auth/master/delete-slave-agent', '/v1/auth/master/delete-slave-agent'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const subAgentId = req.body.subAgentId || req.body.slaveAgentId || req.body.agentId;
+    let subAgentId = req.body.subAgentId || req.body.slaveAgentId || req.body.agentId || req.body.id || req.body.targetAgentId;
+    if (!subAgentId && ((req.user as any)?.master_id || (req.user as any)?.masterUserId)) {
+      subAgentId = req.user.id;
+    }
     if (!subAgentId) {
       return res.status(400).json({ success: false, error: { message: 'slaveAgentId is required.' } });
     }
 
-    const masterUserId = (req.user as any).masterUserId || req.user.id;
+    const masterUserId = (req.user as any).master_id || (req.user as any).masterUserId || req.user.id;
     const supabase = getSupabaseClient();
 
-    // 1. Fetch Slave Agent record
-    const { data: subAgent, error: fetchErr } = await supabase
+    // 1. Fetch Slave Agent record by id or agentId
+    const { data: subAgents, error: fetchErr } = await supabase
       .from('users')
       .select('*')
-      .eq('id', subAgentId)
-      .maybeSingle();
+      .or(`id.eq.${subAgentId},agentId.eq.${subAgentId}`);
 
-    if (fetchErr || !subAgent) {
-      return res.status(404).json({ success: false, error: { message: 'Slave agent not found.' } });
+    let subAgent = subAgents && subAgents.length > 0 ? subAgents[0] : null;
+    if (!subAgent) {
+      const { data: fallbackAgent } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', subAgentId)
+        .maybeSingle();
+      subAgent = fallbackAgent;
     }
 
-    // 2. Verify ownership
-    if (subAgent.master_id !== masterUserId) {
+    if (fetchErr || !subAgent) {
+      return res.status(404).json({ success: false, error: { message: 'Slave agent not found or already deleted.' } });
+    }
+
+    // 2. Verify ownership: must be created by master or caller is master
+    const isAuthorized = subAgent.master_id === masterUserId || 
+                         subAgent.master_id === req.user.id || 
+                         subAgent.id === req.user.id || 
+                         (req.user as any).isMasterUser === true ||
+                         (req.user as any).is_master_primary === true;
+
+    if (!isAuthorized) {
       return res.status(403).json({ success: false, error: { message: 'You are not authorized to undeploy this agent.' } });
     }
 
-    // 3. Delete from Supabase Auth admin to completely wipe credentials & user account
+    const targetUUID = subAgent.id;
+
+    // 3. Clean up dependent child records to prevent foreign key violations
     try {
-      await supabase.auth.admin.deleteUser(subAgentId);
+      await Promise.allSettled([
+        supabase.from('user_key_vaults').delete().eq('user_id', targetUUID),
+        supabase.from('connection_requests').delete().or(`requester_id.eq.${targetUUID},recipient_id.eq.${targetUUID}`),
+        supabase.from('connections').delete().or(`user1_id.eq.${targetUUID},user2_id.eq.${targetUUID}`),
+        supabase.from('messages').delete().or(`sender_id.eq.${targetUUID},recipient_id.eq.${targetUUID}`),
+        supabase.from('clusters').delete().eq('creator_id', targetUUID),
+        supabase.from('reviews').delete().or(`reviewer_id.eq.${targetUUID},target_id.eq.${targetUUID}`),
+        supabase.from('posts').delete().eq('author_id', targetUUID),
+        supabase.from('replies').delete().eq('author_id', targetUUID),
+        supabase.from('footprints').delete().eq('user_id', targetUUID),
+        supabase.from('slave_entitlements').delete().eq('slave_id', targetUUID),
+        supabase.from('audit_logs').delete().eq('user_id', targetUUID)
+      ]);
+    } catch (cleanErr: any) {
+      console.warn('Non-fatal child record cleanup notice:', cleanErr);
+    }
+
+    // 4. Delete from Supabase Auth admin
+    try {
+      await supabase.auth.admin.deleteUser(targetUUID);
     } catch (authErr: any) {
       console.warn('Non-fatal Auth user delete failure:', authErr?.message || authErr);
     }
 
-    // 4. Delete from users table (cascading and deleting all dependent database details in child tables like user_key_vaults, connection_requests, connections, messages, clusters, reviews, posts, replies, footprints, audit logs, etc.)
+    // 5. Delete from users table
     const { error: delErr } = await supabase
       .from('users')
       .delete()
-      .eq('id', subAgentId);
+      .eq('id', targetUUID);
 
     if (delErr) {
       throw new Error(`Failed to remove agent: ${delErr.message}`);
@@ -1729,6 +1768,9 @@ router.get('/agents/:agentId', securityLayer('public_reads'), async (req: Reques
 // 7b. DELETE /api/agents/me (Delete own account)
 router.delete('/agents/me', requireUserOrAgentAuth, securityLayer('agent_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const isSlave = !!((req.user as any)?.master_id || (req.user as any)?.masterUserId);
+    const masterId = (req.user as any)?.master_id || (req.user as any)?.masterUserId;
+
     // Broadcast floor activity: [Agent Name] left the floor
     floorActivityService.recordFloorActivity({
       agentId: req.user!.agentId || req.user!.id,
@@ -1740,6 +1782,30 @@ router.delete('/agents/me', requireUserOrAgentAuth, securityLayer('agent_delete'
     }).catch(console.warn);
 
     await deleteUserAccount(req.user!.id);
+
+    if (isSlave && masterId) {
+      const rawSession = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
+      if (rawSession) {
+        try {
+          const supabase = getSupabaseClient();
+          const { data: masterUser } = await supabase
+            .from('users')
+            .select('agentId, agent_id')
+            .eq('id', masterId)
+            .maybeSingle();
+
+          const masterAgentId = masterUser?.agentId || masterUser?.agent_id || 'master';
+
+          const { switchHumanSessionToken } = await import('../authService.js');
+          const newToken = switchHumanSessionToken(rawSession, masterId, masterAgentId);
+          res.cookie(HUMAN_SESSION_COOKIE_NAME, newToken, getHumanSessionCookieOptions());
+        } catch (swErr) {
+          console.warn('Failed to auto-switch session cookie to master:', swErr);
+        }
+      }
+      return res.json({ success: true, data: { switchedToMaster: true, masterId } });
+    }
+
     res.clearCookie(HUMAN_SESSION_COOKIE_NAME, getHumanSessionCookieOptions());
     res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieOptions());
     res.json({ success: true, data: null });

@@ -91,15 +91,24 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
   const primaryMasterId = user?.id;
   const primaryMasterAgentId = user?.agentId;
-  const isSlaveAccount = !!(
-    (activeAccount && user && (activeAccount.id !== primaryMasterId || activeAccount.agentId !== primaryMasterAgentId)) ||
-    (currentUser?.master_id && currentUser.master_id !== currentUser.id) ||
-    (currentUser?.masterUserId && currentUser.masterUserId !== currentUser.id) ||
-    currentUser?.isMasterUser === false ||
-    currentUser?.is_master_primary === false ||
-    currentUser?.isMasterPrimary === false ||
-    (currentUser?.email && currentUser.email.includes('+AMR-'))
-  );
+  const isSlaveAccount = (() => {
+    if (currentUser?.account_type === 'master' || currentUser?.role === 'master' || currentUser?.isMasterUser === true || currentUser?.is_master_primary === true || currentUser?.isMasterPrimary === true) {
+      return false;
+    }
+    if (currentUser?.account_type === 'slave' || currentUser?.role === 'slave' || currentUser?.is_slave === true || currentUser?.isSlave === true) {
+      return true;
+    }
+    if (currentUser?.email && currentUser.email.includes('+AMR-')) {
+      return true;
+    }
+    if ((currentUser?.master_id && currentUser.master_id !== currentUser.id) || (currentUser?.masterUserId && currentUser.masterUserId !== currentUser.id)) {
+      return true;
+    }
+    if (activeAccount && user && activeAccount.id !== user.id && activeAccount.agentId !== user.agentId && activeAccount.id !== primaryMasterId) {
+      return true;
+    }
+    return false;
+  })();
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
   const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -1536,7 +1545,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 </div>
                 <div className="flex flex-col gap-4 flex-grow">
                   <div className="flex-grow flex items-center">
-                    <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                    <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap text-[#141414]">
                       <span>••••••••••••••••</span>
                     </span>
                   </div>
@@ -1652,7 +1661,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <Globe className="w-4 h-4 text-[#141414]" />
-                  <span className="font-bold uppercase tracking-wider text-xs text-[#141414]">Account access IPs</span>
+                  <span className="font-bold uppercase tracking-wider text-xs text-[#141414]">Network Whitelist IPs</span>
                 </div>
                 <p className="text-[10px] text-[#141414]/70 mt-0.5">
                   Control which IP addresses/networks are allowed to access this account.
@@ -1738,7 +1747,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               className="py-2 px-4 bg-white text-red-700 hover:bg-red-700 hover:text-white active:bg-red-800 active:text-white border-2 border-red-700 hover:border-red-900 active:border-black font-mono text-[11px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_rgba(185,28,28,1)] hover:shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Account</span>
+              <span>{isSlaveAccount ? 'Undeploy Account' : 'Delete Account'}</span>
             </button>
           </div>
         </div>
@@ -2206,7 +2215,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
                 <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-1.5">
                   <Trash2 className="w-4 h-4 text-red-400" />
-                  <span>Delete Account</span>
+                  <span>{isSlaveAccount ? 'Undeploy Slave Agent' : 'Delete Account'}</span>
                 </h2>
                 <button
                   type="button"
@@ -2227,23 +2236,25 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   <div>
                     <h3 className="font-bold text-sm mb-1 uppercase tracking-wider font-mono">Warning</h3>
                     <p className="text-sm font-medium leading-relaxed text-red-800/80">
-                      Are you absolutely sure you want to permanently delete your agent account? This cannot be undone.
+                      {isSlaveAccount
+                        ? 'Undeploying this slave account will wipe its deployment, restore 1 slot back to "Available to Deploy", and auto-switch back to your Master account.'
+                        : 'Are you absolutely sure you want to permanently delete your agent account? This cannot be undone.'}
                     </p>
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <label className="block font-mono text-[11px] font-black uppercase text-[#141414]/60">
-                    Type the following to confirm:
+                    Type <span className="text-red-600 font-bold">DELETE</span> to confirm:
                   </label>
                   <div className="flex items-center gap-2">
                     <div className="bg-[#141414] text-white p-3 text-xs font-mono select-none flex-1 border border-[#141414]">
-                      Yes I want to delete this account
+                      DELETE
                     </div>
                     <button
                       type="button"
                       onClick={() => {
-                        navigator.clipboard.writeText('Yes I want to delete this account');
+                        navigator.clipboard.writeText('DELETE');
                         setCopied(true);
                         setTimeout(() => setCopied(false), 2000);
                       }}
@@ -2257,7 +2268,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                     type="text"
                     value={deleteConfirmInput}
                     onChange={(e) => setDeleteConfirmInput(e.target.value)}
-                    placeholder="Type confirmation here..."
+                    placeholder="Type 'DELETE' to confirm"
                     className="w-full border-2 border-[#141414] px-4 py-3 text-sm font-mono focus:outline-none focus:ring-0 bg-[#F5F4F0]"
                     disabled={isDeleting}
                   />
@@ -2267,7 +2278,8 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   <button
                     type="button"
                     onClick={async () => {
-                      if (deleteConfirmInput !== 'Yes I want to delete this account') return;
+                      const trimmed = deleteConfirmInput.trim().toUpperCase();
+                      if (trimmed !== 'DELETE' && !trimmed.includes('DELETE') && !deleteConfirmInput.toLowerCase().includes('yes')) return;
                       setIsDeleting(true);
                       try {
                         await deleteAccount();
@@ -2280,7 +2292,14 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         setIsDeleting(false);
                       }
                     }}
-                    disabled={isDeleting || deleteConfirmInput !== 'Yes I want to delete this account'}
+                    disabled={
+                      isDeleting || 
+                      (
+                        deleteConfirmInput.trim().toUpperCase() !== 'DELETE' && 
+                        !deleteConfirmInput.trim().toUpperCase().includes('DELETE') && 
+                        !deleteConfirmInput.toLowerCase().includes('yes')
+                      )
+                    }
                     className="w-full py-3 bg-red-700 text-white hover:bg-white hover:text-red-700 active:bg-red-900 active:text-white border-2 border-red-900 hover:border-red-700 active:border-black font-mono font-black text-xs uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(185,28,28,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 transition-all flex items-center justify-center gap-2 disabled:opacity-30 cursor-pointer touch-manipulation select-none"
                   >
                     {isDeleting ? (
@@ -2293,7 +2312,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                     ) : (
                       <>
                         <Trash2 className="w-4 h-4" />
-                        <span>Yes, Delete Permanent</span>
+                        <span>{isSlaveAccount ? 'Undeploy & Switch to Master' : 'Yes, Delete Permanent'}</span>
                       </>
                     )}
                   </button>
@@ -2355,20 +2374,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   return (
     <div className="w-full max-w-xl mx-auto animate-in fade-in duration-300">
       <div className="bg-white border-2 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] p-6 sm:p-10 md:p-10 lg:p-10 text-[#141414]">
-        {/* Header */}
-        <div className="mb-6 text-center">
-          <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 bg-[#E4E3E0] border border-[#141414] font-mono text-xs font-bold uppercase tracking-widest">
-            <ShieldCheck className="w-4 h-4 text-black" />
-            <span>Account Access</span>
-          </div>
-          <h1 className="text-3xl sm:text-4xl md:text-4xl lg:text-4xl font-serif italic font-light tracking-tight">
-            {mode === 'login' ? 'Sign In to Dashboard' : 'Request Access / Apply'}
-          </h1>
-          <p className="font-mono text-xs text-[#141414]/70 mt-2 max-w-sm mx-auto">
-            Access secure agent controls, issue API keys, and manage agent telemetries.
-          </p>
-          <div className="h-0.5 w-16 bg-black mx-auto mt-4"></div>
-        </div>
+
 
         {/* Mode Toggle Tabs */}
         <div className="grid grid-cols-2 gap-2 mb-6 p-1.5 bg-[#E4E3E0] border-2 border-[#141414]">
@@ -2513,7 +2519,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
           <div>
             <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
-              {mode === 'login' ? 'Agent ID (e.g. AMR-XXXX)' : 'Email Address'}
+              {mode === 'login' ? 'Agent ID' : 'Email Address'}
             </label>
             <div className="relative flex items-center">
               {mode === 'login' ? (
@@ -2526,7 +2532,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 required
                 value={mode === 'login' ? loginAgentId : email}
                 onChange={(e) => mode === 'login' ? setLoginAgentId(e.target.value) : setEmail(e.target.value)}
-                placeholder={mode === 'login' ? 'e.g. AMR-ABCD-1234' : 'agent@aamarva.net'}
+                placeholder={mode === 'login' ? 'Agent ID' : 'agent@aamarva.net'}
                 className="w-full pl-10 pr-4 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
               />
             </div>
@@ -2542,10 +2548,8 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               <label className="block font-mono text-xs uppercase tracking-wider font-bold">
                 {mode === 'login' ? 'Password' : 'Secure Password'}
               </label>
-              {mode === 'register' ? (
+              {mode === 'register' && (
                 <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-wider leading-none">(Min. 6 characters)</span>
-              ) : (
-                <span className="font-mono text-[10px] text-[#141414]/70">256-bit encrypted</span>
               )}
             </div>
             <div className="relative flex items-center">

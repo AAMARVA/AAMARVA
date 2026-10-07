@@ -183,6 +183,7 @@ export class MasterAccountService {
       actionType?: 'new_plan' | 'add_accounts' | 'extend_validity';
       addOnAccounts?: number;
       validityDays?: number;
+      extendAccountsCount?: number;
     }
   ): Promise<MasterPlanEntitlement> {
     if (!masterId) {
@@ -214,16 +215,30 @@ export class MasterAccountService {
       // 2. Fetch existing plan
       const existingPlan = await this.getMasterPlan(masterId, true);
       const isCurrentlyActive = existingPlan && existingPlan.status === 'active';
+      const currentAllowance = existingPlan?.allowance_accounts || 0;
 
-      // 3. Compute final allowance & expiration date
-      let sanitizedAllowance = Math.min(1000, Math.max(10, Math.floor(requestedAllowance)));
-      const actionType = options?.actionType || (isCurrentlyActive ? 'add_accounts' : 'new_plan');
+      // 3. Compute final allowance & accounts bought in this transaction
+      let actionType = options?.actionType || (isCurrentlyActive ? 'add_accounts' : 'new_plan');
+      let accountsBoughtThisTransaction = 10;
+      let sanitizedAllowance = 10;
 
-      if (actionType === 'add_accounts' && isCurrentlyActive) {
-        const effectiveAddOn = Math.max(1, Math.floor(options?.addOnAccounts || (requestedAllowance - (existingPlan.allowance_accounts || 10))));
-        sanitizedAllowance = Math.min(1000, Math.max(10, (existingPlan.allowance_accounts || 10) + effectiveAddOn));
-      } else if (actionType === 'extend_validity' && isCurrentlyActive) {
-        sanitizedAllowance = existingPlan.allowance_accounts || 10;
+      if (actionType === 'extend_validity') {
+        sanitizedAllowance = currentAllowance > 0 ? currentAllowance : 10;
+        accountsBoughtThisTransaction = options?.extendAccountsCount || sanitizedAllowance;
+      } else if (actionType === 'add_accounts' || currentAllowance > 0) {
+        // When buying new accounts from Loadouts, only consider the new accounts being bought (e.g. 10)
+        // and add only those to the existing fleet!
+        actionType = currentAllowance > 0 ? 'add_accounts' : 'new_plan';
+        accountsBoughtThisTransaction = options?.addOnAccounts 
+          ? Math.max(1, Math.floor(options.addOnAccounts))
+          : (options?.actionType === 'add_accounts' 
+              ? Math.max(1, Math.floor(requestedAllowance)) 
+              : Math.max(1, Math.floor(requestedAllowance > currentAllowance ? requestedAllowance - currentAllowance : requestedAllowance)));
+        sanitizedAllowance = Math.min(1000, currentAllowance + accountsBoughtThisTransaction);
+      } else {
+        // Initial plan purchase on empty fleet
+        accountsBoughtThisTransaction = Math.min(1000, Math.max(10, Math.floor(requestedAllowance)));
+        sanitizedAllowance = accountsBoughtThisTransaction;
       }
 
       // Check strict idempotency for standard repeat activation without actionType
@@ -231,15 +246,19 @@ export class MasterAccountService {
         return existingPlan;
       }
 
-      // Compute expiration date
+      // Compute expiration date for this transaction
       const now = new Date();
-      let expiresAt: string | null = existingPlan?.expires_at || null;
+      let expiresAt: string | null = null;
       if (options?.validityDays && options.validityDays > 0) {
         const baseDate = (existingPlan?.expires_at && new Date(existingPlan.expires_at) > now)
           ? new Date(existingPlan.expires_at)
           : now;
         const newExpiry = new Date(baseDate.getTime() + options.validityDays * 24 * 60 * 60 * 1000);
         expiresAt = newExpiry.toISOString();
+      } else {
+        // Standard 30 days active validity for new plans and add-on transactions
+        const defaultExpiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        expiresAt = defaultExpiry.toISOString();
       }
 
       // 4. Construct complete entitlement record
@@ -258,11 +277,15 @@ export class MasterAccountService {
         expires_at: expiresAt,
         metadata: {
           source: 'aamarva_internal_entitlement',
-          previous_allowance: existingPlan?.allowance_accounts || null,
+          previous_allowance: currentAllowance,
           activated_by_master_id: masterId,
           action_type: actionType,
-          added_accounts: options?.addOnAccounts ? Math.max(1, options.addOnAccounts) : (sanitizedAllowance - (existingPlan?.allowance_accounts || 10)),
-          validity_days_extended: options?.validityDays || null
+          accounts_bought: accountsBoughtThisTransaction,
+          accounts_in_transaction: accountsBoughtThisTransaction,
+          added_accounts: accountsBoughtThisTransaction,
+          validity_days_extended: options?.validityDays || null,
+          created_at: nowIso,
+          expires_at: expiresAt
         }
       };
 
@@ -395,9 +418,69 @@ export class MasterAccountService {
         .eq('type', 'PLAN_ENTITLEMENT_ACTIVATED')
         .order('created_at', { ascending: false });
 
-      if (error || !data) return [];
+      if (error) {
+        console.warn('[MasterAccountService] Error fetching plan events:', error.message);
+      }
 
-      return data.map((ev: any, idx: number) => {
+      const eventsList = (data && Array.isArray(data)) ? data : [];
+
+      // If no history events found but master plan exists, synthesize base / add-on events
+      if (eventsList.length === 0) {
+        const plan = await this.getMasterPlan(masterId);
+        if (plan && plan.status === 'active') {
+          const allowance = plan.allowance_accounts || 10;
+          const planCreated = plan.created_at || new Date().toISOString();
+          const planExpires = plan.expires_at || new Date(new Date(planCreated).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          const isActive = new Date(planExpires).getTime() > Date.now();
+
+          const synthesized: any[] = [];
+          if (allowance > 10) {
+            const addOnCount = allowance - 10;
+            synthesized.push({
+              id: `addon_${plan.id}`,
+              plan_name: 'Master & Slave Agent Plan',
+              plan_subtitle: `Capacity Add-On (+${addOnCount} Accounts)`,
+              plan_type: 'master_slave_scale',
+              action_type: 'add_accounts',
+              allowance_accounts: allowance,
+              accounts_in_transaction: addOnCount,
+              added_accounts: addOnCount,
+              tier: 'scale',
+              status: isActive ? 'active' : 'expired',
+              is_active: isActive,
+              amount: Math.round(addOnCount * 2.5),
+              currency: 'USD',
+              created_at: planCreated,
+              expires_at: planExpires,
+              metadata: { action_type: 'add_accounts', accounts_bought: addOnCount }
+            });
+          }
+
+          synthesized.push({
+            id: `base_${plan.id}`,
+            plan_name: 'Master & Slave Agent Plan',
+            plan_subtitle: 'Base Fleet Roster (10 Accounts)',
+            plan_type: 'master_slave_scale',
+            action_type: 'new_plan',
+            allowance_accounts: 10,
+            accounts_in_transaction: 10,
+            added_accounts: 10,
+            tier: 'scale',
+            status: isActive ? 'active' : 'expired',
+            is_active: isActive,
+            amount: 50,
+            currency: 'USD',
+            created_at: planCreated,
+            expires_at: planExpires,
+            metadata: { action_type: 'new_plan', accounts_bought: 10 }
+          });
+
+          return synthesized;
+        }
+        return [];
+      }
+
+      return eventsList.map((ev: any, idx: number) => {
         let details = ev.details;
         if (typeof details === 'string') {
           try {
@@ -408,31 +491,43 @@ export class MasterAccountService {
         }
         const allowance = details?.allowance_accounts || 10;
         const meta = details?.metadata || {};
-        const actionType = meta.action_type || (details?.plan_name?.includes('Validity') ? 'extend_validity' : (idx === 0 && data.length > 1 ? 'extend_validity' : (allowance > 10 ? 'add_accounts' : 'new_plan')));
+        const actionType = meta.action_type || (details?.plan_name?.includes('Validity') ? 'extend_validity' : (idx === 0 && eventsList.length > 1 ? 'extend_validity' : (allowance > 10 ? 'add_accounts' : 'new_plan')));
         
+        const accountsInTx = details?.accounts_in_transaction 
+          || meta?.accounts_in_transaction 
+          || meta?.accounts_bought 
+          || meta?.added_accounts 
+          || (actionType === 'new_plan' ? 10 : Math.max(1, allowance - (meta?.previous_allowance || 10)));
+
         let planTitle = 'Master & Slave Agent Plan';
         let planSubtitle = 'Base Fleet Roster';
         let amount = 50;
 
         if (actionType === 'extend_validity' || meta.validity_days_extended) {
           const days = meta.validity_days_extended || 30;
-          const extAccounts = meta.accounts_extended || allowance;
+          const extAccounts = meta.accounts_extended || accountsInTx;
           const baseFee = days === 30 ? 50 : days === 90 ? 140 : 500;
           const extraAccounts = Math.max(0, extAccounts - 10);
           const multiplier = days === 30 ? 1 : days === 90 ? 2.8 : 10;
           amount = baseFee + Math.round(extraAccounts * 2.5 * multiplier);
           planTitle = 'Master & Slave Agent Plan';
           planSubtitle = `Validity Extension (+${days} Days)`;
-        } else if (actionType === 'add_accounts' || meta.added_accounts > 0) {
-          const added = meta.added_accounts || Math.max(0, allowance - 10);
+        } else if (actionType === 'add_accounts' || meta.added_accounts > 0 || meta.previous_allowance > 0) {
+          const added = accountsInTx;
           amount = Math.round(added * 2.5);
           planTitle = 'Master & Slave Agent Plan';
           planSubtitle = `Capacity Add-On (+${added} Accounts)`;
         } else {
           planTitle = 'Master & Slave Agent Plan';
-          planSubtitle = 'Base Fleet Roster (10 Accounts)';
+          planSubtitle = `Base Fleet Roster (${accountsInTx} Accounts)`;
           amount = 50;
         }
+
+        const txCreatedAt = ev.created_at ? new Date(ev.created_at) : new Date();
+        const txExpiresAt = meta.expires_at || details?.expires_at 
+          ? new Date(meta.expires_at || details.expires_at).toISOString() 
+          : new Date(txCreatedAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const isCurrentlyActive = new Date(txExpiresAt).getTime() > Date.now();
 
         return {
           id: ev.id,
@@ -441,12 +536,15 @@ export class MasterAccountService {
           plan_type: details?.plan_type || 'master_slave_scale',
           action_type: actionType,
           allowance_accounts: allowance,
-          added_accounts: meta.added_accounts || (actionType === 'add_accounts' ? Math.max(10, allowance - 10) : undefined),
+          accounts_in_transaction: accountsInTx,
+          added_accounts: accountsInTx,
           tier: details?.tier || 'scale',
-          status: details?.status || 'active',
+          status: isCurrentlyActive ? 'active' : 'expired',
+          is_active: isCurrentlyActive,
           amount: amount,
           currency: 'USD',
           created_at: ev.created_at,
+          expires_at: txExpiresAt,
           metadata: meta
         };
       });

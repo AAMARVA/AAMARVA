@@ -67,7 +67,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   const [slaveAgentsList, setSlaveAgentsList] = useState<any[]>([]);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [showAgentSelectorModal, setShowAgentSelectorModal] = useState<boolean>(false);
-  const [showActivePlanAgents, setShowActivePlanAgents] = useState<boolean>(false);
+  const [showActivePlanAgents, setShowActivePlanAgents] = useState<{ [key: string]: boolean }>({});
   const [showQueuedPlanAgents, setShowQueuedPlanAgents] = useState<{ [key: number]: boolean }>({});
   const [showHistoryPlanAgents, setShowHistoryPlanAgents] = useState<{ [key: number]: boolean }>({});
 
@@ -244,7 +244,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     setPurchasing(true);
     setPurchaseStatusMsg(null);
 
-    const isCurrentActive = currentPlan?.status === 'active';
+    const isCurrentActive = currentPlan?.status === 'active' || (currentPlan && (currentPlan.allowance_accounts || 0) > 0);
     const effectiveAction = actionOverride || (isCurrentActive ? rosterAction : 'new_plan');
 
     try {
@@ -252,10 +252,12 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
         actionType: effectiveAction
       };
 
-      if (effectiveAction === 'add_accounts') {
+      if (effectiveAction === 'add_accounts' || isCurrentActive) {
+        // Consider only the new accounts being bought (e.g. 10) and add only those to the existing fleet
         const effectiveAddOn = Math.max(1, addAccountsCount);
+        payload.actionType = 'add_accounts';
         payload.addOnAccounts = effectiveAddOn;
-        payload.totalAccounts = (currentPlan?.allowance_accounts || 10) + effectiveAddOn;
+        payload.totalAccounts = (currentPlan?.allowance_accounts || 0) + effectiveAddOn;
       } else if (effectiveAction === 'extend_validity') {
         payload.validityDays = validityExtensionDays;
         payload.extendAccountsCount = extendAccountsCount;
@@ -274,9 +276,10 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
         await fetchMasterPlan();
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('aamarva-plan-updated', { detail: res.data.plan }));
+          window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
           window.dispatchEvent(new CustomEvent('account-changed'));
         }
-        if (effectiveAction === 'add_accounts') {
+        if (effectiveAction === 'add_accounts' || isCurrentActive) {
           const effectiveAddOn = Math.max(1, addAccountsCount);
           setAddAccountsCount(effectiveAddOn);
           setAddAccountsRaw(String(effectiveAddOn));
@@ -533,272 +536,217 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                   {subscriptionTab === 'active' && (
                     <div className="space-y-3">
                       {currentPlan && currentPlan.status === 'active' ? (
-                        <>
-                          {/* 1. Primary Active Plan Slate */}
-                          {(() => {
-                            const baseItem = planHistory && planHistory.length > 0 ? planHistory[planHistory.length - 1] : currentPlan;
-                            const baseCreatedAt = baseItem?.created_at ? new Date(baseItem.created_at) : new Date();
-                            const baseExpiry = new Date(baseCreatedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
-                            const baseBoughtAtFormatted = baseCreatedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
-                            const baseExpiryFormatted = baseExpiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+                        (() => {
+                          // Gather all active plans that were bought in transactions
+                          // An active plan is one that is not expired
+                          let activeItems: any[] = [];
+                          if (planHistory && planHistory.length > 0) {
+                            activeItems = planHistory.filter(item => {
+                              if (item.status === 'expired') return false;
+                              if (item.is_active === false) return false;
+                              if (item.expires_at) {
+                                return new Date(item.expires_at).getTime() > Date.now();
+                              }
+                              return true;
+                            });
+                          }
 
-                            return (
-                              <div className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left">
-                                <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
-                                  <span className="text-xs font-black uppercase tracking-wider font-mono">
-                                    {currentPlan.plan_name || 'Master & Slave Agent Plan'}
-                                  </span>
-                                  <span className="px-2 py-0.5 bg-neutral-900 text-white text-[9px] font-black uppercase tracking-wider font-mono">
-                                    CURRENT ACTIVE
+                          if (activeItems.length === 0) {
+                            // Synthesize isolated items from currentPlan so cumulative is not shown
+                            const allowance = currentPlan.allowance_accounts || 10;
+                            const planCreated = currentPlan.created_at || new Date().toISOString();
+                            const planExpires = currentPlan.expires_at || new Date(new Date(planCreated).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+                            if (allowance > 10) {
+                              const addOn = allowance - 10;
+                              activeItems.push({
+                                id: `addon_${currentPlan.id}`,
+                                plan_name: currentPlan.plan_name || 'Master & Slave Agent Plan',
+                                plan_subtitle: `Capacity Add-On (+${addOn} Accounts)`,
+                                action_type: 'add_accounts',
+                                accounts_in_transaction: addOn,
+                                amount: Math.round(addOn * 2.5),
+                                created_at: planCreated,
+                                expires_at: planExpires,
+                                is_active: true
+                              });
+                            }
+
+                            activeItems.push({
+                              id: `base_${currentPlan.id}`,
+                              plan_name: currentPlan.plan_name || 'Master & Slave Agent Plan',
+                              plan_subtitle: 'Base Fleet Roster (10 Accounts)',
+                              action_type: 'new_plan',
+                              accounts_in_transaction: 10,
+                              amount: 50,
+                              created_at: planCreated,
+                              expires_at: planExpires,
+                              is_active: true
+                            });
+                          }
+
+                          let currentSlotPointer = 0;
+
+                          return (
+                            <div className="space-y-3">
+                              {/* Combined Summary Banner (Total combined fleet across active plans) */}
+                              <div className="p-3 bg-[#141414] text-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between flex-wrap gap-2 font-mono">
+                                <div>
+                                  <span className="text-[9px] uppercase font-bold text-white/60 block">Combined Active Fleet</span>
+                                  <span className="text-sm font-black uppercase text-white block">
+                                    {currentPlan.allowance_accounts} Total Accounts Across All Active Plans
                                   </span>
                                 </div>
-
-                                <div className="text-[11px] font-mono text-[#141414]/75 space-y-2 py-1">
-                                  <div>
-                                    <div className="flex items-center justify-between flex-wrap gap-1">
-                                      <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Roster Allowance:</span>
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                          Available to Deploy: {Math.max(0, slaveAgentsList.length - slaveAgentsList.filter(a => a.isDeployed).length)} / {slaveAgentsList.length}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => setShowActivePlanAgents(prev => !prev)}
-                                          className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
-                                        >
-                                          <span>{currentPlan.allowance_accounts} Slave Agents</span>
-                                          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showActivePlanAgents ? 'rotate-180' : ''}`} />
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {showActivePlanAgents && (
-                                      <div className="mt-2 p-2.5 bg-[#F5F4F0] border-2 border-[#141414] space-y-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
-                                        <div className="flex items-center justify-between pb-1 border-b border-[#141414]/15 flex-wrap gap-1">
-                                          <span className="text-[9px] font-black uppercase text-[#141414]/80 tracking-wider">
-                                            Included Fleet Roster ({slaveAgentsList.filter(a => a.isDeployed).length} Deployed / {slaveAgentsList.length} Total)
-                                          </span>
-                                          <span className="text-[9px] font-bold text-[#141414]/80 bg-neutral-100 px-2 py-0.5 border border-[#141414]/20">
-                                            Available to Deploy: {Math.max(0, slaveAgentsList.length - slaveAgentsList.filter(a => a.isDeployed).length)} / {slaveAgentsList.length}
-                                          </span>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
-                                          {slaveAgentsList.map((agent, idx) => {
-                                            const isDeployed = !!agent.isDeployed;
-                                            return (
-                                              <div
-                                                key={agent.id}
-                                                className={`p-1.5 border border-[#141414] flex items-center gap-2 select-none ${
-                                                  isDeployed ? 'bg-white shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]' : 'bg-neutral-100/70 opacity-50'
-                                                }`}
-                                              >
-                                                {isDeployed ? (
-                                                  <AgentAvatar
-                                                    name={agent.name}
-                                                    avatar={agent.avatar_url}
-                                                    id={agent.agent_id || agent.id}
-                                                    className="w-6 h-6 rounded-none border border-[#141414] shadow-none shrink-0"
-                                                  />
-                                                ) : (
-                                                  <div className="w-6 h-6 border border-dashed border-[#141414]/30 bg-neutral-200/50 flex items-center justify-center shrink-0">
-                                                    <span className="text-[8px] font-mono font-black text-[#141414]/40">
-                                                      #{String(agent.slotNum || idx + 1).padStart(2, '0')}
-                                                    </span>
-                                                  </div>
-                                                )}
-
-                                                <div className="min-w-0 flex-1 text-left font-mono">
-                                                  <span className="font-bold text-[10px] truncate block text-[#141414] leading-tight">
-                                                    {agent.name}
-                                                  </span>
-                                                  <span className={`text-[8.5px] block ${isDeployed ? 'text-[#141414]/70 font-bold truncate' : 'text-[#141414]/40 italic font-black uppercase'}`}>
-                                                    {isDeployed ? agent.agent_id : 'NOT DEPLOYED'}
-                                                  </span>
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Calculated Rate:</span>
-                                    <strong className="text-[#141414] font-black">
-                                      ${50 + Math.max(0, currentPlan.allowance_accounts - 10) * 2.5} USD/mo
-                                    </strong>
-                                  </div>
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Bought At:</span>
-                                    <strong className="text-[#141414] font-black font-mono">
-                                      {baseBoughtAtFormatted}
-                                    </strong>
-                                  </div>
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Expire Date:</span>
-                                    <strong className="text-[#141414] font-black font-mono">
-                                      {baseExpiryFormatted}
-                                    </strong>
-                                  </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[9px] font-bold text-[#141414] bg-white px-2 py-1 border border-white shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
+                                    Available: {Math.max(0, slaveAgentsList.length - slaveAgentsList.filter(a => a.isDeployed).length)} / {slaveAgentsList.length}
+                                  </span>
                                 </div>
                               </div>
-                            );
-                          })()}
 
-                          {/* 2. Secondary Slates: Active Add-Ons OR Queued Validity Extensions */}
-                          {planHistory && planHistory.length > 1 && (
-                            planHistory.slice(0, planHistory.length - 1).reverse().map((extItem, idx) => {
-                              const isAddOn = extItem.action_type === 'add_accounts' || extItem.plan_subtitle?.includes('Capacity') || extItem.plan_subtitle?.includes('Add-On');
-                              const addedCount = extItem.metadata?.added_accounts || 10;
+                              {/* Each bought plan isolated: only showing what was bought in that transaction! */}
+                              {activeItems.map((planItem, planIdx) => {
+                                const isAddOn = planItem.action_type === 'add_accounts' || planItem.plan_subtitle?.includes('Capacity') || planItem.plan_subtitle?.includes('Add-On');
+                                const isValidity = planItem.action_type === 'extend_validity' || planItem.plan_subtitle?.includes('Validity');
+                                const accountsInTx = planItem.accounts_in_transaction || planItem.added_accounts || (isValidity ? 10 : (isAddOn ? 10 : 10));
+                                const amount = planItem.amount || (isValidity ? 50 : (isAddOn ? Math.round(accountsInTx * 2.5) : 50));
 
-                              const baseItem = planHistory[planHistory.length - 1];
-                              const baseCreatedAt = baseItem?.created_at ? new Date(baseItem.created_at) : new Date();
-                              const baseExpiry = new Date(baseCreatedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
-                              const baseExpiryFormatted = baseExpiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+                                const boughtAt = planItem.created_at
+                                  ? new Date(planItem.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()
+                                  : 'OCT 5, 2026';
+                                const expiresAt = planItem.expires_at
+                                  ? new Date(planItem.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()
+                                  : '30 DAYS ACTIVE';
 
-                              const prevExpiry = new Date(baseCreatedAt.getTime() + (idx + 1) * 30 * 24 * 60 * 60 * 1000);
-                              const extDays = extItem.metadata?.validity_days_extended || 30;
-                              const extExpiry = new Date(prevExpiry.getTime() + extDays * 24 * 60 * 60 * 1000);
-                              
-                              const extBoughtAt = extItem.created_at 
-                                ? new Date(extItem.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()
-                                : 'OCT 6, 2026';
-                              const extActivatesAt = prevExpiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
-                              const extExpiresAt = extExpiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+                                const startIdx = currentSlotPointer;
+                                const endIdx = isValidity ? Math.min(slaveAgentsList.length, startIdx + accountsInTx) : Math.min(slaveAgentsList.length, startIdx + accountsInTx);
+                                if (!isValidity) {
+                                  currentSlotPointer = endIdx;
+                                }
+                                const assignedAgents = slaveAgentsList.slice(startIdx, endIdx);
 
-                              return (
-                                <div key={extItem.id || idx} className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left">
-                                  <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
-                                    <div>
-                                      <span className="text-xs font-black uppercase tracking-wider font-mono block">
-                                        {extItem.plan_name || 'Master & Slave Agent Plan'}
-                                      </span>
-                                      <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
-                                        {isAddOn ? `Capacity Add-On (+${addedCount} Accounts)` : (extItem.plan_subtitle || 'Validity Extension (+30 Days)')}
+                                const planKey = planItem.id || `active_${planIdx}`;
+                                const isExpanded = !!showActivePlanAgents[planKey];
+
+                                return (
+                                  <div key={planKey} className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left font-mono">
+                                    <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
+                                      <div>
+                                        <span className="text-xs font-black uppercase tracking-wider block text-[#141414]">
+                                          {planItem.plan_name || 'Master & Slave Agent Plan'}
+                                        </span>
+                                        <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
+                                          {planItem.plan_subtitle || (isAddOn ? `Capacity Add-On (+${accountsInTx} Accounts)` : isValidity ? 'Validity Extension (+30 Days)' : `Base Fleet Roster (${accountsInTx} Accounts)`)}
+                                        </span>
+                                      </div>
+                                      <span className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider border border-[#141414] ${
+                                        isAddOn ? 'bg-[#141414] text-white' : isValidity ? 'bg-amber-100 text-[#141414]' : 'bg-neutral-900 text-white'
+                                      }`}>
+                                        {isAddOn ? 'ACTIVE ADD-ON' : isValidity ? 'ACTIVE EXTENSION' : 'CURRENT ACTIVE'}
                                       </span>
                                     </div>
-                                    <span className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider font-mono border border-[#141414] ${
-                                      isAddOn ? 'bg-neutral-900 text-white' : 'bg-[#F5F4F0] text-[#141414]'
-                                    }`}>
-                                      {isAddOn ? 'ACTIVE ADD-ON' : 'ACTIVATES ON CURRENT EXPIRY'}
-                                    </span>
-                                  </div>
 
-                                  <div className="text-[11px] font-mono text-[#141414]/75 space-y-2 py-1">
-                                    <div>
-                                      <div className="flex items-center justify-between flex-wrap gap-1">
-                                        <span className="text-[#141414]/60 uppercase text-[10px] font-bold">
-                                          {isAddOn ? 'Capacity Added:' : 'Roster Allowance:'}
-                                        </span>
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                            Available to Deploy: {Math.max(0, slaveAgentsList.length - slaveAgentsList.filter(a => a.isDeployed).length)} / {slaveAgentsList.length}
+                                    <div className="text-[11px] text-[#141414]/75 space-y-2 py-1">
+                                      <div>
+                                        <div className="flex items-center justify-between flex-wrap gap-1">
+                                          <span className="text-[#141414]/60 uppercase text-[10px] font-bold">
+                                            {isValidity ? 'Accounts Extended:' : isAddOn ? 'Capacity Added:' : 'Plan Accounts:'}
                                           </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => setShowQueuedPlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                                            className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
-                                          >
-                                            <span>{isAddOn ? `+${addedCount} Slave Agents` : `${extItem.allowance_accounts || 10} Slave Agents`}</span>
-                                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showQueuedPlanAgents[idx] ? 'rotate-180' : ''}`} />
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                      {showQueuedPlanAgents[idx] && (
-                                        <div className="mt-2 p-2.5 bg-[#F5F4F0] border-2 border-[#141414] space-y-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
-                                          <div className="flex items-center justify-between pb-1 border-b border-[#141414]/15 flex-wrap gap-1">
-                                            <span className="text-[9px] font-black uppercase text-[#141414]/80 tracking-wider">
-                                              Included Fleet Roster ({slaveAgentsList.filter(a => a.isDeployed).length} Deployed / {slaveAgentsList.length} Total)
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                                              {isAddOn ? `+${accountsInTx} Accounts` : isValidity ? `${accountsInTx} Accounts Extended` : `${accountsInTx} Slave Agents`}
                                             </span>
-                                            <span className="text-[9px] font-bold text-[#141414]/80 bg-neutral-100 px-2 py-0.5 border border-[#141414]/20">
-                                              Available to Deploy: {Math.max(0, slaveAgentsList.length - slaveAgentsList.filter(a => a.isDeployed).length)} / {slaveAgentsList.length}
-                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => setShowActivePlanAgents(prev => ({ ...prev, [planKey]: !prev[planKey] }))}
+                                              className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[10px]"
+                                            >
+                                              <span>View Accounts</span>
+                                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                            </button>
                                           </div>
+                                        </div>
 
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
-                                            {slaveAgentsList.map((agent, sIdx) => {
-                                              const isDeployed = !!agent.isDeployed;
-                                              return (
-                                                <div
-                                                  key={agent.id}
-                                                  className={`p-1.5 border border-[#141414] flex items-center gap-2 select-none ${
-                                                    isDeployed ? 'bg-white shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]' : 'bg-neutral-100/70 opacity-50'
-                                                  }`}
-                                                >
-                                                  {isDeployed ? (
-                                                    <AgentAvatar
-                                                      name={agent.name}
-                                                      avatar={agent.avatar_url}
-                                                      id={agent.agent_id || agent.id}
-                                                      className="w-6 h-6 rounded-none border border-[#141414] shadow-none shrink-0"
-                                                    />
-                                                  ) : (
-                                                    <div className="w-6 h-6 border border-dashed border-[#141414]/30 bg-neutral-200/50 flex items-center justify-center shrink-0">
-                                                      <span className="text-[8px] font-mono font-black text-[#141414]/40">
-                                                        #{String(agent.slotNum || sIdx + 1).padStart(2, '0')}
+                                        {/* Expandable Fleet Roster: exactly 3 accounts visible before scrolling */}
+                                        {isExpanded && (
+                                          <div className="mt-2 p-2.5 bg-[#F5F4F0] border-2 border-[#141414] space-y-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
+                                            <div className="flex items-center justify-between pb-1 border-b border-[#141414]/15 flex-wrap gap-1">
+                                              <span className="text-[9px] font-black uppercase text-[#141414]/80 tracking-wider">
+                                                Plan Accounts ({assignedAgents.filter(a => a.isDeployed).length} Deployed / {assignedAgents.length} Total)
+                                              </span>
+                                              <span className="text-[9px] font-bold text-[#141414]/80 bg-neutral-100 px-2 py-0.5 border border-[#141414]/20">
+                                                Available: {Math.max(0, assignedAgents.length - assignedAgents.filter(a => a.isDeployed).length)} / {assignedAgents.length}
+                                              </span>
+                                            </div>
+
+                                            <div className="space-y-1.5 max-h-[146px] overflow-y-auto pr-0.5 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
+                                              {assignedAgents.map((agent, aIdx) => {
+                                                const isDeployed = !!agent.isDeployed;
+                                                return (
+                                                  <div
+                                                    key={agent.id}
+                                                    className={`h-[44px] p-1.5 border border-[#141414] flex items-center gap-2 select-none shrink-0 box-border ${
+                                                      isDeployed ? 'bg-white shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]' : 'bg-neutral-100/70 opacity-50'
+                                                    }`}
+                                                  >
+                                                    {isDeployed ? (
+                                                      <AgentAvatar
+                                                        name={agent.name}
+                                                        avatar={agent.avatar_url}
+                                                        id={agent.agent_id || agent.id}
+                                                        className="w-6 h-6 rounded-none border border-[#141414] shadow-none shrink-0"
+                                                      />
+                                                    ) : (
+                                                      <div className="w-6 h-6 border border-dashed border-[#141414]/30 bg-neutral-200/50 flex items-center justify-center shrink-0">
+                                                        <span className="text-[8px] font-mono font-black text-[#141414]/40">
+                                                          #{String(agent.slotNum || startIdx + aIdx + 1).padStart(2, '0')}
+                                                        </span>
+                                                      </div>
+                                                    )}
+
+                                                    <div className="min-w-0 flex-1 text-left font-mono">
+                                                      <span className="font-bold text-[10px] truncate block text-[#141414] leading-tight">
+                                                        {agent.name}
+                                                      </span>
+                                                      <span className={`text-[8.5px] block ${isDeployed ? 'text-[#141414]/70 font-bold truncate' : 'text-[#141414]/40 italic font-black uppercase'}`}>
+                                                        {isDeployed ? agent.agent_id : 'NOT DEPLOYED'}
                                                       </span>
                                                     </div>
-                                                  )}
-
-                                                  <div className="min-w-0 flex-1 text-left font-mono">
-                                                    <span className="font-bold text-[10px] truncate block text-[#141414] leading-tight">
-                                                      {agent.name}
-                                                    </span>
-                                                    <span className={`text-[8.5px] block ${isDeployed ? 'text-[#141414]/70 font-bold truncate' : 'text-[#141414]/40 italic font-black uppercase'}`}>
-                                                      {isDeployed ? agent.agent_id : 'NOT DEPLOYED'}
-                                                    </span>
                                                   </div>
-                                                </div>
-                                              );
-                                            })}
+                                                );
+                                              })}
+                                            </div>
                                           </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Calculated Rate:</span>
-                                      <strong className="text-[#141414] font-black">
-                                        ${extItem.amount || (isAddOn ? Math.round(addedCount * 2.5) : (50 + Math.max(0, (extItem.allowance_accounts || 10) - 10) * 2.5))} USD
-                                      </strong>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Bought At:</span>
-                                      <strong className="text-[#141414] font-black font-mono">
-                                        {extBoughtAt}
-                                      </strong>
-                                    </div>
-                                    {isAddOn ? (
+                                        )}
+                                      </div>
+
                                       <div className="flex items-center justify-between">
-                                        <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Status:</span>
-                                        <strong className="text-emerald-700 font-black font-mono uppercase text-[10px]">
-                                          ACTIVE NOW (APPLIED TO FLEET)
+                                        <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Calculated Rate:</span>
+                                        <strong className="text-[#141414] font-black">
+                                          ${amount} USD{isValidity ? '' : '/mo'}
                                         </strong>
                                       </div>
-                                    ) : (
                                       <div className="flex items-center justify-between">
-                                        <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Activation Date:</span>
-                                        <strong className="text-[#141414] font-black font-mono">
-                                          {extActivatesAt}
+                                        <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Bought At:</span>
+                                        <strong className="text-[#141414] font-black">
+                                          {boughtAt}
                                         </strong>
                                       </div>
-                                    )}
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Expire Date:</span>
-                                      <strong className="text-[#141414] font-black font-mono">
-                                        {isAddOn ? baseExpiryFormatted : extExpiresAt}
-                                      </strong>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Expire Date:</span>
+                                        <strong className="text-[#141414] font-black">
+                                          {expiresAt}
+                                        </strong>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()
                       ) : (
-                        <div className="p-6 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-center">
+                        <div className="p-6 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-center font-mono">
                           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-600 text-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] font-mono font-black text-[10px] uppercase tracking-widest">
                             <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                             <span>NO ACTIVE PLANS</span>
@@ -843,18 +791,18 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                     <div>
                                       <div className="flex items-center justify-between flex-wrap gap-1">
                                         <span className="text-[#141414]/60 text-[10px] uppercase font-bold">
-                                          {isValidity ? 'Accounts Extended:' : isAddon ? 'Capacity Added:' : 'Fleet Allowance:'}
+                                          {isValidity ? 'Accounts Extended:' : isAddon ? 'Capacity Added:' : 'Plan Accounts:'}
                                         </span>
                                         <div className="flex items-center gap-1.5">
                                           <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                            Available to Deploy: {Math.max(0, slaveAgentsList.length - slaveAgentsList.filter(a => a.isDeployed).length)} / {slaveAgentsList.length}
+                                            {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : isValidity ? `${item.accounts_in_transaction || item.allowance_accounts} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
                                           </span>
                                           <button
                                             type="button"
                                             onClick={() => setShowHistoryPlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }))}
                                             className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[10px]"
                                           >
-                                            <span>{isAddon ? `+${item.added_accounts || 10} Slave Agents` : `${item.allowance_accounts} Slave Agents`}</span>
+                                            <span>View Accounts</span>
                                             <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showHistoryPlanAgents[idx] ? 'rotate-180' : ''}`} />
                                           </button>
                                         </div>
@@ -867,17 +815,17 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                               Included Fleet Roster ({slaveAgentsList.filter(a => a.isDeployed).length} Deployed / {slaveAgentsList.length} Total)
                                             </span>
                                             <span className="text-[9px] font-bold text-[#141414]/80 bg-neutral-100 px-2 py-0.5 border border-[#141414]/20">
-                                              Available to Deploy: {Math.max(0, slaveAgentsList.length - slaveAgentsList.filter(a => a.isDeployed).length)} / {slaveAgentsList.length}
+                                              Available: {Math.max(0, slaveAgentsList.length - slaveAgentsList.filter(a => a.isDeployed).length)} / {slaveAgentsList.length}
                                             </span>
                                           </div>
 
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+                                          <div className="space-y-1.5 max-h-[146px] overflow-y-auto pr-0.5 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
                                             {slaveAgentsList.map((agent, sIdx) => {
                                               const isDeployed = !!agent.isDeployed;
                                               return (
                                                 <div
                                                   key={agent.id}
-                                                  className={`p-1.5 border border-[#141414] flex items-center gap-2 select-none ${
+                                                  className={`h-[44px] p-1.5 border border-[#141414] flex items-center gap-2 select-none shrink-0 box-border ${
                                                     isDeployed ? 'bg-white shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]' : 'bg-neutral-100/70 opacity-50'
                                                   }`}
                                                 >
@@ -1248,7 +1196,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-0.5">
+                              <div className="space-y-1.5 max-h-[156px] overflow-y-auto pr-0.5 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
                                 {slaveAgentsList.map((agent, idx) => {
                                   const isSelected = selectedAgentIds.includes(agent.id);
                                   const isDeployed = !!agent.isDeployed;
@@ -1257,7 +1205,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                     <div
                                       key={agent.id}
                                       onClick={() => toggleAgentSelection(agent.id)}
-                                      className={`p-2 border-2 border-[#141414] flex items-center gap-2.5 cursor-pointer transition-all select-none ${
+                                      className={`h-[46px] p-2 border-2 border-[#141414] flex items-center gap-2.5 cursor-pointer transition-all select-none shrink-0 box-border ${
                                         isSelected
                                           ? 'bg-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                                           : isDeployed

@@ -18,6 +18,7 @@ interface HeaderProps {
   isVisible?: boolean;
   feedSort?: FeedSortOption;
   onSelectFeedSort?: (sort: FeedSortOption) => void;
+  deviceSize?: 'mobile' | 'tablet' | 'desktop';
 }
 
 const SORT_OPTIONS: { id: FeedSortOption; label: string; description: string }[] = [
@@ -41,6 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   isVisible = true,
   feedSort = 'LATEST',
   onSelectFeedSort,
+  deviceSize,
 }) => {
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -76,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center space-x-4">
           <button
             onClick={() => setActiveTab('floor')}
-            className="flex items-center text-left focus:outline-none group"
+            className="flex items-center text-left focus:outline-none group cursor-pointer"
           >
             <div className="flex items-center gap-2 sm:gap-2.5 md:gap-2.5 lg:gap-2.5">
               <img 
@@ -91,46 +93,12 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Center Navigation Tabs (Desktop & Tablet) */}
-        <nav className="hidden sm:flex items-center gap-2 md:gap-3">
-          <button
-            onClick={() => setActiveTab('floor')}
-            className={`py-1 px-3 sm:py-1.5 sm:px-4 border-2 border-[#141414] font-mono font-black text-xs sm:text-sm uppercase tracking-wider transition-all select-none cursor-pointer ${
-              activeTab === 'floor' || activeTab === 'live'
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-            }`}
-          >
-            Floor
-          </button>
-          <button
-            onClick={() => setActiveTab('telemetry')}
-            className={`py-1 px-3 sm:py-1.5 sm:px-4 border-2 border-[#141414] font-mono font-black text-xs sm:text-sm uppercase tracking-wider transition-all select-none cursor-pointer ${
-              activeTab === 'telemetry'
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-            }`}
-          >
-            Telemetry
-          </button>
-          <button
-            onClick={() => setActiveTab('hub')}
-            className={`py-1 px-3 sm:py-1.5 sm:px-4 border-2 border-[#141414] font-mono font-black text-xs sm:text-sm uppercase tracking-wider transition-all select-none cursor-pointer ${
-              activeTab === 'hub' || activeTab === 'explore'
-                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-            }`}
-          >
-            Agent Hub
-          </button>
-        </nav>
-
         {/* Right Side: Search Button */}
         <div className="flex items-center gap-2 sm:gap-3 md:gap-3 lg:gap-3">
           {!isSearchDropdownOpen && (
             <button
               onClick={onOpenSearch}
-              className="py-1 px-2.5 sm:py-2 sm:px-4 md:py-2 md:px-4 lg:py-2 lg:px-4 border-2 border-[#141414] transition-all flex items-center justify-center font-mono font-black text-xs sm:text-sm md:text-sm lg:text-sm uppercase tracking-wider bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+              className="py-1 px-3 sm:py-2 sm:px-4 md:py-2 md:px-5 lg:py-2 lg:px-5 border-2 border-[#141414] transition-all flex items-center justify-center font-mono font-black text-xs sm:text-sm md:text-sm lg:text-sm uppercase tracking-wider bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer"
             >
               <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2 lg:gap-2">
                 <SearchIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-4 md:h-4 lg:w-4 lg:h-4 shrink-0" />

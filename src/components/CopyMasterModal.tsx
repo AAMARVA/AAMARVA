@@ -27,7 +27,7 @@ export function CopyMasterModal({ masterAgent, slaveAgents, user, onClose }: Cop
     const selectedModules = [];
     if (copySecretsPreserver) selectedModules.push('Secrets Preserver');
     if (copyAccessManagement) selectedModules.push('Access Management');
-    if (copyAccountIps) selectedModules.push('Account Access IPs');
+    if (copyAccountIps) selectedModules.push('Network Whitelist IPs');
     if (copyApiKeyRotation) selectedModules.push('API Key Rotation');
     if (copyGlobalLogout) selectedModules.push('Global Logout');
 
@@ -257,7 +257,7 @@ export function CopyMasterModal({ masterAgent, slaveAgents, user, onClose }: Cop
                   className="w-4 h-4 accent-black cursor-pointer mt-0.5"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-black uppercase text-[#141414]">Account Access IPs</div>
+                  <div className="text-xs font-black uppercase text-[#141414]">Network Whitelist IPs</div>
                   <p className="text-[9.5px] text-neutral-600 font-sans mt-0.5 leading-tight">
                     Whitelisted IP addresses and network perimeter firewall rules.
                   </p>

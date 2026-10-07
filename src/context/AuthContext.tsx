@@ -585,6 +585,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteAccount = async () => {
+    const rawUser = activeAccount || user;
+    const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
+    const masterId = currentUser?.master_id || currentUser?.masterUserId || user?.id;
+
+    const isSlave = !!(
+      (currentUser?.master_id && currentUser.master_id !== currentUser.id) ||
+      (currentUser?.masterUserId && currentUser.masterUserId !== currentUser.id) ||
+      currentUser?.account_type === 'slave' ||
+      currentUser?.role === 'slave' ||
+      (currentUser?.email && currentUser.email.includes('+AMR-')) ||
+      (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId))
+    );
+
+    if (isSlave) {
+      const targetSlaveId = currentUser?.id || activeAccount?.id || user?.id || '';
+
+      try {
+        await apiFetch('/api/auth/master/undeploy-slave-agent', {
+          method: 'POST',
+          authType: 'human',
+          body: JSON.stringify({ 
+            slaveAgentId: targetSlaveId,
+            subAgentId: targetSlaveId,
+            agentId: targetSlaveId
+          })
+        });
+      } catch (err: any) {
+        console.warn('[deleteAccount] undeploy-slave-agent error:', err?.message || err);
+        throw err;
+      }
+
+      // Auto switch back to master account
+      if (masterId && masterId !== targetSlaveId) {
+        try {
+          await apiFetch('/api/auth/master/switch', {
+            method: 'POST',
+            authType: 'human',
+            body: JSON.stringify({ targetAgentId: masterId })
+          });
+        } catch (switchErr) {
+          console.warn('[deleteAccount] Auto-switch back to master account notice:', switchErr);
+        }
+      }
+
+      await refreshProfile();
+      window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
+      return;
+    }
+
+    // Otherwise, master account deletion
     await deleteAccountApi();
     setUser(null);
     setActiveAccount(null);

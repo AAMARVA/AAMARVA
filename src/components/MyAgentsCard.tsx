@@ -138,7 +138,7 @@ export function MyAgentsCard() {
 
   const handleUndeploySlave = async () => {
     if (!undeployTarget) return;
-    if (undeployConfirmText !== 'DELETE') return;
+    if (undeployConfirmText.trim().toUpperCase() !== 'DELETE') return;
 
     const slaveAgentId = undeployTarget.id;
     setUndeployingAgentId(slaveAgentId);
@@ -146,24 +146,28 @@ export function MyAgentsCard() {
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      // 1. If currently operating as this slave agent, switch back to Master first to prevent logging out
-      if (activeAgentId === slaveAgentId && masterAgent?.id) {
-        await apiFetch('/api/auth/master/switch', {
-          method: 'POST',
-          authType: 'human',
-          body: JSON.stringify({ targetAgentId: masterAgent.id })
-        });
-        await refreshProfile();
-      }
-
-      // 2. Perform the undeploy/deletion
+      // 1. Perform the undeploy/deletion
       const res = await apiFetch('/api/auth/master/undeploy-slave-agent', {
         method: 'POST',
         authType: 'human',
         body: JSON.stringify({ slaveAgentId })
       });
+
+      // 2. Auto-switch to master account
+      if (masterAgent?.id) {
+        try {
+          await apiFetch('/api/auth/master/switch', {
+            method: 'POST',
+            authType: 'human',
+            body: JSON.stringify({ targetAgentId: masterAgent.id })
+          });
+        } catch (switchErr) {
+          console.warn('Auto-switch to master account notice:', switchErr);
+        }
+      }
+
       if (res?.success) {
-        setSuccessMsg(res?.message || 'Slave agent undeployed successfully.');
+        setSuccessMsg(res?.message || 'Slave agent deleted successfully. Switched back to Master account.');
         await fetchAccounts();
         await refreshProfile();
         window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
@@ -391,7 +395,7 @@ export function MyAgentsCard() {
             </div>
 
             {availableToDeploy <= 0 && (
-              <div className="p-2.5 bg-neutral-100 border-2 border-[#141414] text-[#141414] text-[10px] font-mono font-bold leading-normal">
+              <div className="p-2.5 bg-[#141414] text-white border-2 border-[#141414] text-[10px] font-mono font-bold leading-normal shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
                 {totalAllowance === 0 
                   ? 'No slave accounts available to deploy. Please purchase a Master & Slave Agent Plan in the Loadouts section below.'
                   : `All ${totalAllowance} bought accounts have been deployed. Please purchase additional accounts in the Loadouts section below to deploy more slave agents.`}
@@ -513,9 +517,9 @@ export function MyAgentsCard() {
                 No Slave Agents Deployed
               </div>
             ) : (
-              <div className="space-y-2 max-h-[195px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
+              <div className="space-y-2 max-h-[190px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
                 {slaveAgents.map((sub: any) => (
-                  <div key={sub.id} className={`p-3 border-2 flex items-center justify-between gap-3 ${
+                  <div key={sub.id} className={`h-[58px] p-2.5 border-2 flex items-center justify-between gap-3 shrink-0 box-border ${
                     activeAgentId === sub.id 
                     ? 'bg-neutral-50 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
                     : 'bg-white border-[#141414]/30'
@@ -897,7 +901,7 @@ export function MyAgentsCard() {
                 </button>
                 <button
                   type="button"
-                  disabled={undeployConfirmText !== 'DELETE'}
+                  disabled={undeployConfirmText.trim().toUpperCase() !== 'DELETE'}
                   onClick={handleUndeploySlave}
                   className="flex-1 py-2 bg-red-600 text-white disabled:bg-red-200 disabled:text-red-400 disabled:cursor-not-allowed hover:bg-red-700 text-[10px] font-black uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] enabled:active:translate-x-[1px] enabled:active:translate-y-[1px] cursor-pointer text-center"
                 >

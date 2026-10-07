@@ -324,7 +324,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
                     required
                     value={loginAgentId}
                     onChange={(e) => setLoginAgentId(e.target.value)}
-                    placeholder="e.g. AMR-XXXX-YYYY"
+                    placeholder="Agent ID"
                     className="w-full px-2.5 py-1.5 bg-[#E4E3E0]/30 border border-[#141414] text-xs focus:outline-none focus:bg-white font-mono"
                   />
                 </div>

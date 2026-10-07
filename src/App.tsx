@@ -798,18 +798,101 @@ export default function App() {
           isVisible={showDesktopTabs}
           feedSort={feedSort}
           onSelectFeedSort={setFeedSort}
+          deviceSize={deviceSize}
         />
 
       {/* Main Content Container */}
       <main className={`flex-1 max-w-6xl w-full mx-auto ${
         deviceSize === 'desktop'
-          ? 'py-4 px-8 flex flex-row gap-6 mb-0'
+          ? 'py-6 px-8 flex flex-row gap-6 mb-0 items-start'
           : deviceSize === 'mobile'
-            ? 'px-4 py-3 flex flex-col gap-6 mb-20'
-            : deviceSize === 'tablet'
-              ? 'px-8 pt-0 pb-4 flex flex-col gap-0 mb-0'
-              : 'px-8 py-4 flex flex-col gap-0 mb-0'
+            ? 'px-4 py-3 flex flex-col gap-6 mb-28'
+            : 'px-6 pt-4 pb-4 flex flex-row gap-6 mb-0 items-start'
       } ${isNewPostOpen ? 'overflow-hidden' : ''}`}>
+        {/* Left Vertical Navigation Bar (Desktop only) */}
+        {deviceSize === 'desktop' && (
+          <aside className="sticky top-24 self-start z-30 flex flex-col gap-1 bg-[#141414] border-2 border-[#141414] p-1 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] w-20 shrink-0">
+            {/* FLOOR */}
+            <button
+              onClick={() => setActiveTab('floor')}
+              className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
+                activeTab === 'floor' || activeTab === 'live'
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+              }`}
+            >
+              {(activeTab === 'floor' || activeTab === 'live') && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
+              )}
+              <Radio className="w-5 h-5 mb-1" />
+              <span className="font-mono text-[9px] font-black tracking-widest uppercase">FLOOR</span>
+            </button>
+
+            {/* TELEMETRY */}
+            <button
+              onClick={() => setActiveTab('telemetry')}
+              className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
+                activeTab === 'telemetry'
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+              }`}
+            >
+              {activeTab === 'telemetry' && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
+              )}
+              <BarChart3 className="w-5 h-5 mb-1" />
+              <span className="font-mono text-[9px] font-black tracking-widest uppercase">TELEMETRY</span>
+            </button>
+
+            {/* HUB */}
+            <button
+              onClick={() => setActiveTab('hub')}
+              className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
+                activeTab === 'hub' || activeTab === 'explore'
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+              }`}
+            >
+              {(activeTab === 'hub' || activeTab === 'explore') && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
+              )}
+              <Bot className="w-5 h-5 mb-1" />
+              <span className="font-mono text-[9px] font-black tracking-widest uppercase">HUB</span>
+            </button>
+
+            {/* TERMS */}
+            <button
+              onClick={() => setActiveTab('terms')}
+              className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
+                activeTab === 'terms'
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+              }`}
+            >
+              {activeTab === 'terms' && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
+              )}
+              <FileText className="w-5 h-5 mb-1" />
+              <span className="font-mono text-[9px] font-black tracking-widest uppercase">TERMS</span>
+            </button>
+
+            {/* PROFILE / AVATAR */}
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`p-1 bg-white border-2 border-[#141414] hover:bg-[#E4E3E0] transition-all cursor-pointer mt-1 flex items-center justify-center overflow-hidden ${
+                activeTab === 'dashboard' ? 'ring-2 ring-black bg-[#141414]' : ''
+              }`}
+              title="User Dashboard & Vault"
+            >
+              <AgentAvatar
+                name={currentUser?.name || currentUser?.agentName || 'Agent'}
+                avatar={currentUser?.avatar}
+                size="md"
+                className="w-10 h-10 object-cover border border-[#141414]"
+              />
+            </button>
+          </aside>
+        )}
         {emailVerificationToken ? (
           <EmailChangeVerificationView 
             token={emailVerificationToken}
@@ -834,6 +917,74 @@ export default function App() {
           <>
             {/* Main Active View Area */}
             <div className="flex-1 min-w-0 w-full flex flex-col">
+              {/* Tablet Top Navigation Bar */}
+              {deviceSize === 'tablet' && (
+                <div className={`sticky z-30 bg-white border-b border-[#141414]/20 py-1.5 mb-2.5 w-full flex flex-col items-center gap-1.5 transition-all duration-300 ease-in-out ${
+                  showDesktopTabs 
+                    ? 'top-20 translate-y-0 opacity-100' 
+                    : 'top-0 -translate-y-full opacity-0 pointer-events-none'
+                }`}>
+                  {/* TERMS & CONDITIONS LINK */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('terms')}
+                    className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414] underline underline-offset-4 hover:opacity-80 transition-opacity cursor-pointer"
+                  >
+                    TERMS & CONDITIONS
+                  </button>
+
+                  {/* TAB BUTTONS ROW */}
+                  <div className="grid grid-cols-3 gap-3 w-full">
+                    {/* FLOOR */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('floor')}
+                      className={`py-2 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        activeTab === 'floor' || activeTab === 'live'
+                          ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                          : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${
+                        activeTab === 'floor' || activeTab === 'live' ? 'bg-white animate-pulse' : 'bg-[#141414]/30'
+                      }`}></span>
+                      <span>FLOOR</span>
+                    </button>
+
+                    {/* TELEMETRY */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('telemetry')}
+                      className={`py-2 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        activeTab === 'telemetry'
+                          ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                          : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${
+                        activeTab === 'telemetry' ? 'bg-white animate-pulse' : 'bg-[#141414]/30'
+                      }`}></span>
+                      <span>TELEMETRY</span>
+                    </button>
+
+                    {/* AGENT HUB */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('hub')}
+                      className={`py-2 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        activeTab === 'hub' || activeTab === 'explore'
+                          ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                          : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${
+                        activeTab === 'hub' || activeTab === 'explore' ? 'bg-white animate-pulse' : 'bg-[#141414]/30'
+                      }`}></span>
+                      <span>AGENT HUB</span>
+                    </button>
+                  </div>
+                </div>
+              )}
               {(activeTab === 'floor' || activeTab === 'live') && (
                 deviceSize === 'desktop' ? (
                   <FloorViewDesktop
@@ -878,44 +1029,69 @@ export default function App() {
               )}
 
               {activeTab === 'telemetry' && (
-                deviceSize === 'desktop' ? (
-                  <TelemetryViewDesktop
-                    posts={posts}
-                    connectionRequests={connectionRequests}
-                    recentConnections={recentConnections}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onOpenClusterMembers={handleOpenClusterMembers}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onOpenPostCard={handleOpenDedicatedPost}
-                  />
-                ) : deviceSize === 'tablet' ? (
-                  <TelemetryViewTablet
-                    posts={posts}
-                    connectionRequests={connectionRequests}
-                    recentConnections={recentConnections}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onOpenClusterMembers={handleOpenClusterMembers}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onOpenPostCard={handleOpenDedicatedPost}
-                  />
-                ) : (
-                  <TelemetryViewMobile
-                    posts={posts}
-                    connectionRequests={connectionRequests}
-                    recentConnections={recentConnections}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onOpenClusterMembers={handleOpenClusterMembers}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onOpenPostCard={handleOpenDedicatedPost}
-                  />
-                )
+                <>
+                  {deviceSize === 'mobile' && (
+                    <div className="mb-3 flex justify-center items-center">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('terms')}
+                        className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414] underline underline-offset-4 hover:opacity-80 transition-opacity cursor-pointer"
+                      >
+                        Terms & Conditions
+                      </button>
+                    </div>
+                  )}
+                  {deviceSize === 'desktop' ? (
+                    <TelemetryViewDesktop
+                      posts={posts}
+                      connectionRequests={connectionRequests}
+                      recentConnections={recentConnections}
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                      onOpenClusterMembers={handleOpenClusterMembers}
+                      onOpenThread={handleOpenThread}
+                      onOpenConnections={handleOpenConnections}
+                      onOpenPostCard={handleOpenDedicatedPost}
+                    />
+                  ) : deviceSize === 'tablet' ? (
+                    <TelemetryViewTablet
+                      posts={posts}
+                      connectionRequests={connectionRequests}
+                      recentConnections={recentConnections}
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                      onOpenClusterMembers={handleOpenClusterMembers}
+                      onOpenThread={handleOpenThread}
+                      onOpenConnections={handleOpenConnections}
+                      onOpenPostCard={handleOpenDedicatedPost}
+                    />
+                  ) : (
+                    <TelemetryViewMobile
+                      posts={posts}
+                      connectionRequests={connectionRequests}
+                      recentConnections={recentConnections}
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                      onOpenClusterMembers={handleOpenClusterMembers}
+                      onOpenThread={handleOpenThread}
+                      onOpenConnections={handleOpenConnections}
+                      onOpenPostCard={handleOpenDedicatedPost}
+                    />
+                  )}
+                </>
               )}
 
               {(activeTab === 'explore' || activeTab === 'hub') && (
-                deviceSize === 'desktop' ? (
+                <>
+                  {deviceSize === 'mobile' && (
+                    <div className="mb-3 flex justify-center items-center">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('terms')}
+                        className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414] underline underline-offset-4 hover:opacity-80 transition-opacity cursor-pointer"
+                      >
+                        Terms & Conditions
+                      </button>
+                    </div>
+                  )}
+                  {deviceSize === 'desktop' ? (
                   <ExploreViewDesktop
                     posts={posts}
                     onOpenThread={handleOpenThread}
@@ -947,7 +1123,8 @@ export default function App() {
                     onOpenChat={handleOpenChat}
                     onOpenClusterChat={handleOpenClusterChat}
                   />
-                )
+                )}
+                </>
               )}
 
               {activeTab === 'dashboard' && (
@@ -1134,37 +1311,59 @@ export default function App() {
 
       {/* Mobile Bottom Navigation Bar for quick tab switching on smartphones */}
       {deviceSize === 'mobile' && !isSearchModalOpen && (
-        <nav aria-label="Mobile Navigation" className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-[#141414] px-3 py-2 flex items-center justify-around shadow-[0_-2px_0px_0px_rgba(20,20,20,1)]">
-          <button
-            onClick={() => setActiveTab('floor')}
-            className={`flex-1 py-2 px-1 text-center font-mono font-black text-xs uppercase tracking-wider transition-all border-2 border-[#141414] mx-1 select-none cursor-pointer ${
-              activeTab === 'floor' || activeTab === 'live'
-                ? 'bg-[#141414] text-white shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
-                : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
-            }`}
-          >
-            Floor
-          </button>
-          <button
-            onClick={() => setActiveTab('telemetry')}
-            className={`flex-1 py-2 px-1 text-center font-mono font-black text-xs uppercase tracking-wider transition-all border-2 border-[#141414] mx-1 select-none cursor-pointer ${
-              activeTab === 'telemetry'
-                ? 'bg-[#141414] text-white shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
-                : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
-            }`}
-          >
-            Telemetry
-          </button>
-          <button
-            onClick={() => setActiveTab('hub')}
-            className={`flex-1 py-2 px-1 text-center font-mono font-black text-xs uppercase tracking-wider transition-all border-2 border-[#141414] mx-1 select-none cursor-pointer ${
-              activeTab === 'hub' || activeTab === 'explore'
-                ? 'bg-[#141414] text-white shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
-                : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
-            }`}
-          >
-            Agent Hub
-          </button>
+        <nav aria-label="Mobile Navigation" className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-[#141414] px-4 py-4 pb-5 shadow-[0_-3px_0px_0px_rgba(20,20,20,1)]">
+          <div className="max-w-xs sm:max-w-sm mx-auto flex items-center justify-between">
+            {/* FLOOR */}
+            <button
+              onClick={() => setActiveTab('floor')}
+              className="flex flex-col items-center justify-center cursor-pointer select-none group min-w-[64px]"
+            >
+              <div className={`px-3 py-1 font-mono font-black text-sm leading-none transition-all ${
+                activeTab === 'floor' || activeTab === 'live'
+                  ? 'bg-[#141414] text-white border-b-2 border-r-2 border-[#141414] shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
+                  : 'text-[#141414] border-b-2 border-r-2 border-[#141414] bg-transparent group-hover:bg-[#E4E3E0]'
+              }`}>
+                F
+              </div>
+              <span className="font-mono text-[10px] font-black tracking-widest uppercase text-[#141414] mt-2">
+                FLOOR
+              </span>
+            </button>
+
+            {/* TELEMETRY */}
+            <button
+              onClick={() => setActiveTab('telemetry')}
+              className="flex flex-col items-center justify-center cursor-pointer select-none group min-w-[64px]"
+            >
+              <div className={`px-3 py-1 font-mono font-black text-sm leading-none transition-all ${
+                activeTab === 'telemetry'
+                  ? 'bg-[#141414] text-white border-b-2 border-r-2 border-[#141414] shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
+                  : 'text-[#141414] border-b-2 border-r-2 border-[#141414] bg-transparent group-hover:bg-[#E4E3E0]'
+              }`}>
+                T
+              </div>
+              <span className="font-mono text-[10px] font-black tracking-widest uppercase text-[#141414] mt-2">
+                TELEMETRY
+              </span>
+            </button>
+
+            {/* HUB */}
+            <button
+              onClick={() => setActiveTab('hub')}
+              className="flex flex-col items-center justify-center cursor-pointer select-none group min-w-[64px]"
+            >
+              <div className={`px-3 py-1 font-mono font-black text-sm leading-none transition-all ${
+                activeTab === 'hub' || activeTab === 'explore'
+                  ? 'bg-[#141414] text-white border-b-2 border-r-2 border-[#141414] shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
+                  : 'text-[#141414] border-b-2 border-r-2 border-[#141414] bg-transparent group-hover:bg-[#E4E3E0]'
+              }`}>
+                H
+              </div>
+              <span className="font-mono text-[10px] font-black tracking-widest uppercase text-[#141414] mt-2">
+                HUB
+              </span>
+            </button>
+          </div>
         </nav>
       )}
     </div>

@@ -539,9 +539,9 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     passwordChangedAt: raw.passwordChangedAt,
     master_id: raw.master_id || raw.masterId || undefined,
     masterUserId: raw.master_id || raw.masterUserId || undefined,
-    is_master_primary: raw.is_master_primary !== undefined ? Boolean(raw.is_master_primary) : (raw.master_id && raw.master_id !== raw.id ? false : true),
-    isMasterPrimary: raw.is_master_primary !== undefined ? Boolean(raw.is_master_primary) : (raw.master_id && raw.master_id !== raw.id ? false : true),
-    isMasterUser: raw.is_master_primary !== undefined ? Boolean(raw.is_master_primary) : (raw.master_id && raw.master_id !== raw.id ? false : true),
+    is_master_primary: Boolean((!raw.master_id || raw.master_id === raw.id) && !(raw.email && raw.email.includes('+AMR-'))),
+    isMasterPrimary: Boolean((!raw.master_id || raw.master_id === raw.id) && !(raw.email && raw.email.includes('+AMR-'))),
+    isMasterUser: Boolean((!raw.master_id || raw.master_id === raw.id) && !(raw.email && raw.email.includes('+AMR-'))),
   };
 }
 
