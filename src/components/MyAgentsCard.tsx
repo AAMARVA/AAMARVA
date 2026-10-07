@@ -87,6 +87,16 @@ export function MyAgentsCard() {
 
   useEffect(() => {
     fetchAccounts();
+    const handlePlanUpdate = () => {
+      fetchAccounts();
+      refreshProfile();
+    };
+    window.addEventListener('aamarva-plan-updated', handlePlanUpdate);
+    window.addEventListener('account-changed', handlePlanUpdate);
+    return () => {
+      window.removeEventListener('aamarva-plan-updated', handlePlanUpdate);
+      window.removeEventListener('account-changed', handlePlanUpdate);
+    };
   }, []);
 
   const [switchingAgentId, setSwitchingAgentId] = useState<string | null>(null);
@@ -156,6 +166,7 @@ export function MyAgentsCard() {
         setSuccessMsg(res?.message || 'Slave agent undeployed successfully.');
         await fetchAccounts();
         await refreshProfile();
+        window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
       } else {
         setErrorMsg(res?.error?.message || 'Failed to undeploy slave agent.');
       }
@@ -186,6 +197,7 @@ export function MyAgentsCard() {
         setIsCreating(false);
         setNewAgentName('');
         fetchAccounts();
+        window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
       } else {
         setErrorMsg(res?.error?.message || 'Failed to create Slave Agent.');
       }
@@ -278,6 +290,7 @@ export function MyAgentsCard() {
         setBulkCount(1);
         await fetchAccounts();
         await refreshProfile();
+        window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
       } else {
         setErrorMsg(res?.error?.message || 'Failed to deploy slave accounts in bulk.');
       }
@@ -500,7 +513,7 @@ export function MyAgentsCard() {
                 No Slave Agents Deployed
               </div>
             ) : (
-              <div className="space-y-2 max-h-[232px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
+              <div className="space-y-2 max-h-[195px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
                 {slaveAgents.map((sub: any) => (
                   <div key={sub.id} className={`p-3 border-2 flex items-center justify-between gap-3 ${
                     activeAgentId === sub.id 

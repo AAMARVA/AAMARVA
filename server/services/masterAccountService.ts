@@ -95,7 +95,7 @@ export class MasterAccountService {
           plan_type: entRecord.plan_type || 'master_slave_scale',
           plan_name: entRecord.plan_name || 'Master & Slave Agent Plan',
           status: entRecord.status || 'active',
-          allowance_accounts: entRecord.allowance_accounts || 20,
+          allowance_accounts: entRecord.allowance_accounts || 10,
           tier: entRecord.tier || 'scale',
           created_at: entRecord.created_at || new Date().toISOString(),
           updated_at: entRecord.updated_at || new Date().toISOString(),
@@ -128,7 +128,7 @@ export class MasterAccountService {
               plan_type: parsed.plan_type || 'master_slave_scale',
               plan_name: parsed.plan_name || 'Master & Slave Agent Plan',
               status: parsed.status || 'active',
-              allowance_accounts: parsed.allowance_accounts || 20,
+              allowance_accounts: parsed.allowance_accounts || 10,
               tier: parsed.tier || 'scale',
               created_at: parsed.created_at || eventRecord.created_at,
               updated_at: parsed.updated_at || eventRecord.created_at,
@@ -155,7 +155,7 @@ export class MasterAccountService {
           plan_type: 'master_slave_scale',
           plan_name: 'Master & Slave Agent Plan',
           status: 'active',
-          allowance_accounts: 20,
+          allowance_accounts: 10,
           tier: 'scale',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -178,7 +178,7 @@ export class MasterAccountService {
    */
   public async activateMasterPlan(
     masterId: string, 
-    requestedAllowance: number = 20,
+    requestedAllowance: number = 10,
     options?: {
       actionType?: 'new_plan' | 'add_accounts' | 'extend_validity';
       addOnAccounts?: number;
@@ -216,14 +216,14 @@ export class MasterAccountService {
       const isCurrentlyActive = existingPlan && existingPlan.status === 'active';
 
       // 3. Compute final allowance & expiration date
-      let sanitizedAllowance = Math.min(1000, Math.max(20, Math.floor(requestedAllowance)));
+      let sanitizedAllowance = Math.min(1000, Math.max(10, Math.floor(requestedAllowance)));
       const actionType = options?.actionType || (isCurrentlyActive ? 'add_accounts' : 'new_plan');
 
       if (actionType === 'add_accounts' && isCurrentlyActive) {
-        const effectiveAddOn = Math.max(20, Math.floor(options?.addOnAccounts || 20));
-        sanitizedAllowance = Math.min(1000, Math.max(20, (existingPlan.allowance_accounts || 20) + effectiveAddOn));
+        const effectiveAddOn = Math.max(1, Math.floor(options?.addOnAccounts || (requestedAllowance - (existingPlan.allowance_accounts || 10))));
+        sanitizedAllowance = Math.min(1000, Math.max(10, (existingPlan.allowance_accounts || 10) + effectiveAddOn));
       } else if (actionType === 'extend_validity' && isCurrentlyActive) {
-        sanitizedAllowance = existingPlan.allowance_accounts || 20;
+        sanitizedAllowance = existingPlan.allowance_accounts || 10;
       }
 
       // Check strict idempotency for standard repeat activation without actionType
@@ -261,7 +261,7 @@ export class MasterAccountService {
           previous_allowance: existingPlan?.allowance_accounts || null,
           activated_by_master_id: masterId,
           action_type: actionType,
-          added_accounts: options?.addOnAccounts ? Math.max(20, options.addOnAccounts) : (sanitizedAllowance - (existingPlan?.allowance_accounts || 20)),
+          added_accounts: options?.addOnAccounts ? Math.max(1, options.addOnAccounts) : (sanitizedAllowance - (existingPlan?.allowance_accounts || 10)),
           validity_days_extended: options?.validityDays || null
         }
       };
@@ -339,18 +339,18 @@ export class MasterAccountService {
         id: masterId,
         plan_status: 'ACTIVE',
         tier: plan.tier || 'scale',
-        max_sub_agents: plan.allowance_accounts || 20
+        max_sub_agents: plan.allowance_accounts || 10
       };
       this.masterAccountCache.set(masterId, record);
       return record;
     }
 
-    // Default master record with 20 accounts allowance if not yet activated
+    // Default master record with 10 accounts allowance if not yet activated
     const defaultRecord: MasterAccountRecord = {
       id: masterId,
       plan_status: 'ACTIVE',
       tier: 'scale',
-      max_sub_agents: 20
+      max_sub_agents: 10
     };
     this.masterAccountCache.set(masterId, defaultRecord);
     return defaultRecord;

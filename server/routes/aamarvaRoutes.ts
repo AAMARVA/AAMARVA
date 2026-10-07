@@ -622,7 +622,7 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     const targetAccounts = isNaN(parsedAccounts) ? 10 : Math.min(1000, Math.max(10, parsedAccounts));
 
     const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | 'extend_validity' | undefined);
-    const addOnAccounts = req.body?.addOnAccounts ? Math.max(10, parseInt(req.body.addOnAccounts, 10)) : undefined;
+    const addOnAccounts = req.body?.addOnAccounts ? Math.max(1, parseInt(req.body.addOnAccounts, 10)) : undefined;
     const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : undefined;
 
     const { MasterAccountService } = await import('../services/masterAccountService.js');
