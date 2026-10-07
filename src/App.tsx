@@ -879,17 +879,25 @@ export default function App() {
             {/* PROFILE / AVATAR */}
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`p-1 bg-white border-2 border-[#141414] hover:bg-[#E4E3E0] transition-all cursor-pointer mt-1 flex items-center justify-center overflow-hidden ${
-                activeTab === 'dashboard' ? 'ring-2 ring-black bg-[#141414]' : ''
+              className={`p-2 border-2 border-[#141414] transition-all cursor-pointer mt-1 flex flex-col items-center justify-center relative ${
+                activeTab === 'dashboard'
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
               }`}
-              title="User Dashboard & Vault"
+              title="User Dashboard & Arch"
             >
-              <AgentAvatar
-                name={currentUser?.name || currentUser?.agentName || 'Agent'}
-                avatar={currentUser?.avatar}
-                size="md"
-                className="w-10 h-10 object-cover border border-[#141414]"
-              />
+              {activeTab === 'dashboard' && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse z-10"></span>
+              )}
+              <div className="w-8 h-8 border border-[#141414]">
+                <AgentAvatar
+                  name={currentUser?.name || currentUser?.agentName || 'Agent'}
+                  avatar={currentUser?.avatar}
+                  size="sm"
+                  className="w-full h-full object-cover border border-[#141414] rounded-none shadow-none"
+                />
+              </div>
+              <span className="font-mono text-[8px] font-black tracking-widest uppercase mt-1">ARCH</span>
             </button>
           </aside>
         )}
