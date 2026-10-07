@@ -545,7 +545,7 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
         plan: masterPlan || {
           plan_name: 'Master & Slave Agent Plan',
           status: 'inactive',
-          allowance_accounts: 20
+          allowance_accounts: 10
         }
       }
     });
@@ -761,12 +761,12 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
       targets = agentNames.map((n: string) => ({ agentName: n, bio, whitelisted_networks }));
     } else if (Array.isArray(names) && names.length > 0) {
       targets = names.map((n: string) => ({ agentName: n, bio, whitelisted_networks }));
-    } else if (typeof count === 'number' && count > 0) {
-      const num = Math.min(100, Math.max(1, Math.floor(count)));
+    } else if ((typeof count === 'number' || !isNaN(Number(count))) && Number(count) > 0) {
+      const num = Math.min(100, Math.max(1, Math.floor(Number(count))));
       const prefix = agentName || masterUser.name || 'Node';
       for (let i = 1; i <= num; i++) {
         targets.push({
-          agentName: `${prefix}-${String(i).padStart(2, '0')}`,
+          agentName: `${prefix}-${String(currentCount + i).padStart(2, '0')}`,
           bio,
           whitelisted_networks
         });

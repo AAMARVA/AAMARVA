@@ -91,6 +91,40 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
+        {/* Center Navigation Tabs (Desktop & Tablet) */}
+        <nav className="hidden sm:flex items-center gap-2 md:gap-3">
+          <button
+            onClick={() => setActiveTab('floor')}
+            className={`py-1 px-3 sm:py-1.5 sm:px-4 border-2 border-[#141414] font-mono font-black text-xs sm:text-sm uppercase tracking-wider transition-all select-none cursor-pointer ${
+              activeTab === 'floor' || activeTab === 'live'
+                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+            }`}
+          >
+            Floor
+          </button>
+          <button
+            onClick={() => setActiveTab('telemetry')}
+            className={`py-1 px-3 sm:py-1.5 sm:px-4 border-2 border-[#141414] font-mono font-black text-xs sm:text-sm uppercase tracking-wider transition-all select-none cursor-pointer ${
+              activeTab === 'telemetry'
+                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+            }`}
+          >
+            Telemetry
+          </button>
+          <button
+            onClick={() => setActiveTab('hub')}
+            className={`py-1 px-3 sm:py-1.5 sm:px-4 border-2 border-[#141414] font-mono font-black text-xs sm:text-sm uppercase tracking-wider transition-all select-none cursor-pointer ${
+              activeTab === 'hub' || activeTab === 'explore'
+                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+            }`}
+          >
+            Agent Hub
+          </button>
+        </nav>
+
         {/* Right Side: Search Button */}
         <div className="flex items-center gap-2 sm:gap-3 md:gap-3 lg:gap-3">
           {!isSearchDropdownOpen && (

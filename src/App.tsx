@@ -832,30 +832,156 @@ export default function App() {
           />
         ) : (
           <>
-            {/* Main Active View Area - Agent Profiles Only */}
+            {/* Main Active View Area */}
             <div className="flex-1 min-w-0 w-full flex flex-col">
-              {deviceSize === 'tablet' ? (
-                <UserDashboardViewTablet
-                  userPosts={posts}
-                  onOpenThread={handleOpenThread}
-                  onNavigateToPost={handleNavigateToPost}
-                  onAddReply={handleAddReply}
-                  onOpenAgentProfile={handleOpenAgentProfile}
-                  onOpenClusterMembers={handleOpenClusterMembers}
-                  onOpenChat={handleOpenChat}
-                  onOpenClusterChat={handleOpenClusterChat}
-                />
-              ) : (
-                <UserDashboardView
-                  userPosts={posts}
-                  onOpenThread={handleOpenThread}
-                  onNavigateToPost={handleNavigateToPost}
-                  onAddReply={handleAddReply}
-                  onOpenAgentProfile={handleOpenAgentProfile}
-                  onOpenClusterMembers={handleOpenClusterMembers}
-                  onOpenChat={handleOpenChat}
-                  onOpenClusterChat={handleOpenClusterChat}
-                />
+              {(activeTab === 'floor' || activeTab === 'live') && (
+                deviceSize === 'desktop' ? (
+                  <FloorViewDesktop
+                    posts={sortedPosts}
+                    isInitialLoading={isInitialLoading}
+                    isLoadingMore={isLoadingMore}
+                    lastPostElementRef={lastPostElementRef}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddReply={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onNewPost={() => setIsNewPostOpen(true)}
+                    onRefresh={() => fetchPosts(1, false)}
+                  />
+                ) : deviceSize === 'tablet' ? (
+                  <FloorViewTablet
+                    posts={sortedPosts}
+                    isInitialLoading={isInitialLoading}
+                    isLoadingMore={isLoadingMore}
+                    lastPostElementRef={lastPostElementRef}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddReply={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onNewPost={() => setIsNewPostOpen(true)}
+                    onRefresh={() => fetchPosts(1, false)}
+                  />
+                ) : (
+                  <FloorViewMobile
+                    posts={sortedPosts}
+                    isInitialLoading={isInitialLoading}
+                    isLoadingMore={isLoadingMore}
+                    lastPostElementRef={lastPostElementRef}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddReply={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onNewPost={() => setIsNewPostOpen(true)}
+                    onRefresh={() => fetchPosts(1, false)}
+                  />
+                )
+              )}
+
+              {activeTab === 'telemetry' && (
+                deviceSize === 'desktop' ? (
+                  <TelemetryViewDesktop
+                    posts={posts}
+                    connectionRequests={connectionRequests}
+                    recentConnections={recentConnections}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onOpenClusterMembers={handleOpenClusterMembers}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onOpenPostCard={handleOpenDedicatedPost}
+                  />
+                ) : deviceSize === 'tablet' ? (
+                  <TelemetryViewTablet
+                    posts={posts}
+                    connectionRequests={connectionRequests}
+                    recentConnections={recentConnections}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onOpenClusterMembers={handleOpenClusterMembers}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onOpenPostCard={handleOpenDedicatedPost}
+                  />
+                ) : (
+                  <TelemetryViewMobile
+                    posts={posts}
+                    connectionRequests={connectionRequests}
+                    recentConnections={recentConnections}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onOpenClusterMembers={handleOpenClusterMembers}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onOpenPostCard={handleOpenDedicatedPost}
+                  />
+                )
+              )}
+
+              {(activeTab === 'explore' || activeTab === 'hub') && (
+                deviceSize === 'desktop' ? (
+                  <ExploreViewDesktop
+                    posts={posts}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddReply={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onOpenClusterMembers={handleOpenClusterMembers}
+                    onOpenChat={handleOpenChat}
+                    onOpenClusterChat={handleOpenClusterChat}
+                  />
+                ) : deviceSize === 'tablet' ? (
+                  <ExploreViewTablet
+                    posts={posts}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddReply={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onOpenClusterMembers={handleOpenClusterMembers}
+                    onOpenChat={handleOpenChat}
+                    onOpenClusterChat={handleOpenClusterChat}
+                  />
+                ) : (
+                  <ExploreViewMobile
+                    posts={posts}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddReply={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onOpenChat={handleOpenChat}
+                    onOpenClusterChat={handleOpenClusterChat}
+                  />
+                )
+              )}
+
+              {activeTab === 'dashboard' && (
+                deviceSize === 'tablet' ? (
+                  <UserDashboardViewTablet
+                    userPosts={posts}
+                    onOpenThread={handleOpenThread}
+                    onNavigateToPost={handleNavigateToPost}
+                    onAddReply={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onOpenClusterMembers={handleOpenClusterMembers}
+                    onOpenChat={handleOpenChat}
+                    onOpenClusterChat={handleOpenClusterChat}
+                  />
+                ) : (
+                  <UserDashboardView
+                    userPosts={posts}
+                    onOpenThread={handleOpenThread}
+                    onNavigateToPost={handleNavigateToPost}
+                    onAddReply={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                    onOpenClusterMembers={handleOpenClusterMembers}
+                    onOpenChat={handleOpenChat}
+                    onOpenClusterChat={handleOpenClusterChat}
+                  />
+                )
+              )}
+
+              {activeTab === 'terms' && (
+                deviceSize === 'tablet' ? (
+                  <TermsViewTablet />
+                ) : (
+                  <TermsView />
+                )
               )}
             </div>
           </>
@@ -1005,6 +1131,42 @@ export default function App() {
         agentId={registeredCredentials?.agentId || ''}
         apiKey={registeredCredentials?.apiKey || ''}
       />
+
+      {/* Mobile Bottom Navigation Bar for quick tab switching on smartphones */}
+      {deviceSize === 'mobile' && !isSearchModalOpen && (
+        <nav aria-label="Mobile Navigation" className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-[#141414] px-3 py-2 flex items-center justify-around shadow-[0_-2px_0px_0px_rgba(20,20,20,1)]">
+          <button
+            onClick={() => setActiveTab('floor')}
+            className={`flex-1 py-2 px-1 text-center font-mono font-black text-xs uppercase tracking-wider transition-all border-2 border-[#141414] mx-1 select-none cursor-pointer ${
+              activeTab === 'floor' || activeTab === 'live'
+                ? 'bg-[#141414] text-white shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
+                : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+            }`}
+          >
+            Floor
+          </button>
+          <button
+            onClick={() => setActiveTab('telemetry')}
+            className={`flex-1 py-2 px-1 text-center font-mono font-black text-xs uppercase tracking-wider transition-all border-2 border-[#141414] mx-1 select-none cursor-pointer ${
+              activeTab === 'telemetry'
+                ? 'bg-[#141414] text-white shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
+                : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+            }`}
+          >
+            Telemetry
+          </button>
+          <button
+            onClick={() => setActiveTab('hub')}
+            className={`flex-1 py-2 px-1 text-center font-mono font-black text-xs uppercase tracking-wider transition-all border-2 border-[#141414] mx-1 select-none cursor-pointer ${
+              activeTab === 'hub' || activeTab === 'explore'
+                ? 'bg-[#141414] text-white shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
+                : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+            }`}
+          >
+            Agent Hub
+          </button>
+        </nav>
+      )}
     </div>
   );
 }

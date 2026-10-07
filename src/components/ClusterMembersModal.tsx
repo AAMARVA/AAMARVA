@@ -32,6 +32,7 @@ export interface ClusterData {
 
 interface ClusterMembersModalProps {
   cluster: ClusterData | null;
+  isOpen?: boolean;
   onClose: () => void;
   onBack?: () => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
@@ -40,6 +41,7 @@ interface ClusterMembersModalProps {
 // Modal component to display cluster members
 export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   cluster,
+  isOpen,
   onClose,
   onBack,
   onOpenAgentProfile,
@@ -49,13 +51,26 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
     if (!cluster) return;
     setClusterInfo(cluster);
 
     let isMounted = true;
     setLoading(true);
 
-    const clusterId = cluster.id || 'cluster_alpha_secret';
+    const clusterId = cluster.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id || 'cluster_alpha_secret';
+    const ownerAgentId = cluster.ownerAgentId || (cluster as any)?.owner_agent_id || 'AMR-TW43-24WU';
+    const ownerName = cluster.ownerName || cluster.ownerAgentName || (cluster as any)?.owner_name || (cluster as any)?.owner_agent_name || ownerAgentId || 'Agent';
+    const ownerAvatar = cluster.ownerAvatar || cluster.ownerAgentAvatar || (cluster as any)?.owner_avatar || (cluster as any)?.owner_agent_avatar || undefined;
 
     apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'none' })
       .then((res) => {
@@ -68,13 +83,12 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
           
           // Fallback if no members found: consider admin as the first member
           if (fetchedMembers.length === 0) {
-            const adminId = cluster.ownerAgentId || 'AMR-TW43-24WU';
             fetchedMembers = [
               {
                 id: `admin-${clusterId}`,
-                agentId: adminId,
-                agentName: cluster.ownerName || cluster.ownerAgentName || cluster.ownerAgentId || 'Agent',
-                avatar: cluster.ownerAvatar || cluster.ownerAgentAvatar || undefined,
+                agentId: ownerAgentId,
+                agentName: ownerName,
+                avatar: ownerAvatar,
                 role: 'admin',
                 emailVerified: true,
               },
@@ -83,13 +97,12 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
           setMembers(fetchedMembers);
         } else {
           // Fallback logic if API endpoint returns empty or error
-          const adminId = cluster.ownerAgentId || 'AMR-TW43-24WU';
           setMembers([
             {
               id: `admin-${clusterId}`,
-              agentId: adminId,
-              agentName: cluster.ownerName || cluster.ownerAgentName || adminId || 'Agent',
-              avatar: cluster.ownerAvatar || cluster.ownerAgentAvatar || undefined,
+              agentId: ownerAgentId,
+              agentName: ownerName,
+              avatar: ownerAvatar,
               role: 'admin',
               emailVerified: true,
             },
@@ -98,13 +111,12 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
       })
       .catch(() => {
         if (!isMounted) return;
-        const adminId = cluster.ownerAgentId || 'AMR-TW43-24WU';
         setMembers([
           {
             id: `admin-${clusterId}`,
-            agentId: adminId,
-            agentName: cluster.ownerName || cluster.ownerAgentName || adminId || 'Agent',
-            avatar: cluster.ownerAvatar || cluster.ownerAgentAvatar || undefined,
+            agentId: ownerAgentId,
+            agentName: ownerName,
+            avatar: ownerAvatar,
             role: 'admin',
             emailVerified: true,
           },
@@ -119,13 +131,18 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     };
   }, [cluster]);
 
-  if (!cluster) return null;
+  if (isOpen === false || !cluster) return null;
 
   const clusterTitle = (clusterInfo?.name || cluster.name || 'ALPHA SECRET CLUSTER').toUpperCase();
   const isClusterDissolved = (clusterInfo?.status || (cluster as any)?.status) === 'dissolved';
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[640px] my-auto overflow-hidden text-[#141414]">
         
         {/* Header */}
