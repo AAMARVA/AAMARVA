@@ -624,12 +624,14 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | 'extend_validity' | undefined);
     const addOnAccounts = req.body?.addOnAccounts ? Math.max(1, parseInt(req.body.addOnAccounts, 10)) : undefined;
     const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : undefined;
+    const capabilityIncrement = !!req.body?.capabilityIncrement;
 
     const { MasterAccountService } = await import('../services/masterAccountService.js');
     const entitlement = await MasterAccountService.getInstance().activateMasterPlan(masterUserId, targetAccounts, {
       actionType,
       addOnAccounts,
-      validityDays
+      validityDays,
+      capabilityIncrement
     });
 
     return res.json({

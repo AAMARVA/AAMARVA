@@ -627,6 +627,31 @@ export class SecurityService {
    * Evaluates a request against the security policy.
    * Throws an error if enforcement is triggered.
    */
+  private async checkCapabilityIncrement(userId: string): Promise<boolean> {
+    if (!userId) return false;
+    
+    // Check master account plan entitlement
+    try {
+      const { MasterAccountService } = await import('./masterAccountService.js');
+      const masterService = MasterAccountService.getInstance();
+      
+      // If user is a slave, find the master ID
+      let metadata = masterService.getUserMetadata(userId);
+      if (!metadata) {
+        metadata = await masterService.refreshUserMetadata(userId);
+      }
+      const masterId = metadata?.master_id || userId;
+      
+      const plan = await masterService.getMasterPlan(masterId);
+      
+      // Check if capability increment is enabled in metadata
+      return !!plan?.metadata?.capabilityIncrement;
+    } catch (e) {
+      console.error('[SECURITY] Capability check failed:', e);
+      return false;
+    }
+  }
+
   public async evaluateRequest(req: Request, policyName: string, userId?: string, trafficClass: TrafficClass = TrafficClass.PUBLIC): Promise<void> {
     const policy = GLOBAL_SECURITY_POLICIES[policyName];
     if (!policy) {
@@ -639,14 +664,30 @@ export class SecurityService {
     // 0. IP Reputation Check
     await this.checkIpReputation(ipStr, policy.isCritical, trafficClass);
 
-    // Hardened identifier extraction
+    // Optional Authentication: Identify account/agent if credentials exist (without enforcement)
     let effectiveUserId = userId;
-    
-    // Attempt to extract from authenticated request if not provided
-    if (!effectiveUserId && (req as any).user?.id) {
-      effectiveUserId = (req as any).user.id;
+    if (!effectiveUserId) {
+        try {
+            const { verifyHumanSession, verifyAgentAccessToken, HUMAN_SESSION_COOKIE_NAME } = await import('../authService.js');
+            const authHeader = req.headers.authorization;
+            const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
+            const apiKey = req.headers['x-api-key'] as string;
+            
+            if (authHeader?.startsWith('Bearer ')) {
+                const token = authHeader.substring(7);
+                const payload = verifyAgentAccessToken(token);
+                if (payload) effectiveUserId = payload.id;
+            } else if (sessionCookie) {
+                const payload = await verifyHumanSession(sessionCookie);
+                if (payload) effectiveUserId = payload.id;
+            } else if (apiKey) {
+                 // Agent API key auth usually requires lookup, skipping for optional path
+            }
+        } catch (e) {
+            console.warn('[SECURITY] Optional auth failed:', e);
+        }
     }
-
+    
     // Check account Access Management endpoint toggles
     if (effectiveUserId) {
       let disabledList = this.getUserDisabledEndpoints(effectiveUserId);
@@ -661,6 +702,12 @@ export class SecurityService {
     
     if (!effectiveUserId && (policyName === 'auth_login' || policyName === 'auth_register')) {
       effectiveUserId = req.body.agentId || req.body.email || req.body.userId;
+    }
+
+    // CHECK CAPABILITY INCREMENT
+    let isCapabilityIncrement = false;
+    if (effectiveUserId) {
+      isCapabilityIncrement = await this.checkCapabilityIncrement(effectiveUserId);
     }
 
     const identifier = policy.identity === 'account' 
@@ -687,9 +734,9 @@ export class SecurityService {
     }
 
     if (policy.quota || policy.resourceConstraints) {
-      await this.checkQuota(identifier as string, policyName, ipStr, policy.isCritical, trafficClass);
+      await this.checkQuota(identifier as string, policyName, ipStr, policy.isCritical, trafficClass, isCapabilityIncrement, req);
     } else {
-      await this.checkRateLimit(identifier as string, policyName, ipStr, policy.isCritical, trafficClass);
+      await this.checkRateLimit(identifier as string, policyName, ipStr, policy.isCritical, trafficClass, undefined, isCapabilityIncrement, req);
     }
 
     // 5. Track Activity
@@ -773,11 +820,24 @@ export class SecurityService {
     }
   }
 
-  private async checkQuota(identifier: string, policyName: string, ip: string, isCritical: boolean = false, trafficClass: TrafficClass = TrafficClass.PUBLIC): Promise<void> {
+  private async checkQuota(identifier: string, policyName: string, ip: string, isCritical: boolean = false, trafficClass: TrafficClass = TrafficClass.PUBLIC, isCapabilityIncrement: boolean = false, req?: Request): Promise<void> {
     const policy = GLOBAL_SECURITY_POLICIES[policyName];
     if (!policy) return;
 
     const now = new Date();
+    
+    // Use capability limits if applicable
+    let limitMax = policy.rateLimit.max;
+    if (isCapabilityIncrement) {
+      const capabilityLimits: Record<string, number> = {
+        'cluster_create': 10, // /hour
+        'cluster_join': 20, // /hour
+      };
+      if (capabilityLimits[policyName]) {
+        limitMax = capabilityLimits[policyName];
+      }
+    }
+
     const windowStartMs = Math.floor(now.getTime() / policy.rateLimit.windowMs) * policy.rateLimit.windowMs;
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -789,7 +849,7 @@ export class SecurityService {
           p_identifier: identifier,
           p_endpoint: policyName,
           p_window_start: new Date(windowStartMs).toISOString(),
-          p_max_burst: policy.rateLimit.max,
+          p_max_burst: limitMax,
           p_month_start: monthStart.toISOString(),
           p_max_monthly: policy.quota?.monthly || 1000000,
           p_day_start: dayStart.toISOString(),
@@ -839,10 +899,10 @@ export class SecurityService {
       throw new SecurityError('DATABASE_UNAVAILABLE', 'Security verification service temporarily unavailable.');
     }
 
-    await this.checkRateLimit(identifier, policyName, ip, isCritical, trafficClass);
+    await this.checkRateLimit(identifier, policyName, ip, isCritical, trafficClass, undefined, isCapabilityIncrement, req);
   }
 
-  private async checkRateLimit(identifier: string, policyName: string, ip: string, isCritical: boolean = false, trafficClass: TrafficClass = TrafficClass.PUBLIC, customLimit?: { windowMs: number, max: number }): Promise<void> {
+  private async checkRateLimit(identifier: string, policyName: string, ip: string, isCritical: boolean = false, trafficClass: TrafficClass = TrafficClass.PUBLIC, customLimit?: { windowMs: number, max: number }, isCapabilityIncrement: boolean = false, req?: Request): Promise<void> {
     const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip === 'localhost';
     if (process.env.NODE_ENV === 'test' || isLoopback) {
       return;
@@ -850,13 +910,77 @@ export class SecurityService {
     const policy = GLOBAL_SECURITY_POLICIES[policyName];
     let limit = customLimit || (policy ? { ...policy.rateLimit } : { windowMs: 60000, max: 100 });
 
+    // Capability Increment Rate-Limit Upgrade
+    if (isCapabilityIncrement && policyName !== 'public_reads') {
+      const capabilityLimits: Record<string, { windowMs: number, max: number }> = {
+        'post_create': { windowMs: 1 * 60 * 1000, max: 120 },
+        'reply_create': { windowMs: 1 * 60 * 1000, max: 300 },
+        'connection_request': { windowMs: 1 * 60 * 1000, max: 60 },
+        'message_create': { windowMs: 1 * 60 * 1000, max: 600 },
+        'cluster_create': { windowMs: 60 * 60 * 1000, max: 10 },
+        'cluster_list': { windowMs: 60 * 1000, max: 300 },
+        'cluster_get': { windowMs: 60 * 1000, max: 300 },
+        'cluster_update': { windowMs: 60 * 1000, max: 60 },
+        'cluster_invite_create': { windowMs: 60 * 1000, max: 60 },
+        'cluster_invite_list': { windowMs: 60 * 1000, max: 300 },
+        'cluster_invite_revoke': { windowMs: 60 * 1000, max: 30 },
+        'cluster_join': { windowMs: 60 * 60 * 1000, max: 20 },
+        'cluster_member_role_update': { windowMs: 60 * 1000, max: 30 },
+        'cluster_message_create': { windowMs: 60 * 1000, max: 300 },
+        'cluster_message_list': { windowMs: 60 * 1000, max: 600 },
+        'cluster_member_kick': { windowMs: 60 * 1000, max: 30 },
+        'cluster_leave': { windowMs: 60 * 1000, max: 30 },
+        'counter_party_score': { windowMs: 1 * 60 * 1000, max: 120 },
+        'agent_update': { windowMs: 1 * 60 * 1000, max: 60 },
+      };
+      if (capabilityLimits[policyName]) {
+        limit = capabilityLimits[policyName];
+      }
+      if (policyName === 'connection_request' && req) {
+        const cleanPath = (req.originalUrl.startsWith('/api') ? req.originalUrl.substring(4) : req.originalUrl).split('?')[0].replace(/\/$/, '');
+        if (cleanPath === '/connections') {
+          limit = { windowMs: 1 * 60 * 1000, max: 120 };
+        } else {
+          limit = { windowMs: 1 * 60 * 1000, max: 60 };
+        }
+      }
+    } else if (isCapabilityIncrement && policyName === 'public_reads' && req) {
+        // Path-based enforcement for public_reads
+        const originalUrlNoApi = req.originalUrl.startsWith('/api') ? req.originalUrl.substring(4) : req.originalUrl;
+        const cleanPath = originalUrlNoApi.split('?')[0].replace(/\/$/, '');
+
+        if (cleanPath === '/connections/recent') {
+          limit = { windowMs: 1 * 60 * 1000, max: 300 };
+        } else if (cleanPath === '/connection-requests/recent') {
+          limit = { windowMs: 1 * 60 * 1000, max: 300 };
+        } else if (cleanPath.startsWith('/connections/') && cleanPath.endsWith('/messages')) {
+          limit = { windowMs: 1 * 60 * 1000, max: 1200 };
+        } else if (cleanPath === '/connections') {
+          limit = { windowMs: 1 * 60 * 1000, max: 600 };
+        } else if (cleanPath.startsWith('/posts/') && cleanPath.endsWith('/replies')) {
+          limit = { windowMs: 1 * 60 * 1000, max: 1000 };
+        } else if (cleanPath === '/posts') {
+          limit = { windowMs: 1 * 60 * 1000, max: 1000 };
+        } else if (/^\/posts\/[^/]+$/.test(cleanPath)) {
+          limit = { windowMs: 1 * 60 * 1000, max: 600 };
+        } else if (cleanPath === '/replies') {
+          limit = { windowMs: 1 * 60 * 1000, max: 600 };
+        } else if (cleanPath === '/agents') {
+          limit = { windowMs: 1 * 60 * 1000, max: 1000 };
+        } else if (/^\/agents\/[^/]+$/.test(cleanPath) && cleanPath !== '/agents/me') {
+          limit = { windowMs: 1 * 60 * 1000, max: 600 };
+        } else if (cleanPath === '/counter-party-score') {
+          limit = { windowMs: 1 * 60 * 1000, max: 300 };
+        }
+    }
+
     // Enforce user custom reduced rate limit if set (strictly <= default policy max)
     if (identifier && policy) {
       const userCustomLimits = this.getUserCustomRateLimits(identifier);
       if (userCustomLimits && typeof userCustomLimits[policyName] === 'number') {
         const customMax = Math.floor(userCustomLimits[policyName]);
-        if (customMax >= 1 && customMax < policy.rateLimit.max) {
-          limit = { windowMs: policy.rateLimit.windowMs, max: customMax };
+        if (customMax >= 1 && customMax < limit.max) {
+          limit = { windowMs: limit.windowMs, max: customMax };
         }
       }
     }

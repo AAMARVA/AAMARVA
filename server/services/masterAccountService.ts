@@ -184,6 +184,7 @@ export class MasterAccountService {
       addOnAccounts?: number;
       validityDays?: number;
       extendAccountsCount?: number;
+      capabilityIncrement?: boolean;
     }
   ): Promise<MasterPlanEntitlement> {
     if (!masterId) {
@@ -242,7 +243,7 @@ export class MasterAccountService {
       }
 
       // Check strict idempotency for standard repeat activation without actionType
-      if (!options?.actionType && isCurrentlyActive && existingPlan.allowance_accounts === sanitizedAllowance) {
+      if (!options?.actionType && isCurrentlyActive && existingPlan.allowance_accounts === sanitizedAllowance && (!options?.capabilityIncrement || existingPlan.metadata?.capabilityIncrement)) {
         return existingPlan;
       }
 
@@ -276,6 +277,7 @@ export class MasterAccountService {
         updated_at: nowIso,
         expires_at: expiresAt,
         metadata: {
+          ...(existingPlan?.metadata || {}),
           source: 'aamarva_internal_entitlement',
           previous_allowance: currentAllowance,
           activated_by_master_id: masterId,
@@ -285,7 +287,8 @@ export class MasterAccountService {
           added_accounts: accountsBoughtThisTransaction,
           validity_days_extended: options?.validityDays || null,
           created_at: nowIso,
-          expires_at: expiresAt
+          expires_at: expiresAt,
+          capabilityIncrement: options?.capabilityIncrement || existingPlan?.metadata?.capabilityIncrement || false
         }
       };
 

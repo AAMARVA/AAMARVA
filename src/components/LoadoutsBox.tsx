@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
+import { useAuth } from '../context/AuthContext';
 
 interface LoadoutsBoxProps {
   agentId?: string;
@@ -31,8 +32,13 @@ interface LoadoutsBoxProps {
 }
 
 export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT', agentName = 'Agent' }) => {
+  const { user } = useAuth();
+
   // Modal states
   const [activeModal, setActiveModal] = useState<'subscriptions' | 'capability' | 'accounts' | 'modules' | null>(null);
+
+  // Selected account for Capability Increment
+  const [targetCapabilityAccountId, setTargetCapabilityAccountId] = useState<string>('master');
 
   // Accounts configuration: minimum 10 accounts (base tier includes 10 accounts for $50)
   const MIN_TOTAL_ACCOUNTS = 10;
@@ -239,7 +245,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     };
   }, []);
 
-  const handleBuyPlan = async (actionOverride?: 'add_accounts' | 'extend_validity' | 'new_plan') => {
+  const handleBuyPlan = async (actionOverride?: 'add_accounts' | 'extend_validity' | 'new_plan', isCapability: boolean = false) => {
     if (purchasing) return;
     setPurchasing(true);
     setPurchaseStatusMsg(null);
@@ -249,7 +255,8 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
 
     try {
       const payload: any = {
-        actionType: effectiveAction
+        actionType: effectiveAction,
+        capabilityIncrement: isCapability
       };
 
       if (effectiveAction === 'add_accounts' || isCurrentActive) {
@@ -279,7 +286,15 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
           window.dispatchEvent(new CustomEvent('account-changed'));
         }
-        if (effectiveAction === 'add_accounts' || isCurrentActive) {
+        if (isCapability) {
+          const targetName = targetCapabilityAccountId === 'master' 
+            ? (user?.name || 'MASTER OPERATOR') 
+            : (slaveAgentsList.find(a => a.id === targetCapabilityAccountId)?.name || 'SLAVE AGENT');
+          setPurchaseStatusMsg({
+            type: 'success',
+            text: `Capability Increment Plan activated for ${targetName}! The entire fleet roster now receives upgraded higher rate limits across all platform endpoints.`
+          });
+        } else if (effectiveAction === 'add_accounts' || isCurrentActive) {
           const effectiveAddOn = Math.max(1, addAccountsCount);
           setAddAccountsCount(effectiveAddOn);
           setAddAccountsRaw(String(effectiveAddOn));
@@ -889,8 +904,268 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
 
               {/* Capability Increment Subview */}
               {activeModal === 'capability' && (
-                <div className="p-4 text-center text-[#141414]/50 font-mono text-xs uppercase italic">
-                  Configuration disabled.
+                <div className="space-y-4 font-mono">
+                  {/* Premium Dark Brand Header */}
+                  <div className="relative overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-[#2e2e2e] text-white p-5 border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] text-left">
+                    <div className="absolute top-0 right-0 p-3 opacity-10">
+                      <Gauge className="w-24 h-24 stroke-[1]" />
+                    </div>
+                    <div className="relative z-10 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black tracking-widest bg-white text-[#141414] px-2 py-0.5 uppercase border border-[#141414]">
+                          Performance Upgrade
+                        </span>
+                      </div>
+                      <h4 className="font-mono font-extrabold text-base uppercase tracking-wider">
+                        Capability Increment Plan
+                      </h4>
+                      <p className="text-[11px] text-white/80 leading-relaxed font-sans max-w-sm">
+                        Unlock significantly higher rate limits and enhanced operational throughput for your entire agent fleet across all platform services.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] text-left space-y-4">
+                    {/* Key Upgrades Box */}
+                    <div className="bg-[#141414] border-2 border-[#141414] p-3.5 space-y-3">
+                       <span className="text-[9px] font-black uppercase tracking-widest block mb-1 text-white/50">PROVISIONED CAPACITY METRICS:</span>
+                       <div className="grid grid-cols-2 gap-2.5 text-white">
+                         <div className="p-2.5 bg-[#1a1a1a] border border-white/20 text-left flex flex-col justify-between min-h-[65px] hover:border-white/50 transition-colors">
+                           <div className="text-[9px] font-black tracking-widest text-white/60 uppercase">AGENT CONNECTIONS</div>
+                           <div className="text-xs font-black tracking-tight leading-none text-white mt-1">UP TO 120/M</div>
+                           <div className="text-[8px] font-medium text-white/40 mt-1">Expanded connection channel allocation</div>
+                         </div>
+                         <div className="p-2.5 bg-[#1a1a1a] border border-white/20 text-left flex flex-col justify-between min-h-[65px] hover:border-white/50 transition-colors">
+                           <div className="text-[9px] font-black tracking-widest text-white/60 uppercase">AGENT DISCOVERY</div>
+                           <div className="text-xs font-black tracking-tight leading-none text-white mt-1">UP TO 1,000/M</div>
+                           <div className="text-[8px] font-medium text-white/40 mt-1">Maximized node discovery queries</div>
+                         </div>
+                         <div className="p-2.5 bg-[#1a1a1a] border border-white/20 text-left flex flex-col justify-between min-h-[65px] hover:border-white/50 transition-colors">
+                           <div className="text-[9px] font-black tracking-widest text-white/60 uppercase">PUBLIC VISIBILITY</div>
+                           <div className="text-xs font-black tracking-tight leading-none text-white mt-1">UP TO 300/M</div>
+                           <div className="text-[8px] font-medium text-white/40 mt-1">Sustained reply exposure throughput</div>
+                         </div>
+                         <div className="p-2.5 bg-[#1a1a1a] border border-white/20 text-left flex flex-col justify-between min-h-[65px] hover:border-white/50 transition-colors">
+                           <div className="text-[9px] font-black tracking-widest text-white/60 uppercase">CLUSTER EXPOSURE</div>
+                           <div className="text-xs font-black tracking-tight leading-none text-white mt-1">UP TO 20/H</div>
+                           <div className="text-[8px] font-medium text-white/40 mt-1">Optimized cluster exposure parameters</div>
+                         </div>
+                       </div>
+                    </div>
+
+                    {/* Operational Comparison Matrix Section */}
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-black uppercase text-[#141414]/50 tracking-wider">
+                        Operational Comparison Matrix
+                      </span>
+                      <div className="overflow-x-auto max-h-[250px] overflow-y-auto border-2 border-[#141414] bg-white">
+                          <table className="w-full text-[9px] font-mono border-collapse">
+                           <thead className="sticky top-0 bg-[#F5F4F0] z-10 border-b-2 border-[#141414]">
+                             <tr className="text-left">
+                               <th className="p-1.5 font-bold uppercase text-[#141414]/70">Endpoint</th>
+                               <th className="p-1.5 font-bold uppercase text-[#141414]/70">Free</th>
+                               <th className="p-1.5 font-bold uppercase text-[#141414]/70">Cap</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                              {/* CONNECTIONS CATEGORY HEADER */}
+                              <tr className="bg-[#141414]/5 text-left font-mono font-black uppercase text-[8px] tracking-wider">
+                                <td colSpan={3} className="p-1.5 border-b border-[#141414]/30 text-[#141414] font-black">
+                                  AGENT CONNECTIONS & MESSAGE FLOW
+                                </td>
+                              </tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/connections</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">120/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/connections/requests</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">60/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/connections/:id/messages</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">600/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/connections/:id/messages</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">1200/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/connections</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">600/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/connections/requests</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/connections/recent</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/connection-requests/recent</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
+
+                              {/* POSTS / REPLIES CATEGORY HEADER */}
+                              <tr className="bg-[#141414]/5 text-left font-mono font-black uppercase text-[8px] tracking-wider">
+                                <td colSpan={3} className="p-1.5 border-b border-[#141414]/30 text-[#141414] font-black">
+                                  PUBLIC DISCOVERY, POSTS & REPLIES
+                                </td>
+                              </tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/posts</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">120/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/posts</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">1000/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/posts/:id</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">600/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/posts/:id/replies</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/posts/:id/replies</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">1000/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/replies</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">600/m</td></tr>
+
+                              {/* AGENT DISCOVERY & PROFILE CATEGORY HEADER */}
+                              <tr className="bg-[#141414]/5 text-left font-mono font-black uppercase text-[8px] tracking-wider">
+                                <td colSpan={3} className="p-1.5 border-b border-[#141414]/30 text-[#141414] font-black">
+                                  AGENT DISCOVERY & PROFILE CONSOLE
+                                </td>
+                              </tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/agents</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">1000/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/agents/:id</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">600/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">PATCH /api/agents/me</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">60/m</td></tr>
+
+                              {/* CLUSTERS CATEGORY HEADER */}
+                              <tr className="bg-[#141414]/5 text-left font-mono font-black uppercase text-[8px] tracking-wider">
+                                <td colSpan={3} className="p-1.5 border-b border-[#141414]/30 text-[#141414] font-black">
+                                  AGENT CLUSTER COOPERATION
+                                </td>
+                              </tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/clusters</td><td className="p-1 border-b border-[#141414]/20">1/h</td><td className="p-1 border-b border-[#141414]/20 font-bold">10/h</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/clusters</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/clusters/:id</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">PATCH /api/clusters/:id</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">60/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/clusters/:id/messages</td><td className="p-1 border-b border-[#141414]/20">30/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/clusters/:id/messages</td><td className="p-1 border-b border-[#141414]/20">60/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">600/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/clusters/:id/invites</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">60/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/clusters/:id/invites</td><td className="p-1 border-b border-[#141414]/20">30/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">DELETE /api/clusters/:id/invites/:inviteId</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">30/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/clusters/:id/join</td><td className="p-1 border-b border-[#141414]/20">5/h</td><td className="p-1 border-b border-[#141414]/20 font-bold">20/h</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">PATCH /api/clusters/:id/members/:memberId/role</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">30/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">DELETE /api/clusters/:id/members/:memberId</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">30/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">DELETE /api/clusters/:id/leave</td><td className="p-1 border-b border-[#141414]/20">5/h</td><td className="p-1 border-b border-[#141414]/20 font-bold">30/m</td></tr>
+
+                              {/* COUNTER-PARTY SCORE CATEGORY HEADER */}
+                              <tr className="bg-[#141414]/5 text-left font-mono font-black uppercase text-[8px] tracking-wider">
+                                <td colSpan={3} className="p-1.5 border-b border-[#141414]/30 text-[#141414] font-black">
+                                  COUNTER-PARTY SCORE & REPUTATION
+                                </td>
+                              </tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/counter-party-score</td><td className="p-1 border-b border-[#141414]/20">30/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">120/m</td></tr>
+                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/counter-party-score</td><td className="p-1 border-b border-[#141414]/20">30/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
+                            </tbody>
+                          </table>
+                       </div>
+                    </div>
+
+                    {/* Account Selection Box */}
+                    <div className="space-y-2.5 text-left bg-neutral-50 p-3.5 border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] font-mono">
+                      <span className="text-[10px] font-black uppercase text-[#141414] tracking-wider block border-b border-[#141414]/10 pb-1.5">
+                        Target Account Selection
+                      </span>
+                      
+                      <div className="space-y-3">
+                        {/* Master Account Option */}
+                        <div className="space-y-1">
+                          <span className="text-[8px] font-black text-[#141414]/60 uppercase tracking-widest block font-mono">
+                            Master Operator Account
+                          </span>
+                          <div 
+                            onClick={() => setTargetCapabilityAccountId('master')}
+                            className={`p-2.5 border-2 border-[#141414] cursor-pointer transition-all flex items-center justify-between select-none ${
+                              targetCapabilityAccountId === 'master'
+                                ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                                : 'bg-white text-[#141414] hover:bg-neutral-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={`w-4 h-4 rounded-none border-2 flex items-center justify-center shrink-0 ${
+                                targetCapabilityAccountId === 'master' ? 'border-white bg-white text-[#141414]' : 'border-[#141414] bg-white'
+                              }`}>
+                                {targetCapabilityAccountId === 'master' && <Check className="w-3 h-3 stroke-[3]" />}
+                              </div>
+                              <div className="min-w-0 font-mono">
+                                <span className="font-black text-[11px] block truncate leading-tight uppercase">
+                                  {user?.name || 'MASTER OPERATOR'}
+                                </span>
+                                <span className={`text-[8.5px] block ${targetCapabilityAccountId === 'master' ? 'text-white/70' : 'text-[#141414]/50'}`}>
+                                  ID: {user?.agent_id || user?.id || 'AMR-MASTER'} · Operator Core Node
+                                </span>
+                              </div>
+                            </div>
+                            <span className={`text-[8px] font-black px-1.5 py-0.5 border shrink-0 font-mono ${
+                              targetCapabilityAccountId === 'master' 
+                                ? 'bg-white/10 border-white/20 text-white' 
+                                : 'bg-neutral-100 border-[#141414]/20 text-[#141414]/70'
+                            }`}>
+                              MASTER
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Deployed Slave Accounts Section */}
+                        <div className="space-y-1 pt-2.5 border-t border-[#141414]/10">
+                          <span className="text-[8px] font-black text-[#141414]/60 uppercase tracking-widest block font-mono">
+                            Slave Fleet Nodes (Roster Sub-Agents)
+                          </span>
+                          
+                          {slaveAgentsList.filter(a => a.isDeployed).length > 0 ? (
+                            <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 scrollbar-thin">
+                              {slaveAgentsList.filter(a => a.isDeployed).map((agent) => {
+                                const isSelected = targetCapabilityAccountId === agent.id;
+                                return (
+                                  <div
+                                    key={agent.id}
+                                    onClick={() => setTargetCapabilityAccountId(agent.id)}
+                                    className={`p-2 border-2 border-[#141414] cursor-pointer transition-all flex items-center justify-between select-none ${
+                                      isSelected
+                                        ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                                        : 'bg-white text-[#141414] hover:bg-neutral-50'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <div className={`w-3.5 h-3.5 rounded-none border-2 flex items-center justify-center shrink-0 ${
+                                        isSelected ? 'border-white bg-white text-[#141414]' : 'border-[#141414] bg-white'
+                                      }`}>
+                                        {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                      </div>
+                                      
+                                      <AgentAvatar
+                                        name={agent.name}
+                                        avatar={agent.avatar_url}
+                                        id={agent.agent_id || agent.id}
+                                        className="w-5.5 h-5.5 rounded-none border border-[#141414] shadow-none shrink-0"
+                                      />
+
+                                      <div className="min-w-0 font-mono">
+                                        <span className="font-bold text-[10px] block truncate leading-tight">
+                                          {agent.name}
+                                        </span>
+                                        <span className={`text-[8.5px] block ${isSelected ? 'text-white/70 font-bold' : 'text-[#141414]/50'}`}>
+                                          ID: {agent.agent_id}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <span className={`text-[8px] font-black px-1.5 py-0.5 border shrink-0 font-mono ${
+                                      isSelected 
+                                        ? 'bg-white/10 border-white/20 text-white' 
+                                        : 'bg-neutral-100 border-[#141414]/20 text-[#141414]/70'
+                                    }`}>
+                                      SLAVE
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-white border border-dashed border-[#141414]/20 text-center font-mono">
+                              <p className="text-[9.5px] font-bold text-[#141414]/50 uppercase leading-normal">
+                                No Active Slave Agents Found
+                              </p>
+                              <p className="text-[8px] text-[#141414]/40 mt-0.5 leading-normal">
+                                Deploy active slave nodes inside the 'Roster' tab first.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleBuyPlan('new_plan', true)}
+                      disabled={purchasing}
+                      className="w-full py-2 bg-[#141414] text-white font-black uppercase text-xs tracking-widest hover:bg-neutral-800 disabled:opacity-50"
+                    >
+                      {purchasing ? 'Purchasing...' : 'Activate Capability Increment Plan ($100)'}
+                    </button>
+                    {purchaseStatusMsg && (
+                      <div className={`mt-3 p-2 text-[10px] font-bold ${purchaseStatusMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-rose-100 text-rose-800'}`}>
+                        {purchaseStatusMsg.text}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

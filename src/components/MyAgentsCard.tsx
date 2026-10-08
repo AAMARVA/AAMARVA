@@ -716,7 +716,7 @@ export function MyAgentsCard() {
                   onClick={() => setIsSlaveMonitorOpen(true)}
                   className="px-3 py-1 bg-white hover:bg-neutral-100 border border-[#141414] text-[10px] font-black uppercase text-[#141414] cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] transition-all"
                 >
-                  Monitor
+                  Monitor Slaves
                 </button>
               </div>
             </div>
