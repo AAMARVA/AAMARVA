@@ -46,7 +46,7 @@ async function runTestSuite() {
   // TEST 1: Normal Purchase / Activation
   console.log('\n--- TEST 1: Normal Purchase / Activation ---');
   {
-    const plan = await masterService.activateMasterPlan(masterUserA.id, 10);
+    const plan = await masterService.activateMasterPlan(masterUserA.id, 10, { actionType: 'new_plan' });
     assert(plan !== null, 'Plan was returned upon activation');
     assert(plan.status === 'active', 'Plan status is active');
     assert(plan.allowance_accounts === 10, 'Allowance is 10 accounts');
@@ -95,7 +95,7 @@ async function runTestSuite() {
   if (masterUserB) {
     console.log('\n--- TEST 4: Multi-Tenant Master Account Isolation ---');
     {
-      const planB = await masterService.activateMasterPlan(masterUserB.id, 10);
+      const planB = await masterService.activateMasterPlan(masterUserB.id, 10, { actionType: 'new_plan' });
       const planA = await masterService.getMasterPlan(masterUserA.id, true);
 
       assert(planB.master_account_id === masterUserB.id, 'Plan B belongs strictly to Master B');

@@ -484,6 +484,11 @@ export async function getAgentActivityStats() {
   usersList.forEach(u => {
     const cleanId = (u.agentId || '').replace(/^@/, '');
     const key = cleanId.toUpperCase();
+    
+    // Check if this agent has an active capability increment
+    // Since we don't have direct access here, we might need a lookup or assume status.
+    // Given the constraints, I will add a placeholder logic or fetch.
+    
     const isVerified = Boolean(u.emailVerified === true);
     const vStatus = isVerified ? 'verified' : 'not verified';
     activityMap[key] = {
@@ -500,6 +505,23 @@ export async function getAgentActivityStats() {
       connections: 0
     };
   });
+
+  // Filter agents with active capability increments
+  try {
+    const { data: capabilityEntitlements } = await supabase
+      .from('capability_entitlements')
+      .select('agent_id')
+      .eq('status', 'active');
+    
+    if (capabilityEntitlements) {
+      capabilityEntitlements.forEach(ce => {
+        const key = (ce.agent_id || '').replace(/^@/, '').toUpperCase();
+        delete activityMap[key];
+      });
+    }
+  } catch (e) {
+    // ignore
+  }
 
   // Count Posts
   (posts || []).forEach(p => {
@@ -611,5 +633,137 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
     total: count || 0,
     page: safePage,
     limit: safeLimit,
+  };
+}
+
+export async function getAgentOwnerDossier(agentId: string) {
+  const trimmed = agentId.trim();
+  const normalizedTarget = trimmed.replace(/^@/, '');
+  const supabase = getSupabaseClient();
+
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+  const orConditions = [
+    `agentId.ilike.${normalizedTarget}`,
+    `agentId.eq.${normalizedTarget}`,
+    `name.ilike.${normalizedTarget}`,
+    isUUID ? `id.eq.${trimmed}` : null
+  ].filter(Boolean).join(',');
+
+  const { data: rawUser, error: userError } = await supabase
+    .from('users')
+    .select('id, agentId, email, name, status, avatar, bio, master_id, is_master_primary, createdAt')
+    .or(orConditions)
+    .maybeSingle();
+
+  if (userError || !rawUser) {
+    throw new Error('Agent not found.');
+  }
+
+  // Determine master user id (if this agent is a slave, master_id points to master account)
+  const masterUserId = (rawUser.master_id && rawUser.master_id !== rawUser.id) ? rawUser.master_id : rawUser.id;
+  
+  let masterUser = rawUser;
+  if (masterUserId !== rawUser.id) {
+    const { data: mUser } = await supabase
+      .from('users')
+      .select('id, agentId, email, name, status, avatar, bio, master_id, createdAt')
+      .eq('id', masterUserId)
+      .maybeSingle();
+    if (mUser) {
+      masterUser = mUser;
+    }
+  }
+
+  // Fetch all slave accounts operating under this master
+  const { data: slaveRecords } = await supabase
+    .from('users')
+    .select('id, agentId, name, avatar, status')
+    .eq('master_id', masterUserId);
+
+  const cleanSlaveAgents = (slaveRecords || [])
+    .filter((s: any) => s.id !== masterUserId)
+    .map((s: any) => ({
+      agentId: s.agentId,
+      name: s.name || 'Slave Agent',
+      avatar: s.avatar || '🤖',
+      status: s.status || 'active',
+      isCurrent: (s.agentId || '').toLowerCase() === (rawUser.agentId || '').toLowerCase()
+    }));
+
+  // Look up owner application by master user's email
+  let application: any = null;
+  try {
+    const { applicationService } = await import('./applicationService.js');
+    const allApps = await applicationService.getApplications();
+    if (masterUser.email) {
+      const normEmail = masterUser.email.toLowerCase().trim();
+      application = allApps.find(a => a.emailAddress?.toLowerCase().trim() === normEmail);
+    }
+    if (!application && masterUser.name) {
+      application = allApps.find(a => a.agentName?.toLowerCase().trim() === masterUser.name?.toLowerCase().trim());
+    }
+  } catch (err) {
+    console.warn('[getAgentOwnerDossier] Application lookup notice:', err);
+  }
+
+  // Parse and sanitize social handles
+  const rawX = application?.xProfile?.trim() || '';
+  const rawGithub = application?.githubProfile?.trim() || '';
+  const rawLinkedin = application?.linkedinProfile?.trim() || '';
+  const rawReddit = application?.redditProfile?.trim() || '';
+
+  const cleanHandle = (val: string, platform: 'x' | 'github' | 'linkedin' | 'reddit') => {
+    if (!val) return null;
+    let url = val;
+    let handle = val;
+    if (val.startsWith('http://') || val.startsWith('https://')) {
+      try {
+        const u = new URL(val);
+        const parts = u.pathname.split('/').filter(Boolean);
+        handle = parts[parts.length - 1] || val;
+        if (platform === 'x' && !handle.startsWith('@')) handle = `@${handle}`;
+        if (platform === 'reddit' && !handle.startsWith('u/')) handle = `u/${handle}`;
+      } catch (e) {}
+    } else {
+      if (platform === 'x') {
+        const clean = val.replace(/^@/, '');
+        url = `https://x.com/${clean}`;
+        handle = `@${clean}`;
+      } else if (platform === 'github') {
+        const clean = val.replace(/^@/, '');
+        url = `https://github.com/${clean}`;
+        handle = `@${clean}`;
+      } else if (platform === 'reddit') {
+        const clean = val.replace(/^u\//, '').replace(/^@/, '');
+        url = `https://reddit.com/u/${clean}`;
+        handle = `u/${clean}`;
+      } else if (platform === 'linkedin') {
+        url = val.startsWith('linkedin.com') ? `https://${val}` : `https://linkedin.com/in/${val}`;
+      }
+    }
+    return { handle, url };
+  };
+
+  const socialHandles = {
+    x: cleanHandle(rawX, 'x'),
+    github: cleanHandle(rawGithub, 'github'),
+    linkedin: cleanHandle(rawLinkedin, 'linkedin'),
+    reddit: cleanHandle(rawReddit, 'reddit'),
+  };
+
+  const ownerName = application?.fullName || masterUser.name || 'AAMARVA Operator';
+
+  return {
+    ownerName,
+    socialHandles,
+    masterAccount: {
+      agentId: masterUser.agentId,
+      name: masterUser.name || 'Master Agent',
+      avatar: masterUser.avatar || '🤖',
+      status: masterUser.status || 'active',
+      isCurrent: (masterUser.agentId || '').toLowerCase() === (rawUser.agentId || '').toLowerCase()
+    },
+    slaveAccounts: cleanSlaveAgents,
+    totalAccounts: 1 + cleanSlaveAgents.length
   };
 }

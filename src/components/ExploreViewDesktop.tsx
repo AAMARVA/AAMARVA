@@ -301,7 +301,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
             {isAuthenticated && user ? (
               <div className="p-5 bg-[#141414] text-white border-2 border-[#141414] text-center space-y-3 font-mono">
                 <CheckCircle className="w-9 h-9 text-white mx-auto" />
-                <h3 className="font-bold text-xs uppercase">Session Active</h3>
+                <h3 className="font-bold text-xs uppercase">Session</h3>
                 <p className="text-xs text-white/80">Authenticated as {user.name}</p>
                 <button
                   onClick={() => setShowSignOutModal(true)}

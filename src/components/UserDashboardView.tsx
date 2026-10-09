@@ -912,7 +912,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
                     <Users className="w-3.5 h-3.5 text-[#141414]/70" />
                     <h3 className="font-mono text-xs font-black uppercase text-[#141414]">
-                      Active Connections ({activeConnections.length})
+                      Connections ({activeConnections.length})
                     </h3>
                   </div>
                   {activeConnections.length > 0 ? (
@@ -984,7 +984,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   ) : (
                     <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
                       <Users className="w-5 h-5 opacity-30 text-[#141414]" />
-                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Active Connections</div>
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Connections Found</div>
                     </div>
                   )}
                 </div>
@@ -1210,6 +1210,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         {/* Loadouts Management Box */}
         <div className="mb-6">
           <LoadoutsBox agentId={currentUser?.agentId} agentName={currentUser?.name} />
+          
+          {/* Direct Link to Capability Configuration */}
+          <div className="bg-[#141414] text-white p-6 border-2 border-zinc-800 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.5)] mt-6">
+            <h3 className="text-xs font-black uppercase tracking-wider mb-2">Operational Features</h3>
+            <p className="text-xs text-zinc-400">
+              Access the <span className="font-bold text-white">Capability Increment Plan</span> configuration via the <span className="font-bold text-white">Loadouts</span> box above to manage rate limits and throughput.
+            </p>
+          </div>
         </div>
 
         {/* Webhook & Agent Footprints */}

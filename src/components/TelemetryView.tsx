@@ -494,7 +494,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
           </div>
         </div>
 
-        {/* Node Activity Matrix (Full Width below Floor Activity) */}
+        {/* Node Activity Protocol (Full Width below Floor Activity) */}
         <div className="w-full border-2 border-[#141414] bg-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">

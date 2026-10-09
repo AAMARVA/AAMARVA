@@ -519,47 +519,45 @@ export function MyAgentsCard() {
             ) : (
               <div className="space-y-2 max-h-[190px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
                 {slaveAgents.map((sub: any) => (
-                  <div key={sub.id} className={`h-[58px] p-2.5 border-2 flex items-center justify-between gap-3 shrink-0 box-border ${
+                  <div key={sub.id} className={`h-[44px] p-1.5 border-2 flex items-center justify-between gap-2 shrink-0 box-border ${
                     activeAgentId === sub.id 
                     ? 'bg-neutral-50 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
                     : 'bg-white border-[#141414]/30'
                   }`}>
-                    <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
                       <AgentAvatar 
                         name={sub.name || 'Slave Agent'} 
                         avatar={sub.avatar} 
                         id={sub.agentId || sub.id} 
-                        className="w-8 h-8 rounded-none border border-[#141414] shrink-0" 
+                        className="w-6 h-6 rounded-none border border-[#141414] shrink-0" 
                       />
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-black uppercase text-[#141414] truncate">
+                          <p className="text-[10px] font-black uppercase text-[#141414] truncate leading-tight">
                             {sub.name || 'Slave Agent'}
                           </p>
                         </div>
-                        <p className="text-[9px] text-[#141414] font-bold font-mono italic truncate">
+                        <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
                           @{sub.agentId}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       {activeAgentId !== sub.id && (
                         <button
                           type="button"
                           onClick={() => handleSwitch(sub.id)}
                           disabled={switchingAgentId === sub.id}
-                          className="px-2.5 py-1 bg-white border border-[#141414] hover:bg-[#141414] hover:text-white text-[9px] font-extrabold uppercase transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          className="px-2 py-0.5 bg-white border border-[#141414] hover:bg-[#141414] hover:text-white text-[8px] font-extrabold uppercase transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
                         >
                           {switchingAgentId === sub.id ? (
                             <span className="flex items-center gap-1">
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                              <span>Switching...</span>
+                              <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                             </span>
                           ) : (
                             <>
                               <span>Switch</span>
-                              <ChevronRight className="w-3 h-3" />
                             </>
                           )}
                         </button>
@@ -569,11 +567,10 @@ export function MyAgentsCard() {
                         type="button"
                         onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
                         disabled={undeployingAgentId === sub.id}
-                        className="px-2 py-1 bg-white border border-red-300 hover:border-red-600 text-red-600 hover:bg-red-50 text-[9px] font-extrabold uppercase transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                        title="Undeploy slave agent and restore allowance slot"
+                        className="p-1 bg-white border border-red-300 hover:border-red-600 text-red-600 hover:bg-red-50 transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
+                        title="Undeploy slave agent"
                       >
                         <Trash2 className="w-3 h-3" />
-                        <span>{undeployingAgentId === sub.id ? 'Removing...' : 'Undeploy'}</span>
                       </button>
                     </div>
                   </div>
@@ -741,40 +738,40 @@ export function MyAgentsCard() {
                 }
 
                 return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2">
                     {filteredSlaveAgents.map((sub: any) => (
                       <div
                         key={sub.id}
-                        className={`p-3 border-2 border-[#141414] flex flex-col justify-between gap-3 ${
+                        className={`p-1.5 border-2 border-[#141414] flex flex-col justify-between gap-1.5 ${
                           activeAgentId === sub.id
-                            ? 'bg-neutral-100 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                            ? 'bg-neutral-100 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                             : 'bg-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <AgentAvatar
                             name={sub.name || 'Slave Agent'}
                             avatar={sub.avatar}
                             id={sub.agentId || sub.id}
-                            className="w-8 h-8 rounded-none border border-[#141414] shrink-0"
+                            className="w-6 h-6 rounded-none border border-[#141414] shrink-0"
                           />
                           <div className="min-w-0">
-                            <p className="text-[11px] font-black uppercase text-[#141414] truncate">
+                            <p className="text-[9px] font-black uppercase text-[#141414] truncate leading-tight">
                               {sub.name || 'Slave Agent'}
                             </p>
-                            <p className="text-[9px] text-[#141414] font-bold font-mono italic truncate">
+                            <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
                               @{sub.agentId}
                             </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5 pt-2 border-t border-[#141414]/15">
+                        <div className="flex items-center gap-1 pt-1 border-t border-[#141414]/15">
                           {activeAgentId !== sub.id && (
                             <button
                               type="button"
                               onClick={() => handleSwitch(sub.id)}
                               disabled={switchingAgentId === sub.id}
-                              className="flex-1 py-1 bg-white border border-[#141414] hover:bg-[#141414] hover:text-white text-[9px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                              className="flex-1 py-0.5 bg-white border border-[#141414] hover:bg-[#141414] hover:text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                             >
                               <span>Switch</span>
                             </button>
@@ -783,7 +780,7 @@ export function MyAgentsCard() {
                             type="button"
                             onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
                             disabled={undeployingAgentId === sub.id}
-                            className="flex-1 py-1 bg-white border border-red-300 hover:border-red-600 text-red-600 hover:bg-red-50 text-[9px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                            className="flex-1 py-0.5 bg-white border border-red-300 hover:border-red-600 text-red-600 hover:bg-red-50 text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                           >
                             <span>Undeploy</span>
                           </button>

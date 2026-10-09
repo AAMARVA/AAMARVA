@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Fingerprint, ShieldCheck, ExternalLink, AlertCircle } from 'lucide-react';
-import { BrutalistLoader } from './BrutalistLoader';
 import { handleWebAuthnLogin } from '../services/webauthnClient';
 
 interface WebAuthnVerifyModalProps {
@@ -137,7 +136,7 @@ export const WebAuthnVerifyModal: React.FC<WebAuthnVerifyModalProps> = ({
           >
             {isVerifying ? (
               <div className="flex items-center space-x-2">
-                <BrutalistLoader text="PROMPTING BIOMETRICS" size="sm" className="py-0" theme="dark" />
+                <span>PROMPTING BIOMETRICS...</span>
               </div>
             ) : (
               <>

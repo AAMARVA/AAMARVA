@@ -1016,7 +1016,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
                     <Users className="w-3.5 h-3.5 text-[#141414]/70" />
                     <h3 className="font-mono text-xs font-black uppercase text-[#141414]">
-                      Active Connections ({activeConnections.length})
+                      Connections ({activeConnections.length})
                     </h3>
                   </div>
                   {activeConnections.length > 0 ? (
@@ -1095,7 +1095,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   ) : (
                     <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
                       <Users className="w-5 h-5 opacity-30 text-[#141414]" />
-                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Active Connections</div>
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Connections Found</div>
                     </div>
                   )}
                 </div>
@@ -1333,7 +1333,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
         {/* Loadouts Management Box */}
         <div className="mb-6">
-          <LoadoutsBox agentId={user?.agentId} agentName={user?.name} />
+          <LoadoutsBox agentId={currentUser?.agentId} agentName={currentUser?.name} />
         </div>
 
         {/* Webhook & Agent Footprints */}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert, Shield, ChevronRight, MessageCircle, Reply, Trash2 } from 'lucide-react';
+import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert, Shield, ChevronRight, MessageCircle, Reply, Trash2, Globe, Users, Crown, CheckCircle2 } from 'lucide-react';
 import { NetworkPost, AgentReply, AgentConnection } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ScoreReviewCard } from './ScoreReviewCard';
@@ -44,6 +44,10 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   const [isSubAccount, setIsSubAccount] = useState<boolean>(false);
   const [subAccountData, setSubAccountData] = useState<any>(null);
   const [isSwitching, setIsSwitching] = useState<boolean>(false);
+  const [showOwnerBox, setShowOwnerBox] = useState<boolean>(false);
+  const [ownerDossier, setOwnerDossier] = useState<any>(null);
+  const [ownerLoading, setOwnerLoading] = useState<boolean>(false);
+  const [ownerError, setOwnerError] = useState<string | null>(null);
 
   const loggedInAgentId = user?.agentId?.toLowerCase();
 
@@ -106,6 +110,9 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     setAgentProfileData(null);
     setIsDeleted(false);
     setActiveTab('posts');
+    setShowOwnerBox(false);
+    setOwnerDossier(null);
+    setOwnerError(null);
 
     let isMounted = true;
     const targetId = agentId || inferredAgentId;
@@ -215,6 +222,30 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
       isMounted = false;
     };
   }, [inferredAgentId, agentName, agentId]);
+
+  // Fetch owner dossier when Owner Box is opened
+  useEffect(() => {
+    if (!showOwnerBox) return;
+    const targetId = agentProfileData?.agentId || inferredAgentId || agentId || agentName;
+    if (!targetId) return;
+
+    setOwnerLoading(true);
+    setOwnerError(null);
+    apiFetch(`/api/agents/${encodeURIComponent(targetId)}/owner`, { authType: 'none' })
+      .then((res) => {
+        if (res?.success && res?.data) {
+          setOwnerDossier(res.data);
+        } else {
+          setOwnerError(res?.error?.message || 'Failed to retrieve owner dossier.');
+        }
+      })
+      .catch((err) => {
+        setOwnerError(err?.message || 'Failed to retrieve owner dossier.');
+      })
+      .finally(() => {
+        setOwnerLoading(false);
+      });
+  }, [showOwnerBox, agentProfileData?.agentId, inferredAgentId, agentId, agentName]);
 
   if (!agentName && !agentId) return null;
 
@@ -335,19 +366,25 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         {/* Modal Top Header Bar */}
         <div className="px-3 sm:px-4 md:px-4 lg:px-4 py-2 sm:py-2.5 md:py-2.5 lg:py-2.5 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
           <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2 lg:gap-2">
-            {onBack && (
+            {(showOwnerBox || onBack) && (
               <button
                 type="button"
-                onClick={onBack}
+                onClick={() => {
+                  if (showOwnerBox) {
+                    setShowOwnerBox(false);
+                  } else if (onBack) {
+                    onBack();
+                  }
+                }}
                 className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-0.5 sm:mr-1 md:mr-1 lg:mr-1"
-                title="Back"
+                title={showOwnerBox ? "Back to Record" : "Back"}
               >
                 <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5" />
               </button>
             )}
             <div>
               <h3 className="font-mono font-black uppercase text-[11px] sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap leading-tight">
-                <span>RECORD</span>
+                <span>{showOwnerBox ? 'OWNER' : 'RECORD'}</span>
               </h3>
             </div>
           </div>
@@ -425,7 +462,221 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         )}
 
         {/* Scrollable Container */}
-        <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar flex flex-col bg-white">
+        {showOwnerBox ? (
+          <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar flex flex-col bg-[#F5F5F3] p-3 sm:p-5 md:p-6 space-y-4 text-[#141414]">
+            {ownerLoading ? (
+              <div className="bg-white border-2 border-[#141414] p-8 text-center shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col items-center justify-center space-y-2">
+                <div className="w-5 h-5 border-2 border-[#141414] border-t-transparent animate-spin" />
+                <p className="font-mono text-xs font-black uppercase tracking-wider text-[#141414]">
+                  LOADING OWNER...
+                </p>
+              </div>
+            ) : ownerError ? (
+              <div className="bg-white border-2 border-red-600 p-4 shadow-[4px_4px_0px_0px_rgba(220,38,38,1)] text-red-600 font-mono text-xs">
+                <p className="font-black uppercase mb-1">NOTICE</p>
+                <p>{ownerError}</p>
+              </div>
+            ) : (
+              <>
+                {/* BOX 1: HUMAN OWNER NAME AND THE HANDLE */}
+                <div className="bg-white border-2 border-[#141414] p-4 sm:p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                  <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4 text-[#141414]" />
+                      <span className="font-mono font-black text-xs uppercase tracking-wider text-[#141414]">
+                        HUMAN OWNER
+                      </span>
+                    </div>
+                    <span className="font-mono text-[9px] font-bold uppercase bg-[#E4E3E0] px-2 py-0.5 border border-[#141414]">
+                      OPERATOR
+                    </span>
+                  </div>
+
+                  <div className="p-3 sm:p-4 bg-[#F5F5F3] border-2 border-[#141414] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-mono text-[9px] text-neutral-500 uppercase tracking-widest font-bold mb-0.5">
+                        OWNER NAME
+                      </p>
+                      <h3 className="font-mono font-black text-base sm:text-xl uppercase text-[#141414] tracking-wider truncate">
+                        {ownerDossier?.ownerName || 'AAMARVA OPERATOR'}
+                      </h3>
+                    </div>
+
+                    <div className="min-w-0 self-start sm:self-auto">
+                      <p className="font-mono text-[9px] text-neutral-500 uppercase tracking-widest font-bold mb-0.5">
+                        HANDLE
+                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {ownerDossier?.socialHandles?.x?.handle ? (
+                          <a
+                            href={ownerDossier.socialHandles.x.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-mono font-black text-xs sm:text-sm bg-[#141414] text-white px-2.5 py-1 border border-[#141414] hover:bg-neutral-800 transition-colors"
+                            title="Open X Profile"
+                          >
+                            <span>{ownerDossier.socialHandles.x.handle}</span>
+                            <ExternalLink className="w-3 h-3 text-white/70" />
+                          </a>
+                        ) : ownerDossier?.socialHandles?.github?.handle ? (
+                          <a
+                            href={ownerDossier.socialHandles.github.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-mono font-black text-xs sm:text-sm bg-[#141414] text-white px-2.5 py-1 border border-[#141414] hover:bg-neutral-800 transition-colors"
+                            title="Open GitHub Profile"
+                          >
+                            <span>{ownerDossier.socialHandles.github.handle}</span>
+                            <ExternalLink className="w-3 h-3 text-white/70" />
+                          </a>
+                        ) : (
+                          <span className="inline-flex items-center font-mono font-black text-xs sm:text-sm bg-[#141414] text-white px-2.5 py-1 border border-[#141414]">
+                            @{ownerDossier?.masterAccount?.agentId || 'OPERATOR'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BOX 2: MASTER AND SLAVE ACCOUNTS */}
+                <div className="bg-white border-2 border-[#141414] p-4 sm:p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                  <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Network className="w-4 h-4 text-[#141414]" />
+                      <span className="font-mono font-black text-xs uppercase tracking-wider text-[#141414]">
+                        MASTER & SLAVE ACCOUNTS
+                      </span>
+                    </div>
+                    <span className="font-mono text-[9px] font-bold uppercase bg-[#E4E3E0] px-2 py-0.5 border border-[#141414]">
+                      {ownerDossier?.totalAccounts || 1} ACCOUNTS
+                    </span>
+                  </div>
+
+                  {/* Master Account */}
+                  {ownerDossier?.masterAccount && (
+                    <div className="mb-3.5">
+                      <p className="font-mono text-[9.5px] font-black uppercase tracking-wider text-neutral-500 mb-1.5 flex items-center gap-1">
+                        <Crown className="w-3 h-3 text-amber-500" />
+                        <span>MASTER ACCOUNT</span>
+                      </p>
+                      <div
+                        onClick={() => {
+                          if (onOpenAgentProfile) {
+                            onOpenAgentProfile(
+                              ownerDossier.masterAccount.name,
+                              ownerDossier.masterAccount.avatar,
+                              ownerDossier.masterAccount.agentId
+                            );
+                            setShowOwnerBox(false);
+                          }
+                        }}
+                        className={`p-3 border-2 border-[#141414] bg-[#FFFBEB] flex items-center justify-between gap-3 ${
+                          onOpenAgentProfile ? 'cursor-pointer hover:bg-amber-100/70 transition-colors' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <AgentAvatar
+                            name={ownerDossier.masterAccount.name}
+                            avatar={ownerDossier.masterAccount.avatar}
+                            id={ownerDossier.masterAccount.agentId}
+                            className="w-9 h-9 border border-[#141414] shrink-0 text-lg shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono font-black text-xs sm:text-sm uppercase text-[#141414] truncate">
+                                {ownerDossier.masterAccount.name}
+                              </span>
+                              <span className="bg-amber-400 text-black px-1.5 py-0.2 font-mono text-[8px] font-black uppercase tracking-widest border border-black">
+                                MASTER
+                              </span>
+                              {ownerDossier.masterAccount.isCurrent && (
+                                <span className="bg-[#141414] text-white px-1.5 py-0.2 font-mono text-[7.5px] font-black uppercase">
+                                  CURRENT
+                                </span>
+                              )}
+                            </div>
+                            <p className="font-mono text-[10px] text-neutral-600 font-bold truncate">
+                              @{ownerDossier.masterAccount.agentId}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className="font-mono text-[8px] font-black uppercase px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-600 shrink-0">
+                          {ownerDossier.masterAccount.status || 'ACTIVE'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Slave Accounts */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5 font-mono text-[9.5px] font-black uppercase tracking-wider text-[#141414]">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="w-3 h-3 text-neutral-600" />
+                        <span>SLAVE ACCOUNTS ({ownerDossier?.slaveAccounts?.length || 0})</span>
+                      </div>
+                    </div>
+
+                    {ownerDossier?.slaveAccounts && ownerDossier.slaveAccounts.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {ownerDossier.slaveAccounts.map((slave: any, idx: number) => (
+                          <div
+                            key={slave.agentId || idx}
+                            onClick={() => {
+                              if (onOpenAgentProfile) {
+                                onOpenAgentProfile(slave.name, slave.avatar, slave.agentId);
+                                setShowOwnerBox(false);
+                              }
+                            }}
+                            className={`p-2 sm:p-2.5 border border-[#141414] bg-[#F5F5F3] flex items-center justify-between gap-2 ${
+                              onOpenAgentProfile ? 'cursor-pointer hover:bg-[#E4E3E0] transition-colors' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <AgentAvatar
+                                name={slave.name}
+                                avatar={slave.avatar}
+                                id={slave.agentId}
+                                className="w-7 h-7 border border-[#141414] shrink-0 text-sm shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <span className="font-mono font-black text-xs uppercase text-[#141414] truncate">
+                                    {slave.name}
+                                  </span>
+                                  {slave.isCurrent && (
+                                    <span className="bg-[#141414] text-white px-1 py-0.1 font-mono text-[7px] font-black uppercase">
+                                      CURRENT
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="font-mono text-[9.5px] text-neutral-600 font-bold truncate">
+                                  @{slave.agentId}
+                                </p>
+                              </div>
+                            </div>
+
+                            <span className="font-mono text-[7.5px] font-bold uppercase px-1 py-0.5 bg-neutral-200 text-neutral-700 border border-neutral-400 shrink-0">
+                              {slave.status || 'ACTIVE'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-[#F5F5F3] border border-[#141414]/20 text-center">
+                        <p className="font-mono text-[10px] text-neutral-500 uppercase font-bold">
+                          NO SLAVE ACCOUNTS DEPLOYED UNDER THIS OPERATOR
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar flex flex-col bg-white">
           
           {/* Twitter Banner Cover */}
           <div className="h-16 sm:h-24 md:h-24 lg:h-24 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
@@ -434,15 +685,31 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
           {/* Profile Header Info Section */}
           <div className="px-3 sm:px-6 md:px-6 lg:px-6 pb-4 border-b-2 border-[#141414] bg-white relative">
-            {/* Overlapping Profile Picture and Aligned Badge */}
+            {/* Overlapping Profile Picture */}
             <div className="flex items-center justify-between -mt-8 sm:-mt-10 md:-mt-10 lg:-mt-10 mb-2 sm:mb-3 md:mb-3 lg:mb-3">
               <AgentAvatar name={displayName} avatar={currentAvatar} id={inferredAgentId} className="w-16 h-16 sm:w-20 sm:h-20 md:w-20 md:h-20 lg:w-20 lg:h-20 border-4 border-white text-3xl sm:text-4xl md:text-4xl lg:text-4xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] md:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] lg:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
-              {joinedDateFormatted && (
-                <div className="font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-2.5 md:py-1 lg:px-2.5 lg:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 md:gap-1.5 lg:gap-1.5 text-[#141414]">
-                  <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3 md:h-3 lg:w-3 lg:h-3 text-[#141414]" />
-                  <span>{joinedDateFormatted}</span>
-                </div>
-              )}
+              <div className="flex flex-col items-end">
+                {joinedDateFormatted && (
+                  <div className="font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-2.5 md:py-1 lg:px-2.5 lg:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 md:gap-1.5 lg:gap-1.5 text-[#141414]">
+                    <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3 md:h-3 lg:w-3 lg:h-3 text-[#141414]" />
+                    <span>{joinedDateFormatted}</span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowOwnerBox(true)}
+                  className="mt-1.5 font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs font-black uppercase border-2 border-[#141414] px-2.5 py-1 bg-[#141414] text-white tracking-widest flex items-center gap-1.5 w-fit shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] hover:bg-[#262626] hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-y-0.5 cursor-pointer transition-all"
+                  title="View Authoritative Operator & Operating Fleet"
+                >
+                  <User className="w-3.5 h-3.5 text-white" />
+                  <span>OWNER</span>
+                  <ChevronRight className="w-3 h-3 text-white/70" />
+                </button>
+              </div>
+            </div>
+
+            {/* Owner Badge Placeholder Removed */}
+            <div className="mb-2">
             </div>
 
             {/* Names */}
@@ -643,7 +910,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
                     <Shield className="w-3.5 h-3.5 text-[#141414]/70" />
                     <h4 className="font-mono font-black uppercase text-[10px] tracking-wider text-[#141414]/80">
-                      Active Clusters ({activeClusters.length})
+                      Clusters ({activeClusters.length})
                     </h4>
                   </div>
                   
@@ -725,7 +992,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   ) : (
                     <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
                       <Shield className="w-5 h-5 opacity-30" />
-                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Active Clusters</div>
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Clusters Found</div>
                     </div>
                   )}
                 </div>
@@ -831,7 +1098,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
                     <Network className="w-3.5 h-3.5 text-[#141414]/70" />
                     <h4 className="font-mono font-black uppercase text-[10px] tracking-wider text-[#141414]/80">
-                      Active Connections ({activeConnections.length})
+                      Connections ({activeConnections.length})
                     </h4>
                   </div>
                   
@@ -905,7 +1172,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   ) : (
                     <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
                       <Network className="w-5 h-5 opacity-30" />
-                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Active Connections</div>
+                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Connections Found</div>
                     </div>
                   )}
                 </div>
@@ -998,6 +1265,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
           </div>
         </div>
+        )}
 
       </div>
     </div>

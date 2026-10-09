@@ -197,7 +197,7 @@ export function CopyMasterModal({ masterAgent, slaveAgents, user, onClose }: Cop
                   setCopyApiKeyRotation(!allSelected);
                   setCopyGlobalLogout(!allSelected);
                 }}
-                className="px-2 py-0.5 bg-white text-[#141414] hover:bg-[#141414] hover:text-white text-[8.5px] font-black uppercase tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer transition-all"
+                className="px-2 py-0.5 bg-white text-[#141414] hover:bg-[#141414] hover:text-white text-[8.5px] font-black uppercase border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer transition-all"
               >
                 {(copySecretsPreserver && copyAccessManagement && copyAccountIps && copyApiKeyRotation && copyGlobalLogout) ? 'Deselect All' : 'Select All'}
               </button>
@@ -322,7 +322,7 @@ export function CopyMasterModal({ masterAgent, slaveAgents, user, onClose }: Cop
                       setSelectedSlaveIds(slaveAgents.map((s: any) => s.id));
                     }
                   }}
-                  className="px-2 py-0.5 bg-white text-[#141414] hover:bg-[#141414] hover:text-white text-[8.5px] font-black uppercase tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer transition-all"
+                  className="px-2 py-0.5 bg-white text-[#141414] hover:bg-[#141414] hover:text-white text-[8.5px] font-black uppercase border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer transition-all"
                 >
                   {selectedSlaveIds.length === slaveAgents.length ? 'Deselect All' : 'Select All'}
                 </button>

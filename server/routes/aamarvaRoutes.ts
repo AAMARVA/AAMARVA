@@ -71,7 +71,7 @@ import { securityLayer } from '../middleware/securityLayerMiddleware';
 import { humanLoginFirewall } from '../middleware/humanLoginFirewallMiddleware';
 import { SecurityService, SecuritySeverity } from '../services/securityService';
 import { getPosts, createPost, deletePost, seedSamplePosts } from '../services/postService';
-import { getAgentProfile, getAgentActivityStats, getAgents } from '../services/agentService';
+import { getAgentProfile, getAgentActivityStats, getAgents, getAgentOwnerDossier } from '../services/agentService';
 import { getPostAndReplies, createReply, getReplyDetails, deleteReply, getUserReplies } from '../services/replyService';
 import {
   createConnection,
@@ -545,7 +545,7 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
         plan: masterPlan || {
           plan_name: 'Master & Slave Agent Plan',
           status: 'inactive',
-          allowance_accounts: 10
+          allowance_accounts: 0
         }
       }
     });
@@ -554,12 +554,160 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
   }
 });
 
-// 4a-1b. GET /api/auth/master/plan - Retrieve authoritative plan entitlement for authenticated Master Account
+// 4a-1b. GET /api/auth/master/plan - Retrieve authoritative plan entitlement scoped to requested account
 router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const masterUserId = (req.user as any).masterUserId || req.user.id;
     const supabase = getSupabaseClient();
+    const primaryUserId = req.user.id;
+    const requestedAccountId = (req.query?.accountId as string) || (req.query?.userId as string) || primaryUserId;
 
+    // Check if the requested account is a slave agent
+    const { data: targetUser } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', requestedAccountId)
+      .maybeSingle();
+
+    const isSlave = !!(
+      targetUser && (
+        targetUser.account_type === 'slave' ||
+        targetUser.role === 'slave' ||
+        targetUser.is_slave === true ||
+        (targetUser.email && targetUser.email.includes('+AMR-')) ||
+        (targetUser.master_id && targetUser.master_id !== targetUser.id)
+      )
+    );
+
+    if (isSlave && targetUser) {
+      // SLAVE ACCOUNT SCOPE:
+      // A Slave account can own Capability Increment entitlements and inherit Master plan coverage.
+      const { CapabilityService } = await import('../services/capabilityService.js');
+      const { MasterAccountService } = await import('../services/masterAccountService.js');
+      const capService = CapabilityService.getInstance();
+      const slaveCap = await capService.getAgentCapability(targetUser.id) || await capService.getAgentCapability(targetUser.agentId);
+
+      const isCapActive = !!(
+        slaveCap &&
+        slaveCap.status === 'active' &&
+        slaveCap.expires_at &&
+        new Date(slaveCap.expires_at).getTime() > Date.now()
+      );
+
+      let masterPlanObj = null;
+      let isMasterActive = false;
+      let masterHistory = [];
+      if (targetUser.master_id) {
+        masterPlanObj = await MasterAccountService.getInstance().getMasterPlan(targetUser.master_id);
+        const isMasterExpired = !!(masterPlanObj?.expires_at && new Date(masterPlanObj.expires_at).getTime() <= Date.now());
+        isMasterActive = !!(masterPlanObj && masterPlanObj.status === 'active' && !isMasterExpired);
+        masterHistory = await MasterAccountService.getInstance().getMasterPlanHistory(targetUser.master_id);
+      }
+
+      // Fetch persistent capability purchase history for this slave only
+      const { data: capEvents } = await supabase
+        .from('external_events')
+        .select('*')
+        .eq('type', 'SLAVE_CAPABILITY_ACTIVATED')
+        .order('created_at', { ascending: false });
+
+      const slaveEvents = (capEvents || []).filter((ev: any) => {
+        let details = ev.details;
+        if (typeof details === 'string') {
+          try { details = JSON.parse(details); } catch (e) {}
+        }
+        return ev.user_id === targetUser.id || details?.user_id === targetUser.id || details?.agent_id === targetUser.agentId;
+      });
+
+      const slaveHistory = slaveEvents.map((ev: any) => {
+        let details = ev.details;
+        if (typeof details === 'string') {
+          try { details = JSON.parse(details); } catch (e) {}
+        }
+        const validityDays = details?.metadata?.validity_days_extended || 30;
+        const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
+        return {
+          id: ev.id,
+          plan_name: 'Capability Increment Plan',
+          plan_subtitle: `Per-Slave Agent Rate-Limit Increment (+${validityDays} Days)`,
+          plan_type: 'slave_capability',
+          action_type: 'capability_increment',
+          allowance_accounts: 1,
+          accounts_in_transaction: 1,
+          amount: 100,
+          currency: 'USD',
+          created_at: ev.created_at,
+          expires_at: details?.expires_at || null,
+          status: isEvActive ? (details?.status || 'active') : 'expired',
+          is_active: isEvActive,
+          is_direct: true
+        };
+      });
+
+      const formattedMasterHistory = masterHistory.map((mh: any) => ({
+        ...mh,
+        id: `inherited_${mh.id}`,
+        plan_name: 'Master & Slave Agent Plan',
+        plan_subtitle: `Master Account ${mh.plan_subtitle || 'Purchase'} — Applied to this account`,
+        is_inherited: true
+      }));
+
+      const combinedSlaveHistory = [...slaveHistory, ...formattedMasterHistory];
+
+      const activePlanObj = isCapActive ? {
+        id: slaveCap.id,
+        master_account_id: targetUser.id,
+        plan_type: 'slave_capability',
+        plan_name: 'Capability Increment Plan',
+        status: 'active',
+        allowance_accounts: 1,
+        tier: 'capability',
+        created_at: slaveCap.created_at,
+        updated_at: slaveCap.updated_at,
+        expires_at: slaveCap.expires_at,
+        metadata: slaveCap.metadata || {}
+      } : {
+        id: `plan_${targetUser.id}`,
+        master_account_id: targetUser.id,
+        plan_type: 'slave_capability',
+        plan_name: 'Capability Increment Plan',
+        status: 'inactive',
+        allowance_accounts: 0,
+        tier: 'capability',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        expires_at: null
+      };
+
+      const inheritedPlanObj = masterPlanObj ? {
+        ...masterPlanObj,
+        is_inherited: true,
+        plan_name: 'Master & Slave Agent Plan',
+        status: isMasterActive ? 'active' : 'inactive'
+      } : null;
+
+      return res.json({
+        success: true,
+        data: {
+          accountId: targetUser.id,
+          accountType: 'slave',
+          masterId: targetUser.master_id || null,
+          inheritedPlan: inheritedPlanObj,
+          plan: activePlanObj,
+          active: isCapActive || isMasterActive,
+          status: (isCapActive || isMasterActive) ? 'active' : 'inactive',
+          allowance: 0,
+          currentSlaveAgentsCount: 0,
+          remainingAllowance: 0,
+          slaveAgents: [],
+          history: combinedSlaveHistory
+        }
+      });
+    }
+
+    // MASTER ACCOUNT SCOPE:
+    // A Master account can own Master & Slave Agent Plan entitlements.
+    // A Master must never inherit a Slave's Capability Increment.
+    const masterUserId = (req.user as any).masterUserId || primaryUserId;
     const { MasterAccountService } = await import('../services/masterAccountService.js');
     const masterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
 
@@ -577,13 +725,16 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
       });
     }
     const currentSlaveCount = cleanSubAgents.length;
-    const isActive = !!(masterPlan && masterPlan.status === 'active');
+    const isExpired = !!(masterPlan?.expires_at && new Date(masterPlan.expires_at).getTime() <= Date.now());
+    const isActive = !!(masterPlan && masterPlan.status === 'active' && !isExpired);
     const allowance = isActive ? (masterPlan?.allowance_accounts || 0) : 0;
     const history = await MasterAccountService.getInstance().getMasterPlanHistory(masterUserId);
 
     return res.json({
       success: true,
       data: {
+        accountId: masterUserId,
+        accountType: 'master',
         masterId: masterUserId,
         plan: masterPlan || {
           id: `plan_${masterUserId}`,
@@ -615,7 +766,57 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
 router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/plan/activate', '/v1/auth/master/plan/activate'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const masterUserId = (req.user as any).masterUserId || req.user.id;
-    
+    const capabilityIncrement = !!req.body?.capabilityIncrement;
+
+    // 1. Independent Capability Increment Path (Tied strictly to individual Slave Account)
+    if (capabilityIncrement) {
+      let rawTargets = req.body?.targetAccountIds || req.body?.targetAgentIds || req.body?.targetAgentId || req.body?.agentId || req.body?.targetAccountId;
+      if (!Array.isArray(rawTargets)) {
+        rawTargets = rawTargets ? [rawTargets] : [];
+      }
+
+      // Do not attach Capability Increment to the Master
+      const targetSlaves = rawTargets.filter((id: any) => typeof id === 'string' && id.trim() && id.trim() !== 'master' && id.trim() !== masterUserId);
+
+      if (targetSlaves.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Capability Increment must target a specific Slave Account. It cannot be attached to the Master account.'
+          }
+        });
+      }
+
+      const { CapabilityService } = await import('../services/capabilityService.js');
+      const capService = CapabilityService.getInstance();
+      const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : 30;
+
+      const activatedList = [];
+      for (const slaveId of targetSlaves) {
+        const cap = await capService.activateSlaveCapability(masterUserId, slaveId, { validityDays });
+        activatedList.push(cap);
+      }
+
+      const { MasterAccountService } = await import('../services/masterAccountService.js');
+      const existingMasterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
+
+      return res.json({
+        success: true,
+        data: {
+          plan: existingMasterPlan || {
+            plan_name: 'Capability Increment Plan',
+            status: 'active',
+            allowance_accounts: 0
+          },
+          capability: activatedList[0],
+          capabilities: activatedList,
+          status: 'active'
+        },
+        message: `Capability Increment activated for ${activatedList.length} slave agent(s). Higher rate limits unlocked strictly for target slave(s).`
+      });
+    }
+
+    // 2. Master & Slave Fleet Plan Path (Controls total number of Slave accounts)
     // Total accounts requested (defaults to 10 base accounts, bounded between 10 and 1000)
     const rawAccounts = req.body?.totalAccounts ?? req.body?.allowance ?? 10;
     const parsedAccounts = parseInt(rawAccounts, 10);
@@ -624,15 +825,16 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | 'extend_validity' | undefined);
     const addOnAccounts = req.body?.addOnAccounts ? Math.max(1, parseInt(req.body.addOnAccounts, 10)) : undefined;
     const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : undefined;
-    const capabilityIncrement = !!req.body?.capabilityIncrement;
 
     const { MasterAccountService } = await import('../services/masterAccountService.js');
-    const entitlement = await MasterAccountService.getInstance().activateMasterPlan(masterUserId, targetAccounts, {
+    const masterService = MasterAccountService.getInstance();
+    const entitlement = await masterService.activateMasterPlan(masterUserId, targetAccounts, {
       actionType,
       addOnAccounts,
-      validityDays,
-      capabilityIncrement
+      validityDays
     });
+
+    masterService.invalidateMasterPlanCache(masterUserId);
 
     return res.json({
       success: true,
@@ -711,6 +913,7 @@ router.post(['/auth/master/switch', '/v1/auth/master/switch'], requireHumanSessi
 
 // 4a-3. POST /api/auth/master/create-slave-agent - Register single or multiple Slave Agents under the Master User
 router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent', '/auth/master/create-slave-agent', '/v1/auth/master/create-slave-agent'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  let slotReservation: { release?: () => void } | null = null;
   try {
     const { agentName, bio, whitelisted_networks, agents, count, agentNames, names } = req.body;
 
@@ -738,12 +941,8 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
       return res.status(404).json({ success: false, error: { message: 'Master user not found.' } });
     }
 
-    // 2. Count existing Slave Agents to enforce limits from authoritative plan
-    const { MasterAccountService } = await import('../services/masterAccountService.js');
-    const masterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
-    const maxSubAgents = masterPlan?.allowance_accounts || 10;
-
-    const { data: subAgents, error: countErr } = await supabase
+    // 2. Count existing Slave Agents to name target nodes
+    const { data: subAgents } = await supabase
       .from('users')
       .select('id')
       .eq('master_id', masterUserId);
@@ -779,11 +978,15 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
       return res.status(400).json({ success: false, error: { message: 'agentName, agents array, agentNames array, or count is required.' } });
     }
 
-    if (currentCount + targets.length > maxSubAgents) {
+    // 3. Atomic Slave-slot allocation: Lock Master Plan row FOR UPDATE and check authoritative allowance
+    const { MasterAccountService } = await import('../services/masterAccountService.js');
+    try {
+      slotReservation = await MasterAccountService.getInstance().allocateSlaveSlotsAtomic(masterUserId, targets.length);
+    } catch (allocErr: any) {
       return res.status(400).json({
         success: false,
         error: {
-          message: `Slave agent allowance limit exceeded. Your Master plan allows a maximum of ${maxSubAgents} accounts, but you currently have ${currentCount} deployed and requested ${targets.length} new accounts.`
+          message: allocErr?.message || 'Slave agent allowance limit exceeded.'
         }
       });
     }
@@ -899,6 +1102,10 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
     }
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err?.message || 'Failed to deploy Slave agent(s).' } });
+  } finally {
+    if (slotReservation?.release) {
+      slotReservation.release();
+    }
   }
 });
 
@@ -1764,6 +1971,17 @@ router.get('/agents/:agentId', securityLayer('public_reads'), async (req: Reques
     res.json({ success: true, data: profile });
   } catch (err: any) {
     res.status(404).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// 6b. GET /api/agents/:agentId/owner (Public read for Owner dossier: Owner name, social handles, master & slave accounts - no email)
+router.get('/agents/:agentId/owner', securityLayer('public_reads'), async (req: Request, res: Response) => {
+  try {
+    const agentId = req.params.agentId as string;
+    const dossier = await getAgentOwnerDossier(agentId);
+    res.json({ success: true, data: dossier });
+  } catch (err: any) {
+    res.status(404).json({ success: false, error: { message: err.message || 'Owner dossier not found.' } });
   }
 });
 

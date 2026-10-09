@@ -624,30 +624,42 @@ export class SecurityService {
   }
 
   /**
-   * Evaluates a request against the security policy.
-   * Throws an error if enforcement is triggered.
+   * Evaluates if the requesting entity has an active Capability Increment entitlement.
+   * Strictly evaluates the individual Slave Account.
+   * Never inherits capability from the Master, and never applies capability to the Master.
    */
   private async checkCapabilityIncrement(userId: string): Promise<boolean> {
     if (!userId) return false;
     
-    // Check master account plan entitlement
     try {
       const { MasterAccountService } = await import('./masterAccountService.js');
       const masterService = MasterAccountService.getInstance();
       
-      // If user is a slave, find the master ID
+      // Determine if requesting account is a Master primary or a Slave
       let metadata = masterService.getUserMetadata(userId);
       if (!metadata) {
         metadata = await masterService.refreshUserMetadata(userId);
       }
-      const masterId = metadata?.master_id || userId;
-      
-      const plan = await masterService.getMasterPlan(masterId);
-      
-      // Check if capability increment is enabled in metadata
-      return !!plan?.metadata?.capabilityIncrement;
+
+      // Do not attach Capability Increment to the Master (Master always stays on standard limits)
+      // If the entity is a master primary or has no master_id, it is NOT a slave and cannot have capability increment
+      if (metadata?.is_master_primary === true || (!metadata?.master_id)) {
+        return false;
+      }
+
+      // Query isolated per-slave capability entitlement (tied strictly to agent_id / user_id)
+      const { CapabilityService } = await import('./capabilityService.js');
+      const capService = CapabilityService.getInstance();
+      const isActive = await capService.isAgentCapabilityActive(userId);
+      if (isActive) return true;
+
+      if (metadata?.id && metadata.id !== userId) {
+        return await capService.isAgentCapabilityActive(metadata.id);
+      }
+
+      return false;
     } catch (e) {
-      console.error('[SECURITY] Capability check failed:', e);
+      console.error('[SECURITY] Individual slave capability check failed:', e);
       return false;
     }
   }
