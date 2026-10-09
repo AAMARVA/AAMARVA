@@ -296,17 +296,19 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
       if (isCapability) {
         payload.actionType = 'new_plan';
         payload.validityDays = 30;
-      } else if (effectiveAction === 'add_accounts' || isCurrentActive) {
+      } else if (effectiveAction === 'add_accounts') {
         // Consider only the new accounts being bought (e.g. 10) and add only those to the existing fleet
         const effectiveAddOn = Math.max(1, addAccountsCount);
         payload.actionType = 'add_accounts';
         payload.addOnAccounts = effectiveAddOn;
         payload.totalAccounts = (currentPlan?.allowance_accounts || 0) + effectiveAddOn;
       } else if (effectiveAction === 'extend_validity') {
+        payload.actionType = 'extend_validity';
         payload.validityDays = validityExtensionDays;
         payload.extendAccountsCount = extendAccountsCount;
         payload.totalAccounts = currentPlan?.allowance_accounts || 10;
       } else {
+        payload.actionType = 'new_plan';
         payload.totalAccounts = totalAccounts;
       }
 
@@ -324,12 +326,15 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           window.dispatchEvent(new CustomEvent('account-changed'));
         }
         if (isCapability) {
-          const targetName = slaveAgentsList.find(a => targetCapabilityAccountIds.includes(a.id))?.name || 'SLAVE AGENT';
+          const count = targetCapabilityAccountIds.length;
+          const targetName = count === 1 
+            ? (slaveAgentsList.find(a => targetCapabilityAccountIds.includes(a.id))?.name || 'SLAVE AGENT')
+            : `${count} SLAVE AGENTS`;
           setPurchaseStatusMsg({
             type: 'success',
-            text: `Capability Increment Plan activated for ${targetName}! Upgraded higher rate limits are now unlocked strictly for this designated slave agent.`
+            text: `Capability Increment Plan activated for ${targetName}! Upgraded higher rate limits are now unlocked strictly for the designated node${count > 1 ? 's' : ''}.`
           });
-        } else if (effectiveAction === 'add_accounts' || isCurrentActive) {
+        } else if (effectiveAction === 'add_accounts') {
           const effectiveAddOn = Math.max(1, addAccountsCount);
           setAddAccountsCount(effectiveAddOn);
           setAddAccountsRaw(String(effectiveAddOn));
@@ -376,44 +381,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
 
   // Subscriptions configuration
   const [activePlan, setActivePlan] = useState<string | null>(null);
-  const subscriptionPlans = [
-    { id: 'prime', name: 'Autonomous Prime', price: '0.045 BTC/mo', limit: '10,000 req/min', desc: 'Enterprise-grade throughput with premium zero-knowledge transit relays.' },
-    { id: 'enclave', name: 'Secure Enclave', price: '0.020 BTC/mo', limit: '5,000 req/min', desc: 'Secure multi-party multi-agent isolation with custom SGX hardware execution.' },
-    { id: 'standard', name: 'Standard Sync', price: 'Free', limit: '1,000 req/min', desc: 'Basic direct-messaging and public Floor activity publishing.' }
-  ];
-
-  // Capability parameters
-  const [multiplier, setMultiplier] = useState(1);
-  const [concurrency, setConcurrency] = useState(4);
-  const [memoryLimit, setMemoryLimit] = useState(512); // MB
-
-  // Roster Accounts
-  const [rosterAccounts, setRosterAccounts] = useState<Array<{ id: string; name: string; role: 'follower' | 'relay' }>>([
-    { id: 'AMR-82KD-PJ92', name: 'PROX_RELAY_01', role: 'relay' },
-    { id: 'AMR-39FL-QL10', name: 'NORM_FOLLOWER_02', role: 'follower' }
-  ]);
-  const [newRosterId, setNewRosterId] = useState('');
-  const [newRosterName, setNewRosterName] = useState('');
-  const [newRosterRole, setNewRosterRole] = useState<'follower' | 'relay'>('follower');
-
-  const handleAddRoster = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newRosterId.trim() || !newRosterName.trim()) return;
-    setRosterAccounts(prev => [
-      ...prev,
-      {
-        id: newRosterId.trim().toUpperCase(),
-        name: newRosterName.trim().toUpperCase(),
-        role: newRosterRole
-      }
-    ]);
-    setNewRosterId('');
-    setNewRosterName('');
-  };
-
-  const handleRemoveRoster = (id: string) => {
-    setRosterAccounts(prev => prev.filter(acc => acc.id !== id));
-  };
 
   return (
     <div className="bg-white border-2 border-[#141414] p-5 sm:p-6 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] text-[#141414] text-left font-mono">
@@ -427,9 +394,13 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             Loadouts
           </h3>
         </div>
-        <div className="px-3 py-1 bg-[#141414] text-white border-2 border-[#141414] text-[10px] font-black uppercase tracking-widest select-none cursor-default">
+        <button
+          type="button"
+          onClick={() => setActiveModal('modules')}
+          className="px-3 py-1 bg-[#141414] hover:bg-neutral-800 text-white border-2 border-[#141414] text-[10px] font-black uppercase tracking-widest cursor-pointer transition-colors"
+        >
           System Modules
-        </div>
+        </button>
       </div>
 
       {/* Grid Content */}
@@ -462,7 +433,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             ) : activePlan ? (
               <span className="text-[10px] font-black uppercase text-green-400 bg-white/10 px-1.5 py-0.5 border border-green-400/20">
                 <span className="hidden sm:inline">
-                  ACTIVE PLAN: {subscriptionPlans.find(p => p.id === activePlan)?.name}
+                  ACTIVE PLAN: Master & Slave Agent Plan
                 </span>
                 <span className="inline sm:hidden">
                   ACTIVE PLAN
@@ -494,7 +465,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
               <ArrowUpRight className="w-4 h-4 text-white" />
             </div>
             <p className="text-[11px] text-white/60 font-sans leading-relaxed">
-              Configure system operational scaling & execution parameters. Current Limit: {(multiplier * concurrency * (memoryLimit / 256)).toFixed(1)}x Capacity.
+              Configure system operational scaling & rate limit parameters across all platform services.
             </p>
           </button>
 
@@ -1069,7 +1040,11 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                       disabled={purchasing}
                       className="w-full py-2 bg-[#141414] text-white font-black uppercase text-xs tracking-widest hover:bg-neutral-800 disabled:opacity-50"
                     >
-                      {purchasing ? 'Purchasing...' : 'Activate Capability Increment Plan ($100)'}
+                      {purchasing 
+                        ? 'Purchasing...' 
+                        : targetCapabilityAccountIds.length > 1 
+                          ? `Activate Capability Increment Plan ($${targetCapabilityAccountIds.length * 100} for ${targetCapabilityAccountIds.length} Agents)` 
+                          : 'Activate Capability Increment Plan ($100)'}
                     </button>
                     {purchaseStatusMsg && (
                       <div className={`mt-3 p-2 text-[10px] font-bold ${purchaseStatusMsg.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-rose-100 text-rose-800'}`}>
@@ -1379,7 +1354,12 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => setSelectedAgentIds([])}
+                                    onClick={() => {
+                                      const baseSlice = slaveAgentsList.slice(0, 10).map(a => a.id);
+                                      setSelectedAgentIds(baseSlice);
+                                      setExtendAccountsCount(10);
+                                      setExtendAccountsRaw('10');
+                                    }}
                                     className="px-2 py-0.5 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white font-black uppercase text-[9px] transition-colors cursor-pointer"
                                   >
                                     Deselect All
