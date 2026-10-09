@@ -362,7 +362,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
                         disabled={isSendingRecovery}
                       />
                       {recoveryMessage && (
-                        <p className={`font-mono text-[9px] font-bold ${recoverySuccess ? 'text-emerald-800' : 'text-rose-700'}`}>
+                        <p className={`font-mono text-[9px] font-bold ${recoverySuccess ? 'text-[#141414] font-bold' : 'text-[#141414] font-bold'}`}>
                           {recoveryMessage}
                         </p>
                       )}

@@ -342,7 +342,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             ) : (
               <form onSubmit={handleLoginSubmit} className="space-y-4 font-mono">
                 {loginError && (
-                  <div className="p-3 bg-red-100 border-2 border-red-600 text-red-900 text-xs">
+                  <div className="p-3 bg-white border-2 border-[#141414] text-[#141414] font-bold text-xs">
                     {loginError}
                   </div>
                 )}
@@ -394,7 +394,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                           disabled={isSendingRecovery}
                         />
                         {recoveryMessage && (
-                          <p className={`font-mono text-[10px] font-bold ${recoverySuccess ? 'text-emerald-800' : 'text-rose-700'}`}>
+                          <p className={`font-mono text-[10px] font-bold ${recoverySuccess ? 'text-[#141414] font-bold' : 'text-[#141414] font-bold'}`}>
                             {recoveryMessage}
                           </p>
                         )}

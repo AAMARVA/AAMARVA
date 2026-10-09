@@ -105,7 +105,25 @@ export class MasterAccountService {
         let blocks = metadata.blocks;
 
         if (Array.isArray(blocks) && blocks.length > 0) {
-          const activeBlocks = blocks.filter((b: any) => new Date(b.expires_at).getTime() > now);
+          const enrichedBlocks = blocks.map((b: any, idx: number) => {
+            const expTime = new Date(b.expires_at).getTime();
+            const isAct = expTime > now;
+            const daysLeft = Math.max(0, Math.ceil((expTime - now) / (1000 * 60 * 60 * 24)));
+            return {
+              ...b,
+              id: b.id || `box_${idx + 1}_${entRecord.id}`,
+              plan_number: b.plan_number || (idx + 1),
+              plan_name: b.plan_name || (idx === 0 ? 'Master & Slave Agent Plan' : `Fleet Expansion Plan #${idx + 1}`),
+              plan_subtitle: b.plan_subtitle || `${b.allowance || 10} Slave Accounts`,
+              status: isAct ? 'active' : 'expired',
+              is_active: isAct,
+              days_remaining: daysLeft,
+              amount: b.amount || (idx === 0 ? 50 : Math.round((b.allowance || 10) * 2.5)),
+              currency: b.currency || 'USD'
+            };
+          });
+
+          const activeBlocks = enrichedBlocks.filter((b: any) => b.is_active);
           if (activeBlocks.length === 0) {
             try {
               await sb
@@ -116,8 +134,22 @@ export class MasterAccountService {
             this.masterPlanCache.delete(masterId);
             return null;
           }
+
+          // Compute earliest expiry timestamp among active blocks
+          const earliestTime = Math.min(...activeBlocks.map((b: any) => new Date(b.expires_at).getTime()));
+          const latestTime = Math.max(...activeBlocks.map((b: any) => new Date(b.expires_at).getTime()));
+
+          const finalBlocks = enrichedBlocks.map((b: any) => {
+            const bExpTime = new Date(b.expires_at).getTime();
+            return {
+              ...b,
+              is_earliest_expiry: b.is_active && activeBlocks.length > 1 && bExpTime === earliestTime,
+              is_later_expiry: b.is_active && activeBlocks.length > 1 && bExpTime > earliestTime
+            };
+          });
+
           const activeAllowance = activeBlocks.reduce((sum: number, b: any) => sum + (b.allowance || 0), 0);
-          const maxExpiry = activeBlocks.reduce((latest: string, b: any) => new Date(b.expires_at) > new Date(latest) ? b.expires_at : latest, activeBlocks[0].expires_at);
+          const maxExpiry = new Date(latestTime).toISOString();
 
           const entitlement: MasterPlanEntitlement = {
             id: entRecord.id,
@@ -130,7 +162,13 @@ export class MasterAccountService {
             created_at: entRecord.created_at || new Date().toISOString(),
             updated_at: entRecord.updated_at || new Date().toISOString(),
             expires_at: maxExpiry,
-            metadata: { ...metadata, blocks: activeBlocks }
+            metadata: { 
+              ...metadata, 
+              blocks: finalBlocks,
+              active_blocks: finalBlocks.filter((b: any) => b.is_active),
+              earliest_expiry: new Date(earliestTime).toISOString(),
+              total_active_boxes: activeBlocks.length
+            }
           };
           this.masterPlanCache.set(masterId, entitlement);
           return entitlement;
@@ -281,7 +319,7 @@ export class MasterAccountService {
     masterId: string, 
     requestedAllowance: number = 10,
     options?: {
-      actionType?: 'new_plan' | 'add_accounts' | 'extend_validity';
+      actionType?: 'new_plan' | 'add_accounts';
       addOnAccounts?: number;
       validityDays?: number;
       extendAccountsCount?: number;
@@ -329,13 +367,13 @@ export class MasterAccountService {
       let accountsBoughtThisTransaction = 10;
       let sanitizedAllowance = 10;
 
-      if (options?.actionType === 'extend_validity') {
+      if (false) {
         sanitizedAllowance = currentAllowance > 0 ? currentAllowance : 10;
-        accountsBoughtThisTransaction = options?.extendAccountsCount || sanitizedAllowance;
+        accountsBoughtThisTransaction = Math.max(10, options?.extendAccountsCount || sanitizedAllowance);
       } else if (options?.actionType === 'add_accounts') {
         accountsBoughtThisTransaction = options?.addOnAccounts 
-          ? Math.max(1, Math.floor(options.addOnAccounts))
-          : Math.max(1, Math.floor(requestedAllowance > currentAllowance ? requestedAllowance - currentAllowance : requestedAllowance));
+          ? Math.max(10, Math.floor(options.addOnAccounts))
+          : Math.max(10, Math.floor(requestedAllowance > currentAllowance ? requestedAllowance - currentAllowance : requestedAllowance));
         sanitizedAllowance = Math.min(1000, currentAllowance + accountsBoughtThisTransaction);
       } else {
         // Direct allowance specification or 'new_plan' (clamped between 10 and 1000)
@@ -363,34 +401,45 @@ export class MasterAccountService {
         }
       }
 
-      // Filter out expired blocks
+      // Retain unexpired blocks
       blocks = blocks.filter((b: any) => new Date(b.expires_at).getTime() > now.getTime());
 
-      if (actionType === 'new_plan' || !existingPlan || blocks.length === 0) {
-        blocks = [{
-          allowance: sanitizedAllowance,
-          created_at: now.toISOString(),
-          expires_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
-        }];
-      } else if (actionType === 'add_accounts') {
-        // Newly purchased capacity receives 30 days of initial validity.
-        // Existing capacity/accounts retain their existing validity without being reset or extended.
-        const addOnBlock = {
+      const validityDays = options?.validityDays || 30;
+      const blockExpiryIso = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000).toISOString();
+      const nextPlanNumber = blocks.length + 1;
+
+      if (actionType === 'new_plan') {
+        const newPlanBlock = {
+          id: `plan_box_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+          plan_number: nextPlanNumber,
+          plan_name: `Master & Slave Agent Plan (Box #${nextPlanNumber})`,
+          plan_subtitle: `Fleet Package (${accountsBoughtThisTransaction} Accounts)`,
+          plan_type: 'master_slave_scale',
+          action_type: 'new_plan',
           allowance: accountsBoughtThisTransaction,
           created_at: now.toISOString(),
-          expires_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          expires_at: '9999-12-31T23:59:59.999Z',
+          amount: 50 + Math.max(0, accountsBoughtThisTransaction - 10) * 2.5,
+          currency: 'USD',
+          status: 'active'
+        };
+        blocks.push(newPlanBlock);
+      } else if (actionType === 'add_accounts') {
+        const addOnBlock = {
+          id: `plan_box_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+          plan_number: nextPlanNumber,
+          plan_name: `Capacity Add-On Plan (Box #${nextPlanNumber})`,
+          plan_subtitle: `Capacity Expansion (+${accountsBoughtThisTransaction} Accounts)`,
+          plan_type: 'master_slave_scale',
+          action_type: 'add_accounts',
+          allowance: accountsBoughtThisTransaction,
+          created_at: now.toISOString(),
+          expires_at: '9999-12-31T23:59:59.999Z',
+          amount: Math.round(accountsBoughtThisTransaction * 2.5),
+          currency: 'USD',
+          status: 'active'
         };
         blocks.push(addOnBlock);
-      } else if (actionType === 'extend_validity') {
-        // Extend existing blocks by validityDays
-        const days = options?.validityDays || 30;
-        blocks = blocks.map((b: any) => {
-          const baseExpiry = new Date(b.expires_at) > now ? new Date(b.expires_at) : now;
-          return {
-            ...b,
-            expires_at: new Date(baseExpiry.getTime() + days * 24 * 60 * 60 * 1000).toISOString()
-          };
-        });
       }
 
       const totalAllowance = Math.min(1000, blocks.reduce((sum: number, b: any) => sum + (b.allowance || 0), 0));
@@ -642,7 +691,7 @@ export class MasterAccountService {
         }
         const allowance = details?.allowance_accounts || 10;
         const meta = details?.metadata || {};
-        const actionType = meta.action_type || (details?.plan_name?.includes('Validity') ? 'extend_validity' : (idx === 0 && eventsList.length > 1 ? 'extend_validity' : (allowance > 10 ? 'add_accounts' : 'new_plan')));
+        const actionType = meta.action_type || (allowance > 10 ? 'add_accounts' : 'new_plan');
         
         const accountsInTx = details?.accounts_in_transaction 
           || meta?.accounts_in_transaction 
@@ -654,7 +703,7 @@ export class MasterAccountService {
         let planSubtitle = 'Base Fleet Roster';
         let amount = 50;
 
-        if (actionType === 'extend_validity' || meta.validity_days_extended) {
+        if (false || meta.validity_days_extended) {
           const days = meta.validity_days_extended || 30;
           const extAccounts = meta.accounts_extended || accountsInTx;
           const baseFee = days === 30 ? 50 : days === 90 ? 140 : 500;

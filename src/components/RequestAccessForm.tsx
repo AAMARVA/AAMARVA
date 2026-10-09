@@ -533,8 +533,8 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
       {/* Main Intake Area */}
       <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6">
         {submitError && (
-          <div className="p-3.5 bg-red-50 border-2 border-red-600 font-mono text-xs text-red-900 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
+          <div className="p-3.5 bg-white border-2 border-[#141414] font-mono text-xs text-[#141414] font-bold flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#141414] font-bold mt-0.5" />
             <span>{submitError}</span>
           </div>
         )}
@@ -565,12 +565,12 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                     if (validationErrors.fullName) setValidationErrors({...validationErrors, fullName: ''});
                   }}
                   className={`w-full pl-10 pr-4 py-2.5 bg-white border-2 ${
-                    validationErrors.fullName ? 'border-red-600' : 'border-[#141414]'
+                    validationErrors.fullName ? 'border-[#141414]' : 'border-[#141414]'
                   } font-mono text-xs focus:outline-none`}
                 />
               </div>
               {validationErrors.fullName && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.fullName}
                 </p>
@@ -594,12 +594,12 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                     if (validationErrors.emailAddress) setValidationErrors({...validationErrors, emailAddress: ''});
                   }}
                   className={`w-full pl-10 pr-4 py-2.5 bg-white border-2 ${
-                    validationErrors.emailAddress ? 'border-red-600' : 'border-[#141414]'
+                    validationErrors.emailAddress ? 'border-[#141414]' : 'border-[#141414]'
                   } font-mono text-xs focus:outline-none`}
                 />
               </div>
               {validationErrors.emailAddress && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.emailAddress}
                 </p>
@@ -618,12 +618,12 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                     if (validationErrors.githubProfile) setValidationErrors({...validationErrors, githubProfile: ''});
                   }}
                   className={`w-full pl-10 pr-4 py-2.5 bg-white border-2 ${
-                    validationErrors.githubProfile ? 'border-red-600' : 'border-[#141414]'
+                    validationErrors.githubProfile ? 'border-[#141414]' : 'border-[#141414]'
                   } font-mono text-xs focus:outline-none`}
                 />
               </div>
               {validationErrors.githubProfile && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.githubProfile}
                 </p>
@@ -642,12 +642,12 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                     if (validationErrors.linkedinProfile) setValidationErrors({...validationErrors, linkedinProfile: ''});
                   }}
                   className={`w-full pl-10 pr-4 py-2.5 bg-white border-2 ${
-                    validationErrors.linkedinProfile ? 'border-red-600' : 'border-[#141414]'
+                    validationErrors.linkedinProfile ? 'border-[#141414]' : 'border-[#141414]'
                   } font-mono text-xs focus:outline-none`}
                 />
               </div>
               {validationErrors.linkedinProfile && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.linkedinProfile}
                 </p>
@@ -698,7 +698,7 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   if (validationErrors.bestDescribes) setValidationErrors({...validationErrors, bestDescribes: ''});
                 }}
                 className={`w-full px-3 py-2.5 bg-white border-2 ${
-                  validationErrors.bestDescribes ? 'border-red-600' : 'border-[#141414]'
+                  validationErrors.bestDescribes ? 'border-[#141414]' : 'border-[#141414]'
                 } font-mono text-xs focus:outline-none`}
               >
                 <option value="">-- Choose Option --</option>
@@ -712,7 +712,7 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                 <option value="Other">Other</option>
               </select>
               {validationErrors.bestDescribes && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.bestDescribes}
                 </p>
@@ -756,7 +756,7 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                 ))}
               </div>
               {validationErrors.operatingAgent && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.operatingAgent}
                 </p>
@@ -781,12 +781,12 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                     if (validationErrors.agentName) setValidationErrors({...validationErrors, agentName: ''});
                   }}
                   className={`w-full pl-10 pr-4 py-2.5 bg-white border-2 ${
-                    validationErrors.agentName ? 'border-red-600' : 'border-[#141414]'
+                    validationErrors.agentName ? 'border-[#141414]' : 'border-[#141414]'
                   } font-mono text-xs focus:outline-none`}
                 />
               </div>
               {validationErrors.agentName && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.agentName}
                 </p>
@@ -814,12 +814,12 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                     if (validationErrors.agentUrl) setValidationErrors({...validationErrors, agentUrl: ''});
                   }}
                   className={`w-full pl-10 pr-4 py-2.5 bg-white border-2 ${
-                    validationErrors.agentUrl ? 'border-red-600' : 'border-[#141414]'
+                    validationErrors.agentUrl ? 'border-[#141414]' : 'border-[#141414]'
                   } font-mono text-xs focus:outline-none`}
                 />
               </div>
               {validationErrors.agentUrl && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.agentUrl}
                 </p>
@@ -842,11 +842,11 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   if (validationErrors.agentDetails) setValidationErrors({...validationErrors, agentDetails: ''});
                 }}
                 className={`w-full px-3 py-2 bg-white border-2 ${
-                  validationErrors.agentDetails ? 'border-red-600' : 'border-[#141414]'
+                  validationErrors.agentDetails ? 'border-[#141414]' : 'border-[#141414]'
                 } font-mono text-xs focus:outline-none min-h-[80px]`}
               />
               {validationErrors.agentDetails && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.agentDetails}
                 </p>
@@ -863,7 +863,7 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   if (validationErrors.agentStage) setValidationErrors({...validationErrors, agentStage: ''});
                 }}
                 className={`w-full px-3 py-2.5 bg-white border-2 ${
-                  validationErrors.agentStage ? 'border-red-600' : 'border-[#141414]'
+                  validationErrors.agentStage ? 'border-[#141414]' : 'border-[#141414]'
                 } font-mono text-xs focus:outline-none`}
               >
                 <option value="">-- Choose Stage --</option>
@@ -875,7 +875,7 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                 <option value="Research">Research</option>
               </select>
               {validationErrors.agentStage && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.agentStage}
                 </p>
@@ -1104,11 +1104,11 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   if (validationErrors.hopeToAccomplish) setValidationErrors({...validationErrors, hopeToAccomplish: ''});
                 }}
                 className={`w-full px-3 py-2 bg-white border-2 ${
-                  validationErrors.hopeToAccomplish ? 'border-red-600' : 'border-[#141414]'
+                  validationErrors.hopeToAccomplish ? 'border-[#141414]' : 'border-[#141414]'
                 } font-mono text-xs focus:outline-none min-h-[60px]`}
               />
               {validationErrors.hopeToAccomplish && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.hopeToAccomplish}
                 </p>
@@ -1131,11 +1131,11 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   if (validationErrors.agentUsePurpose) setValidationErrors({...validationErrors, agentUsePurpose: ''});
                 }}
                 className={`w-full px-3 py-2 bg-white border-2 ${
-                  validationErrors.agentUsePurpose ? 'border-red-600' : 'border-[#141414]'
+                  validationErrors.agentUsePurpose ? 'border-[#141414]' : 'border-[#141414]'
                 } font-mono text-xs focus:outline-none min-h-[60px]`}
               />
               {validationErrors.agentUsePurpose && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.agentUsePurpose}
                 </p>
@@ -1158,11 +1158,11 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   if (validationErrors.discoverCapability) setValidationErrors({...validationErrors, discoverCapability: ''});
                 }}
                 className={`w-full px-3 py-2 bg-white border-2 ${
-                  validationErrors.discoverCapability ? 'border-red-600' : 'border-[#141414]'
+                  validationErrors.discoverCapability ? 'border-[#141414]' : 'border-[#141414]'
                 } font-mono text-xs focus:outline-none min-h-[60px]`}
               />
               {validationErrors.discoverCapability && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.discoverCapability}
                 </p>
@@ -1185,11 +1185,11 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   if (validationErrors.discoveryProblems) setValidationErrors({...validationErrors, discoveryProblems: ''});
                 }}
                 className={`w-full px-3 py-2 bg-white border-2 ${
-                  validationErrors.discoveryProblems ? 'border-red-600' : 'border-[#141414]'
+                  validationErrors.discoveryProblems ? 'border-[#141414]' : 'border-[#141414]'
                 } font-mono text-xs focus:outline-none min-h-[60px]`}
               />
               {validationErrors.discoveryProblems && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.discoveryProblems}
                 </p>
@@ -1250,11 +1250,11 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
                   if (validationErrors.first30Days) setValidationErrors({...validationErrors, first30Days: ''});
                 }}
                 className={`w-full px-3 py-2 bg-white border-2 ${
-                  validationErrors.first30Days ? 'border-red-600' : 'border-[#141414]'
+                  validationErrors.first30Days ? 'border-[#141414]' : 'border-[#141414]'
                 } font-mono text-xs focus:outline-none min-h-[80px]`}
               />
               {validationErrors.first30Days && (
-                <p className="text-[10px] text-red-600 font-mono font-bold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-[#141414] font-bold font-mono font-bold mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   {validationErrors.first30Days}
                 </p>

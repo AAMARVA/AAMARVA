@@ -162,11 +162,11 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
 
         {success ? (
           <div className="space-y-4 py-2">
-            <div className="p-4 bg-emerald-500/10 border-2 border-emerald-600 text-emerald-950 text-xs flex items-start gap-2.5">
-              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="p-4 bg-white border-2 border-[#141414] text-neutral-700 text-xs flex items-start gap-2.5">
+              <CheckCircle className="w-5 h-5 text-[#141414] font-bold shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold uppercase mb-1">Password & Passkey Verified</p>
-                <p className="text-emerald-900/80">
+                <p className="text-[#141414] font-bold">
                   Your password has been successfully reset and authenticated via WebAuthn hardware assertion. Your human session is active.
                 </p>
               </div>
@@ -184,21 +184,21 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
           </div>
         ) : webAuthnPrompt ? (
           <div className="space-y-4 py-2">
-            <div className="p-3 bg-amber-500/10 border-2 border-amber-600 text-amber-950 text-xs flex items-start gap-2.5">
-              <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+            <div className="p-3 bg-white border-2 border-[#141414] text-neutral-700 text-xs flex items-start gap-2.5">
+              <ShieldCheck className="w-5 h-5 text-[#141414] font-bold shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold uppercase mb-1">
                   {webAuthnPrompt.isSetup ? 'Passkey Enrollment Required' : 'Biometric Passkey Required'}
                 </p>
-                <p className="text-amber-900/90 text-[11px] leading-relaxed">
+                <p className="text-[#141414] font-bold text-[11px] leading-relaxed">
                   To protect your account against automated agents and unauthorized takeovers, password resets require physical biometric verification (Touch ID, Face ID, or Security Key).
                 </p>
               </div>
             </div>
 
             {error && (
-              <div className="p-3 bg-rose-500/10 border-2 border-rose-600 text-rose-950 text-xs flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="p-3 bg-white border-2 border-[#141414] text-neutral-700 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-[#141414] font-bold shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}
@@ -273,8 +273,8 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
             </p>
 
             {error && (
-              <div className="p-3 bg-rose-500/10 border-2 border-rose-600 text-rose-950 text-xs flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="p-3 bg-white border-2 border-[#141414] text-neutral-700 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-[#141414] font-bold shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}

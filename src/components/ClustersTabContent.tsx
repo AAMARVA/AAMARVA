@@ -143,7 +143,7 @@ export function ClustersTabContent({
       {isCreating && (
         <div className="p-4 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] animate-in slide-in-from-top-2 duration-200">
           <form onSubmit={handleCreateCluster} className="space-y-4">
-            {createError && <p className="text-[10px] font-bold text-red-600 font-mono uppercase">{createError}</p>}
+            {createError && <p className="text-[10px] font-bold text-[#141414] font-bold font-mono uppercase">{createError}</p>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/60">Name</label>
@@ -213,13 +213,13 @@ export function ClustersTabContent({
                 <div className="flex gap-1.5 shrink-0">
                   <button
                     onClick={() => handleAcceptInvite(inv.clusterId)}
-                    className="p-1.5 bg-emerald-50 text-emerald-700 border-2 border-emerald-700 hover:bg-emerald-700 hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                    className="p-1.5 bg-white text-[#141414] font-bold border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
                   >
                     Accept
                   </button>
                   <button
                     onClick={() => handleDeclineInvite(inv.clusterId, inv.id)}
-                    className="p-1.5 bg-rose-50 text-rose-700 border-2 border-rose-700 hover:bg-rose-700 hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                    className="p-1.5 bg-white text-[#141414] font-bold border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
                   >
                     Reject
                   </button>

@@ -254,7 +254,7 @@ export function AdminApplicationsView() {
         <div className="max-w-xs mx-auto w-full my-auto space-y-4">
           <div className="border-4 border-[#141414] bg-white p-6 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)]">
             {error && (
-              <div className="p-3 bg-red-50 border-2 border-red-600 text-red-900 text-xs mb-4 font-bold text-center">
+              <div className="p-3 bg-white border-2 border-[#141414] text-[#141414] font-bold text-xs mb-4 font-bold text-center">
                 {error}
               </div>
             )}
@@ -302,7 +302,7 @@ export function AdminApplicationsView() {
                 }
               }}
               disabled={loading}
-              className="w-full py-2.5 bg-emerald-600 text-white hover:bg-white hover:text-emerald-700 border-2 border-emerald-600 text-xs font-black uppercase transition-all shadow-[3px_3px_0px_0px_rgba(16,185,129,0.15)] cursor-pointer"
+              className="w-full py-2.5 bg-neutral-200 text-[#141414] text-white hover:bg-white hover:text-[#141414] font-bold border-2 border-[#141414] text-xs font-black uppercase transition-all shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)] cursor-pointer"
             >
               Establish Safe-mode Link
             </button>
@@ -315,7 +315,7 @@ export function AdminApplicationsView() {
         <div className="max-w-md mx-auto w-full my-auto space-y-6">
           <div className="border-4 border-[#141414] bg-white p-6 shadow-[8px_8px_0px_0px_rgba(20,20,20,1)]">
             <div className="flex items-center gap-3 border-b-2 border-[#141414] pb-4 mb-4">
-              <div className="p-2 bg-emerald-600 text-white border border-[#141414]">
+              <div className="p-2 bg-neutral-200 text-[#141414] text-white border border-[#141414]">
                 <Mail className="w-6 h-6" />
               </div>
               <div>
@@ -329,8 +329,8 @@ export function AdminApplicationsView() {
             </p>
 
             {error && (
-              <div className="p-3.5 bg-red-50 border-2 border-red-600 text-red-900 text-xs mb-4 flex items-start gap-2.5 font-bold">
-                <ShieldAlert className="w-5 h-5 shrink-0 text-red-600" />
+              <div className="p-3.5 bg-white border-2 border-[#141414] text-[#141414] font-bold text-xs mb-4 flex items-start gap-2.5 font-bold">
+                <ShieldAlert className="w-5 h-5 shrink-0 text-[#141414] font-bold" />
                 <span>{error}</span>
               </div>
             )}
@@ -442,7 +442,7 @@ export function AdminApplicationsView() {
                         onClick={() => setSelectedApp(app)}
                         className={`cursor-pointer border-4 p-4 transition-all bg-white hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] ${
                           selectedApp?.id === app.id
-                            ? 'border-red-600 shadow-[4px_4px_0px_0px_rgba(220,38,38,1)] bg-red-50/10'
+                            ? 'border-[#141414] shadow-[4px_4px_0px_0px_rgba(220,38,38,1)] bg-white'
                             : 'border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,0.15)]'
                         }`}
                       >
@@ -451,8 +451,8 @@ export function AdminApplicationsView() {
                             {app.fullName}
                           </h4>
                           <span className={`px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest ${
-                            app.status === 'Approved' ? 'bg-emerald-600 text-white' :
-                            app.status === 'Declined' ? 'bg-red-600 text-white' :
+                            app.status === 'Approved' ? 'bg-neutral-200 text-[#141414] text-white' :
+                            app.status === 'Declined' ? 'bg-neutral-200 text-[#141414] text-white' :
                             'bg-[#141414] text-white'
                           }`}>
                             {app.status || 'UNDER REVIEW'}
@@ -520,7 +520,7 @@ export function AdminApplicationsView() {
                           <span className="text-[9px] uppercase font-black text-[#141414]/50 block">GitHub Profile:</span>
                           <p className="border border-[#141414]/10 p-2 bg-[#F4F3F0]/20 font-bold">
                             {selectedApp.githubProfile ? (
-                              <a href={selectedApp.githubProfile.startsWith('http') ? selectedApp.githubProfile : `https://${selectedApp.githubProfile}`} target="_blank" rel="noreferrer" className="underline hover:text-blue-600 font-bold flex items-center gap-1">
+                              <a href={selectedApp.githubProfile.startsWith('http') ? selectedApp.githubProfile : `https://${selectedApp.githubProfile}`} target="_blank" rel="noreferrer" className="underline hover:text-[#141414] font-bold font-bold flex items-center gap-1">
                                 <Github className="w-3.5 h-3.5 shrink-0" />
                                 {selectedApp.githubProfile}
                               </a>
@@ -531,7 +531,7 @@ export function AdminApplicationsView() {
                           <span className="text-[9px] uppercase font-black text-[#141414]/50 block">LinkedIn Profile:</span>
                           <p className="border border-[#141414]/10 p-2 bg-[#F4F3F0]/20 font-bold">
                             {selectedApp.linkedinProfile ? (
-                              <a href={selectedApp.linkedinProfile.startsWith('http') ? selectedApp.linkedinProfile : `https://${selectedApp.linkedinProfile}`} target="_blank" rel="noreferrer" className="underline hover:text-blue-600 font-bold flex items-center gap-1">
+                              <a href={selectedApp.linkedinProfile.startsWith('http') ? selectedApp.linkedinProfile : `https://${selectedApp.linkedinProfile}`} target="_blank" rel="noreferrer" className="underline hover:text-[#141414] font-bold font-bold flex items-center gap-1">
                                 <Linkedin className="w-3.5 h-3.5 shrink-0" />
                                 {selectedApp.linkedinProfile}
                               </a>
@@ -542,7 +542,7 @@ export function AdminApplicationsView() {
                           <span className="text-[9px] uppercase font-black text-[#141414]/50 block">X (Twitter) Profile:</span>
                           <p className="border border-[#141414]/10 p-2 bg-[#F4F3F0]/20 font-bold">
                             {selectedApp.xProfile ? (
-                              <a href={selectedApp.xProfile.startsWith('http') ? selectedApp.xProfile : `https://x.com/${selectedApp.xProfile.replace('@', '')}`} target="_blank" rel="noreferrer" className="underline hover:text-blue-600 font-bold flex items-center gap-1">
+                              <a href={selectedApp.xProfile.startsWith('http') ? selectedApp.xProfile : `https://x.com/${selectedApp.xProfile.replace('@', '')}`} target="_blank" rel="noreferrer" className="underline hover:text-[#141414] font-bold font-bold flex items-center gap-1">
                                 <span className="font-black text-[10px]">𝕏</span>
                                 {selectedApp.xProfile}
                               </a>
@@ -553,7 +553,7 @@ export function AdminApplicationsView() {
                           <span className="text-[9px] uppercase font-black text-[#141414]/50 block">Reddit Profile:</span>
                           <p className="border border-[#141414]/10 p-2 bg-[#F4F3F0]/20 font-bold">
                             {selectedApp.redditProfile ? (
-                              <a href={selectedApp.redditProfile.startsWith('http') ? selectedApp.redditProfile : `https://reddit.com/${selectedApp.redditProfile.startsWith('u/') ? selectedApp.redditProfile : `u/${selectedApp.redditProfile}`}`} target="_blank" rel="noreferrer" className="underline hover:text-blue-600 font-bold flex items-center gap-1.5">
+                              <a href={selectedApp.redditProfile.startsWith('http') ? selectedApp.redditProfile : `https://reddit.com/${selectedApp.redditProfile.startsWith('u/') ? selectedApp.redditProfile : `u/${selectedApp.redditProfile}`}`} target="_blank" rel="noreferrer" className="underline hover:text-[#141414] font-bold font-bold flex items-center gap-1.5">
                                 <svg className="w-3.5 h-3.5 text-[#FF4500] shrink-0" viewBox="0 0 24 24" fill="currentColor">
                                   <path d="M24 11.5c0-1.65-1.35-3-3-3-.96 0-1.86.48-2.42 1.24-1.64-1-3.85-1.64-6.24-1.72l1.37-4.3 3.8 1.15c.02.77.65 1.38 1.43 1.38 1.1 0 2-.9 2-2s-.9-2-2-2c-.73 0-1.35.4-1.7 1l-4.3-1.3c-.17-.05-.35.03-.43.18l-1.6 5.07c-2.44.05-4.72.68-6.4 1.7-.56-.74-1.44-1.2-2.38-1.2-1.65 0-3 1.35-3 3 0 1.2.7 2.22 1.74 2.7-.04.26-.06.52-.06.8 0 3.86 4.48 7 10 7s10-3.14 10-7c0-.28-.02-.54-.06-.8 1.04-.48 1.74-1.5 1.74-2.7zm-18.5 2c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5zm11 4.5c-1.78 1.78-5.16 1.78-6.94 0-.15-.15-.15-.4 0-.54.15-.15.4-.15.54 0 1.48 1.48 4.38 1.48 5.86 0 .15-.15.4-.15.54 0 .15.15.15.4 0 .54zm-.5-3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
                                 </svg>
@@ -589,9 +589,9 @@ export function AdminApplicationsView() {
                             <span className="text-[9px] uppercase font-black text-[#141414]/50 block">Agent / project URL or repository:</span>
                             <p className="border border-[#141414]/10 p-2 bg-[#F4F3F0]/20 font-bold">
                               {selectedApp.agentUrl === 'Private' ? (
-                                <span className="bg-red-100 text-red-800 border border-red-300 px-1.5 py-0.5 text-[10px] font-bold uppercase rounded">Private Repository</span>
+                                <span className="bg-white text-[#141414] font-bold border border-[#141414] px-1.5 py-0.5 text-[10px] font-bold uppercase rounded">Private Repository</span>
                               ) : (
-                                <a href={selectedApp.agentUrl.startsWith('http') ? selectedApp.agentUrl : `https://${selectedApp.agentUrl}`} target="_blank" rel="noreferrer" className="underline hover:text-blue-600 font-bold flex items-center gap-1">
+                                <a href={selectedApp.agentUrl.startsWith('http') ? selectedApp.agentUrl : `https://${selectedApp.agentUrl}`} target="_blank" rel="noreferrer" className="underline hover:text-[#141414] font-bold font-bold flex items-center gap-1">
                                   <Globe className="w-3.5 h-3.5 shrink-0" />
                                   {selectedApp.agentUrl}
                                 </a>
@@ -741,7 +741,7 @@ export function AdminApplicationsView() {
                       <div className="border-4 border-[#141414] bg-white p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] space-y-4">
                         <div className="flex justify-between items-center pb-2 border-b border-[#141414]/20 font-mono">
                           <span className="text-[10px] uppercase font-black text-[#141414]">DECISION CONTROL HUB</span>
-                          <span className="px-2 py-0.5 border text-[10px] font-black uppercase bg-amber-100 text-amber-900 border-amber-500 animate-pulse">
+                          <span className="px-2 py-0.5 border text-[10px] font-black uppercase bg-white text-[#141414] font-bold border-[#141414] animate-pulse">
                             Under Review
                           </span>
                         </div>
@@ -780,7 +780,7 @@ export function AdminApplicationsView() {
                               }
                             }}
                             disabled={loading || selectedApp.status === 'Approved'}
-                            className="flex-1 py-3 bg-[#10B981] text-white hover:bg-white hover:text-[#10B981] border-2 border-[#10B981] text-xs font-black uppercase transition-all shadow-[4px_4px_0px_0px_rgba(16,185,129,0.2)] disabled:opacity-50 cursor-pointer"
+                            className="flex-1 py-3 bg-[#10B981] text-white hover:bg-white hover:text-[#10B981] border-2 border-[#10B981] text-xs font-black uppercase transition-all shadow-[4px_4px_0px_0px_rgba(20,20,20,0.2)] disabled:opacity-50 cursor-pointer"
                           >
                             Approve & Whitelist Email
                           </button>
@@ -815,7 +815,7 @@ export function AdminApplicationsView() {
                               }
                             }}
                             disabled={loading || selectedApp.status === 'Declined'}
-                            className="flex-1 py-3 bg-red-600 text-white hover:bg-white hover:text-red-600 border-2 border-red-600 text-xs font-black uppercase transition-all shadow-[4px_4px_0px_0px_rgba(220,38,38,0.2)] disabled:opacity-50 cursor-pointer"
+                            className="flex-1 py-3 bg-neutral-200 text-[#141414] text-white hover:bg-white hover:text-[#141414] font-bold border-2 border-[#141414] text-xs font-black uppercase transition-all shadow-[4px_4px_0px_0px_rgba(220,38,38,0.2)] disabled:opacity-50 cursor-pointer"
                           >
                             Decline & Send Regret
                           </button>
@@ -843,7 +843,7 @@ export function AdminApplicationsView() {
                     <span className="bg-[#141414] text-white text-[9px] font-black px-2 py-0.5 uppercase tracking-widest inline-block">
                       OPERATIONAL CONTROL
                     </span>
-                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-400 text-[9px] font-black px-2 py-0.5 uppercase tracking-widest inline-block">
+                    <span className="bg-white text-[#141414] font-bold border border-[#141414] text-[9px] font-black px-2 py-0.5 uppercase tracking-widest inline-block">
                       REGISTRATION ONLY
                     </span>
                   </div>
@@ -860,12 +860,12 @@ export function AdminApplicationsView() {
 
               {/* Error and Success Notifications */}
               {whitelistError && (
-                <div className="p-3.5 bg-red-50 border-2 border-red-600 font-mono text-xs text-red-900 font-bold">
+                <div className="p-3.5 bg-white border-2 border-[#141414] font-mono text-xs text-[#141414] font-bold font-bold">
                   {whitelistError}
                 </div>
               )}
               {whitelistSuccess && (
-                <div className="p-3.5 bg-emerald-50 border-2 border-emerald-600 font-mono text-xs text-emerald-900 font-bold">
+                <div className="p-3.5 bg-white border-2 border-[#141414] font-mono text-xs text-[#141414] font-bold font-bold">
                   {whitelistSuccess}
                 </div>
               )}
@@ -935,7 +935,7 @@ export function AdminApplicationsView() {
                         </span>
                         <button
                           onClick={() => handleRemoveFromWhitelist(email)}
-                          className="px-2 py-1 text-[10px] font-black text-red-600 border border-transparent hover:border-red-600 hover:bg-red-50 transition-all uppercase tracking-wider cursor-pointer"
+                          className="px-2 py-1 text-[10px] font-black text-[#141414] font-bold border border-transparent hover:border-[#141414] hover:bg-white transition-all uppercase tracking-wider cursor-pointer"
                         >
                           Remove from Whitelist
                         </button>

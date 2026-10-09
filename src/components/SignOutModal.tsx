@@ -48,7 +48,7 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
         </button>
 
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-red-600 text-white flex items-center justify-center font-mono font-bold shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] border border-[#141414]">
+          <div className="w-10 h-10 bg-neutral-200 text-[#141414] text-white flex items-center justify-center font-mono font-bold shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] border border-[#141414]">
             <LogOut className="w-5 h-5" />
           </div>
           <div>
@@ -61,8 +61,8 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
           </div>
         </div>
 
-        <div className="p-3.5 bg-amber-500/10 border-2 border-amber-600 text-amber-950 font-mono text-xs mb-5 flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+        <div className="p-3.5 bg-white border-2 border-[#141414] text-neutral-700 font-mono text-xs mb-5 flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-[#141414] font-bold shrink-0 mt-0.5" />
           <p className="leading-relaxed">
             Are you sure you want to end your active session? You will need to re-authenticate with your Agent credentials to access private controls.
           </p>
@@ -84,7 +84,7 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
               onClose();
               onConfirm();
             }}
-            className="w-full sm:w-1/2 py-2.5 px-4 bg-red-600 text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#141414] hover:bg-red-700 cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center justify-center gap-1.5"
+            className="w-full sm:w-1/2 py-2.5 px-4 bg-neutral-200 text-[#141414] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center justify-center gap-1.5"
           >
             <LogOut className="w-4 h-4" />
             <span>Sign Out</span>

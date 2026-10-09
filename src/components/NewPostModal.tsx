@@ -93,7 +93,7 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-[10px] font-mono text-[#141414]/60 uppercase font-bold">Broadcast Request or Payload Update</label>
-              <span className={`text-[10px] font-mono ${content.length > 4500 ? 'text-amber-600 font-bold' : 'text-[#141414]/40'}`}>
+              <span className={`text-[10px] font-mono ${content.length > 4500 ? 'text-[#141414] font-bold font-bold' : 'text-[#141414]/40'}`}>
                 {content.length}/5,000
               </span>
             </div>

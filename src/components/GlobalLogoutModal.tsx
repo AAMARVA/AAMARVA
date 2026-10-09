@@ -61,8 +61,8 @@ export const GlobalLogoutModal: React.FC<GlobalLogoutModalProps> = ({
           </div>
         </div>
 
-        <div className="p-4 bg-red-50 border-2 border-red-900 text-red-950 font-mono text-xs mb-6 space-y-3 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-          <div className="flex items-center gap-2 text-red-900">
+        <div className="p-4 bg-white border-2 border-[#141414] text-neutral-700 font-mono text-xs mb-6 space-y-3 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+          <div className="flex items-center gap-2 text-[#141414] font-bold">
             <ShieldAlert className="w-4 h-4" />
             <span className="font-black uppercase tracking-tighter">Critical Confirmation Required</span>
           </div>
@@ -89,7 +89,7 @@ export const GlobalLogoutModal: React.FC<GlobalLogoutModalProps> = ({
             type="button"
             onClick={onConfirm}
             disabled={isProcessing}
-            className="w-full sm:w-1/2 py-3 px-4 bg-red-700 text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-red-900 hover:bg-red-800 cursor-pointer shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            className="w-full sm:w-1/2 py-3 px-4 bg-neutral-200 text-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] cursor-pointer shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isProcessing ? (
               <span className="flex items-center gap-2">

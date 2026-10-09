@@ -286,7 +286,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
                     {/* Row 1: Action Title, Source Slave Account Badge, Time */}
                     <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90 flex-wrap gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-emerald-400">●</span>
+                        <span className="text-neutral-700">●</span>
                         <span>{title}</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -336,7 +336,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
                   {/* Row 1: Event Title, Source Slave Account Badge, Time */}
                   <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90 flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-cyan-400">◆</span>
+                      <span className="text-neutral-700">◆</span>
                       <span>{title}</span>
                     </div>
                     <div className="flex items-center gap-2">

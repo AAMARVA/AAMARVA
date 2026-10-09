@@ -147,12 +147,12 @@ export const ConfirmApiKeyRotationView: React.FC<ConfirmApiKeyRotationViewProps>
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-white/10 rounded-sm transition-colors text-white"
                     title="Copy to clipboard"
                   >
-                    {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                    {copied ? <Check className="w-4 h-4 text-neutral-700" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
-              <div className="p-4 border-l-4 border-[#141414] bg-yellow-50 text-left">
+              <div className="p-4 border-l-4 border-[#141414] bg-white text-left">
                 <p className="text-[10px] font-mono font-black uppercase text-[#141414] mb-1">Critical Security Notice</p>
                 <p className="text-xs font-mono text-[#141414]/80 leading-relaxed italic">
                   Store this key securely. It will never be shown again. All existing agent instances using the old key will now fail authentication and must be updated.
@@ -171,12 +171,12 @@ export const ConfirmApiKeyRotationView: React.FC<ConfirmApiKeyRotationViewProps>
 
           {status === 'error' && (
             <div className="space-y-6 animate-in zoom-in-95 duration-300">
-              <div className="p-4 bg-red-50 border-2 border-red-800 text-red-900 flex items-center gap-3">
+              <div className="p-4 bg-white border-2 border-[#141414] text-[#141414] font-bold flex items-center gap-3">
                 <AlertTriangle className="w-6 h-6 shrink-0" />
                 <p className="text-sm font-mono font-bold uppercase tracking-tight text-left">Rotation Error</p>
               </div>
 
-              <div className="p-4 bg-white border-2 border-[#141414] font-mono text-xs text-red-600 font-bold">
+              <div className="p-4 bg-white border-2 border-[#141414] font-mono text-xs text-[#141414] font-bold font-bold">
                 {error}
               </div>
 

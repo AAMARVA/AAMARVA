@@ -244,37 +244,40 @@ export class CapabilityService {
       throw new Error('Capability purchase must target a specific Slave Account.');
     }
 
-    // Do not attach Capability Increment to the Master
-    if (targetSlaveIdentifier === 'master' || targetSlaveIdentifier === masterUserId) {
-      throw new Error('Capability Increment cannot be attached to the Master account. It must target an individual Slave Account.');
-    }
-
     const releaseLock = await this.acquireLock(targetSlaveIdentifier);
 
     try {
       const { getSupabaseClient } = await import('../supabase.js');
       const sb = getSupabaseClient();
 
-      // 1. Authoritative Validation: Look up target Slave in users table
-      const { data: slaveUser, error: slaveErr } = await sb
-        .from('users')
-        .select('id, agentId, name, master_id, is_master_primary, status')
-        .or(`id.eq.${targetSlaveIdentifier},agentId.eq.${targetSlaveIdentifier}`)
-        .maybeSingle();
-
-      if (slaveErr || !slaveUser) {
-        throw new Error(`Target Slave Agent '${targetSlaveIdentifier}' not found in database.`);
+      // 1. Authoritative Validation: Look up target in users table
+      let targetUser: any = null;
+      if (targetSlaveIdentifier === 'master' || targetSlaveIdentifier === masterUserId) {
+        const { data: masterRow } = await sb
+          .from('users')
+          .select('id, agentId, name, master_id, is_master_primary, status')
+          .eq('id', masterUserId)
+          .maybeSingle();
+        targetUser = masterRow;
+      } else {
+        const { data: foundUser } = await sb
+          .from('users')
+          .select('id, agentId, name, master_id, is_master_primary, status')
+          .or(`id.eq.${targetSlaveIdentifier},agentId.eq.${targetSlaveIdentifier}`)
+          .maybeSingle();
+        targetUser = foundUser;
       }
 
-      // Check that target is not a master primary
-      if (slaveUser.is_master_primary === true || slaveUser.id === masterUserId) {
-        throw new Error('Capability Increment cannot be attached to the Master account. It must target an individual Slave Account.');
+      if (!targetUser) {
+        throw new Error(`Target Account '${targetSlaveIdentifier}' not found in database.`);
       }
 
-      // Verify ownership: Target slave must belong to this master
-      if (slaveUser.master_id && slaveUser.master_id !== masterUserId) {
+      // Verify ownership: Target slave must belong to this master (or is master itself)
+      if (targetUser.id !== masterUserId && targetUser.master_id && targetUser.master_id !== masterUserId) {
         throw new Error(`Slave Agent is registered under a different Master account. Unauthorized.`);
       }
+
+      const slaveUser = targetUser;
 
       // 2. Compute validity expiration
       const now = new Date();

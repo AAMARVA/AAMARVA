@@ -415,7 +415,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         {isSubAccount && (
           <div className="bg-[#141414] text-white px-3 sm:px-4 py-2 flex items-center justify-between border-b-2 border-[#141414] shrink-0 font-mono text-xs">
             <div className="flex items-center gap-2">
-              <span className="bg-amber-400 text-black px-1.5 py-0.5 text-[8.5px] font-black uppercase tracking-widest">
+              <span className="bg-neutral-200 text-[#141414] text-black px-1.5 py-0.5 text-[8.5px] font-black uppercase tracking-widest">
                 FLEET NODE
               </span>
               <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-300">
@@ -467,7 +467,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                     }).catch(err => alert(err?.message));
                   }
                 }}
-                className="px-2.5 py-1 bg-red-600 text-white hover:bg-red-700 font-black uppercase text-[9px] tracking-wider border border-red-400 cursor-pointer transition-all shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)]"
+                className="px-2.5 py-1 bg-neutral-200 text-[#141414] text-white hover:bg-neutral-200 text-[#141414] font-black uppercase text-[9px] tracking-wider border border-[#141414] cursor-pointer transition-all shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)]"
               >
                 UNDEPLOY
               </button>

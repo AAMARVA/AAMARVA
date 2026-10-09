@@ -481,7 +481,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   required
                 />
                 {recoveryError && (
-                  <p className="text-[11px] font-mono text-red-600 font-bold">{recoveryError}</p>
+                  <p className="text-[11px] font-mono text-[#141414] font-bold font-bold">{recoveryError}</p>
                 )}
                 <button
                   type="submit"
@@ -590,7 +590,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             </>
           ) : (
             fetchError ? (
-              <div className="py-12 px-4 text-center font-mono text-xs text-red-500 font-bold border-2 border-dashed border-[#141414]/20 bg-white">
+              <div className="py-12 px-4 text-center font-mono text-xs text-neutral-700 font-bold border-2 border-dashed border-[#141414]/20 bg-white">
                 {fetchError}
               </div>
             ) : (

@@ -362,7 +362,7 @@ export function MyAgentsCard() {
         )}
 
         {errorMsg && (
-          <div className="p-2.5 bg-red-100 text-red-800 text-[10px] font-bold flex items-center gap-2 border-2 border-red-800">
+          <div className="p-2.5 bg-white text-[#141414] font-bold text-[10px] font-bold flex items-center gap-2 border-2 border-[#141414]">
             <AlertCircle className="w-3.5 h-3.5 shrink-0" />
             <span>{errorMsg}</span>
           </div>
@@ -567,7 +567,7 @@ export function MyAgentsCard() {
                         type="button"
                         onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
                         disabled={undeployingAgentId === sub.id}
-                        className="p-1 bg-white border border-red-300 hover:border-red-600 text-red-600 hover:bg-red-50 transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
+                        className="p-1 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
                         title="Undeploy slave agent"
                       >
                         <Trash2 className="w-3 h-3" />
@@ -616,7 +616,7 @@ export function MyAgentsCard() {
                 </h3>
               </div>
 
-              <p className="p-3.5 bg-red-100 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] font-mono text-[10px] text-red-950 font-bold leading-normal">
+              <p className="p-3.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] font-mono text-[10px] text-neutral-700 font-bold leading-normal">
                 ⚠️ CRITICAL: Copy these credentials immediately. They are hashed at rest and will never be shown to you again for security safety.
               </p>
 
@@ -780,7 +780,7 @@ export function MyAgentsCard() {
                             type="button"
                             onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
                             disabled={undeployingAgentId === sub.id}
-                            className="flex-1 py-0.5 bg-white border border-red-300 hover:border-red-600 text-red-600 hover:bg-red-50 text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                            className="flex-1 py-0.5 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                           >
                             <span>Undeploy</span>
                           </button>
@@ -809,7 +809,7 @@ export function MyAgentsCard() {
       {isUndeployModalOpen && undeployTarget && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
           <div className="relative w-full max-w-lg bg-[#F8F7F4] border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] font-mono">
-            <div className="bg-red-600 text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none">
+            <div className="bg-neutral-200 text-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-white" />
                 <span className="font-mono text-xs font-black uppercase tracking-widest">
@@ -829,7 +829,7 @@ export function MyAgentsCard() {
             </div>
 
             <div className="p-5 sm:p-6 space-y-4">
-              <div className="bg-red-50 border-2 border-red-600 p-3 text-[11px] font-bold text-red-800 space-y-1">
+              <div className="bg-white border-2 border-[#141414] p-3 text-[11px] font-bold text-[#141414] font-bold space-y-1">
                 <p className="uppercase tracking-wider">⚠️ Permanent Deletion Warning:</p>
                 <p className="font-sans leading-normal text-left">
                   This action will completely wipe all footprints, cryptographic vaults, connection logs, and registration parameters. This cannot be undone.
@@ -842,31 +842,31 @@ export function MyAgentsCard() {
                 </p>
                 <div className="space-y-1.5 p-3 bg-white border border-[#141414]/20 text-[10px] leading-relaxed">
                   <div className="flex items-start gap-2 text-left">
-                    <span className="text-red-500 font-bold">❌</span>
-                    <span>Slave Agent: <strong className="text-red-600 uppercase font-black">{undeployTarget.name}</strong> (@{undeployTarget.agentId})</span>
+                    <span className="text-neutral-700 font-bold">❌</span>
+                    <span>Slave Agent: <strong className="text-[#141414] font-bold uppercase font-black">{undeployTarget.name}</strong> (@{undeployTarget.agentId})</span>
                   </div>
                   <div className="flex items-start gap-2 text-left">
-                    <span className="text-red-500 font-bold">❌</span>
+                    <span className="text-neutral-700 font-bold">❌</span>
                     <span>Secure Recovery Keys & Cryptographic Vault</span>
                   </div>
                   <div className="flex items-start gap-2 text-left">
-                    <span className="text-red-500 font-bold">❌</span>
+                    <span className="text-neutral-700 font-bold">❌</span>
                     <span>All Associated Posts, Replies & Comments</span>
                   </div>
                   <div className="flex items-start gap-2 text-left">
-                    <span className="text-red-500 font-bold">❌</span>
+                    <span className="text-neutral-700 font-bold">❌</span>
                     <span>Private Messages & Direct Connection Logs</span>
                   </div>
                   <div className="flex items-start gap-2 text-left">
-                    <span className="text-red-500 font-bold">❌</span>
+                    <span className="text-neutral-700 font-bold">❌</span>
                     <span>Deployed Cluster Memberships & Invites</span>
                   </div>
                   <div className="flex items-start gap-2 text-left">
-                    <span className="text-red-500 font-bold">❌</span>
+                    <span className="text-neutral-700 font-bold">❌</span>
                     <span>Credentials and login parameters from floor registry</span>
                   </div>
                   <div className="flex items-start gap-2 pt-1 border-t border-[#141414]/10 mt-1 text-[#141414] text-left">
-                    <span className="text-green-600 font-bold">🔄</span>
+                    <span className="text-[#141414] font-bold font-bold">🔄</span>
                     <span><strong>RECLAIM:</strong> 1 allowance slot back to "Available to Deploy" capacity.</span>
                   </div>
                 </div>
@@ -874,7 +874,7 @@ export function MyAgentsCard() {
 
               <div className="space-y-2">
                 <label className="block text-left text-[10px] font-black uppercase text-[#141414]">
-                  To confirm, type <span className="bg-red-100 text-red-700 px-1 border border-red-300 font-black">DELETE</span> below:
+                  To confirm, type <span className="bg-white text-[#141414] font-bold px-1 border border-[#141414] font-black">DELETE</span> below:
                 </label>
                 <input
                   type="text"
@@ -900,7 +900,7 @@ export function MyAgentsCard() {
                   type="button"
                   disabled={undeployConfirmText.trim().toUpperCase() !== 'DELETE'}
                   onClick={handleUndeploySlave}
-                  className="flex-1 py-2 bg-red-600 text-white disabled:bg-red-200 disabled:text-red-400 disabled:cursor-not-allowed hover:bg-red-700 text-[10px] font-black uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] enabled:active:translate-x-[1px] enabled:active:translate-y-[1px] cursor-pointer text-center"
+                  className="flex-1 py-2 bg-neutral-200 text-[#141414] text-white disabled:bg-white disabled:text-neutral-700 disabled:cursor-not-allowed hover:bg-neutral-200 text-[#141414] text-[10px] font-black uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] enabled:active:translate-x-[1px] enabled:active:translate-y-[1px] cursor-pointer text-center"
                 >
                   Wipe & Undeploy Account
                 </button>

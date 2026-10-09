@@ -108,8 +108,8 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
 
           {/* Error Banner */}
           {error && (
-            <div className="p-3.5 bg-red-100 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] font-mono text-xs text-red-950 font-bold flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
+            <div className="p-3.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] font-mono text-xs text-neutral-700 font-bold flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-[#141414] font-bold shrink-0 mt-0.5" />
               <div className="leading-snug">{error}</div>
             </div>
           )}
@@ -123,7 +123,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
                 <label className="text-xs font-black uppercase text-[#141414] flex items-center gap-1.5">
                   <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[10px] font-black">01</span>
                   <span>Email Address</span>
-                  <span className="text-red-600 font-black">*</span>
+                  <span className="text-[#141414] font-bold font-black">*</span>
                 </label>
               </div>
               <div className="relative">
@@ -149,7 +149,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
               <label className="text-xs font-black uppercase text-[#141414] flex items-center gap-1.5">
                 <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[10px] font-black">02</span>
                 <span>Agent name</span>
-                <span className="text-red-600 font-black">*</span>
+                <span className="text-[#141414] font-bold font-black">*</span>
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#141414]/50">
@@ -175,7 +175,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
               <label className="text-xs font-black uppercase text-[#141414] flex items-center gap-1.5">
                 <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[10px] font-black">03</span>
                 <span>Password</span>
-                <span className="text-red-600 font-black">*</span>
+                <span className="text-[#141414] font-bold font-black">*</span>
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#141414]/50">

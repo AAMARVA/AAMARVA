@@ -104,9 +104,9 @@ export const AccessGateway: React.FC<AccessGatewayProps> = ({ children }) => {
   if (accessApproved) {
     return (
       <div className="space-y-6">
-        <div className="p-3 bg-emerald-50 border-2 border-emerald-600 text-emerald-950 font-mono text-[11px] font-black uppercase flex items-center justify-between shadow-[2px_2px_0px_0px_rgba(5,150,105,0.2)]">
+        <div className="p-3 bg-white border-2 border-[#141414] text-neutral-700 font-mono text-[11px] font-black uppercase flex items-center justify-between shadow-[2px_2px_0px_0px_rgba(20,20,20,0.2)]">
           <div className="flex items-center gap-2">
-            <Unlock className="w-4 h-4 text-emerald-700 shrink-0" />
+            <Unlock className="w-4 h-4 text-[#141414] font-bold shrink-0" />
             <span>Gateway State: Pre-Authorized / Invite Code Verified</span>
           </div>
           <button 
@@ -128,7 +128,7 @@ export const AccessGateway: React.FC<AccessGatewayProps> = ({ children }) => {
     <div className="space-y-8 max-w-3xl mx-auto">
       {/* Intro Banner */}
       <div className="text-center space-y-2 border-b-2 border-[#141414]/10 pb-6">
-        <div className="inline-flex items-center gap-1.5 bg-red-100 border border-red-700 text-red-900 font-mono text-[10px] font-black px-2 py-0.5 uppercase tracking-wider mb-2 select-none">
+        <div className="inline-flex items-center gap-1.5 bg-white border border-[#141414] text-[#141414] font-bold font-mono text-[10px] font-black px-2 py-0.5 uppercase tracking-wider mb-2 select-none">
           <ShieldAlert className="w-3.5 h-3.5" />
           <span>Restricted Network Access</span>
         </div>
@@ -144,15 +144,15 @@ export const AccessGateway: React.FC<AccessGatewayProps> = ({ children }) => {
         {/* Left Side: Apply for Access */}
         <div className="bg-white border-2 border-[#141414] p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] space-y-4">
           <h3 className="font-mono font-black text-xs uppercase tracking-wider pb-2 border-b border-[#141414]/20 flex items-center gap-1.5 text-[#141414]">
-            <FileText className="w-4 h-4 shrink-0 text-red-700" />
+            <FileText className="w-4 h-4 shrink-0 text-[#141414] font-bold" />
             <span>Apply for Operator Allocation</span>
           </h3>
 
           {submitted ? (
             <div className="space-y-4 font-mono">
-              <div className="p-4 bg-emerald-50 border-2 border-emerald-600 text-emerald-950 space-y-3 shadow-[2px_2px_0px_0px_rgba(5,150,105,0.1)]">
+              <div className="p-4 bg-white border-2 border-[#141414] text-neutral-700 space-y-3 shadow-[2px_2px_0px_0px_rgba(20,20,20,0.2)]">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-emerald-700 shrink-0" />
+                  <CheckCircle className="w-5 h-5 text-[#141414] font-bold shrink-0" />
                   <span className="font-black text-xs uppercase tracking-wider">Application Transmitted</span>
                 </div>
                 <p className="text-[11px] leading-relaxed">
@@ -163,7 +163,7 @@ export const AccessGateway: React.FC<AccessGatewayProps> = ({ children }) => {
               <div className="border border-[#141414] bg-[#E4E3E0]/30 p-3.5 space-y-2.5">
                 <div className="flex justify-between items-center text-[10px] uppercase font-bold text-[#141414]/60">
                   <span>Registry Status:</span>
-                  <span className="bg-amber-100 text-amber-900 border border-amber-500 px-1.5 py-0.5 text-[9px] font-black tracking-widest flex items-center gap-1 animate-pulse">
+                  <span className="bg-white text-[#141414] font-bold border border-[#141414] px-1.5 py-0.5 text-[9px] font-black tracking-widest flex items-center gap-1 animate-pulse">
                     <Clock className="w-2.5 h-2.5" />
                     QUEUED // REVIEW
                   </span>
@@ -260,7 +260,7 @@ export const AccessGateway: React.FC<AccessGatewayProps> = ({ children }) => {
         {/* Right Side: Invite Verification */}
         <div className="bg-white border-2 border-[#141414] p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] space-y-4">
           <h3 className="font-mono font-black text-xs uppercase tracking-wider pb-2 border-b border-[#141414]/20 flex items-center gap-1.5 text-[#141414]">
-            <Key className="w-4 h-4 shrink-0 text-emerald-700" />
+            <Key className="w-4 h-4 shrink-0 text-[#141414] font-bold" />
             <span>Verify Invitation Code</span>
           </h3>
 
@@ -270,13 +270,13 @@ export const AccessGateway: React.FC<AccessGatewayProps> = ({ children }) => {
 
           <form onSubmit={handleVerifyInvite} className="space-y-4 font-mono">
             {inviteError && (
-              <div className="p-3 bg-red-50 border border-red-500 text-red-950 text-[10px] leading-relaxed">
+              <div className="p-3 bg-white border border-[#141414] text-neutral-700 text-[10px] leading-relaxed">
                 {inviteError}
               </div>
             )}
 
             {inviteSuccess && (
-              <div className="p-3 bg-emerald-50 border border-emerald-500 text-emerald-950 text-[10px] leading-relaxed font-black">
+              <div className="p-3 bg-white border border-[#141414] text-neutral-700 text-[10px] leading-relaxed font-black">
                 INVITATION VERIFIED // UNLOCKING GATEWAY...
               </div>
             )}

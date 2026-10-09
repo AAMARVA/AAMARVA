@@ -730,6 +730,59 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     const allowance = isActive ? (masterPlan?.allowance_accounts || 0) : 0;
     const history = await MasterAccountService.getInstance().getMasterPlanHistory(masterUserId);
 
+    const now = Date.now();
+    let rawBlocks = masterPlan?.metadata?.blocks || [];
+    if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) {
+      if (masterPlan && masterPlan.status === 'active') {
+        rawBlocks = [{
+          id: `plan_box_1_${masterPlan.id}`,
+          plan_number: 1,
+          plan_name: masterPlan.plan_name || 'Master & Slave Agent Plan',
+          plan_subtitle: `Base Fleet Roster (${masterPlan.allowance_accounts || 10} Accounts)`,
+          allowance: masterPlan.allowance_accounts || 10,
+          created_at: masterPlan.created_at || new Date().toISOString(),
+          expires_at: masterPlan.expires_at || new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          status: 'active',
+          amount: 50,
+          currency: 'USD'
+        }];
+      } else {
+        rawBlocks = [];
+      }
+    }
+
+    const activeBlocks = rawBlocks.filter((b: any) => new Date(b.expires_at).getTime() > now);
+    const earliestActiveTime = activeBlocks.length > 0 ? Math.min(...activeBlocks.map((b: any) => new Date(b.expires_at).getTime())) : 0;
+
+    let assignedCursor = 0;
+    const enrichedPlanBlocks = rawBlocks.map((b: any, idx: number) => {
+      const expTime = new Date(b.expires_at).getTime();
+      const isAct = expTime > now;
+      const daysLeft = Math.max(0, Math.ceil((expTime - now) / (1000 * 60 * 60 * 24)));
+      const bAllowance = b.allowance || 10;
+      const bSlaves = cleanSubAgents.slice(assignedCursor, assignedCursor + bAllowance);
+      const slotStart = assignedCursor + 1;
+      const slotEnd = assignedCursor + bAllowance;
+      assignedCursor += bAllowance;
+
+      return {
+        ...b,
+        id: b.id || `plan_box_${idx + 1}`,
+        plan_number: b.plan_number || (idx + 1),
+        plan_name: b.plan_name || (idx === 0 ? 'Master & Slave Agent Plan' : `Fleet Expansion Plan #${idx + 1}`),
+        plan_subtitle: b.plan_subtitle || `${bAllowance} Slave Accounts`,
+        status: isAct ? 'active' : 'expired',
+        is_active: isAct,
+        days_remaining: daysLeft,
+        is_earliest_expiry: isAct && activeBlocks.length > 1 && expTime === earliestActiveTime,
+        is_later_expiry: isAct && activeBlocks.length > 1 && expTime > earliestActiveTime,
+        slot_range: `${slotStart} - ${slotEnd}`,
+        assigned_slaves: bSlaves,
+        deployed_count: bSlaves.length,
+        available_count: Math.max(0, bAllowance - bSlaves.length)
+      };
+    });
+
     return res.json({
       success: true,
       data: {
@@ -748,6 +801,9 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
           updated_at: new Date().toISOString(),
           expires_at: null
         },
+        planBlocks: enrichedPlanBlocks,
+        activeBlocks: enrichedPlanBlocks.filter(b => b.is_active),
+        totalActiveBoxes: activeBlocks.length,
         active: isActive,
         status: isActive ? 'active' : 'inactive',
         allowance: allowance,
@@ -775,14 +831,19 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
         rawTargets = rawTargets ? [rawTargets] : [];
       }
 
-      // Do not attach Capability Increment to the Master
-      const targetSlaves = rawTargets.filter((id: any) => typeof id === 'string' && id.trim() && id.trim() !== 'master' && id.trim() !== masterUserId);
+      // Support both Master Account and Slave Accounts
+      const targetAccounts = rawTargets.map((id: any) => {
+        if (typeof id === 'string' && (id.trim() === 'master' || id.trim() === 'master-root')) {
+          return masterUserId;
+        }
+        return typeof id === 'string' ? id.trim() : id;
+      }).filter((id: any) => typeof id === 'string' && id.length > 0);
 
-      if (targetSlaves.length === 0) {
+      if (targetAccounts.length === 0) {
         return res.status(400).json({
           success: false,
           error: {
-            message: 'Capability Increment must target a specific Slave Account. It cannot be attached to the Master account.'
+            message: 'Please select at least one account (Master or Slave) to apply the capability increment.'
           }
         });
       }
@@ -792,8 +853,8 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
       const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : 30;
 
       const activatedList = [];
-      for (const slaveId of targetSlaves) {
-        const cap = await capService.activateSlaveCapability(masterUserId, slaveId, { validityDays });
+      for (const accountId of targetAccounts) {
+        const cap = await capService.activateSlaveCapability(masterUserId, accountId, { validityDays });
         activatedList.push(cap);
       }
 
@@ -822,17 +883,23 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     const parsedAccounts = parseInt(rawAccounts, 10);
     const targetAccounts = isNaN(parsedAccounts) ? 10 : Math.min(1000, Math.max(10, parsedAccounts));
 
-    const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | 'extend_validity' | undefined);
-    const addOnAccounts = req.body?.addOnAccounts ? Math.max(1, parseInt(req.body.addOnAccounts, 10)) : undefined;
+    const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | undefined);
+    const addOnAccounts = req.body?.addOnAccounts ? Math.max(10, parseInt(req.body.addOnAccounts, 10)) : undefined;
+    const extendAccountsCount = req.body?.extendAccountsCount ? Math.max(10, parseInt(req.body.extendAccountsCount, 10)) : undefined;
     const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : undefined;
+    const targetBlockId = req.body?.targetBlockId;
+    const planName = req.body?.planName;
 
     const { MasterAccountService } = await import('../services/masterAccountService.js');
     const masterService = MasterAccountService.getInstance();
     const entitlement = await masterService.activateMasterPlan(masterUserId, targetAccounts, {
       actionType,
       addOnAccounts,
-      validityDays
-    });
+      extendAccountsCount,
+      validityDays,
+      targetBlockId,
+      planName
+    } as any);
 
     masterService.invalidateMasterPlanCache(masterUserId);
 

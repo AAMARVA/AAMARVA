@@ -754,7 +754,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden relative flex flex-col">
           <button
             onClick={() => setShowSignOutModal(true)}
-            className="absolute top-2 right-2 py-1 px-2 bg-red-50 hover:bg-red-100 text-red-800 border-2 border-red-800 font-mono text-[9px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center gap-1 z-10 cursor-pointer"
+            className="absolute top-2 right-2 py-1 px-2 bg-white hover:bg-white text-[#141414] font-bold border-2 border-[#141414] font-mono text-[9px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center gap-1 z-10 cursor-pointer"
           >
             <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5" />
             <span>Sign Out</span>
@@ -1503,7 +1503,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   <button 
                     type="button" 
                     onClick={() => setIsEditing(prev => ({ ...prev, email: false }))}
-                    className="text-[#141414]/60 hover:text-red-600 text-sm font-bold"
+                    className="text-[#141414]/60 hover:text-[#141414] font-bold text-sm font-bold"
                   >
                     ✕
                   </button>
@@ -1613,7 +1613,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                             </span>
                           </div>
                           <div className="flex items-center gap-1">
-                            <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-red-600 hover:text-red-800 p-0.5" title="Delete">
+                            <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-[#141414] font-bold hover:text-[#141414] font-bold p-0.5" title="Delete">
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
@@ -1675,14 +1675,14 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             </div>
 
             {whitelistError && (
-              <div className="p-2 bg-red-100 border border-red-800 text-red-900 text-[11px] font-bold flex items-center gap-2">
+              <div className="p-2 bg-white border border-[#141414] text-[#141414] font-bold text-[11px] font-bold flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 flex-shrink-0" />
                 <span>{whitelistError}</span>
               </div>
             )}
 
             {whitelistSuccess && (
-              <div className="p-2 bg-emerald-100 border border-emerald-800 text-emerald-900 text-[11px] font-bold flex items-center gap-2">
+              <div className="p-2 bg-white border border-[#141414] text-[#141414] font-bold text-[11px] font-bold flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                 <span>{whitelistSuccess}</span>
               </div>
@@ -1702,7 +1702,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRemoveIp(net)}
-                        className="hover:text-red-600 font-bold ml-1 text-sm leading-none"
+                        className="hover:text-[#141414] font-bold font-bold ml-1 text-sm leading-none"
                         title="Remove IP from perimeter"
                       >
                         ×
@@ -1744,7 +1744,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setShowDeleteModal(true)}
-              className="py-2 px-4 bg-white text-red-700 hover:bg-red-700 hover:text-white active:bg-red-800 active:text-white border-2 border-red-700 hover:border-red-900 active:border-black font-mono text-[11px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_rgba(185,28,28,1)] hover:shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5"
+              className="py-2 px-4 bg-white text-[#141414] font-bold hover:bg-neutral-200 text-[#141414] hover:text-white active:bg-neutral-200 text-[#141414] active:text-white border-2 border-[#141414] hover:border-[#141414] active:border-black font-mono text-[11px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-[#141414] focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>{isSlaveAccount ? 'Undeploy Account' : 'Delete Account'}</span>
@@ -1761,7 +1761,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   <ShieldCheck className="w-4 h-4" />
                   Preserve New Secret
                 </h2>
-                <button onClick={() => setShowAddSecretModal(false)} className="text-white hover:text-red-400 p-1">
+                <button onClick={() => setShowAddSecretModal(false)} className="text-white hover:text-neutral-700 p-1">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -1780,7 +1780,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-red-600 hover:text-red-800 p-0.5" title="Delete">
+                              <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-[#141414] font-bold hover:text-[#141414] font-bold p-0.5" title="Delete">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
@@ -1820,7 +1820,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setSecretInputs(secretInputs.filter((_, i) => i !== idx))}
-                            className="px-2.5 py-2 bg-red-100 text-red-700 border-2 border-[#141414] font-bold text-xs"
+                            className="px-2.5 py-2 bg-white text-[#141414] font-bold border-2 border-[#141414] font-bold text-xs"
                           >
                             ✕
                           </button>
@@ -1864,7 +1864,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                     setNewApiKey(null);
                     setRotationEmailSent(false);
                   }}
-                  className="text-white hover:text-red-400 p-1"
+                  className="text-white hover:text-neutral-700 p-1"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1909,7 +1909,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
                       <div className="space-y-4">
                         {rotationError && (
-                          <p className="mt-2 text-xs font-mono font-bold text-red-600 bg-red-50 p-2 border border-red-600">
+                          <p className="mt-2 text-xs font-mono font-bold text-[#141414] font-bold bg-white p-2 border border-[#141414]">
                             {rotationError}
                           </p>
                         )}
@@ -1948,7 +1948,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   )
                 ) : (
                   <div className="space-y-6">
-                    <div className="flex items-center gap-3 p-4 bg-green-50 border-2 border-green-800 text-green-900">
+                    <div className="flex items-center gap-3 p-4 bg-white border-2 border-[#141414] text-[#141414] font-bold">
                       <CheckCircle2 className="w-6 h-6 shrink-0" />
                       <div>
                         <h3 className="font-bold text-sm uppercase tracking-wider font-mono">Success</h3>
@@ -2011,7 +2011,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 </h2>
                 <button
                   onClick={() => setShowEmailChangeModal(false)}
-                  className="text-white hover:text-red-400 p-1"
+                  className="text-white hover:text-neutral-700 p-1"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2049,7 +2049,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       </div>
 
                       {emailChangeError && (
-                        <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs font-mono flex items-center gap-2">
+                        <div className="p-3 bg-white border border-[#141414] text-[#141414] font-bold text-xs font-mono flex items-center gap-2">
                           <ShieldAlert className="w-4 h-4 shrink-0" />
                           {emailChangeError}
                         </div>
@@ -2071,7 +2071,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   </>
                 ) : (
                   <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
-                    <div className="p-4 bg-green-50 border-2 border-green-800 text-green-900 flex items-center gap-3">
+                    <div className="p-4 bg-white border-2 border-[#141414] text-[#141414] font-bold flex items-center gap-3">
                       <CheckCircle2 className="w-5 h-5 shrink-0" />
                       <p className="text-xs font-mono font-bold uppercase tracking-tight">Request Successful</p>
                     </div>
@@ -2115,7 +2115,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 </h2>
                 <button
                   onClick={() => setShowPasswordChangeModal(false)}
-                  className="text-white hover:text-red-400 p-1"
+                  className="text-white hover:text-neutral-700 p-1"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2141,8 +2141,8 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
                     <form onSubmit={handleRequestPasswordReset} className="space-y-4">
                       {passwordResetError && (
-                        <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs font-mono flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                        <div className="p-3 bg-white border border-[#141414] text-[#141414] font-bold text-xs font-mono flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-[#141414] font-bold shrink-0" />
                           <span>{passwordResetError}</span>
                         </div>
                       )}
@@ -2214,7 +2214,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-150">
               <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
                 <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-1.5">
-                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <Trash2 className="w-4 h-4 text-neutral-700" />
                   <span>{isSlaveAccount ? 'Undeploy Slave Agent' : 'Delete Account'}</span>
                 </h2>
                 <button
@@ -2229,13 +2229,13 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               </div>
               
               <div className="p-6 space-y-6">
-                <div className="flex items-start gap-4 p-4 bg-red-50 border-2 border-red-800 text-red-900">
-                  <div className="shrink-0 p-2 bg-red-800 text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] border border-[#141414]">
+                <div className="flex items-start gap-4 p-4 bg-white border-2 border-[#141414] text-[#141414] font-bold">
+                  <div className="shrink-0 p-2 bg-neutral-200 text-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] border border-[#141414]">
                     <Trash2 className="w-5 h-5" />
                   </div>
                   <div>
                     <h3 className="font-bold text-sm mb-1 uppercase tracking-wider font-mono">Warning</h3>
-                    <p className="text-sm font-medium leading-relaxed text-red-800/80">
+                    <p className="text-sm font-medium leading-relaxed text-[#141414] font-bold">
                       {isSlaveAccount
                         ? 'Undeploying this slave account will wipe its deployment, restore 1 slot back to "Available to Deploy", and auto-switch back to your Master account.'
                         : 'Are you absolutely sure you want to permanently delete your agent account? This cannot be undone.'}
@@ -2245,7 +2245,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
                 <div className="space-y-2">
                   <label className="block font-mono text-[11px] font-black uppercase text-[#141414]/60">
-                    Type <span className="text-red-600 font-bold">DELETE</span> to confirm:
+                    Type <span className="text-[#141414] font-bold font-bold">DELETE</span> to confirm:
                   </label>
                   <div className="flex items-center gap-2">
                     <div className="bg-[#141414] text-white p-3 text-xs font-mono select-none flex-1 border border-[#141414]">
@@ -2300,7 +2300,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         !deleteConfirmInput.toLowerCase().includes('yes')
                       )
                     }
-                    className="w-full py-3 bg-red-700 text-white hover:bg-white hover:text-red-700 active:bg-red-900 active:text-white border-2 border-red-900 hover:border-red-700 active:border-black font-mono font-black text-xs uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(185,28,28,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 transition-all flex items-center justify-center gap-2 disabled:opacity-30 cursor-pointer touch-manipulation select-none"
+                    className="w-full py-3 bg-neutral-200 text-[#141414] text-white hover:bg-white hover:text-[#141414] font-bold active:bg-[#141414] text-white active:text-white border-2 border-[#141414] hover:border-[#141414] active:border-black font-mono font-black text-xs uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-[#141414] focus:ring-offset-2 transition-all flex items-center justify-center gap-2 disabled:opacity-30 cursor-pointer touch-manipulation select-none"
                   >
                     {isDeleting ? (
                       <>
@@ -2403,7 +2403,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         </div>
 
         {error && (
-          <div className="mb-6 p-3 bg-red-100 border-2 border-red-600 text-red-900 font-mono text-xs flex items-center gap-2">
+          <div className="mb-6 p-3 bg-white border-2 border-[#141414] text-[#141414] font-bold font-mono text-xs flex items-center gap-2">
             
             <span>{error}</span>
           </div>
@@ -2419,7 +2419,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         {registeredData && (
           <div className="mb-6 p-4 bg-[#E4E3E0] border-2 border-[#141414] space-y-4 animate-in fade-in duration-200">
             <div className="flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-[#141414]">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <ShieldCheck className="w-4 h-4 text-[#141414] font-bold" />
               <span>Agent Credentials Generated</span>
             </div>
             <div className="space-y-2">
@@ -2458,7 +2458,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 </div>
               </div>
             </div>
-            <p className="font-mono text-[11px] text-red-700 font-bold italic">
+            <p className="font-mono text-[11px] text-[#141414] font-bold font-bold italic">
                IMPORTANT: This will never be shown again. Store it carefully.
             </p>
           </div>
@@ -2586,7 +2586,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   disabled={isSendingRecovery}
                 />
                 {recoveryMessage && (
-                  <p className={`font-mono text-[10px] font-bold ${recoverySuccess ? 'text-emerald-800' : 'text-rose-700'}`}>
+                  <p className={`font-mono text-[10px] font-bold ${recoverySuccess ? 'text-[#141414] font-bold' : 'text-[#141414] font-bold'}`}>
                     {recoveryMessage}
                   </p>
                 )}

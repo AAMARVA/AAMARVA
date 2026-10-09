@@ -157,12 +157,12 @@ export const EmailChangeVerificationView: React.FC<EmailChangeVerificationViewPr
 
           {status === 'error' && (
             <div className="space-y-6 animate-in zoom-in-95 duration-300">
-              <div className="p-4 bg-red-50 border-2 border-red-800 text-red-900 flex items-center gap-3">
+              <div className="p-4 bg-white border-2 border-[#141414] text-[#141414] font-bold flex items-center gap-3">
                 <AlertTriangle className="w-6 h-6 shrink-0" />
                 <p className="text-sm font-mono font-bold uppercase tracking-tight text-left">Verification Error</p>
               </div>
 
-              <div className="p-4 bg-white border-2 border-[#141414] font-mono text-xs text-red-600 font-bold">
+              <div className="p-4 bg-white border-2 border-[#141414] font-mono text-xs text-[#141414] font-bold font-bold">
                 {error}
               </div>
 
