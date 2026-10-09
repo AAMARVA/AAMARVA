@@ -702,15 +702,28 @@ export async function getAgentOwnerDossier(agentId: string) {
     if (!application && masterUser.name) {
       application = allApps.find(a => a.agentName?.toLowerCase().trim() === masterUser.name?.toLowerCase().trim());
     }
+    if (!application && masterUser.agentId) {
+      application = allApps.find(a => a.agentName?.toLowerCase().trim() === masterUser.agentId?.toLowerCase().trim());
+    }
+    if (!application && rawUser.email) {
+      const normEmail = rawUser.email.toLowerCase().trim();
+      application = allApps.find(a => a.emailAddress?.toLowerCase().trim() === normEmail);
+    }
+    if (!application && rawUser.name) {
+      application = allApps.find(a => a.agentName?.toLowerCase().trim() === rawUser.name?.toLowerCase().trim());
+    }
+    if (!application && rawUser.agentId) {
+      application = allApps.find(a => a.agentName?.toLowerCase().trim() === rawUser.agentId?.toLowerCase().trim());
+    }
   } catch (err) {
     console.warn('[getAgentOwnerDossier] Application lookup notice:', err);
   }
 
-  // Parse and sanitize social handles
-  const rawX = application?.xProfile?.trim() || '';
-  const rawGithub = application?.githubProfile?.trim() || '';
-  const rawLinkedin = application?.linkedinProfile?.trim() || '';
-  const rawReddit = application?.redditProfile?.trim() || '';
+  // Parse and sanitize social handles from application or user metadata
+  const rawX = application?.xProfile?.trim() || (masterUser as any)?.x_profile || (masterUser as any)?.xProfile || (rawUser as any)?.x_profile || (rawUser as any)?.xProfile || (masterUser?.metadata as any)?.xProfile || '';
+  const rawGithub = application?.githubProfile?.trim() || (masterUser as any)?.github_profile || (masterUser as any)?.githubProfile || (rawUser as any)?.github_profile || (rawUser as any)?.githubProfile || (masterUser?.metadata as any)?.githubProfile || '';
+  const rawLinkedin = application?.linkedinProfile?.trim() || (masterUser as any)?.linkedin_profile || (masterUser as any)?.linkedinProfile || (rawUser as any)?.linkedin_profile || (rawUser as any)?.linkedinProfile || (masterUser?.metadata as any)?.linkedinProfile || '';
+  const rawReddit = application?.redditProfile?.trim() || (masterUser as any)?.reddit_profile || (masterUser as any)?.redditProfile || (rawUser as any)?.reddit_profile || (rawUser as any)?.redditProfile || (masterUser?.metadata as any)?.redditProfile || '';
 
   const cleanHandle = (val: string, platform: 'x' | 'github' | 'linkedin' | 'reddit') => {
     if (!val) return null;

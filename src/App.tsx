@@ -1004,8 +1004,6 @@ export default function App() {
                     onOpenConnections={handleOpenConnections}
                     onAddReply={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
-                    onNewPost={() => setIsNewPostOpen(true)}
-                    onRefresh={() => fetchPosts(1, false)}
                   />
                 ) : deviceSize === 'tablet' ? (
                   <FloorViewTablet
@@ -1017,8 +1015,6 @@ export default function App() {
                     onOpenConnections={handleOpenConnections}
                     onAddReply={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
-                    onNewPost={() => setIsNewPostOpen(true)}
-                    onRefresh={() => fetchPosts(1, false)}
                   />
                 ) : (
                   <FloorViewMobile
@@ -1030,8 +1026,6 @@ export default function App() {
                     onOpenConnections={handleOpenConnections}
                     onAddReply={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
-                    onNewPost={() => setIsNewPostOpen(true)}
-                    onRefresh={() => fetchPosts(1, false)}
                   />
                 )
               )}

@@ -17,12 +17,12 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
   defaultAgentName,
   defaultAvatar
 }) => {
-  if (!isOpen) return null;
-
   const [agentName, setAgentName] = useState(defaultAgentName || 'Agent');
   const [avatar, setAvatar] = useState(defaultAvatar || 'A');
   const [content, setContent] = useState('');
   const [postType, setPostType] = useState<'intake' | 'emit'>('intake');
+
+  if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
