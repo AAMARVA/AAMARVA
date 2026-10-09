@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { UserDashboardView } from './UserDashboardView';
 import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
+import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
 import { NetworkPost } from '../types';
 import { RequestAccessForm } from './RequestAccessForm';
 
@@ -67,7 +68,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
   const [copied, setCopied] = useState(false);
   const [copiedPlatform, setCopiedPlatform] = useState(false);
   const [copiedFrameworks, setCopiedFrameworks] = useState(false);
-  const [adkSpecText, setAdkSpecText] = useState('');
+  const [adkSpecText, setAdkSpecText] = useState(ADK_SPEC_FALLBACK);
   const [isLoadingAdk, setIsLoadingAdk] = useState(false);
   const [adkSubTab, setAdkSubTab] = useState<'endpoints' | 'platform' | 'frameworks'>('endpoints');
 
@@ -75,17 +76,17 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
     if (hubTab === 'adk') {
       setIsLoadingAdk(true);
       fetch(buildApiUrl(`/api/adk?v=${Date.now()}`))
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
         .then((resJson) => {
           if (resJson && resJson.success && resJson.data && resJson.data.adk) {
             setAdkSpecText(resJson.data.adk);
           }
         })
         .catch((err) => {
-          console.warn('Failed to load ADK spec:', err);
-          if (!adkSpecText) {
-            setAdkSpecText('Failed to load AAMARVA Platform Specification.');
-          }
+          console.warn('Live ADK endpoint unavailable, using bundled specification:', err);
         })
         .finally(() => setIsLoadingAdk(false));
     }
@@ -93,13 +94,13 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
 
   const getPlatformSpecOnly = (fullText: string) => {
     if (!fullText) return '';
-    const endpointStart = fullText.indexOf("# POST /api/auth/register");
-    if (endpointStart !== -1) {
-      return fullText.substring(0, endpointStart).trim();
+    const match = fullText.search(/#+\s+POST\s+\/api\/auth\/register/i);
+    if (match !== -1) {
+      return fullText.substring(0, match).trim();
     }
-    const frameworkIdx = fullText.indexOf("# Framework Integrations");
-    if (frameworkIdx !== -1) {
-      return fullText.substring(0, frameworkIdx).trim();
+    const fMatch = fullText.search(/#+\s+Framework Integrations/i);
+    if (fMatch !== -1) {
+      return fullText.substring(0, fMatch).trim();
     }
     return fullText.trim();
   };
@@ -107,23 +108,22 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
   const getEndpointsOnly = (fullText: string) => {
     if (!fullText) return '';
     let text = fullText;
-    const endpointStart = fullText.indexOf("# POST /api/auth/register");
-    if (endpointStart !== -1) {
-      text = fullText.substring(endpointStart);
+    const match = fullText.search(/#+\s+POST\s+\/api\/auth\/register/i);
+    if (match !== -1) {
+      text = fullText.substring(match);
     }
-    const frameworkIdx = text.indexOf("# Framework Integrations");
-    if (frameworkIdx !== -1) {
-      text = text.substring(0, frameworkIdx).trim();
+    const fMatch = text.search(/#+\s+Framework Integrations/i);
+    if (fMatch !== -1) {
+      text = text.substring(0, fMatch);
     }
     return text.trim();
   };
 
   const getFrameworkIntegrationsOnly = (fullText: string) => {
     if (!fullText) return '';
-    const delimiter = "# Framework Integrations";
-    const index = fullText.indexOf(delimiter);
-    if (index !== -1) {
-      return fullText.substring(index).trim();
+    const fMatch = fullText.search(/#+\s+Framework Integrations/i);
+    if (fMatch !== -1) {
+      return fullText.substring(fMatch).trim();
     }
     return '';
   };

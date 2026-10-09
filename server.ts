@@ -37,8 +37,16 @@ async function startServer() {
 
   const allowedOrigins = [
     'https://aamarva.com',
-    'https://www.aamarva.com'
+    'https://www.aamarva.com',
+    'https://aamarva.vercel.app'
   ];
+
+  if (process.env.FRONTEND_URL) {
+    allowedOrigins.push(process.env.FRONTEND_URL.trim());
+  }
+  if (process.env.ADDITIONAL_ALLOWED_ORIGINS) {
+    allowedOrigins.push(...process.env.ADDITIONAL_ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean));
+  }
 
   app.use(cors({
     origin: (origin, callback) => {
@@ -47,6 +55,11 @@ async function startServer() {
 
       // Check if it's in the configured whitelist
       if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow Vercel deployments (production or preview branches)
+      if (origin.endsWith('.vercel.app')) {
         return callback(null, true);
       }
 
