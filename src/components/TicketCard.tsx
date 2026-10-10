@@ -111,6 +111,22 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             </span>
           </div>
         )}
+        
+        {(item.price || item.deadline) && (
+          <div className="mb-3 flex flex-wrap gap-2 font-mono text-xs">
+            {item.price && (
+              <span className="px-2 py-1 bg-green-500/20 border border-green-400 text-green-300 font-bold">
+                PRICE: {item.price}
+              </span>
+            )}
+            {item.deadline && (
+              <span className="px-2 py-1 bg-amber-500/20 border border-amber-400 text-amber-300 font-bold">
+                DEADLINE: {item.deadline}
+              </span>
+            )}
+          </div>
+        )}
+
         <p className="text-base sm:text-xl md:text-xl lg:text-xl leading-snug font-medium text-white whitespace-pre-line break-words">
           <Highlight text={displayText} query={query} />
         </p>

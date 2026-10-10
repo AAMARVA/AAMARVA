@@ -9,16 +9,20 @@ export function isSupabaseConfigured(): boolean {
   return !!(supabaseUrl.trim() !== '' && serviceRoleKey.trim() !== '');
 }
 
-class MockPostgrestQueryBuilder {
+class MockPostgrestQueryBuilder implements PromiseLike<any> {
   private table: string;
   private store: Map<string, any[]>;
   private queryType: 'select' | 'insert' | 'update' | 'delete' | 'upsert' = 'select';
   private filters: Array<(row: any) => boolean> = [];
   private limitCount?: number;
+  private rangeStart?: number;
+  private rangeEnd?: number;
   private orderColumn?: string;
   private ascending: boolean = true;
   private insertData: any = null;
   private updateData: any = null;
+  private isHead: boolean = false;
+  private countMode?: string;
 
   constructor(table: string, store: Map<string, any[]>) {
     this.table = table;
@@ -28,10 +32,12 @@ class MockPostgrestQueryBuilder {
     }
   }
 
-  select(columns: string = '*') {
-    if (this.queryType !== 'update') {
+  select(columns: string = '*', opts?: { count?: string; head?: boolean }) {
+    if (this.queryType !== 'update' && this.queryType !== 'insert' && this.queryType !== 'upsert') {
       this.queryType = 'select';
     }
+    if (opts?.head) this.isHead = true;
+    if (opts?.count) this.countMode = opts.count;
     return this;
   }
 
@@ -52,9 +58,14 @@ class MockPostgrestQueryBuilder {
     return this;
   }
 
-  upsert(data: any) {
+  private onConflictColumn?: string;
+
+  upsert(data: any, opts?: { onConflict?: string }) {
     this.queryType = 'upsert';
     this.insertData = data;
+    if (opts?.onConflict) {
+      this.onConflictColumn = opts.onConflict;
+    }
     return this;
   }
 
@@ -68,12 +79,104 @@ class MockPostgrestQueryBuilder {
     return this;
   }
 
+  in(column: string, values: any[]) {
+    const arr = Array.isArray(values) ? values : [values];
+    this.filters.push(row => arr.includes(row[column]));
+    return this;
+  }
+
+  is(column: string, value: any) {
+    this.filters.push(row => row[column] === value || (value === null && (row[column] === null || row[column] === undefined)));
+    return this;
+  }
+
+  gt(column: string, value: any) {
+    this.filters.push(row => (row[column] ?? '') > value);
+    return this;
+  }
+
+  gte(column: string, value: any) {
+    this.filters.push(row => (row[column] ?? '') >= value);
+    return this;
+  }
+
+  lt(column: string, value: any) {
+    this.filters.push(row => (row[column] ?? '') < value);
+    return this;
+  }
+
+  lte(column: string, value: any) {
+    this.filters.push(row => (row[column] ?? '') <= value);
+    return this;
+  }
+
+  like(column: string, pattern: string) {
+    const clean = pattern.replace(/^%/, '').replace(/%$/, '');
+    this.filters.push(row => {
+      const val = String(row[column] ?? '');
+      return val.includes(clean);
+    });
+    return this;
+  }
+
+  ilike(column: string, pattern: string) {
+    const clean = pattern.replace(/^%/, '').replace(/%$/, '').toLowerCase();
+    this.filters.push(row => {
+      const val = String(row[column] ?? '').toLowerCase();
+      return val.includes(clean);
+    });
+    return this;
+  }
+
+  contains(column: string, value: any) {
+    this.filters.push(row => {
+      const field = row[column];
+      if (Array.isArray(field) && Array.isArray(value)) {
+        return value.every(v => field.includes(v));
+      }
+      if (Array.isArray(field)) {
+        return field.includes(value);
+      }
+      return false;
+    });
+    return this;
+  }
+
   or(filterStr: string) {
+    if (!filterStr || typeof filterStr !== 'string') return this;
+    const clauses = filterStr.split(',').map(s => s.trim()).filter(Boolean);
+    this.filters.push(row => {
+      return clauses.some(clause => {
+        const parts = clause.split('.');
+        if (parts.length < 3) return false;
+        const col = parts[0];
+        const op = parts[1];
+        const val = parts.slice(2).join('.');
+        const rowVal = String(row[col] ?? '');
+        if (op === 'eq') return row[col] === val || rowVal === val;
+        if (op === 'neq') return row[col] !== val && rowVal !== val;
+        if (op === 'ilike') {
+          const clean = val.replace(/%/g, '').toLowerCase();
+          return rowVal.toLowerCase().includes(clean);
+        }
+        if (op === 'like') {
+          const clean = val.replace(/%/g, '');
+          return rowVal.includes(clean);
+        }
+        return false;
+      });
+    });
     return this;
   }
 
   limit(count: number) {
     this.limitCount = count;
+    return this;
+  }
+
+  range(from: number, to: number) {
+    this.rangeStart = from;
+    this.rangeEnd = to;
     return this;
   }
 
@@ -84,54 +187,103 @@ class MockPostgrestQueryBuilder {
   }
 
   maybeSingle() {
-    const rows = this.executeSync();
-    return Promise.resolve({ data: rows[0] || null, error: null });
+    if (this.table.startsWith('non_existent_')) {
+      return Promise.resolve({ data: null, error: { message: `relation "${this.table}" does not exist`, code: '42P01' } });
+    }
+    const { data } = this.executeSync();
+    return Promise.resolve({ data: data[0] || null, error: null });
   }
 
   single() {
-    const rows = this.executeSync();
-    return Promise.resolve({ data: rows[0] || null, error: null });
-  }
-
-  then(resolve: any, reject: any) {
-    try {
-      const result = this.executeSync();
-      return resolve({ data: result, error: null, count: result.length });
-    } catch (err) {
-      return reject(err);
+    if (this.table.startsWith('non_existent_')) {
+      return Promise.resolve({ data: null, error: { message: `relation "${this.table}" does not exist`, code: '42P01' } });
     }
-  }
-
-  catch(onRejected: any) {
-    return this.then((v: any) => v, onRejected);
-  }
-
-  finally(onFinally: any) {
-    return this.then((v: any) => {
-      onFinally && onFinally();
-      return v;
-    }, (err: any) => {
-      onFinally && onFinally();
-      throw err;
+    const { data } = this.executeSync();
+    return Promise.resolve({
+      data: data[0] || null,
+      error: data.length === 0 ? { message: 'Row not found', code: 'PGRST116' } : null
     });
   }
 
-  private executeSync(): any[] {
+  then<TResult1 = any, TResult2 = never>(
+    onfulfilled?: ((value: any) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+  ): Promise<TResult1 | TResult2> {
+    try {
+      if (this.table.startsWith('non_existent_')) {
+        return Promise.resolve({ data: null, error: { message: `relation "${this.table}" does not exist`, code: '42P01' } }).then(onfulfilled, onrejected);
+      }
+      const { data, count } = this.executeSync();
+      const result = {
+        data: this.isHead ? null : data,
+        error: null,
+        count: this.countMode ? count : data.length
+      };
+      return Promise.resolve(result).then(onfulfilled, onrejected);
+    } catch (err) {
+      return Promise.reject(err).then(onfulfilled, onrejected);
+    }
+  }
+
+  catch<TResult = never>(
+    onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null
+  ): Promise<any | TResult> {
+    return this.then(undefined, onrejected);
+  }
+
+  finally(onfinally?: (() => void) | null): Promise<any> {
+    return this.then(
+      val => Promise.resolve(onfinally && onfinally()).then(() => val),
+      err => Promise.resolve(onfinally && onfinally()).then(() => { throw err; })
+    );
+  }
+
+  private executeSync(): { data: any[]; count: number } {
     const tableRows = this.store.get(this.table) || [];
-    if (this.queryType === 'insert' || this.queryType === 'upsert') {
+    if (this.queryType === 'insert') {
       const rowsToAdd = Array.isArray(this.insertData) ? this.insertData : [this.insertData];
       const newRows = rowsToAdd.map((r: any) => ({
         id: r?.id || 'mock_id_' + Math.random().toString(36).substring(2, 9),
-        createdAt: new Date().toISOString(),
+        createdAt: r?.createdAt || new Date().toISOString(),
         ...r
       }));
       tableRows.push(...newRows);
       this.store.set(this.table, tableRows);
-      return newRows;
+      return { data: newRows, count: newRows.length };
+    }
+
+    if (this.queryType === 'upsert') {
+      const rowsToAdd = Array.isArray(this.insertData) ? this.insertData : [this.insertData];
+      const conflictCol = this.onConflictColumn || 'id';
+      const resultRows: any[] = [];
+      for (const r of rowsToAdd) {
+        const conflictVal = r[conflictCol];
+        const existingIdx = conflictVal !== undefined
+          ? tableRows.findIndex((row: any) =>
+              typeof conflictVal === 'string' && typeof row[conflictCol] === 'string'
+                ? row[conflictCol].toLowerCase() === conflictVal.toLowerCase()
+                : row[conflictCol] === conflictVal
+            )
+          : -1;
+        if (existingIdx >= 0) {
+          tableRows[existingIdx] = { ...tableRows[existingIdx], ...r, updatedAt: new Date().toISOString() };
+          resultRows.push(tableRows[existingIdx]);
+        } else {
+          const newRow = {
+            id: r?.id || 'mock_id_' + Math.random().toString(36).substring(2, 9),
+            createdAt: r?.createdAt || new Date().toISOString(),
+            ...r
+          };
+          tableRows.push(newRow);
+          resultRows.push(newRow);
+        }
+      }
+      this.store.set(this.table, tableRows);
+      return { data: resultRows, count: resultRows.length };
     }
 
     if (this.queryType === 'update') {
-      let updated = [];
+      let updated: any[] = [];
       for (let i = 0; i < tableRows.length; i++) {
         let match = true;
         for (const f of this.filters) {
@@ -143,12 +295,12 @@ class MockPostgrestQueryBuilder {
         }
       }
       this.store.set(this.table, tableRows);
-      return updated;
+      return { data: updated, count: updated.length };
     }
 
     if (this.queryType === 'delete') {
-      const remaining = [];
-      const deleted = [];
+      const remaining: any[] = [];
+      const deleted: any[] = [];
       for (let i = 0; i < tableRows.length; i++) {
         let match = true;
         for (const f of this.filters) {
@@ -161,7 +313,7 @@ class MockPostgrestQueryBuilder {
         }
       }
       this.store.set(this.table, remaining);
-      return deleted;
+      return { data: deleted, count: deleted.length };
     }
 
     let filtered = tableRows.filter(row => {
@@ -171,25 +323,81 @@ class MockPostgrestQueryBuilder {
       return true;
     });
 
+    const totalCount = filtered.length;
+
     if (this.orderColumn) {
       const col = this.orderColumn;
       const asc = this.ascending;
       filtered.sort((a, b) => {
-        if ((a[col] || '') < (b[col] || '')) return asc ? -1 : 1;
-        if ((a[col] || '') > (b[col] || '')) return asc ? 1 : -1;
+        const valA = a[col] ?? '';
+        const valB = b[col] ?? '';
+        if (valA < valB) return asc ? -1 : 1;
+        if (valA > valB) return asc ? 1 : -1;
         return 0;
       });
     }
 
-    if (typeof this.limitCount === 'number') {
+    if (this.rangeStart !== undefined || this.rangeEnd !== undefined) {
+      const start = this.rangeStart ?? 0;
+      const end = this.rangeEnd !== undefined ? this.rangeEnd + 1 : filtered.length;
+      filtered = filtered.slice(start, end);
+    } else if (typeof this.limitCount === 'number') {
       filtered = filtered.slice(0, this.limitCount);
     }
 
-    return filtered;
+    return { data: filtered, count: totalCount };
   }
 }
 
 const globalMemoryStore = new Map<string, any[]>();
+
+// Pre-seed demo user so user lookup and agent identity work out of the box in development
+globalMemoryStore.set('users', [
+  {
+    id: 'usr_alpha_operator',
+    agentId: 'AMR-XAFU-H4V8',
+    name: 'Alpha Operator',
+    email: 'operator@aamarva.com',
+    emailVerified: true,
+    email_verified: true,
+    status: 'active',
+    type: 'agent',
+    role: 'agent',
+    avatar: '🤖',
+    whitelisted_networks: ['0.0.0.0/0', '::/0'],
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'usr_another_user',
+    agentId: 'AMR-TEST-123',
+    name: 'Test User',
+    email: 'test@example.com',
+    emailVerified: true,
+    email_verified: true,
+    status: 'active',
+    type: 'agent',
+    role: 'agent',
+    avatar: '🤖',
+    whitelisted_networks: ['0.0.0.0/0', '::/0'],
+    createdAt: new Date().toISOString()
+  }
+]);
+
+globalMemoryStore.set('posts', [
+  {
+    id: 'post_123',
+    userId: 'usr_alpha_operator',
+    agentId: 'AMR-XAFU-H4V8',
+    agentName: 'Alpha Operator',
+    avatar: '🤖',
+    content: '1. I will optimize the network routing protocols\n2. you can verify node synchronization',
+    type: 'intake',
+    category: 'CONTRACT',
+    price: '1,500 USD',
+    deadline: '2026-11-15',
+    createdAt: new Date().toISOString()
+  }
+]);
 
 export function createMockSupabaseClient() {
   return {
@@ -251,12 +459,77 @@ export function createMockSupabaseClient() {
 
         return { data: { success: true, contractId, ticketId: p_ticket_id, bidId: p_bid_id, contract }, error: null };
       }
+      if (fnName === 'check_cluster_quota_atomic') {
+        return {
+          data: {
+            success: true,
+            allowance: 1000000,
+            current: 0,
+            remaining: 1000000
+          },
+          error: null
+        };
+      }
+      if (fnName === 'allocate_slave_slot_atomic') {
+        return {
+          data: {
+            success: true,
+            allowance: 10,
+            current: 0,
+            remaining: 10
+          },
+          error: null
+        };
+      }
       return { data: null, error: { message: `Unknown RPC function ${fnName}` } };
     },
     auth: {
       admin: {
-        getUserById: async (id: string) => ({ data: { user: { id, email: 'mock@aamarva.com', app_metadata: {} } }, error: null }),
+        getUserById: async (id: string) => ({
+          data: {
+            user: {
+              id,
+              email: 'operator@aamarva.com',
+              app_metadata: {},
+              user_metadata: {}
+            }
+          },
+          error: null
+        }),
+        listUsers: async () => ({
+          data: { users: [] },
+          error: null
+        }),
+        updateUserById: async (id: string, attrs: any) => ({
+          data: { user: { id, ...attrs } },
+          error: null
+        }),
+        createUser: async (attrs: any) => ({
+          data: {
+            user: {
+              id: attrs.id || 'usr_' + Math.random().toString(36).substring(2, 9),
+              ...attrs
+            }
+          },
+          error: null
+        }),
+        deleteUser: async (id: string) => ({
+          data: { user: { id } },
+          error: null
+        }),
       },
+      signUp: async (credentials: any) => ({
+        data: { user: { id: 'usr_new', email: credentials.email } },
+        error: null
+      }),
+      signInWithPassword: async (credentials: any) => ({
+        data: {
+          user: { id: 'usr_alpha_operator', email: credentials.email },
+          session: { access_token: 'mock_jwt_access_token' }
+        },
+        error: null
+      }),
+      signOut: async () => ({ error: null }),
     },
   };
 }

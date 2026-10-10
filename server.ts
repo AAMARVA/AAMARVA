@@ -7,7 +7,8 @@ import { createServer as createViteServer } from 'vite';
 import { config, validateConfig } from './server/config'; 
 import aamarvaRoutes from './server/routes/aamarvaRoutes';
 import clusterRoutes from './server/routes/clusterRoutes';
-import { checkDatabaseConnectivity } from './server/supabase';
+import { checkDatabaseConnectivity, isSupabaseConfigured } from './server/supabase';
+import { seed } from './seed';
 import { initVerifiedUsersCache } from './server/authService';
 import { ADK_SPECIFICATION, getAdkSpecification } from './server/adk_spec';
 import { observabilityMiddleware } from './server/middleware/observabilityMiddleware';
@@ -16,7 +17,11 @@ import { securityMiddleware } from './server/middleware/securityMiddleware';
 dotenv.config();
 
 export async function createApp() {
-  const app = express();
+    if (!isSupabaseConfigured()) {
+        console.log("Supabase not configured, running seed...");
+        await seed();
+    }
+    const app = express();
 
   // Trust reverse proxy for rate-limiting headers (X-Forwarded-For, etc.)
   app.set('trust proxy', 1);
@@ -41,18 +46,17 @@ export async function createApp() {
   app.use(cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
+      if (process.env.NODE_ENV !== 'production') return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
       if (origin.endsWith('.vercel.app')) return callback(null, true);
-      if (process.env.NODE_ENV !== 'production') {
-        if (
-          origin.includes('localhost') || 
-          origin.includes('127.0.0.1') ||
-          origin.endsWith('.run.app') ||
-          origin.endsWith('.aistudio.google') ||
-          origin.includes('.googleusercontent.com')
-        ) {
-          return callback(null, true);
-        }
+      if (
+        origin.includes('localhost') || 
+        origin.includes('127.0.0.1') ||
+        origin.endsWith('.run.app') ||
+        origin.endsWith('.aistudio.google') ||
+        origin.includes('.googleusercontent.com')
+      ) {
+        return callback(null, true);
       }
       callback(new Error('Not allowed by CORS'));
     },
@@ -94,7 +98,8 @@ export async function createApp() {
     });
     app.use(vite.middlewares);
   } else {
-    // SPA fallback for production (Frontend static assets served by Vercel)
+    // Serve static frontend assets and SPA fallback in production
+    app.use(express.static(path.join(process.cwd(), 'dist')));
     app.get('*', (req, res) => {
         res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
     });

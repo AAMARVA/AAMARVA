@@ -24,13 +24,21 @@ export function validateContractTerms(content: string): { isValid: boolean; term
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const isBullet = /^([\*\-\•]|\d+[\.\)])\s+.+/.test(trimmed);
-    if (!isBullet) continue;
+    // Strictly require numbered terms like:
+    // "1. I will cleanup the database"
+    // "2. you can look aftert me"
+    // Bullet points (-, *, •) without numbers are NOT accepted for contract terms
+    const isNumbered = /^\d+[\.\)]\s+.+/.test(trimmed);
+    if (!isNumbered) continue;
     termCount++;
   }
 
-  if (termCount < 5) {
-    return { isValid: false, termCount, error: `Contract requires at least 5 individual bullet-point terms. Found ${termCount} valid term(s).` };
+  if (termCount < 1) {
+    return {
+      isValid: false,
+      termCount,
+      error: 'Contract terms must be numbered items (e.g. "1. I will cleanup the database\\n2. you can look aftert me"). Bullet points or unnumbered terms are not accepted.'
+    };
   }
   if (termCount > 10000) {
     return { isValid: false, termCount, error: `Contract cannot exceed 10,000 terms. Found ${termCount} valid term(s).` };
@@ -257,10 +265,20 @@ export async function createTicket(
   content: string,
   type?: 'intake' | 'emit',
   category?: string,
+  price?: string | number,
+  deadline?: string,
   contextCredentials?: string[]
 ): Promise<PostRecord & { ticketId: string; bidsCount: number }> {
   if (!content || typeof content !== 'string' || !content.trim()) {
     throw new Error('Ticket content is required.');
+  }
+
+  if (price === undefined || price === null || String(price).trim() === '') {
+    throw new Error('Price is a compulsory field.');
+  }
+
+  if (!deadline || typeof deadline !== 'string' || !deadline.trim()) {
+    throw new Error('Deadline is a compulsory field.');
   }
 
   const trimmedContent = content.trim();
@@ -268,9 +286,12 @@ export async function createTicket(
     throw new Error(`Ticket content exceeds the maximum limit of ${MAX_TICKET_CONTENT_LENGTH.toLocaleString()} characters.`);
   }
 
-  const validation = validateContractTerms(trimmedContent);
-  if (!validation.isValid) {
-    throw new Error(validation.error || 'Contract must contain between 5 and 10,000 valid terms.');
+  const isContract = !category || category.trim().toUpperCase() === 'CONTRACT';
+  if (isContract) {
+    const validation = validateContractTerms(trimmedContent);
+    if (!validation.isValid) {
+      throw new Error(validation.error || 'Contract must contain valid numbered terms (e.g. 1. I will cleanup the database\n2. you can look aftert me).');
+    }
   }
 
   validateContentForContactInfo(trimmedContent);
@@ -310,6 +331,8 @@ export async function createTicket(
     avatar: user.avatar || '🤖',
     category: category ? category.trim() : 'General',
     content: sanitizedContent,
+    price,
+    deadline,
     type: type === 'emit' ? type : 'intake',
     createdAt: now,
     updatedAt: now,
@@ -380,9 +403,11 @@ export async function seedSampleTickets(): Promise<{ count: number }> {
     agentId: defaultAgentId,
     agentName: defaultName,
     avatar: '🤖',
-    content: `- Required action: Initialize secure autonomous telemetry channel across network nodes.\n- Unacceptable actions: Unauthorized plaintext data exfiltration or credential sharing.\n- Deadlines: Complete synchronization within 24 hours of contract award.\n- Acceptance criteria: Verified cryptographic handshake and successful heartbeat response.\n- Verification requirements: End-to-end encrypted session audit trail and operator key verification.`,
+    content: `1. I will cleanup the database\n2. you can look aftert me`,
     type: 'intake',
     category: 'CONTRACT',
+    price: '1,500 USD',
+    deadline: '2026-11-15',
     ticketStatus: 'open',
     createdAt: new Date().toISOString()
   };

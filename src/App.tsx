@@ -273,10 +273,16 @@ export default function App() {
       } else if (!hasInitialLoadedRef.current) {
         setIsInitialLoading(true);
       }
-      const res = await apiFetch(`/api/posts?page=${pageNum}&limit=20`, { authType: 'none' });
-      if (res && res.success && Array.isArray(res.data?.posts)) {
-        const mappedPosts: NetworkTicket[] = res.data.posts.map((p: any) => ({
+      const res = await apiFetch(`/api/tickets?page=${pageNum}&limit=20`, { authType: 'none' })
+        .catch(() => apiFetch(`/api/posts?page=${pageNum}&limit=20`, { authType: 'none' }));
+      const rawList = Array.isArray(res?.data?.tickets)
+        ? res.data.tickets
+        : (Array.isArray(res?.data?.posts) ? res.data.posts : null);
+      if (res && res.success && rawList) {
+        const mappedPosts: NetworkTicket[] = rawList.map((p: any) => ({
           id: p.id,
+          ticketId: p.ticketId || p.id,
+          postId: p.postId || p.id,
           agentName: p.agentName || 'Agent',
           agentId: p.agentId,
           avatar: p.avatar || undefined,
@@ -284,7 +290,8 @@ export default function App() {
           timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
           createdAt: p.createdAt,
           rawMinutesAgo: p.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 60000)) : 0,
-          bidsCount: p.bidsCount || (p.bids ? p.bids.length : 0),
+          bidsCount: p.bidsCount ?? p.repliesCount ?? (p.bids ? p.bids.length : 0),
+          repliesCount: p.repliesCount ?? p.bidsCount ?? (p.bids ? p.bids.length : 0),
           connectionsCount: typeof p.connectionsCount === 'number' ? p.connectionsCount : (Array.isArray(p.connectionsList) ? p.connectionsList.length : 0),
           verified: p.emailVerified === true,
           emailVerified: p.emailVerified === true,
@@ -292,8 +299,10 @@ export default function App() {
           status: 'active',
           type: p.type || 'intake',
           category: p.category,
-          bids: Array.isArray(p.bids) ? p.bids.map((r: any) => ({
+          bids: Array.isArray(p.bids || p.replies) ? (p.bids || p.replies).map((r: any) => ({
             id: r.id,
+            bidId: r.bidId || r.id,
+            replyId: r.replyId || r.id,
             agentName: r.agentName || r.author?.displayName || 'Agent',
             agentId: r.agentId || r.author?.agentId,
             avatar: r.avatar || r.author?.avatar || undefined,
@@ -306,7 +315,9 @@ export default function App() {
           connectionsList: Array.isArray(p.connectionsList) ? p.connectionsList.map((c: any) => ({
             id: c.id,
             postId: c.postId,
+            ticketId: c.ticketId || c.postId,
             replyId: c.replyId,
+            bidId: c.bidId || c.replyId,
             agentName: c.agentName || c.replyAuthorAgentName || 'Connected Agent',
             agentId: c.agentId || c.replyAuthorAgentId,
             avatar: c.avatar || c.replyAuthorAvatar || undefined,
@@ -336,7 +347,7 @@ export default function App() {
           });
         }
         
-        if (res.data.posts.length < 20) {
+        if (rawList.length < 20) {
           setHasMore(false);
         } else {
           setHasMore(true);
@@ -997,6 +1008,7 @@ export default function App() {
                 deviceSize === 'desktop' ? (
                   <FloorViewDesktop
                     posts={sortedPosts}
+                    tickets={sortedPosts}
                     isInitialLoading={isInitialLoading}
                     isLoadingMore={isLoadingMore}
                     lastPostElementRef={lastPostElementRef}
@@ -1008,6 +1020,7 @@ export default function App() {
                 ) : deviceSize === 'tablet' ? (
                   <FloorViewTablet
                     posts={sortedPosts}
+                    tickets={sortedPosts}
                     isInitialLoading={isInitialLoading}
                     isLoadingMore={isLoadingMore}
                     lastPostElementRef={lastPostElementRef}
@@ -1019,6 +1032,7 @@ export default function App() {
                 ) : (
                   <FloorViewMobile
                     posts={sortedPosts}
+                    tickets={sortedPosts}
                     isInitialLoading={isInitialLoading}
                     isLoadingMore={isLoadingMore}
                     lastPostElementRef={lastPostElementRef}

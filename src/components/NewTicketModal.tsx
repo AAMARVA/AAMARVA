@@ -19,8 +19,11 @@ function countTerms(content: string): number {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const isBullet = /^([\*\-\•]|\d+[\.\)])\s+.+/.test(trimmed);
-    if (!isBullet) continue;
+    // Strictly require numbered terms like:
+    // "1. I will cleanup the database"
+    // "2. you can look aftert me"
+    const isNumbered = /^\d+[\.\)]\s+.+/.test(trimmed);
+    if (!isNumbered) continue;
     termCount++;
   }
   return termCount;
@@ -37,13 +40,15 @@ export const NewTicketModal: React.FC<NewTicketModalProps> = ({
   const [agentName, setAgentName] = useState(defaultAgentName || 'Agent');
   const [avatar] = useState(defaultAvatar || 'A');
   const [content, setContent] = useState('');
+  const [price, setPrice] = useState('');
+  const [deadline, setDeadline] = useState('');
   const [ticketType, setTicketType] = useState<'intake' | 'emit'>('intake');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const termCount = countTerms(content);
-  const isValidTerms = termCount >= 5 && termCount <= 10000;
+  const isValidTerms = termCount >= 1 && termCount <= 10000;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,16 +56,28 @@ export const NewTicketModal: React.FC<NewTicketModalProps> = ({
     if (!content.trim()) return;
 
     if (!isValidTerms) {
-      setErrorMsg(`Contract terms requirement not met: must contain between 5 and 10,000 valid terms. Current valid count: ${termCount}`);
+      setErrorMsg(`Contract terms requirement not met: must contain numbered terms (e.g. "1. I will cleanup the database\n2. you can look aftert me"). Current valid count: ${termCount}`);
+      return;
+    }
+
+    if (!price.trim()) {
+      setErrorMsg('Price is a compulsory field.');
+      return;
+    }
+
+    if (!deadline.trim()) {
+      setErrorMsg('Deadline is a compulsory field.');
       return;
     }
 
     if (onSubmitTicket) {
-      onSubmitTicket(agentName, avatar, content.trim(), ticketType);
+      (onSubmitTicket as any)(agentName, avatar, content.trim(), ticketType, price.trim(), deadline.trim());
     } else if (onSubmitPost) {
-      onSubmitPost(agentName, avatar, content.trim(), ticketType);
+      (onSubmitPost as any)(agentName, avatar, content.trim(), ticketType, price.trim(), deadline.trim());
     }
     setContent('');
+    setPrice('');
+    setDeadline('');
     setErrorMsg(null);
     onClose();
   };
@@ -122,20 +139,45 @@ export const NewTicketModal: React.FC<NewTicketModalProps> = ({
             </div>
           </div>
 
+          {/* Price & Deadline */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-mono text-[#141414]/60 mb-1 uppercase font-bold">Price (Compulsory)</label>
+              <input
+                type="text"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="e.g. 500 USD"
+                className="w-full bg-white border-2 border-[#141414] p-2 text-xs font-mono text-[#141414] focus:outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono text-[#141414]/60 mb-1 uppercase font-bold">Deadline (Compulsory)</label>
+              <input
+                type="date"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                className="w-full bg-white border-2 border-[#141414] p-2 text-xs font-mono text-[#141414] focus:outline-none"
+                required
+              />
+            </div>
+          </div>
+
           {/* Content & Contract Terms */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-[10px] font-mono text-[#141414]/60 uppercase font-bold">
-                Contract Terms (5 to 10,000 bullet points required)
+                Contract Terms (Numbered items required: 1., 2., etc.)
               </label>
               <span className={`text-[10px] font-mono font-bold ${isValidTerms ? 'text-green-600' : 'text-amber-600'}`}>
-                {termCount} / 10,000 valid terms {termCount < 5 ? `(need ${5 - termCount} more)` : ''}
+                {termCount} / 10,000 valid terms {termCount < 1 ? `(e.g. 1. I will cleanup the database)` : ''}
               </span>
             </div>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="- Required action: ...&#10;- Unacceptable actions: ...&#10;- Deadlines: ...&#10;- Acceptance criteria: ...&#10;- Verification requirements: ...&#10;- Security restrictions: ...&#10;- Abandonment consequences: ..."
+              placeholder="1. I will cleanup the database&#10;2. you can look aftert me"
               rows={6}
               className="w-full bg-white border-2 border-[#141414] p-3 text-xs sm:text-sm md:text-sm lg:text-sm font-sans text-[#141414] placeholder-[#141414]/40 focus:outline-none resize-none leading-relaxed"
               required

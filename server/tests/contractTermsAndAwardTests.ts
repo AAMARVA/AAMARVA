@@ -5,24 +5,24 @@ import { setSupabaseClient, createMockSupabaseClient } from '../supabase.js';
 export async function runContractTermsAndAwardTests() {
   console.log('🧪 Running Contract Terms, Bid Awarding, and Mutual Acceptance Tests...');
 
-  // 1. Test 4 valid bullet terms: rejected
-  const fourTerms = `- Term 1\n- Term 2\n- Term 3\n- Term 4`;
-  const res4 = validateContractTerms(fourTerms);
-  if (res4.isValid) {
-    throw new Error('Test failed: 4 terms should be rejected.');
+  // 1. Test unnumbered bullet terms: rejected
+  const bulletTerms = `- Term 1\n- Term 2\n- Term 3\n- Term 4`;
+  const resBullet = validateContractTerms(bulletTerms);
+  if (resBullet.isValid) {
+    throw new Error('Test failed: Unnumbered bullet terms should be rejected.');
   }
-  console.log('✅ 4 valid bullet terms correctly rejected.');
+  console.log('✅ Unnumbered bullet terms correctly rejected.');
 
-  // 2. Test 5 valid bullet terms: accepted
-  const fiveTerms = `- Term 1\n- Term 2\n- Term 3\n- Term 4\n- Term 5`;
-  const res5 = validateContractTerms(fiveTerms);
-  if (!res5.isValid || res5.termCount !== 5) {
-    throw new Error(`Test failed: 5 terms should be accepted. Got isValid=${res5.isValid}, count=${res5.termCount}`);
+  // 2. Test user terms "1. I will cleanup the database\n2. you can look aftert me": accepted
+  const userTerms = `1. I will cleanup the database\n2. you can look aftert me`;
+  const resUser = validateContractTerms(userTerms);
+  if (!resUser.isValid || resUser.termCount !== 2) {
+    throw new Error(`Test failed: User terms should be accepted. Got isValid=${resUser.isValid}, count=${resUser.termCount}`);
   }
-  console.log('✅ 5 valid bullet terms correctly accepted.');
+  console.log('✅ Numbered terms (1. I will cleanup the database / 2. you can look aftert me) correctly accepted.');
 
-  // 3. Test 10,000 valid bullet terms: accepted and persistence
-  const tenThousandTerms = Array.from({ length: 10000 }, (_, i) => `- Term item number ${i + 1}`).join('\n');
+  // 3. Test 10,000 valid numbered terms: accepted and persistence
+  const tenThousandTerms = Array.from({ length: 10000 }, (_, i) => `${i + 1}. Term item number ${i + 1}`).join('\n');
   const res10k = validateContractTerms(tenThousandTerms);
   if (!res10k.isValid || res10k.termCount !== 10000) {
     throw new Error(`Test failed: 10,000 terms should be accepted. Got count=${res10k.termCount}`);
@@ -47,34 +47,32 @@ export async function runContractTermsAndAwardTests() {
   if (!retrievedValidation.isValid || retrievedValidation.termCount !== 10000) {
     throw new Error(`Test failed: 10,000 terms failed persistence roundtrip. Count: ${retrievedValidation.termCount}`);
   }
-  console.log('✅ 10,000 valid bullet terms correctly accepted and survived persistence roundtrip without truncation.');
+  console.log('✅ 10,000 valid numbered terms correctly accepted and survived persistence roundtrip without truncation.');
 
-  // 4. Test 10,001 valid bullet terms: rejected
-  const tenThousandOneTerms = Array.from({ length: 10001 }, (_, i) => `- Term item number ${i + 1}`).join('\n');
+  // 4. Test 10,001 valid numbered terms: rejected
+  const tenThousandOneTerms = Array.from({ length: 10001 }, (_, i) => `${i + 1}. Term item number ${i + 1}`).join('\n');
   const res10k1 = validateContractTerms(tenThousandOneTerms);
   if (res10k1.isValid) {
     throw new Error('Test failed: 10,001 terms should be rejected.');
   }
-  console.log('✅ 10,001 valid bullet terms correctly rejected.');
+  console.log('✅ 10,001 valid numbered terms correctly rejected.');
 
-  // 5. Test Headings, empty bullets, ordinary paragraphs do not count
+  // 5. Test Headings, empty items, ordinary paragraphs do not count
   const mixedContent = `
 # Project Title Heading
 This is an ordinary paragraph text that should not count as a term.
-- 
-* 
+- Bullet not numbered
+* Asterisk not numbered
 1. 
-- Valid bullet term one requirement
-- Valid bullet term two requirement
-- Valid bullet term three requirement
-- Valid bullet term four requirement
-- Valid bullet term five requirement
+2. 
+1. Valid numbered term one requirement
+2. Valid numbered term two requirement
   `;
   const resMixed = validateContractTerms(mixedContent);
-  if (!resMixed.isValid || resMixed.termCount !== 5) {
-    throw new Error(`Test failed: Mixed content should result in exactly 5 valid terms. Got ${resMixed.termCount}`);
+  if (!resMixed.isValid || resMixed.termCount !== 2) {
+    throw new Error(`Test failed: Mixed content should result in exactly 2 valid terms. Got ${resMixed.termCount}`);
   }
-  console.log('✅ Headings, empty bullets, and ordinary paragraphs correctly ignored.');
+  console.log('✅ Headings, empty numbered items, and ordinary paragraphs correctly ignored.');
 
   // 6. Test Mutual Acceptance Logic with mock database
   await mockClient.from('contracts').insert([{
@@ -84,7 +82,7 @@ This is an ordinary paragraph text that should not count as a term.
     ownerUserId: 'user_owner',
     ownerAgentId: 'agent-owner',
     selectedAgentId: 'agent-selected',
-    terms: '- Term 1\n- Term 2\n- Term 3\n- Term 4\n- Term 5',
+    terms: '1. I will cleanup the database\n2. you can look aftert me',
     bidContent: 'My bid offer',
     status: 'pending_acceptance',
     ownerAccepted: false,
@@ -127,7 +125,7 @@ This is an ordinary paragraph text that should not count as a term.
     ownerUserId: 'user_owner',
     ownerAgentId: 'agent-owner',
     selectedAgentId: 'agent-selected',
-    terms: '- Term 1\n- Term 2\n- Term 3\n- Term 4\n- Term 5',
+    terms: '1. I will cleanup the database\n2. you can look aftert me',
     bidContent: 'Bid offer 2',
     status: 'pending_acceptance',
     ownerAccepted: false,

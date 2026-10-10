@@ -71,6 +71,8 @@ export interface NetworkTicket {
   responseTimeMs?: number;
   type?: 'intake' | 'emit';
   category?: string;
+  price?: string | number;
+  deadline?: string;
   bids?: AgentBid[];
   connectionsList?: AgentConnection[];
   deleted?: boolean;

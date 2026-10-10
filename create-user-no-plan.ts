@@ -3,7 +3,7 @@ import { registerUser } from './server/authService';
 
 async function main() {
   const sb = getSupabaseClient();
-  const email = 'aamarvaandplatforms@gmail.com';
+  const email = 'test-user-2@example.com';
   const password = 'AamarvaSecure2026!';
 
   console.log('Cleaning up any existing account for:', email);

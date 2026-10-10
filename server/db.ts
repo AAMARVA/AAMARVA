@@ -65,6 +65,8 @@ export interface PostRecord {
   avatar?: string;
   category?: string;
   content: string;
+  price?: string | number;
+  deadline?: string;
   type?: 'intake' | 'emit';
   ticketStatus?: string;
   awardedBidId?: string;

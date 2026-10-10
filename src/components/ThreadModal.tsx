@@ -24,7 +24,6 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, ticket, onClose,
   const [activePost, setActivePost] = useState<NetworkTicket | null>(initial);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isDeleted, setIsDeleted] = useState<boolean>(false);
-  const [applyContent, setApplyContent] = useState<string>('');
   const [isApplying, setIsApplying] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -85,9 +84,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, ticket, onClose,
   const bidsList = current.bids || [];
   const isTicketOwner = currentUser && (current.userId === currentUser.id || (current.agentId && currentUser.agentId && current.agentId.toLowerCase() === currentUser.agentId.toLowerCase()));
 
-  const handleApply = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!applyContent.trim()) return;
+  const handleRequest = async () => {
     const targetId = current.id || current.ticketId || current.postId;
     if (!targetId) return;
 
@@ -97,12 +94,11 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, ticket, onClose,
 
     try {
       const res = await apiFetch(`/api/tickets/${targetId}/bids`, {
-        method: 'POST',
-        body: JSON.stringify({ content: applyContent.trim() })
+        method: 'POST'
       });
       if (res?.success) {
-        setApplyContent('');
-        setSuccessMessage('Application submitted successfully.');
+        setSuccessMessage('Request submitted successfully.');
+        onOpenAgentProfile?.(currentUser.name, currentUser.avatar, currentUser.agentId);
         const freshRes = await apiFetch(`/api/tickets/${targetId}`, { authType: 'none' });
         if (freshRes?.success && freshRes.data) {
           const item = freshRes.data.ticket || freshRes.data.post;
@@ -114,10 +110,10 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, ticket, onClose,
           });
         }
       } else {
-        setErrorMessage(res?.error?.message || 'Failed to submit application.');
+        setErrorMessage(res?.error?.message || 'Failed to submit request.');
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to submit application.');
+      setErrorMessage(err.message || 'Failed to submit request.');
     } finally {
       setIsApplying(false);
     }
@@ -174,7 +170,7 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, ticket, onClose,
             )}
             <MessageSquare className="w-4 h-4 text-[#141414]" />
             <h3 className="font-mono font-black uppercase text-sm tracking-wider text-[#141414]">
-              Bids & Applications ({bidsList.length})
+              Bids ({bidsList.length})
             </h3>
           </div>
           <button
@@ -259,27 +255,31 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, ticket, onClose,
 
               {/* Apply Form for non-owners */}
               {!isTicketOwner && currentUser && (!current.ticketStatus || current.ticketStatus !== 'awarded') && (
-                <form onSubmit={handleApply} className="pt-4 space-y-2">
+                <div className="pt-4 space-y-3">
                   <label className="block font-mono font-black text-xs uppercase tracking-wider text-[#141414]">
-                    Submit Application / Bid
+                    Submit Request
                   </label>
-                  <textarea
-                    value={applyContent}
-                    onChange={(e) => setApplyContent(e.target.value)}
-                    placeholder="Enter your proposal, deliverables, or terms to apply..."
-                    rows={3}
-                    className="w-full p-2 border-2 border-[#141414] text-xs font-sans focus:outline-none focus:ring-1 focus:ring-[#141414]"
-                  />
+                  <div className="space-y-2">
+                    <input
+                      type="number"
+                      placeholder="Price"
+                      className="w-full p-2 border border-[#141414] font-mono text-xs"
+                    />
+                    <input
+                      type="date"
+                      className="w-full p-2 border border-[#141414] font-mono text-xs"
+                    />
+                  </div>
                   <div className="flex justify-end">
                     <button
-                      type="submit"
-                      disabled={isApplying || !applyContent.trim()}
+                      onClick={handleRequest}
+                      disabled={isApplying}
                       className="px-4 py-2 bg-[#141414] text-white font-mono font-black uppercase text-xs tracking-wider border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:bg-white hover:text-[#141414] transition-all cursor-pointer disabled:opacity-50"
                     >
-                      {isApplying ? 'Applying...' : 'Apply'}
+                      {isApplying ? 'Requesting...' : 'Request Bid'}
                     </button>
                   </div>
-                </form>
+                </div>
               )}
 
               {/* Bids List */}
@@ -321,11 +321,6 @@ export const ThreadModal: React.FC<ThreadModalProps> = ({ post, ticket, onClose,
                               </span>
                             )}
                           </div>
-                          <ExpandableText
-                            text={rep.content}
-                            maxLength={180}
-                            className="text-[#141414] leading-snug whitespace-pre-line break-words mb-2"
-                          />
                           {isTicketOwner && (!current.ticketStatus || current.ticketStatus !== 'awarded') && (
                             <div className="flex justify-end pt-1">
                               <button

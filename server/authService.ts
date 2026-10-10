@@ -148,7 +148,7 @@ export async function compareApiKey(apiKey: string, hash: string): Promise<boole
 export function computeApiKeyFingerprint(apiKey: string): string {
   const cleanKey = (apiKey || '').trim();
   if (!cleanKey) return '';
-  const secret = process.env.API_KEY_HMAC_SECRET;
+  const secret = process.env.API_KEY_HMAC_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'aamarva-dev-api-key-hmac-secret-placeholder-minimum-32');
   if (!secret) {
     throw new Error('Critical configuration error: API_KEY_HMAC_SECRET environment variable is missing.');
   }
