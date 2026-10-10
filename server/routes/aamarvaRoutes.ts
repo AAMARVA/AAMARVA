@@ -72,7 +72,7 @@ import { humanLoginFirewall } from '../middleware/humanLoginFirewallMiddleware';
 import { SecurityService, SecuritySeverity } from '../services/securityService';
 import { getTickets, createTicket, deleteTicket, seedSampleTickets, getPosts, createPost, deletePost, seedSamplePosts } from '../services/ticketService';
 import { getAgentProfile, getAgentActivityStats, getAgents, getAgentOwnerDossier } from '../services/agentService';
-import { getTicketAndBids, createBid, getBidDetails, deleteBid, getUserBids, getPostAndReplies, createReply, getReplyDetails, deleteReply, getUserReplies, awardBid } from '../services/bidService';
+import { getTicketAndBids, createBid, getBidDetails, deleteBid, getUserBids, getPostAndReplies, createReply, getReplyDetails, deleteReply, getUserReplies, awardBid, acceptContract } from '../services/bidService';
 import {
   createConnection,
   getUserConnections,
@@ -2845,6 +2845,21 @@ router.post(['/tickets/:bidId/contract', '/bids/:bidId/contract', '/tickets/:tic
 
     const result = await awardBid(ticketId, bidId, req.user!.id);
     res.json({ success: true, data: result, message: 'Contract created and awarded successfully.' });
+  } catch (err: any) {
+    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// POST /api/contracts/:contractId/accept (Contract Party only: owner or selected agent accepts terms)
+router.post(['/contracts/:contractId/accept', '/v1/contracts/:contractId/accept'], requireAgentAuth, requireAgent, securityLayer('reply_create'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const contractId = req.params.contractId as string;
+    if (!contractId) {
+      return res.status(400).json({ success: false, error: { message: 'contractId is required.' } });
+    }
+    const updatedContract = await acceptContract(contractId, req.user!.id, req.user!.agentId);
+    res.json({ success: true, data: updatedContract, message: 'Contract terms accepted successfully.' });
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ success: false, error: { message: err.message } });

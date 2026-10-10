@@ -121,6 +121,7 @@ export async function getTicketAndBids(ticketId: string) {
       replyId: reply.id,
       ticketId: reply.postId,
       postId: reply.postId,
+      status: reply.status || 'pending',
       emailVerified: isVerified,
       verificationStatus: vStatus,
       verification_status: vStatus,
@@ -228,6 +229,9 @@ export async function getTicketAndBids(ticketId: string) {
     ...post,
     ticketId: post.id,
     postId: post.id,
+    ticketStatus: post.ticketStatus || 'open',
+    awardStatus: post.ticketStatus || 'open',
+    awardedBidId: post.awardedBidId || null,
     emailVerified: postAuthorVerified,
     verificationStatus: postAuthorStatus,
     verification_status: postAuthorStatus,
@@ -363,84 +367,21 @@ export const createReply = createBid;
 export async function awardBid(ticketId: string, bidId: string, userId: string) {
   const supabase = getSupabaseClient();
 
-  // Try atomic database RPC first
-  try {
-    const { data: rpcData, error: rpcError } = await supabase.rpc('award_ticket_and_create_contract', {
-      p_ticket_id: ticketId,
-      p_bid_id: bidId,
-      p_user_id: userId
-    });
-    if (!rpcError && rpcData) {
-      return rpcData;
-    }
-  } catch (e) {
-    // Fallback to application-level atomic CAS if RPC not present
+  const { data: rpcData, error: rpcError } = await supabase.rpc('award_ticket_and_create_contract', {
+    p_ticket_id: ticketId,
+    p_bid_id: bidId,
+    p_user_id: userId
+  });
+
+  if (rpcError) {
+    throw new Error(rpcError.message || 'Award transaction failed.');
   }
 
-  const { data: post, error: postError } = await supabase
-    .from('posts')
-    .select('*')
-    .eq('id', ticketId)
-    .maybeSingle();
-
-  if (postError || !post) throw new Error('Ticket not found.');
-
-  if (post.userId !== userId) {
-    throw new Error('Forbidden: Only the ticket owner can award applications.');
+  if (!rpcData) {
+    throw new Error('Award transaction returned no response.');
   }
 
-  if (post.ticketStatus === 'awarded' || post.awardedBidId) {
-    throw new Error('Ticket has already been awarded.');
-  }
-
-  const { data: bid, error: bidError } = await supabase
-    .from('replies')
-    .select('*')
-    .eq('id', bidId)
-    .eq('postId', ticketId)
-    .maybeSingle();
-
-  if (bidError || !bid) throw new Error('Application/Bid not found on this ticket.');
-
-  // Atomic CAS update
-  const { data: updatedPost, error: updateTicketError } = await supabase
-    .from('posts')
-    .update({ ticketStatus: 'awarded', awardedBidId: bidId })
-    .eq('id', ticketId)
-    .is('awardedBidId', null)
-    .select()
-    .maybeSingle();
-
-  if (updateTicketError || !updatedPost) {
-    throw new Error('Concurrency conflict: Ticket was already awarded by another request.');
-  }
-
-  await supabase
-    .from('replies')
-    .update({ status: 'awarded' })
-    .eq('id', bidId);
-
-  const contractId = `cnt_${crypto.randomUUID()}`;
-  const contractRecord = {
-    id: contractId,
-    ticketId,
-    bidId,
-    ownerUserId: post.userId,
-    ownerAgentId: post.agentId,
-    selectedAgentId: bid.agentId,
-    terms: post.content,
-    bidContent: bid.content,
-    status: 'active',
-    createdAt: new Date().toISOString(),
-  };
-
-  try {
-    await supabase.from('contracts').insert([contractRecord]);
-  } catch (e) {
-    console.warn('Contracts table insertion warning:', e);
-  }
-
-  return { success: true, contractId, ticketId, bidId, contract: contractRecord };
+  return rpcData;
 }
 
 export async function getBidDetails(bidId: string) {
@@ -769,3 +710,24 @@ export async function getUserBids(target: string | GetUserBidsOptions, pageArg =
   };
 }
 export const getUserReplies = getUserBids;
+
+export async function acceptContract(contractId: string, userId: string, agentId?: string) {
+  const supabase = getSupabaseClient();
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc('accept_contract', {
+    p_contract_id: contractId,
+    p_user_id: userId,
+    p_agent_id: agentId || null
+  });
+
+  if (rpcError) {
+    throw new Error(rpcError.message || 'Contract acceptance failed.');
+  }
+
+  if (!rpcData || !rpcData.success) {
+    throw new Error('Contract acceptance returned no response or failed.');
+  }
+
+  return rpcData.contract;
+}
+

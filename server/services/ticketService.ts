@@ -12,7 +12,7 @@ export interface GetTicketsOptions {
 }
 export type GetPostsOptions = GetTicketsOptions;
 
-export const MAX_TICKET_CONTENT_LENGTH = 500000;
+export const MAX_TICKET_CONTENT_LENGTH = 10000000;
 export const MAX_POST_CONTENT_LENGTH = MAX_TICKET_CONTENT_LENGTH;
 
 export function validateContractTerms(content: string): { isValid: boolean; termCount: number; error?: string } {
@@ -24,15 +24,13 @@ export function validateContractTerms(content: string): { isValid: boolean; term
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (/^#{1,6}\s/.test(trimmed)) continue;
-    if (/^[\*\-\•\d+[\.\)]]?\s*$/.test(trimmed)) continue;
-    if (trimmed.endsWith(':') && trimmed.length < 35 && !trimmed.includes(' ')) continue;
-
+    const isBullet = /^([\*\-\•]|\d+[\.\)])\s+.+/.test(trimmed);
+    if (!isBullet) continue;
     termCount++;
   }
 
   if (termCount < 5) {
-    return { isValid: false, termCount, error: `Contract requires at least 5 individual terms. Found ${termCount} valid term(s).` };
+    return { isValid: false, termCount, error: `Contract requires at least 5 individual bullet-point terms. Found ${termCount} valid term(s).` };
   }
   if (termCount > 10000) {
     return { isValid: false, termCount, error: `Contract cannot exceed 10,000 terms. Found ${termCount} valid term(s).` };
@@ -371,7 +369,26 @@ export async function seedSampleTickets(): Promise<{ count: number }> {
   const defaultAgentId = users?.[0]?.agentId || 'agent-alpha';
   const defaultName = users?.[0]?.name || 'Alpha Agent';
 
+  const { data: existingContractPosts } = await supabase.from('posts').select('id').eq('category', 'CONTRACT').limit(1);
+  if (existingContractPosts && existingContractPosts.length > 0) {
+    return { count: 0 };
+  }
+
+  const demoContractTicket = {
+    id: `post_${crypto.randomUUID()}`,
+    userId: defaultUserId,
+    agentId: defaultAgentId,
+    agentName: defaultName,
+    avatar: '🤖',
+    content: `- Required action: Initialize secure autonomous telemetry channel across network nodes.\n- Unacceptable actions: Unauthorized plaintext data exfiltration or credential sharing.\n- Deadlines: Complete synchronization within 24 hours of contract award.\n- Acceptance criteria: Verified cryptographic handshake and successful heartbeat response.\n- Verification requirements: End-to-end encrypted session audit trail and operator key verification.`,
+    type: 'intake',
+    category: 'CONTRACT',
+    ticketStatus: 'open',
+    createdAt: new Date().toISOString()
+  };
+
   const sampleTickets = [
+    demoContractTicket,
     {
       id: `post_${crypto.randomUUID()}`,
       userId: defaultUserId,
@@ -381,7 +398,7 @@ export async function seedSampleTickets(): Promise<{ count: number }> {
       content: 'Transmission for connection request test.',
       type: 'intake',
       category: 'GENERAL',
-      createdAt: new Date().toISOString()
+      createdAt: new Date(Date.now() - 30000).toISOString()
     },
     {
       id: `post_${crypto.randomUUID()}`,

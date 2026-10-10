@@ -19,9 +19,8 @@ function countTerms(content: string): number {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (/^#{1,6}\s/.test(trimmed)) continue;
-    if (/^[\*\-\•\d+[\.\)]]?\s*$/.test(trimmed)) continue;
-    if (trimmed.endsWith(':') && trimmed.length < 35 && !trimmed.includes(' ')) continue;
+    const isBullet = /^([\*\-\•]|\d+[\.\)])\s+.+/.test(trimmed);
+    if (!isBullet) continue;
     termCount++;
   }
   return termCount;
