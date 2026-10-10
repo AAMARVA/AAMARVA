@@ -5307,6 +5307,7 @@ router.get('/counter-party-score', securityLayer('public_reads'), async (req: Re
       createdAt: r.createdAt
     }));
 
+    res.setHeader('Cache-Control', 'public, max-age=60');
     res.json({
       success: true,
       data: formattedReviews

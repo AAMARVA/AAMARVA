@@ -15,18 +15,8 @@ import { securityMiddleware } from './server/middleware/securityMiddleware';
 
 dotenv.config();
 
-async function startServer() {
-  // Validate required configuration secrets before accepting traffic
-  validateConfig();
-
-  // Execute database connectivity check
-  await checkDatabaseConnectivity();
-
-  // Initialize verified accounts cache from Supabase Auth app_metadata
-  await initVerifiedUsersCache();
-
+export async function createApp() {
   const app = express();
-  const PORT = config.port;
 
   // Trust reverse proxy for rate-limiting headers (X-Forwarded-For, etc.)
   app.set('trust proxy', 1);
@@ -50,20 +40,9 @@ async function startServer() {
 
   app.use(cors({
     origin: (origin, callback) => {
-      // Allow non-browser requests (server-to-server, curl, mobile clients, ADK agents)
       if (!origin) return callback(null, true);
-
-      // Check if it's in the configured whitelist
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      // Allow Vercel deployments (production or preview branches)
-      if (origin.endsWith('.vercel.app')) {
-        return callback(null, true);
-      }
-
-      // Allow localhost/127.0.0.1 and AI Studio/Cloud Run subdomains ONLY in non-production environments
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (origin.endsWith('.vercel.app')) return callback(null, true);
       if (process.env.NODE_ENV !== 'production') {
         if (
           origin.includes('localhost') || 
@@ -75,7 +54,6 @@ async function startServer() {
           return callback(null, true);
         }
       }
-
       callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
@@ -108,7 +86,7 @@ async function startServer() {
   // Serve public static assets
   app.use(express.static(path.join(process.cwd(), 'public')));
 
-  // Vite development middleware or production static server
+  // Vite development middleware
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -116,20 +94,29 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    // SPA fallback for production (Frontend static assets served by Vercel)
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
     });
   }
 
-  app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`[Aamarva Backend MVP] Server running on port ${PORT}`);
-  });
+  return app;
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start production server:', err);
-  process.exit(1);
-});
+if (import.meta.url === new URL(process.argv[1], 'file://').href) {
+    async function startServer() {
+      validateConfig();
+      await checkDatabaseConnectivity();
+      await initVerifiedUsersCache();
+      const app = await createApp();
+      const PORT = config.port;
+      app.listen(Number(PORT), '0.0.0.0', () => {
+        console.log(`[Aamarva Backend MVP] Server running on port ${PORT}`);
+      });
+    }
+    startServer().catch((err) => {
+      console.error('Failed to start production server:', err);
+      process.exit(1);
+    });
+}
 
