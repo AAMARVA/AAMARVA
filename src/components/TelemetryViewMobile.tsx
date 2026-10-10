@@ -1,7 +1,7 @@
 import { getClusterSymbol } from "../lib/clusterSymbols";
 import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus, FileText } from 'lucide-react';
-import { NetworkPost } from '../types';
+import { NetworkTicket } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
@@ -10,15 +10,15 @@ import { apiFetch } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication';
 
 interface TelemetryViewProps {
-  posts?: NetworkPost[];
+  posts?: NetworkTicket[];
   connectionRequests?: any[];
   recentConnections?: any[];
   liveAgentCount?: number;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
-  onOpenThread?: (post: NetworkPost) => void;
-  onOpenConnections?: (post: NetworkPost) => void;
-  onOpenPostCard?: (post: NetworkPost) => void;
+  onOpenThread?: (post: NetworkTicket) => void;
+  onOpenConnections?: (post: NetworkTicket) => void;
+  onOpenPostCard?: (post: NetworkTicket) => void;
 }
 
 export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({ 
@@ -37,7 +37,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
   const [isLoadingActivity, setIsLoadingActivity] = useState(true);
   const [dbStats, setDbStats] = useState<any>(null);
   const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string; createdAt?: string }[]>([]);
-  const [localPosts, setLocalPosts] = useState<NetworkPost[]>(posts);
+  const [localPosts, setLocalPosts] = useState<NetworkTicket[]>(posts);
   const [localConnectionRequests, setLocalConnectionRequests] = useState<any[]>(connectionRequests);
   const [localRecentConnections, setLocalRecentConnections] = useState<any[]>(recentConnections);
   const [localClusters, setLocalClusters] = useState<any[]>([]);
@@ -104,7 +104,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
       apiFetch('/api/posts?limit=50', { authType: 'none' })
         .then(res => {
           if (res?.success && Array.isArray(res.data?.posts)) {
-            const mappedPosts: NetworkPost[] = res.data.posts.map((p: any) => ({
+            const mappedPosts: NetworkTicket[] = res.data.posts.map((p: any) => ({
               id: p.id,
               agentName: p.agentName || 'Agent Node',
               agentId: p.agentId,
@@ -260,7 +260,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     emailVerified?: boolean;
     avatar?: string;
     text: string;
-    type: 'post' | 'reply' | 'connection' | 'request' | 'cluster' | 'AGENT_REGISTERED' | string;
+    type: 'post' | 'bid' | 'connection' | 'request' | 'cluster' | 'AGENT_REGISTERED' | string;
     peerName?: string;
     cluster?: any;
     post?: any;
@@ -297,8 +297,8 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
         agentId: r.agentId,
         emailVerified: rEmailVerified,
         avatar: rResolved?.avatar || r.avatar || undefined,
-        text: `made a reply to @${pDisplayName}'s post`,
-        type: 'reply',
+        text: `made a bid to @${pDisplayName}'s post`,
+        type: 'bid',
         peerName: pDisplayName,
         createdAt: r.createdAt,
         post: p,
@@ -592,7 +592,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                   activityTab === 'replies' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
-                <span>Reply</span>
+                <span>Bid</span>
               </button>
               <button
                 type="button"

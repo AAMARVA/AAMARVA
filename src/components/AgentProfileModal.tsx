@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert, Shield, ChevronRight, MessageCircle, Reply, Trash2, Globe, Users, Crown, CheckCircle2 } from 'lucide-react';
-import { NetworkPost, AgentReply, AgentConnection } from '../types';
+import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert, Shield, ChevronRight, MessageCircle, MessageSquare as BidIcon, Trash2, Globe, Users, Crown, CheckCircle2 } from 'lucide-react';
+import { NetworkTicket, AgentReply, AgentConnection } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { ScoreReviewCard } from './ScoreReviewCard';
@@ -15,14 +15,14 @@ interface AgentProfileModalProps {
   agentName: string | null;
   agentId?: string;
   avatar?: string;
-  posts?: NetworkPost[];
+  posts?: NetworkTicket[];
   onClose: () => void;
   onBack?: () => void;
-  onOpenThread?: (post: NetworkPost) => void;
-  onOpenConnections?: (post: NetworkPost) => void;
+  onOpenThread?: (post: NetworkTicket) => void;
+  onOpenConnections?: (post: NetworkTicket) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
-  onAddReply?: (postId: string, text: string) => void;
+  onAddBid?: (postId: string, text: string) => void;
 }
 
 export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
@@ -38,7 +38,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   onOpenClusterMembers,
 }) => {
   const { user, isAuthenticated } = useAuth();
-  const [activeTab, setActiveTab] = useState<'posts' | 'replies' | 'connections' | 'clusters'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'bids' | 'connections' | 'clusters'>('posts');
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
   const [isDeleted, setIsDeleted] = useState<boolean>(false);
@@ -294,7 +294,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
 
   // 1. Gather Posts authored by this agent
-  const agentPosts: NetworkPost[] = (agentProfileData?.posts || []).map((p: any) => ({
+  const agentPosts: NetworkTicket[] = (agentProfileData?.posts || []).map((p: any) => ({
     id: p.id,
     agentName: p.agentName || displayName,
     agentId: p.agentId || inferredAgentId,
@@ -302,13 +302,13 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     content: p.content,
     timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
     createdAt: p.createdAt,
-    repliesCount: p.repliesCount || 0,
+    bidsCount: p.bidsCount || 0,
     connectionsCount: p.connectionsCount || 0,
     type: p.type || 'intake',
   }));
 
   // 2. Gather Replies authored by this agent
-  const agentReplies: any[] = (agentProfileData?.replies || []).map((r: any) => ({
+  const agentReplies: any[] = (agentProfileData?.bids || []).map((r: any) => ({
     id: r.id,
     agentName: r.agentName || displayName,
     agentId: r.agentId || inferredAgentId,
@@ -324,7 +324,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
       content: r.parentPost.content,
       timestamp: r.parentPost.createdAt ? new Date(r.parentPost.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
       createdAt: r.parentPost.createdAt,
-      repliesCount: r.parentPost.repliesCount || 0,
+      bidsCount: r.parentPost.bidsCount || 0,
       connectionsCount: r.parentPost.connectionsCount || 0,
       type: r.parentPost.type || 'intake',
     } : null,
@@ -694,21 +694,21 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Posts</span>
+              <span className="hidden sm:inline">Tickets</span>
               <MessageSquare className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({agentPosts.length})</span>
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('replies')}
+              onClick={() => setActiveTab('bids')}
               className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeTab === 'replies'
+                activeTab === 'bids'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Replies</span>
-              <Reply className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="hidden sm:inline">Bids</span>
+              <BidIcon className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({agentReplies.length})</span>
             </button>
             <button
@@ -752,100 +752,100 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                       post={post}
                       onOpenThread={onOpenThread}
                       onOpenConnections={onOpenConnections}
-                      onAddReply={onOpenThread ? () => {} : undefined} // No-op since modal doesn't have inline reply yet
+                      onAddBid={onOpenThread ? () => {} : undefined} // No-op since modal doesn't have inline bid yet
                       onOpenAgentProfile={onOpenAgentProfile}
                     />
                   ))
                 ) : (
                   <div className="p-12 text-center border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/20 font-mono text-xs uppercase tracking-wider text-[#141414]/60">
-                    No posts broadcasted yet by {agentName?.replace(/\s+agent$/i, '')}
+                    No tickets broadcasted yet by {agentName?.replace(/\s+agent$/i, '')}
                   </div>
                 )}
               </div>
             )}
 
             {/* 2. REPLIES TAB */}
-            {activeTab === 'replies' && (
+            {activeTab === 'bids' && (
               <div className="space-y-4">
                 {agentReplies.length > 0 ? (
-                  agentReplies.map((reply) => (
+                  agentReplies.map((bid) => (
                     <div
-                      key={reply.id}
+                      key={bid.id}
                       className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] transition-all flex flex-col gap-3 text-left"
                     >
-                      {reply.parentPost && (
+                      {bid.parentPost && (
                         <div className="text-[11px] font-mono text-[#141414]/60 flex flex-col gap-1.5 mb-1">
                           <div className="flex items-center gap-1.5">
                             <span>Replying to</span>
                             <AgentAvatar 
-                              name={reply.parentPost.agentName} 
-                              avatar={reply.parentPost.avatar} 
-                              id={reply.parentPost.agentId} 
+                              name={bid.parentPost.agentName} 
+                              avatar={bid.parentPost.avatar} 
+                              id={bid.parentPost.agentId} 
                               className="w-4 h-4 shrink-0" 
                             />
                             <button
                               type="button"
-                              onClick={() => reply.parentPost && onOpenAgentProfile?.(reply.parentPost.agentName, reply.parentPost.avatar, reply.parentPost.agentId)}
+                              onClick={() => bid.parentPost && onOpenAgentProfile?.(bid.parentPost.agentName, bid.parentPost.avatar, bid.parentPost.agentId)}
                               className="font-bold text-[#141414] underline hover:opacity-70 transition-opacity cursor-pointer flex items-center gap-1"
                             >
-                              {reply.parentPost.agentName}
+                              {bid.parentPost.agentName}
                             </button>
                           </div>
                           <div
-                            onClick={() => reply.parentPost && onOpenThread?.(reply.parentPost)}
+                            onClick={() => bid.parentPost && onOpenThread?.(bid.parentPost)}
                             className="p-2 bg-[#E4E3E0]/30 border-l-2 border-[#141414] italic overflow-x-auto no-scrollbar whitespace-nowrap cursor-pointer hover:bg-[#E4E3E0]/60 transition-colors"
                             title="Click to view full post"
                           >
-                            <span>"{reply.parentPost.content}"</span>
+                            <span>"{bid.parentPost.content}"</span>
                           </div>
                         </div>
                       )}
                       
                       <div className="flex items-start gap-3">
                         <AgentAvatar 
-                          name={reply.agentName || agentName} 
-                          avatar={reply.avatar || currentAvatar} 
-                          id={reply.agentId || inferredAgentId} 
+                          name={bid.agentName || agentName} 
+                          avatar={bid.avatar || currentAvatar} 
+                          id={bid.agentId || inferredAgentId} 
                           className="w-8 h-8 shrink-0" 
                         />
                         <div className="flex-1 space-y-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <span className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono font-bold text-xs uppercase text-[#141414]">{reply.agentName || agentName}</span>
-                              {(reply.agentId || inferredAgentId) && (
+                              <span className="font-mono font-bold text-xs uppercase text-[#141414]">{bid.agentName || agentName}</span>
+                              {(bid.agentId || inferredAgentId) && (
                                 <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                  <span>@{reply.agentId || inferredAgentId}</span>
-                                  {Boolean(reply.emailVerified ?? agentProfileData?.emailVerified) && <VerifiedBadge size="xs" />}
+                                  <span>@{bid.agentId || inferredAgentId}</span>
+                                  {Boolean(bid.emailVerified ?? agentProfileData?.emailVerified) && <VerifiedBadge size="xs" />}
                                 </span>
                               )}
                             </span>
                           </div>
                           <ExpandableText
-                            text={reply.content}
+                            text={bid.content}
                             maxLength={220}
                             className="text-sm leading-relaxed text-[#141414] whitespace-pre-line break-words"
                           />
                         </div>
                       </div>
                       <div className="flex items-center justify-start pt-2 border-t border-[#141414]/10 font-mono text-[10px]">
-                        {reply.parentPost && onOpenThread ? (
+                        {bid.parentPost && onOpenThread ? (
                           <button
                             type="button"
-                            onClick={() => onOpenThread(reply.parentPost)}
+                            onClick={() => onOpenThread(bid.parentPost)}
                             className="font-mono text-[10px] font-black uppercase tracking-wider text-[#141414] bg-white hover:bg-[#141414] hover:text-white border border-[#141414] px-2 py-0.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all flex items-center gap-1 cursor-pointer"
                           >
                             <MessageSquare className="w-3 h-3" />
-                            <span>Full Reply</span>
+                            <span>Full Bid</span>
                           </button>
                         ) : (
-                          <span className="text-[#141414]/40 font-bold uppercase">Reply Record</span>
+                          <span className="text-[#141414]/40 font-bold uppercase">Bid Record</span>
                         )}
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="p-12 text-center border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/20 font-mono text-xs uppercase tracking-wider text-[#141414]/60">
-                    No replies published yet by {agentName?.replace(/\s+agent$/i, '')}
+                    No bids published yet by {agentName?.replace(/\s+agent$/i, '')}
                   </div>
                 )}
               </div>

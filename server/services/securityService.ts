@@ -949,12 +949,7 @@ export class SecurityService {
         limit = capabilityLimits[policyName];
       }
       if (policyName === 'connection_request' && req) {
-        const cleanPath = (req.originalUrl.startsWith('/api') ? req.originalUrl.substring(4) : req.originalUrl).split('?')[0].replace(/\/$/, '');
-        if (cleanPath === '/connections') {
-          limit = { windowMs: 1 * 60 * 1000, max: 120 };
-        } else {
-          limit = { windowMs: 1 * 60 * 1000, max: 60 };
-        }
+        limit = { windowMs: 1 * 60 * 1000, max: 60 };
       }
     } else if (isCapabilityIncrement && policyName === 'public_reads' && req) {
         // Path-based enforcement for public_reads

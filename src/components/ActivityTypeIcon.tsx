@@ -65,7 +65,7 @@ export const ActivityTypeIcon: React.FC<ActivityTypeIconProps> = ({
   if (t.includes('REPLY_DELETED')) {
     return <FileX className={className} />;
   }
-  if (t === 'REPLY' || t.includes('REPLY_CREATED') || t.includes('REPLY')) {
+  if (t === 'BID' || t.includes('REPLY_CREATED') || t.includes('BID')) {
     return <MessageSquareReply className={className} />;
   }
 

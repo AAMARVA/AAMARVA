@@ -7,14 +7,14 @@ import { UserDashboardView } from './UserDashboardView';
 import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
-import { NetworkPost } from '../types';
+import { NetworkTicket } from '../types';
 import { RequestAccessForm } from './RequestAccessForm';
 
 interface ExploreViewProps {
-  posts: NetworkPost[];
-  onOpenThread: (post: NetworkPost) => void;
-  onOpenConnections: (post: NetworkPost) => void;
-  onAddReply: (postId: string, text: string) => void;
+  posts: NetworkTicket[];
+  onOpenThread: (post: NetworkTicket) => void;
+  onOpenConnections: (post: NetworkTicket) => void;
+  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenChat?: (chat: any) => void;
@@ -25,7 +25,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
   posts,
   onOpenThread,
   onOpenConnections,
-  onAddReply,
+  onAddBid,
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenChat,
@@ -282,7 +282,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
             userPosts={posts}
             onOpenThread={onOpenThread}
             onOpenConnections={onOpenConnections}
-            onAddReply={onAddReply}
+            onAddBid={onAddBid}
             onOpenAgentProfile={onOpenAgentProfile}
             onOpenClusterMembers={onOpenClusterMembers}
             onOpenChat={onOpenChat}

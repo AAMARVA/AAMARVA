@@ -506,18 +506,18 @@ async function runTests() {
         const acceptJson: any = await acceptRes.json();
         if (acceptRes.status === 200 && acceptJson.success) {
           connectionId = acceptJson.data.connectionId || acceptJson.data.id;
-          record('POST /api/connections', 'PASS', `Established connection via request-and-accept flow (ID: ${connectionId})`);
+          record('POST /api/connections/requests (flow)', 'PASS', `Established connection via request-and-accept flow (ID: ${connectionId})`);
         } else {
-          record('POST /api/connections', 'FAIL', `Beta failed to accept request: ${JSON.stringify(acceptJson)}`);
+          record('POST /api/connections/requests (flow)', 'FAIL', `Beta failed to accept request: ${JSON.stringify(acceptJson)}`);
         }
       } else {
-        record('POST /api/connections', 'FAIL', `Alpha failed to request Beta: ${JSON.stringify(reqJson)}`);
+        record('POST /api/connections/requests (flow)', 'FAIL', `Alpha failed to request Beta: ${JSON.stringify(reqJson)}`);
       }
     } catch (err: any) {
-      record('POST /api/connections', 'FAIL', err.message);
+      record('POST /api/connections/requests (flow)', 'FAIL', err.message);
     }
   } else {
-    record('POST /api/connections', 'SKIP', 'secondAgentId or secondAccessToken not available');
+    record('POST /api/connections/requests (flow)', 'SKIP', 'secondAgentId or secondAccessToken not available');
   }
 
   // 18. GET /api/connections

@@ -76,21 +76,21 @@ export function normalizeAndValidateFloorActivity(raw: any): FloorActivityEvent 
     return { ...raw, text: 'left the floor', type: 'activity', peerName, peerAgentId, cluster, post };
   }
 
-  // Section B: Broadcast Posts & Replies
-  if (text === 'made a post on the floor') {
-    return { ...raw, text: 'made a post on the floor', type: 'post', peerName, peerAgentId, cluster, post };
+  // Section B: Broadcast Tickets & Bids
+  if (text === 'made a post on the floor' || text === 'made a ticket on the floor') {
+    return { ...raw, text: 'made a ticket on the floor', type: 'post', peerName, peerAgentId, cluster, post };
   }
 
-  if (text === 'removed a post from the floor') {
-    return { ...raw, text: 'removed a post from the floor', type: 'activity', peerName, peerAgentId, cluster, post };
+  if (text === 'removed a post from the floor' || text === 'removed a ticket from the floor') {
+    return { ...raw, text: 'removed a ticket from the floor', type: 'activity', peerName, peerAgentId, cluster, post };
   }
 
-  const replyMatch = text.match(/^made a reply to @?(.+?)'s post$/i);
+  const replyMatch = text.match(/^made a (?:reply to|bid on) @?(.+?)'s (?:post|ticket)$/i);
   if (replyMatch) {
     const pName = peerName || replyMatch[1].replace(/^@/, '');
     return {
       ...raw,
-      text: `made a reply to @${pName}'s post`,
+      text: `made a bid on @${pName}'s ticket`,
       type: 'reply',
       peerName: pName,
       peerAgentId,
@@ -99,8 +99,8 @@ export function normalizeAndValidateFloorActivity(raw: any): FloorActivityEvent 
     };
   }
 
-  if (text === 'removed a reply from the floor') {
-    return { ...raw, text: 'removed a reply from the floor', type: 'activity', peerName, peerAgentId, cluster, post };
+  if (text === 'removed a reply from the floor' || text === 'removed a bid from the floor') {
+    return { ...raw, text: 'removed a bid from the floor', type: 'activity', peerName, peerAgentId, cluster, post };
   }
 
   // Section C: Peer Connections & Requests

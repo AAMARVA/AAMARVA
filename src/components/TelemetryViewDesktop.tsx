@@ -2,7 +2,7 @@ import { getClusterSymbol } from "../lib/clusterSymbols";
 import { normalizeAndValidateFloorActivity } from "../lib/floorActivitySpec";
 import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus, FileText } from 'lucide-react';
-import { NetworkPost } from '../types';
+import { NetworkTicket } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
@@ -11,15 +11,15 @@ import { apiFetch } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication';
 
 interface TelemetryViewProps {
-  posts?: NetworkPost[];
+  posts?: NetworkTicket[];
   connectionRequests?: any[];
   recentConnections?: any[];
   liveAgentCount?: number;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
-  onOpenThread?: (post: NetworkPost) => void;
-  onOpenConnections?: (post: NetworkPost) => void;
-  onOpenPostCard?: (post: NetworkPost) => void;
+  onOpenThread?: (post: NetworkTicket) => void;
+  onOpenConnections?: (post: NetworkTicket) => void;
+  onOpenPostCard?: (post: NetworkTicket) => void;
 }
 
 export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({ 
@@ -32,13 +32,13 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
   onOpenConnections,
   onOpenPostCard,
 }) => {
-  const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies' | 'clusters'>('posts');
+  const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'bids' | 'clusters'>('posts');
   const [agentActivity, setAgentActivity] = useState<any[]>([]);
   const [clusterRanking, setClusterRanking] = useState<any[]>([]);
   const [isLoadingActivity, setIsLoadingActivity] = useState(true);
   const [dbStats, setDbStats] = useState<any>(null);
   const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string; createdAt?: string }[]>([]);
-  const [localPosts, setLocalPosts] = useState<NetworkPost[]>(posts);
+  const [localPosts, setLocalPosts] = useState<NetworkTicket[]>(posts);
   const [localConnectionRequests, setLocalConnectionRequests] = useState<any[]>(connectionRequests);
   const [localRecentConnections, setLocalRecentConnections] = useState<any[]>(recentConnections);
   const [localClusters, setLocalClusters] = useState<any[]>([]);
@@ -105,7 +105,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
       apiFetch('/api/posts?limit=50', { authType: 'none' })
         .then(res => {
           if (res?.success && Array.isArray(res.data?.posts)) {
-            const mappedPosts: NetworkPost[] = res.data.posts.map((p: any) => ({
+            const mappedPosts: NetworkTicket[] = res.data.posts.map((p: any) => ({
               id: p.id,
               agentName: p.agentName || 'Agent Node',
               agentId: p.agentId,
@@ -114,7 +114,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
               timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
               createdAt: p.createdAt,
               rawMinutesAgo: p.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 60000)) : 0,
-              repliesCount: p.repliesCount || (p.replies ? p.replies.length : 0),
+              bidsCount: p.bidsCount || (p.bids ? p.bids.length : 0),
               connectionsCount: p.connectionsCount || (p.connectionsList ? p.connectionsList.length : 0),
               verified: p.emailVerified === true,
               emailVerified: p.emailVerified === true,
@@ -122,7 +122,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
               status: 'active',
               type: p.type || 'intake',
               category: p.category,
-              replies: Array.isArray(p.replies) ? p.replies : [],
+              bids: Array.isArray(p.bids) ? p.bids : [],
               connectionsList: Array.isArray(p.connectionsList) ? p.connectionsList : [],
             }));
             setLocalPosts(mappedPosts);
@@ -185,7 +185,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
 
   const computedTotalPosts = localPosts.length;
   const computedTotalConnections = localPosts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0) + localRecentConnections.length;
-  const computedTotalReplies = localPosts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
+  const computedTotalReplies = localPosts.reduce((acc, p) => acc + (p.bidsCount || p.bids?.length || 0), 0);
 
   const normalizeId = (id: string) => (id || '').trim().replace(/^@/, '').toUpperCase();
   const isTechnicalName = (name: string) => !name || name.startsWith('AMR-');
@@ -213,7 +213,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
           emailVerified: (sysAgent as any).emailVerified,
           posts: 0,
           connections: 0,
-          replies: 0
+          bids: 0
         });
       }
     });
@@ -224,7 +224,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
     return [...mergedAgentActivity].sort((a, b) => {
       if (activityTab === 'posts') return (b.posts || 0) - (a.posts || 0);
       if (activityTab === 'connections') return (b.connections || 0) - (a.connections || 0);
-      if (activityTab === 'replies') return (b.replies || 0) - (a.replies || 0);
+      if (activityTab === 'bids') return (b.bids || 0) - (a.bids || 0);
       return 0;
     });
   }, [mergedAgentActivity, activityTab]);
@@ -233,7 +233,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
   const agentsTodayCount = dbStats?.agentsAddedToday ?? 0;
   const totalPosts = dbStats?.postsCount ?? computedTotalPosts;
   const postsTodayCount = dbStats?.postsAddedToday ?? 0;
-  const totalReplies = dbStats?.repliesCount ?? computedTotalReplies;
+  const totalReplies = dbStats?.bidsCount ?? computedTotalReplies;
   const repliesTodayCount = dbStats?.repliesAddedToday ?? 0;
   const totalConnections = dbStats?.connectionsCount ?? computedTotalConnections;
   const connectionsTodayCount = dbStats?.connectionsAddedToday ?? 0;
@@ -261,7 +261,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
     emailVerified?: boolean;
     avatar: string;
     text: string;
-    type: 'post' | 'reply' | 'connection' | 'request' | 'CLUSTER_CREATED' | 'CLUSTER_JOINED' | string;
+    type: 'post' | 'bid' | 'connection' | 'request' | 'CLUSTER_CREATED' | 'CLUSTER_JOINED' | string;
     peerName?: string;
     cluster?: any;
     post?: any;
@@ -286,7 +286,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
       post: p,
     });
 
-    p.replies?.forEach((r: any) => {
+    p.bids?.forEach((r: any) => {
       const rKey = normalizeId(r.agentId || r.agentName);
       const rResolved = masterNameMap[rKey];
       const rDisplayName = rResolved && !isTechnicalName(rResolved.name) ? rResolved.name : r.agentName;
@@ -298,8 +298,8 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         agentId: r.agentId,
         emailVerified: rEmailVerified,
         avatar: rResolved?.avatar || r.avatar || undefined,
-        text: `made a reply to @${pDisplayName}'s post`,
-        type: 'reply',
+        text: `made a bid to @${pDisplayName}'s post`,
+        type: 'bid',
         peerName: pDisplayName,
         createdAt: r.createdAt,
         post: p,
@@ -592,12 +592,12 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setActivityTab('replies')}
+                onClick={() => setActivityTab('bids')}
                 className={`py-1 px-1 border border-[#141414] uppercase overflow-x-auto no-scrollbar whitespace-nowrap transition-colors ${
-                  activityTab === 'replies' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
+                  activityTab === 'bids' ? 'bg-[#141414] text-white' : 'bg-[#f0f0ee] text-[#141414] hover:bg-[#e0e0de]'
                 }`}
               >
-                <span>Reply</span>
+                <span>Bid</span>
               </button>
               <button
                 type="button"
@@ -659,7 +659,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                     <span className="px-1.5 py-0.5 bg-[#f0f0ee] border border-[#141414]/20 text-[#141414] text-[9px] font-bold">
                       {activityTab === 'posts' && `${agent.posts} posts`}
                       {activityTab === 'connections' && `${agent.connections} connection`}
-                      {activityTab === 'replies' && `${agent.replies} replies`}
+                      {activityTab === 'bids' && `${agent.bids} bids`}
                     </span>
                   </div>
                 ))

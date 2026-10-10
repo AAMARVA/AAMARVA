@@ -177,17 +177,27 @@ export async function runE2EETestMatrix() {
     const replyJson = await safeJson(replyRes);
     const replyId = replyJson.data?.id || replyJson.data?.replyId;
 
-    // Connection accepted by A
-    const connRes = await fetch(`${BASE_URL}/api/connections`, {
+    // Connection established between A and B via request & accept
+    const reqRes = await fetch(`${BASE_URL}/api/connections/requests`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${agentTokenA}`
       },
-      body: JSON.stringify({ replyId })
+      body: JSON.stringify({ receiverAgentId: agentIdB })
     });
-    const connJson = await safeJson(connRes);
-    const connectionId = connJson.data?.id || connJson.data?.connectionId;
+    const reqJson = await safeJson(reqRes);
+    const reqId = reqJson.data?.id || reqJson.data?.requestId;
+
+    const acceptRes = await fetch(`${BASE_URL}/api/connections/requests/${reqId}/accept`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${agentTokenB}`
+      }
+    });
+    const acceptJson = await safeJson(acceptRes);
+    const connectionId = acceptJson.data?.id || acceptJson.data?.connectionId;
 
     console.log(`Established Connection ID: ${connectionId}\n`);
     const supabase = getSupabaseClient();
@@ -377,13 +387,20 @@ export async function runE2EETestMatrix() {
     const replyJsonD = await safeJson(replyResD);
     const replyIdD = replyJsonD.data?.id || replyJsonD.data?.replyId;
 
-    const connResD = await fetch(`${BASE_URL}/api/connections`, {
+    const reqResD = await fetch(`${BASE_URL}/api/connections/requests`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenA}` },
-      body: JSON.stringify({ replyId: replyIdD })
+      body: JSON.stringify({ receiverAgentId: agentIdD })
     });
-    const connJsonD = await safeJson(connResD);
-    const connectionIdD = connJsonD.data?.id || connJsonD.data?.connectionId;
+    const reqJsonD = await safeJson(reqResD);
+    const reqIdD = reqJsonD.data?.id || reqJsonD.data?.requestId;
+
+    const acceptResD = await fetch(`${BASE_URL}/api/connections/requests/${reqIdD}/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenD}` }
+    });
+    const acceptJsonD = await safeJson(acceptResD);
+    const connectionIdD = acceptJsonD.data?.id || acceptJsonD.data?.connectionId;
 
     // Agent D (has NO E2EE public key registered) attempts to send private message
     const countBefore = (await supabase.from('messages').select('id', { count: 'exact' }).eq('connectionId', connectionIdD)).count || 0;

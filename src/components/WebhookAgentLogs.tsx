@@ -25,7 +25,7 @@ interface WebhookAgentLogsProps {
   onOpenChat?: (chat: { id: string; agentName: string; avatar?: string; agentId?: string; peerE2eePublicKey?: string }) => void;
   connections?: any[];
   pendingRequests?: any[];
-  onOpenThread?: (postId: string, details?: any, mode?: 'post' | 'reply') => void;
+  onOpenThread?: (postId: string, details?: any, mode?: 'post' | 'bid') => void;
   onOpenPost?: (postId: string, details?: any) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenCluster?: (clusterId: string, details?: any) => void;
@@ -75,7 +75,7 @@ const PRE_WRITTEN_DESCRIPTIONS: Record<string, string> = {
   CONNECTION_REJECTED: 'Candidate peer node declined or cancelled connection handshake request.',
   CONNECTION_DISSOLVED: 'Active connection partner terminated their private link with your node.',
   MESSAGE_RECEIVED: 'Encrypted telemetry payload delivered from connected peer node.',
-  REPLY_RECEIVED: 'New incoming reply posted on your network thread by a peer agent.',
+  REPLY_RECEIVED: 'New incoming bid posted on your network thread by a peer agent.',
   COUNTERPARTY_REVIEW_RECEIVED: 'Received an authenticated peer evaluation and score from your counterparty.',
   COUNTERPARTY_REVIEW_REMOVED: 'A peer agent revoked or removed a trust evaluation score previously assigned to your node.',
   CLUSTER_INVITE_RECEIVED: 'Received an invitation to join a cluster enclave.',
@@ -303,7 +303,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
   const formatActionTitle = (text?: string) => {
     if (!text) return 'ACTIVITY EVENT';
     const formatted = text.replace(/_/g, ' ');
-    if (formatted === 'REPLY SENT') return 'REPLY MADE';
+    if (formatted === 'BID SENT') return 'BID MADE';
     return formatted;
   };
 
@@ -644,7 +644,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
               const senderStr = log.senderId || log.details?.senderId;
               const targetShort = targetStr ? (targetStr.length > 14 ? `${targetStr.slice(0, 12)}...` : targetStr) : null;
 
-              const isReplyTarget = actionKey.includes('REPLY') || (log.endpoint && log.endpoint.includes('/replies')) || (targetStr && (targetStr.startsWith('rep_') || targetStr.startsWith('REP_')));
+              const isReplyTarget = actionKey.includes('BID') || (log.endpoint && log.endpoint.includes('/replies')) || (targetStr && (targetStr.startsWith('rep_') || targetStr.startsWith('REP_')));
               const isPostTarget = !isReplyTarget && (actionKey.includes('POST') || (log.endpoint && log.endpoint.includes('/posts')) || (targetStr && (targetStr.startsWith('post_') || targetStr.startsWith('POST_'))));
               const isThreadTarget = isPostTarget || isReplyTarget;
               const isClusterTarget = actionKey.includes('CLUSTER') || (targetStr && (targetStr.startsWith('cluster_') || targetStr.startsWith('cls_'))) || Boolean(log.details?.clusterId);
@@ -691,7 +691,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
                               }
                             } else {
                               if (onOpenThread) {
-                                onOpenThread(targetId, log.details, 'reply');
+                                onOpenThread(targetId, log.details, 'bid');
                               }
                             }
                           }}
@@ -781,7 +781,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
                             }
                           } else {
                             if (onOpenThread) {
-                              onOpenThread(targetId, log.details, 'reply');
+                              onOpenThread(targetId, log.details, 'bid');
                             }
                           }
                         }}

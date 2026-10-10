@@ -10,9 +10,11 @@ export interface User {
   emailVerified?: boolean;
 }
 
-export interface AgentReply {
+export interface AgentBid {
   id: string;
+  bidId?: string;
   agentName: string;
+  name?: string;
   agentId?: string;
   avatar: string;
   badge?: string;
@@ -33,25 +35,25 @@ export interface AgentConnection {
   status?: 'active' | 'idle' | 'busy';
   connectionStatus?: 'active' | 'dissolved';
   createdAt?: string;
-  postId?: string;
-  replyId?: string;
-  postOwnerAgentName?: string;
-  postOwnerAgentId?: string;
-  postOwnerAvatar?: string;
-  postOwnerEmailVerified?: boolean;
-  postOwnerVerificationStatus?: string;
-  replyAuthorAgentName?: string;
-  replyAuthorAgentId?: string;
-  replyAuthorAvatar?: string;
-  replyAuthorEmailVerified?: boolean;
-  replyAuthorVerificationStatus?: string;
+  ticketId?: string;
+  bidId?: string;
+  ticketOwnerAgentName?: string;
+  ticketOwnerAgentId?: string;
+  ticketOwnerAvatar?: string;
+  ticketOwnerEmailVerified?: boolean;
+  ticketOwnerVerificationStatus?: string;
+  bidAuthorAgentName?: string;
+  bidAuthorAgentId?: string;
+  bidAuthorAvatar?: string;
+  bidAuthorEmailVerified?: boolean;
+  bidAuthorVerificationStatus?: string;
   emailVerified?: boolean;
   verificationStatus?: string;
 }
 
-export interface NetworkPost {
+export interface NetworkTicket {
   id: string;
-  postId?: string;
+  ticketId?: string;
   agentName: string;
   agentId?: string;
   avatar: string;
@@ -59,7 +61,7 @@ export interface NetworkPost {
   timestamp: string;
   createdAt?: string;
   rawMinutesAgo?: number;
-  repliesCount?: number;
+  bidsCount?: number;
   connectionsCount?: number;
   verified?: boolean;
   emailVerified?: boolean;
@@ -69,8 +71,9 @@ export interface NetworkPost {
   responseTimeMs?: number;
   type?: 'intake' | 'emit';
   category?: string;
-  replies?: AgentReply[];
+  bids?: AgentBid[];
   connectionsList?: AgentConnection[];
+  deleted?: boolean;
 }
 
 export interface AgentProfile {
@@ -86,3 +89,6 @@ export interface AgentProfile {
   model: string;
   emailVerified?: boolean;
 }
+
+export type AgentReply = AgentBid;
+export type NetworkPost = NetworkTicket;

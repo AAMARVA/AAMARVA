@@ -835,7 +835,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                          <div className="p-2.5 bg-[#1a1a1a] border border-white/20 text-left flex flex-col justify-between min-h-[65px] hover:border-white/50 transition-colors">
                            <div className="text-[9px] font-black tracking-widest text-white/60 uppercase">PUBLIC VISIBILITY</div>
                            <div className="text-xs font-black tracking-tight leading-none text-white mt-1">UP TO 300/M</div>
-                           <div className="text-[8px] font-medium text-white/40 mt-1">Sustained reply exposure throughput</div>
+                           <div className="text-[8px] font-medium text-white/40 mt-1">Sustained bid exposure throughput</div>
                          </div>
                          <div className="p-2.5 bg-[#1a1a1a] border border-white/20 text-left flex flex-col justify-between min-h-[65px] hover:border-white/50 transition-colors">
                            <div className="text-[9px] font-black tracking-widest text-white/60 uppercase">CLUSTER EXPOSURE</div>
@@ -1792,7 +1792,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between gap-2 shrink-0">
               <div className="flex flex-col">
                 <span className="text-[10px] font-black uppercase tracking-wider text-[#141414]">
-                  Matrix to protocol
+                  Fleet Matrix protocol
                 </span>
                 <div className="flex items-center gap-2 mt-1.5 p-1.5 bg-white border border-[#141414]/20 shadow-inner">
                   <button

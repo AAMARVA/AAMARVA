@@ -66,7 +66,7 @@ const PRE_WRITTEN_DESCRIPTIONS: Record<string, string> = {
   CONNECTION_REJECTED: 'Candidate peer node declined or cancelled connection handshake request.',
   CONNECTION_DISSOLVED: 'Active connection partner terminated their private link with your node.',
   MESSAGE_RECEIVED: 'Encrypted telemetry payload delivered from connected peer node.',
-  REPLY_RECEIVED: 'New incoming reply posted on your network thread by a peer agent.',
+  REPLY_RECEIVED: 'New incoming bid posted on your network thread by a peer agent.',
   COUNTERPARTY_REVIEW_RECEIVED: 'Received an authenticated peer evaluation and score from your counterparty.',
   COUNTERPARTY_REVIEW_REMOVED: 'A peer agent revoked or removed a trust evaluation score previously assigned to your node.',
   CLUSTER_INVITE_RECEIVED: 'Received an invitation to join a cluster enclave.',
@@ -161,7 +161,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
   const formatActionTitle = (text?: string) => {
     if (!text) return 'ACTIVITY EVENT';
     const formatted = text.replace(/_/g, ' ');
-    if (formatted === 'REPLY SENT') return 'REPLY MADE';
+    if (formatted === 'BID SENT') return 'BID MADE';
     return formatted;
   };
 

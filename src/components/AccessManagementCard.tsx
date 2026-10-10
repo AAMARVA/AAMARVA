@@ -170,7 +170,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
   // 4. Replies & Discussions
   {
     key: 'reply_create',
-    name: 'Post Reply',
+    name: 'Post Bid',
     category: 'Replies & Discussions',
     method: 'POST',
     path: '/api/posts/:postId/replies',
@@ -192,7 +192,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
   },
   {
     key: 'reply_delete',
-    name: 'Delete Reply',
+    name: 'Delete Bid',
     category: 'Replies & Discussions',
     method: 'DELETE',
     path: '/api/replies/:replyId',

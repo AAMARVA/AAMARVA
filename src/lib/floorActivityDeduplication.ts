@@ -19,35 +19,47 @@ export function getStableActivityKey(log: any): string {
   // 1. Return explicit activityKey or canonicalKey if available
   const rawKey = log.activityKey || log.canonicalKey;
   if (rawKey && typeof rawKey === 'string' && rawKey.trim()) {
-    const k = rawKey.trim();
-    return k.startsWith('connection:') ? 'conn:' + k.substring(11) : k;
+    let k = rawKey.trim();
+    if (k.startsWith('connection:')) k = 'conn:' + k.substring(11);
+    if (k.startsWith('ticket:')) k = 'post:' + k.substring(7);
+    if (k.startsWith('bid:')) k = 'reply:' + k.substring(4);
+    return k;
   }
 
   const type = String(log.type || '').trim().toLowerCase();
   const logId = String(log.id || '').trim();
   const text = String(log.text || '').trim();
 
-  // 2. Reply activity (CRITICAL: must use actual reply ID, NOT parent post ID!)
-  if (type === 'reply' || logId.startsWith('r-') || text.toLowerCase().includes('made a reply')) {
-    const rawReplyId = log.replyId ||
+  // 2. Bid/Reply activity (CRITICAL: must use actual bid/reply ID, NOT parent ticket/post ID!)
+  if (type === 'reply' || type === 'bid' || logId.startsWith('r-') || logId.startsWith('b-') || text.toLowerCase().includes('made a reply') || text.toLowerCase().includes('made a bid')) {
+    const rawReplyId = log.bidId ||
+                       log.replyId ||
+                       log.bid?.id ||
                        log.reply?.id ||
+                       (logId.startsWith('b-') ? logId.substring(2) : '') ||
                        (logId.startsWith('r-') ? logId.substring(2) : '') ||
+                       (log.post?.bidId ? log.post.bidId : '') ||
                        (log.post?.replyId ? log.post.replyId : '') ||
-                       // If log.post has a postId property, log.post is the reply record itself:
+                       (log.ticket?.bidId ? log.ticket.bidId : '') ||
+                       // If log.post/ticket has a postId/ticketId property, it is the bid record itself:
                        (log.post?.postId && log.post?.id ? log.post.id : '') ||
-                       (type === 'reply' && log.entityId ? log.entityId : '');
+                       (log.ticket?.ticketId && log.ticket?.id ? log.ticket.id : '') ||
+                       ((type === 'reply' || type === 'bid') && log.entityId ? log.entityId : '');
     if (rawReplyId && rawReplyId !== 'undefined' && rawReplyId !== 'null') {
       return `reply:${rawReplyId}`;
     }
   }
 
-  // 3. Post activity -> post ID
-  if (type === 'post' || logId.startsWith('p-') || text.toLowerCase().startsWith('made a post on the floor')) {
-    const rawPostId = log.postId ||
+  // 3. Ticket/Post activity -> ticket/post ID
+  if (type === 'post' || type === 'ticket' || logId.startsWith('p-') || logId.startsWith('t-') || text.toLowerCase().includes('made a post on the floor') || text.toLowerCase().includes('made a ticket on the floor')) {
+    const rawPostId = log.ticketId ||
+                      log.postId ||
+                      (logId.startsWith('t-') ? logId.substring(2) : '') ||
                       (logId.startsWith('p-') ? logId.substring(2) : '') ||
-                      // If log.post is not a reply (does not have postId) and has id:
+                      // If log.post is not a bid (does not have postId/ticketId) and has id:
                       (!log.post?.postId && log.post?.id ? log.post.id : '') ||
-                      (type === 'post' && log.entityId ? log.entityId : '');
+                      (!log.ticket?.ticketId && log.ticket?.id ? log.ticket.id : '') ||
+                      ((type === 'post' || type === 'ticket') && log.entityId ? log.entityId : '');
     if (rawPostId && rawPostId !== 'undefined' && rawPostId !== 'null') {
       return `post:${rawPostId}`;
     }

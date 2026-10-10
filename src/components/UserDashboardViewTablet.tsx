@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { NetworkPost } from '../types';
-import { Reply, Shield, Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Inbox } from 'lucide-react';
+import { NetworkTicket } from '../types';
+import { MessageSquare as BidIcon, Shield, Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Inbox } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -26,10 +26,10 @@ import { MyAgentsCard } from './MyAgentsCard';
 
 
 interface UserDashboardViewProps {
-  userPosts: NetworkPost[];
-  onOpenThread: (post: NetworkPost) => void;
-  onOpenConnections?: (post: NetworkPost) => void;
-  onAddReply: (postId: string, text: string) => void;
+  userPosts: NetworkTicket[];
+  onOpenThread: (post: NetworkTicket) => void;
+  onOpenConnections?: (post: NetworkTicket) => void;
+  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onNavigateToPost?: (postId: string) => void;
@@ -41,7 +41,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   userPosts,
   onOpenThread,
   onOpenConnections,
-  onAddReply,
+  onAddBid,
   onOpenAgentProfile,
   onOpenClusterMembers,
   onNavigateToPost,
@@ -465,7 +465,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   };
   
   // Active Twitter profile tab state
-  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'replies' | 'connections' | 'requests' | 'clusters'>('posts');
+  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'bids' | 'connections' | 'requests' | 'clusters'>('posts');
 
   const handleStartEditing = () => {
     setEditName(currentAgentName);
@@ -656,7 +656,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     fetchPendingRequests();
     fetchClusterInvites();
 
-    // Fetch full profile data (posts, replies, connections)
+    // Fetch full profile data (posts, bids, connections)
     apiFetch('/api/agents/me', { authType: 'human' })
       .then((res) => {
         if (isMounted && res?.data) {
@@ -690,7 +690,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     const loggedInAgentId = user.agentId || '';
 
     // 1. Gather Posts authored by this user (Strict source: API)
-    const userAuthoredPosts: NetworkPost[] = (agentProfileData?.posts || []).map((p: any) => ({
+    const userAuthoredPosts: NetworkTicket[] = (agentProfileData?.posts || []).map((p: any) => ({
       id: p.id,
       agentId: p.agentId,
       agentName: p.agentName,
@@ -699,13 +699,13 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       content: p.content,
       timestamp: p.createdAt ? new Date(p.createdAt).toLocaleString() : '',
       createdAt: p.createdAt,
-      repliesCount: p.repliesCount || 0,
+      bidsCount: p.bidsCount || 0,
       connectionsCount: p.connectionsCount || 0,
     }));
 
     // 2. Gather Replies authored by this user (Strict source: API)
-    const userReplies: Array<{ reply: any; parentPost: NetworkPost }> = (agentProfileData?.replies || []).map((r: any) => ({
-      reply: {
+    const userReplies: Array<{ bid: any; parentPost: NetworkTicket }> = (agentProfileData?.bids || []).map((r: any) => ({
+      bid: {
         id: r.id,
         postId: r.postId || r.parentPost?.id || r.parentPost?.postId,
         agentName: r.agentName,
@@ -843,21 +843,21 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Posts</span>
+              <span className="hidden sm:inline">Tickets</span>
               <MessageSquare className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userAuthoredPosts.length})</span>
             </button>
             <button
               type="button"
-              onClick={() => setActiveProfileTab('replies')}
+              onClick={() => setActiveProfileTab('bids')}
               className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'replies'
+                activeProfileTab === 'bids'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Replies</span>
-              <Reply className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="hidden sm:inline">Bids</span>
+              <BidIcon className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userReplies.length})</span>
             </button>
             <button
@@ -914,30 +914,30 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       post={post}
                       onOpenThread={onOpenThread}
                       onOpenConnections={onOpenConnections}
-                      onAddReply={onAddReply}
+                      onAddBid={onAddBid}
                       onOpenAgentProfile={onOpenAgentProfile}
                     />
                   ))
                 ) : (
                   <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                    No posts broadcasted yet by {currentAgentName}
+                    No tickets broadcasted yet by {currentAgentName}
                   </div>
                 )}
               </div>
             )}
 
             {/* 2. REPLIES TAB */}
-            {activeProfileTab === 'replies' && (
+            {activeProfileTab === 'bids' && (
               <div className="space-y-4">
                 {userReplies.length > 0 ? (
-                  userReplies.map(({ reply, parentPost }) => (
+                  userReplies.map(({ bid, parentPost }) => (
                     <div
-                      key={reply.id}
+                      key={bid.id}
                       className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] transition-all space-y-3 text-left"
                     >
                       {/* Replying context bar */}
                       <div className="text-[11px] font-mono text-[#141414]/60 flex items-center gap-1.5">
-                        <span>Replying to</span>
+                        <span>Bidding on</span>
                         <AgentAvatar 
                           name={parentPost.agentName} 
                           avatar={parentPost.avatar} 
@@ -958,33 +958,33 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         <span>"{parentPost.content}"</span>
                       </div>
 
-                      {/* Reply Content */}
+                      {/* Bid Content */}
                       <div className="flex items-start gap-3">
-                        <AgentAvatar name={reply.agentName} avatar={reply.avatar} id={reply.agentId} className="w-8 h-8" />
+                        <AgentAvatar name={bid.agentName} avatar={bid.avatar} id={bid.agentId} className="w-8 h-8" />
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="flex flex-col">
-                              <span className="font-mono font-bold text-xs uppercase text-[#141414]">{reply.agentName}</span>
-                              {reply.agentId && (
+                              <span className="font-mono font-bold text-xs uppercase text-[#141414]">{bid.agentName}</span>
+                              {bid.agentId && (
                                 <span className="inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start">
-                                  <span>@{reply.agentId}</span>
-                                  {reply.emailVerified && <VerifiedBadge size="xs" />}
+                                  <span>@{bid.agentId}</span>
+                                  {bid.emailVerified && <VerifiedBadge size="xs" />}
                                 </span>
                               )}
                             </span>
                             <span className="font-mono text-[10px] text-[#141414]/50">
-                              {reply.timestamp}
+                              {bid.timestamp}
                             </span>
                           </div>
                           <ExpandableText
-                            text={reply.content}
+                            text={bid.content}
                             maxLength={220}
                             className="font-sans text-sm text-[#141414] leading-relaxed whitespace-pre-line break-words"
                           />
                         </div>
                       </div>
 
-                      {/* Reply Action Footer */}
+                      {/* Bid Action Footer */}
                       <div className="flex items-center justify-end pt-2 border-t border-[#141414]/15 font-mono text-xs">
                         {onOpenThread && (
                           <button
@@ -1002,7 +1002,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   ))
                 ) : (
                   <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                    No replies published yet by {user.name}
+                    No bids published yet by {user.name}
                   </div>
                 )}
               </div>
@@ -1346,35 +1346,35 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             const norm = (id?: any) => String(id || '').replace(/^post[_-]/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
             const targetNorm = norm(cleanId);
 
-            // 1. Check if cleanId matches a post or a reply inside userPosts
+            // 1. Check if cleanId matches a post or a bid inside userPosts
             let foundPost = userPosts?.find(p => {
               const pNorm = norm(p.id || p.postId);
               if (pNorm && (pNorm === targetNorm || String(p.id) === cleanId || String(p.postId) === cleanId)) return true;
-              return p.replies?.some((r: any) => {
+              return p.bids?.some((r: any) => {
                 const rNorm = norm(r.id || r.replyId);
                 return rNorm && (rNorm === targetNorm || String(r.id) === cleanId || String(r.replyId) === cleanId);
               });
             });
 
-            // 2. Query backend for post or reply
+            // 2. Query backend for ticket or bid
             if (!foundPost && cleanId) {
               try {
-                let res = await apiFetch(`/api/posts/${cleanId}`, { authType: 'none' }).catch(() => null);
+                let res = await apiFetch(`/api/tickets/${cleanId}`, { authType: 'none' }).catch(() => null);
                 if (!res || !res.success) {
-                  res = await apiFetch(`/api/posts/${cleanId}`, { authType: 'human' }).catch(() => null);
+                  res = await apiFetch(`/api/tickets/${cleanId}`, { authType: 'human' }).catch(() => null);
                 }
 
-                // If direct post query returned no success, try querying as reply ID
+                // If direct ticket query returned no success, try querying as bid ID
                 if ((!res || !res.success) && cleanId) {
-                  const replyRes = await apiFetch(`/api/replies/${cleanId}`, { authType: 'none' }).catch(() => null);
-                  if (replyRes && replyRes.success && replyRes.data?.postId) {
-                    res = await apiFetch(`/api/posts/${replyRes.data.postId}`, { authType: 'none' }).catch(() => null);
+                  const replyRes = await apiFetch(`/api/bids/${cleanId}`, { authType: 'none' }).catch(() => null);
+                  if (replyRes && replyRes.success && (replyRes.data?.ticketId || replyRes.data?.postId)) {
+                    res = await apiFetch(`/api/tickets/${replyRes.data.ticketId || replyRes.data.postId}`, { authType: 'none' }).catch(() => null);
                   }
                 }
 
                 if (res && res.success && res.data) {
-                  const p = res.data.post || res.data;
-                  const rawReplies = res.data.replies || p.replies || [];
+                  const p = res.data.ticket || res.data.post || res.data;
+                  const rawReplies = res.data.bids || res.data.bids || p.bids || p.bids || [];
                   foundPost = {
                     id: p.id || cleanId,
                     postId: p.postId || p.id || cleanId,
@@ -1384,14 +1384,14 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                     content: p.content || 'Transmission payload retrieved from network node.',
                     timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
                     createdAt: p.createdAt,
-                    repliesCount: rawReplies.length,
+                    bidsCount: rawReplies.length,
                     connectionsCount: 0,
                     verified: Boolean(p.emailVerified === true || res.data.author?.emailVerified === true),
                     emailVerified: Boolean(p.emailVerified === true || res.data.author?.emailVerified === true),
                     verificationStatus: p.verificationStatus || ((p.emailVerified || res.data.author?.emailVerified) ? 'verified' : 'not verified'),
                     status: 'active',
                     type: p.type || 'intake',
-                    replies: Array.isArray(rawReplies) ? rawReplies.map((r: any) => ({
+                    bids: Array.isArray(rawReplies) ? rawReplies.map((r: any) => ({
                       id: r.id,
                       agentName: r.name || r.agentName || r.author?.displayName || 'Agent',
                       agentId: r.agentId || r.author?.agentId,
@@ -1419,7 +1419,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               const postAuthor = detailsObj.agentName || detailsObj.authorName || detailsObj.senderName || detailsObj.peerName || 'Agent';
               const postAvatar = detailsObj.avatar || detailsObj.authorAvatar || detailsObj.senderAvatar || undefined;
               const postAgentId = detailsObj.agentId || detailsObj.authorAgentId || detailsObj.senderAgentId || 'agent';
-              const postReplies = Array.isArray(detailsObj.replies) ? detailsObj.replies : [];
+              const postReplies = Array.isArray(detailsObj.bids) ? detailsObj.bids : [];
 
               foundPost = {
                 id: cleanId || 'post',
@@ -1429,14 +1429,14 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 avatar: postAvatar,
                 content: postContent,
                 timestamp: 'Just now',
-                repliesCount: postReplies.length,
+                bidsCount: postReplies.length,
                 connectionsCount: 0,
                 verified: true,
                 emailVerified: true,
                 verificationStatus: 'verified',
                 status: 'active',
                 type: 'intake',
-                replies: postReplies,
+                bids: postReplies,
                 connectionsList: []
               };
             }

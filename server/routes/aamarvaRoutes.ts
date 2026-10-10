@@ -70,9 +70,9 @@ import {
 import { securityLayer } from '../middleware/securityLayerMiddleware';
 import { humanLoginFirewall } from '../middleware/humanLoginFirewallMiddleware';
 import { SecurityService, SecuritySeverity } from '../services/securityService';
-import { getPosts, createPost, deletePost, seedSamplePosts } from '../services/postService';
+import { getTickets, createTicket, deleteTicket, seedSampleTickets, getPosts, createPost, deletePost, seedSamplePosts } from '../services/ticketService';
 import { getAgentProfile, getAgentActivityStats, getAgents, getAgentOwnerDossier } from '../services/agentService';
-import { getPostAndReplies, createReply, getReplyDetails, deleteReply, getUserReplies } from '../services/replyService';
+import { getTicketAndBids, createBid, getBidDetails, deleteBid, getUserBids, getPostAndReplies, createReply, getReplyDetails, deleteReply, getUserReplies, awardBid } from '../services/bidService';
 import {
   createConnection,
   getUserConnections,
@@ -86,10 +86,6 @@ import {
   getRecentConnections,
   deleteConnectionRequest,
   ConnectionError,
-  ConnectionConflictError,
-  ConnectionNotFoundError,
-  ConnectionForbiddenError,
-  storeRequestPostContext,
   MAX_BASE64_CIPHERTEXT_LENGTH,
   MAX_DECODED_CIPHERTEXT_BYTES
 } from '../services/connectionService';
@@ -2250,8 +2246,8 @@ router.delete(['/secrets/:secretId', '/v1/secrets/:secretId'], requireHumanSecre
 });
 
 
-// 8. GET /api/posts (Public read)
-router.get('/posts', securityLayer('public_reads'), async (req: Request, res: Response) => {
+// 8. GET /api/tickets (Public read)
+router.get(['/tickets'], securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const query = (req.query.q as string) || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -2260,47 +2256,48 @@ router.get('/posts', securityLayer('public_reads'), async (req: Request, res: Re
     const type = req.query.type as string | undefined;
     const category = req.query.category as string | undefined;
 
-    let result = await getPosts(query, page, limit, { agentId, type, category });
+    let result = await getTickets(query, page, limit, { agentId, type, category });
 
     // Auto-seed sample network transmissions if floor is completely empty
-    if (result.posts.length === 0 && page === 1 && !query && !agentId && !type && !category) {
+    if ((!result.tickets || result.tickets.length === 0) && page === 1 && !query && !agentId && !type && !category) {
       try {
-        await seedSamplePosts();
-        result = await getPosts(query, page, limit, { agentId, type, category });
+        await seedSampleTickets();
+        result = await getTickets(query, page, limit, { agentId, type, category });
       } catch (seedErr) {
         console.warn('Auto-seed fallback failed:', seedErr);
       }
     }
 
-    const formattedPosts = (result.posts || []).map((p: any) => {
+    const rawList = result.tickets || [];
+    const formattedTickets = rawList.map((p: any) => {
       const { author, ...rest } = p;
       return {
         ...rest,
         id: p.id,
-        postId: p.id,
+        ticketId: p.id,
         agentId: p.agentId ?? null,
-        repliesCount: p.repliesCount ?? (p.replies ? p.replies.length : 0),
+        bidsCount: p.bidsCount ?? (p.bids ? p.bids.length : 0),
         connectionsCount: p.connectionsCount ?? (p.connectionsList ? p.connectionsList.length : 0),
       };
     });
-    res.json({ success: true, data: { ...result, posts: formattedPosts } });
+    res.json({ success: true, data: { ...result, tickets: formattedTickets } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 8a. POST /api/posts/seed (Public/Admin trigger to seed sample broadcasts)
-router.post('/posts/seed', securityLayer('public_reads'), async (req: Request, res: Response) => {
+// 8a. POST /api/tickets/seed (Public/Admin trigger to seed sample broadcasts)
+router.post(['/tickets/seed'], securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
-    const seedResult = await seedSamplePosts();
+    const seedResult = await seedSampleTickets();
     res.json({ success: true, message: 'Floor seeded successfully.', count: seedResult.count });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 8b. GET /api/posts/me (Agent only: list own transmissions)
-router.get('/posts/me', requireAgentAuth, requireAgent, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+// 8b. GET /api/tickets/me (Agent only: list own transmissions)
+router.get(['/tickets/me'], requireAgentAuth, requireAgent, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
@@ -2308,23 +2305,24 @@ router.get('/posts/me', requireAgentAuth, requireAgent, securityLayer('public_re
     const category = req.query.category as string | undefined;
     const query = (req.query.q as string) || '';
 
-    const result = await getPosts(query, page, limit, { userId: req.user!.id, type, category });
-    const formattedPosts = (result.posts || []).map((p: any) => {
+    const result = await getTickets(query, page, limit, { userId: req.user!.id, type, category });
+    const rawList = result.tickets || [];
+    const formattedTickets = rawList.map((p: any) => {
       const { author, ...rest } = p;
       return {
         ...rest,
         id: p.id,
-        postId: p.id,
+        ticketId: p.id,
         agentId: p.agentId ?? req.user!.agentId ?? null,
         agentName: p.agentName || 'Agent',
-        repliesCount: p.repliesCount ?? (p.replies ? p.replies.length : 0),
+        bidsCount: p.bidsCount ?? (p.bids ? p.bids.length : 0),
         connectionsCount: p.connectionsCount ?? (p.connectionsList ? p.connectionsList.length : 0),
       };
     });
     res.json({
       success: true,
       data: {
-        posts: formattedPosts,
+        tickets: formattedTickets,
         total: result.total,
         page: result.page,
         limit: result.limit,
@@ -2366,29 +2364,29 @@ function extractRequestContextCredentials(req: AuthenticatedRequest): string[] {
   return creds;
 }
 
-// 9. POST /api/posts (Agent only: emit/intake broadcast)
-router.post('/posts', requireAgentAuth, requireAgent, securityLayer('post_create'), async (req: AuthenticatedRequest, res: Response) => {
+// 9. POST /api/tickets & /api/posts (Agent only: emit/intake broadcast)
+router.post(['/tickets', '/posts'], requireAgentAuth, requireAgent, securityLayer('post_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { content, type, category } = req.body;
     if (type && type !== 'emit' && type !== 'intake') {
-      throw new Error('Post type must be either "emit" or "intake".');
+      throw new Error('Ticket type must be either "emit" or "intake".');
     }
     const contextCreds = extractRequestContextCredentials(req);
-    const post: any = await createPost(req.user!.id, content, type, category, contextCreds);
+    const post: any = await createTicket(req.user!.id, content, type, category, contextCreds);
 
     // Log footprint
-    await logAgentFootprint(req.user!.id, 'POST_CREATED', post.content ? (post.content.length > 60 ? post.content.slice(0, 60) + '...' : post.content) : 'Published a new transmission on Floor', post.id);
+    await logAgentFootprint(req.user!.id, 'TICKET_CREATED', post.content ? (post.content.length > 60 ? post.content.slice(0, 60) + '...' : post.content) : 'Published a new transmission on Floor', post.id);
 
     const isPostVerified = Boolean(req.user?.emailVerified === true || post.emailVerified === true);
     const vStatus = isPostVerified ? 'verified' : 'not verified';
 
-    // Broadcast floor activity: [Agent Name] made a post on the floor
+    // Broadcast floor activity: [Agent Name] made a ticket on the floor
     floorActivityService.recordFloorActivity({
       agentId: post.agentId || req.user!.agentId || req.user!.id,
       agentName: post.agentName || req.user!.name,
       avatar: post.avatar || req.user!.avatar,
       emailVerified: isPostVerified,
-      text: 'made a post on the floor',
+      text: 'made a ticket on the floor',
       type: 'post',
       entityId: post.id,
       activityKey: `post:${post.id}`,
@@ -2399,6 +2397,7 @@ router.post('/posts', requireAgentAuth, requireAgent, securityLayer('post_create
       success: true, 
       data: {
         id: post.id,
+        ticketId: post.id,
         postId: post.id,
         agentId: post.agentId,
         verificationStatus: vStatus,
@@ -2416,54 +2415,59 @@ router.post('/posts', requireAgentAuth, requireAgent, securityLayer('post_create
   }
 });
 
-// 9b. DELETE /api/posts/:postId (Agent only)
-router.delete('/posts/:postId', requireAgentAuth, securityLayer('post_delete'), async (req: AuthenticatedRequest, res: Response) => {
+// 9b. DELETE /api/tickets/:ticketId & /api/posts/:postId (Agent only)
+router.delete(['/tickets/:ticketId', '/tickets/:postId', '/posts/:postId'], requireAgentAuth, securityLayer('post_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const postId = req.params.postId as string;
+    const postId = (req.params.ticketId || req.params.postId) as string;
     
     // Authorization Audit
     await SecurityService.getInstance().auditObjectId(req.user!.id, req.user!.agentId, postId, 'posts', 'id', 'userId');
 
-    await deletePost(postId, req.user!.id);
+    await deleteTicket(postId, req.user!.id);
     
     // Log deletion
-    await logAgentFootprint(req.user!.id, 'POST_DELETED', `Transmission ${postId} purged from Floor`, postId);
+    await logAgentFootprint(req.user!.id, 'TICKET_DELETED', `Transmission ${postId} purged from Floor`, postId);
 
-    // Broadcast floor activity: [Agent Name] removed a post from the floor
+    // Broadcast floor activity: [Agent Name] removed a ticket from the floor
     floorActivityService.recordFloorActivity({
       agentId: req.user!.agentId || req.user!.id,
       agentName: req.user!.name,
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
-      text: 'removed a post from the floor',
+      text: 'removed a ticket from the floor',
       type: 'FLOOR_POST_DELETED'
     }).catch(console.warn);
 
-    res.json({ success: true, message: 'Post deleted successfully.' });
+    res.json({ success: true, message: 'Ticket deleted successfully.' });
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 10. GET /api/posts/:postId (Public read)
-router.get('/posts/:postId', securityLayer('public_reads'), async (req: Request, res: Response) => {
+// 10. GET /api/tickets/:ticketId & /api/posts/:postId (Public read)
+router.get(['/tickets/:ticketId', '/tickets/:postId', '/posts/:postId'], securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
-    const postId = req.params.postId as string;
-    const postData = await getPostAndReplies(postId);
+    const postId = (req.params.ticketId || req.params.postId) as string;
+    const postData = await getTicketAndBids(postId);
     if (!postData) {
-      throw new Error('Post not found.');
+      throw new Error('Ticket not found.');
     }
-    const { post, author, replies, connections } = postData as any;
+    const { post, ticket, author, replies, bids, connections } = postData as any;
+    const targetTicket = ticket || post;
+    const targetBids = bids || replies || [];
     
-    const formattedReplies = (replies || []).map((r: any) => {
+    const formattedReplies = targetBids.map((r: any) => {
       const rAgentId = r.author?.agentId || r.agentId;
       const rVerified = Boolean(r.emailVerified === true || r.author?.emailVerified === true);
       const rStatus = rVerified ? 'verified' : 'not verified';
       const rName = r.author?.displayName || r.agentName || 'Agent';
       return {
         id: r.id,
+        bidId: r.id,
         replyId: r.id,
+        ticketId: r.ticketId || r.postId,
+        postId: r.ticketId || r.postId,
         agentId: rAgentId,
         name: rName,
         agentName: rName,
@@ -2475,11 +2479,11 @@ router.get('/posts/:postId', securityLayer('public_reads'), async (req: Request,
       };
     });
 
-    const postVerified = Boolean(post.emailVerified === true);
+    const postVerified = Boolean(targetTicket.emailVerified === true);
     const postStatus = postVerified ? 'verified' : 'not verified';
 
-    const authorAgentId = author?.agentId || post.agentId;
-    const authorVerified = Boolean(author?.emailVerified === true || post.emailVerified === true);
+    const authorAgentId = author?.agentId || targetTicket.agentId;
+    const authorVerified = Boolean(author?.emailVerified === true || targetTicket.emailVerified === true);
     const authorStatus = authorVerified ? 'verified' : 'not verified';
 
     const connIds = (connections || []).map((c: any) => c.id).filter(Boolean);
@@ -2557,16 +2561,17 @@ router.get('/posts/:postId', securityLayer('public_reads'), async (req: Request,
   }
 });
 
-// GET /api/posts/:postId/connections (Public read)
-router.get('/posts/:postId/connections', securityLayer('public_reads'), async (req: Request, res: Response) => {
+// GET /api/tickets/:ticketId/connections & /api/posts/:postId/connections (Public read)
+router.get(['/tickets/:ticketId/connections', '/tickets/:postId/connections', '/posts/:postId/connections'], securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
-    const postId = req.params.postId as string;
-    const details = await getPostAndReplies(postId);
+    const postId = (req.params.ticketId || req.params.postId) as string;
+    const details = await getTicketAndBids(postId);
     if (!details) {
-      throw new Error('Post not found.');
+      throw new Error('Ticket not found.');
     }
-    const { post, connections } = details as any;
-    const postVerified = Boolean(post.emailVerified === true);
+    const { post, ticket, connections } = details as any;
+    const targetTicket = ticket || post;
+    const postVerified = Boolean(targetTicket.emailVerified === true);
     const postStatus = postVerified ? 'verified' : 'not verified';
 
     const mappedConnections = (connections || []).map((c: any) => {
@@ -2593,23 +2598,23 @@ router.get('/posts/:postId/connections', securityLayer('public_reads'), async (r
   }
 });
 
-// 11. POST /api/posts/:postId/replies (Agent only)
-router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, securityLayer('reply_create'), async (req: AuthenticatedRequest, res: Response) => {
+// 11. POST /api/tickets/:ticketId/bids & /api/posts/:postId/replies (Agent only)
+router.post(['/tickets/:ticketId/bids', '/tickets/:postId/bids', '/tickets/:ticketId/replies', '/posts/:postId/bids', '/posts/:postId/replies'], requireAgentAuth, requireAgent, securityLayer('reply_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const postId = req.params.postId as string;
+    const postId = (req.params.ticketId || req.params.postId) as string;
     const { content } = req.body;
     const contextCreds = extractRequestContextCredentials(req);
-    const reply: any = await createReply(postId, req.user!.id, content, contextCreds);
+    const reply: any = await createBid(postId, req.user!.id, content, contextCreds);
 
     // Log footprint for replier
-    await logAgentFootprint(req.user!.id, 'REPLY_SENT', reply.content ? (reply.content.length > 60 ? reply.content.slice(0, 60) + '...' : reply.content) : 'Broadcasted response to node', reply.id);
+    await logAgentFootprint(req.user!.id, 'BID_SENT', reply.content ? (reply.content.length > 60 ? reply.content.slice(0, 60) + '...' : reply.content) : 'Broadcasted response to node', reply.id);
 
-    // Log external event for post owner if different account
+    // Log external event for ticket owner if different account
     try {
       const sb = getSupabaseClient();
       const { data: originalPost } = await sb.from('posts').select('userId').eq('id', postId).maybeSingle();
       if (originalPost && originalPost.userId && originalPost.userId !== req.user!.id) {
-        await logExternalEvent(originalPost.userId, 'REPLY_RECEIVED', req.user!.agentId || req.user!.id, postId, { replyId: reply.id, content: reply.content });
+        await logExternalEvent(originalPost.userId, 'BID_RECEIVED', req.user!.agentId || req.user!.id, postId, { bidId: reply.id, replyId: reply.id, content: reply.content });
       }
     } catch (e) {}
 
@@ -2617,7 +2622,7 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, securityLa
     const raVerified = Boolean(req.user?.emailVerified === true || reply.emailVerified === true);
     const raStatus = raVerified ? 'verified' : 'not verified';
 
-    // Broadcast floor activity: [Agent Name] made a reply to [Author Agent]'s post
+    // Broadcast floor activity: [Agent Name] made a bid to [Author Agent]'s ticket
     let originalAuthorName = 'Agent';
     try {
       const sb = getSupabaseClient();
@@ -2634,7 +2639,7 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, securityLa
       agentName: req.user!.name || reply.agentName,
       avatar: req.user!.avatar || reply.avatar,
       emailVerified: raVerified,
-      text: `made a reply to ${originalAuthorName}'s post`,
+      text: `made a bid to ${originalAuthorName}'s ticket`,
       type: 'reply',
       peerName: originalAuthorName,
       entityId: reply.id,
@@ -2646,7 +2651,9 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, securityLa
       success: true, 
       data: {
         id: reply.id,
+        bidId: reply.id,
         replyId: reply.id,
+        ticketId: reply.postId,
         postId: reply.postId,
         authorAgentId: raAgentId,
         verificationStatus: raStatus,
@@ -2662,18 +2669,22 @@ router.post('/posts/:postId/replies', requireAgentAuth, requireAgent, securityLa
   }
 });
 
-// GET /api/posts/:postId/replies (Public read)
-router.get('/posts/:postId/replies', securityLayer('public_reads'), async (req: Request, res: Response) => {
+// GET /api/tickets/:ticketId/bids & /api/posts/:postId/replies (Public read)
+router.get(['/tickets/:ticketId/bids', '/tickets/:postId/bids', '/tickets/:ticketId/replies', '/posts/:postId/bids', '/posts/:postId/replies'], securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
-    const postId = req.params.postId as string;
-    const details = await getPostAndReplies(postId);
-    const mappedReplies = (details?.replies || []).map((r: any) => {
+    const postId = (req.params.ticketId || req.params.postId) as string;
+    const details = await getTicketAndBids(postId);
+    const rawBids = details?.bids || details?.replies || [];
+    const mappedReplies = rawBids.map((r: any) => {
       const raAgentId = r.agentId || r.author?.agentId;
       const raVerified = Boolean(r.emailVerified === true || r.author?.emailVerified === true);
       const raStatus = raVerified ? 'verified' : 'not verified';
       return {
         id: r.id,
+        bidId: r.id,
         replyId: r.id,
+        ticketId: r.ticketId || r.postId,
+        postId: r.ticketId || r.postId,
         content: r.content,
         authorAgentId: raAgentId,
         verificationStatus: raStatus,
@@ -2682,38 +2693,44 @@ router.get('/posts/:postId/replies', securityLayer('public_reads'), async (req: 
         emailVerified: raVerified,
       };
     });
-    res.json({ success: true, data: mappedReplies });
+    res.json({ success: true, data: mappedReplies, bids: mappedReplies, replies: mappedReplies });
   } catch (err: any) {
     res.status(404).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 12a. GET /api/replies/me (Agent only: list own replies)
-router.get('/replies/me', requireAgentAuth, requireAgent, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+// 12a. GET /api/bids/me & /api/replies/me (Agent only: list own bids)
+router.get(['/bids/me', '/replies/me'], requireAgentAuth, requireAgent, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
 
-    const result = await getUserReplies(req.user!.id, page, limit);
+    const result = await getUserBids(req.user!.id, page, limit);
+    const list = result.bids || result.replies || [];
     res.json({
       success: true,
-      data: result,
+      data: {
+        ...result,
+        bids: list,
+        replies: list,
+      },
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 12b. GET /api/replies (Public read: optionally filter by agentId)
-router.get('/replies', securityLayer('public_reads'), async (req: Request, res: Response) => {
+// 12b. GET /api/bids & /api/replies (Public read: optionally filter by agentId)
+router.get(['/bids', '/replies'], securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const agentId = (req.query.agentId || req.query.agent_id || req.query.author) as string | undefined;
 
-    const result = await getUserReplies({ agentId, page, limit });
-    const formattedReplies = (result.replies || []).map((r: any) => {
-      const { postId: _p, ...rest } = r;
+    const result = await getUserBids({ agentId, page, limit });
+    const rawBids = result.bids || result.replies || [];
+    const formattedReplies = rawBids.map((r: any) => {
+      const { postId: _p, ticketId: _t, ...rest } = r;
       return rest;
     });
 
@@ -2721,6 +2738,7 @@ router.get('/replies', securityLayer('public_reads'), async (req: Request, res: 
       success: true,
       data: {
         ...result,
+        bids: formattedReplies,
         replies: formattedReplies
       },
     });
@@ -2729,355 +2747,107 @@ router.get('/replies', securityLayer('public_reads'), async (req: Request, res: 
   }
 });
 
-// GET /api/replies/:replyId (Public read)
-router.get('/replies/:replyId', securityLayer('public_reads'), async (req: Request, res: Response) => {
+// GET /api/bids/:bidId & /api/replies/:replyId (Public read)
+router.get(['/bids/:bidId', '/bids/:replyId', '/replies/:replyId'], securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
-    const replyId = req.params.replyId as string;
-    const data: any = await getReplyDetails(replyId);
-    const raAgentId = data.reply.author?.agentId || data.reply.agentId;
-    const raVerified = Boolean(data.reply.emailVerified === true || data.reply.author?.emailVerified === true);
+    const replyId = (req.params.bidId || req.params.replyId) as string;
+    const data: any = await getBidDetails(replyId);
+    const item = data.bid || data.reply;
+    const raAgentId = item.author?.agentId || item.agentId;
+    const raVerified = Boolean(item.emailVerified === true || item.author?.emailVerified === true);
     const raStatus = raVerified ? 'verified' : 'not verified';
     const mappedData = {
-      id: data.reply.id,
-      replyId: data.reply.id,
-      postId: data.reply.postId,
-      content: data.reply.content,
+      id: item.id,
+      bidId: item.id,
+      replyId: item.id,
+      ticketId: item.ticketId || item.postId,
+      postId: item.ticketId || item.postId,
+      content: item.content,
       authorAgentId: raAgentId,
       verificationStatus: raStatus,
       verification_status: raStatus,
       ["verification status"]: raStatus,
       emailVerified: raVerified,
     };
-    res.json({ success: true, data: mappedData });
+    res.json({ success: true, data: mappedData, bid: mappedData, reply: mappedData });
   } catch (err: any) {
     const status = err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ success: false, error: { message: err.message } });
   }
 });
 
-// DELETE /api/replies/:replyId (Agent only)
-router.delete('/replies/:replyId', requireAgentAuth, securityLayer('reply_delete'), async (req: AuthenticatedRequest, res: Response) => {
+// DELETE /api/bids/:bidId & /api/replies/:replyId (Agent only)
+router.delete(['/bids/:bidId', '/bids/:replyId', '/replies/:replyId'], requireAgentAuth, securityLayer('reply_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const replyId = req.params.replyId as string;
+    const replyId = (req.params.bidId || req.params.replyId) as string;
     
     // Authorization Audit
     await SecurityService.getInstance().auditObjectId(req.user!.id, req.user!.agentId, replyId, 'replies', 'id', 'userId');
 
-    await deleteReply(replyId, req.user!.id);
+    await deleteBid(replyId, req.user!.id);
 
     // Log deletion
-    await logAgentFootprint(req.user!.id, 'REPLY_DELETED', `Response ${replyId} retracted from node`, replyId);
+    await logAgentFootprint(req.user!.id, 'BID_DELETED', `Response ${replyId} retracted from node`, replyId);
 
-    // Broadcast floor activity: [Agent Name] removed a reply from the floor
+    // Broadcast floor activity: [Agent Name] removed a bid from the floor
     floorActivityService.recordFloorActivity({
       agentId: req.user!.agentId || req.user!.id,
       agentName: req.user!.name,
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
-      text: 'removed a reply from the floor',
+      text: 'removed a bid from the floor',
       type: 'FLOOR_REPLY_DELETED'
     }).catch(console.warn);
 
-    res.json({ success: true, message: 'Reply deleted successfully.' });
+    res.json({ success: true, message: 'Bid deleted successfully.' });
   } catch (err: any) {
     const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
     res.status(status).json({ success: false, error: { message: err.message } });
   }
 });
 
-// 12. POST /api/connections (Agent only: act as request sender rather than instant establishment)
-router.post('/connections', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/tickets/:bidId/contract (Ticket Owner only: select bid and enter contract workflow)
+router.post(['/tickets/:bidId/contract', '/bids/:bidId/contract', '/tickets/:ticketId/bids/:bidId/contract', '/tickets/:ticketId/award', '/posts/:postId/award'], requireAgentAuth, requireAgent, securityLayer('reply_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const replyId = (req.body?.replyId || req.body?.reply_id) as string | undefined;
-    const receiverAgentId = (req.body?.receiverAgentId || req.body?.receiver_agent_id || req.body?.targetAgentId || req.body?.recipientAgentId || req.body?.agentId) as string | undefined;
-    const requestId = (req.body?.requestId || req.body?.request_id) as string | undefined;
-    const postId = (req.body?.postId || req.body?.post_id) as string | undefined;
+    const rawTicketId = req.params.ticketId || req.params.postId;
+    const rawBidId = req.params.bidId || req.params.replyId;
+    const rawParam1 = rawTicketId || rawBidId;
 
-    if (!replyId && !receiverAgentId && !requestId) {
-      throw new ConnectionError('replyId or receiverAgentId is required.', 400, 'MISSING_PARAM');
+    let ticketId: string | undefined = Array.isArray(rawTicketId) ? rawTicketId[0] : rawTicketId;
+    let bidId: string | undefined = Array.isArray(rawBidId) ? rawBidId[0] : rawBidId;
+    const param1: string | undefined = Array.isArray(rawParam1) ? rawParam1[0] : rawParam1;
+    if (!bidId && req.body?.bidId) {
+      bidId = typeof req.body.bidId === 'string' ? req.body.bidId : undefined;
     }
 
-    const sb = getSupabaseClient();
-    const callerUserId = req.user!.id;
-    const callerAgentId = req.user!.agentId || callerUserId;
-    const callerAgentName = req.user!.name || 'Agent';
+    const supabase = getSupabaseClient();
 
-    let targetUserId: string = '';
-    let targetAgentId: string = '';
-    let targetAgentName: string = 'Agent';
-    let resolvedPostId: string | null = postId || null;
-    let resolvedReplyId: string | null = replyId || null;
-    let postRecord: any = null;
-    let replyRecord: any = null;
-
-    if (replyId) {
-      const { data: rep, error: repErr } = await sb
-        .from('replies')
-        .select('id, postId, userId, agentId, agentName')
-        .eq('id', replyId)
-        .maybeSingle();
-
-      if (repErr || !rep) {
-        throw new ConnectionNotFoundError('Reply not found.', 'REPLY_NOT_FOUND');
+    // If route was /tickets/:bidId/contract where param1 is a bidId
+    if (!bidId && param1) {
+      const { data: reply } = await supabase.from('replies').select('id, postId').eq('id', param1).maybeSingle();
+      if (reply) {
+        bidId = reply.id;
+        ticketId = reply.postId;
       }
-      replyRecord = rep;
-      resolvedReplyId = rep.id;
-      resolvedPostId = rep.postId;
+    }
 
-      const { data: post, error: postErr } = await sb
-        .from('posts')
-        .select('id, userId, agentId, agentName')
-        .eq('id', rep.postId)
-        .maybeSingle();
+    if (!bidId) {
+      return res.status(400).json({ success: false, error: { message: 'Winning bidId is required.' } });
+    }
 
-      if (postErr || !post) {
-        throw new ConnectionNotFoundError('Associated post not found.', 'POST_NOT_FOUND');
+    if (!ticketId) {
+      const { data: reply } = await supabase.from('replies').select('postId').eq('id', bidId).maybeSingle();
+      if (!reply) {
+        return res.status(404).json({ success: false, error: { message: 'Bid not found.' } });
       }
-      postRecord = post;
-
-      if (callerUserId === post.userId) {
-        // Caller is post owner -> target is reply author
-        targetUserId = rep.userId;
-        targetAgentId = rep.agentId;
-        targetAgentName = rep.agentName || 'Agent';
-      } else if (callerUserId === rep.userId) {
-        // Caller is reply author -> target is post owner
-        targetUserId = post.userId;
-        targetAgentId = post.agentId;
-        targetAgentName = post.agentName || 'Agent';
-      } else {
-        throw new ConnectionForbiddenError('Forbidden: Only the author of the post or the author of the reply can initiate a connection.', 'FORBIDDEN');
-      }
-    } else if (receiverAgentId) {
-      const cleanAgentId = receiverAgentId.trim().toUpperCase();
-      const { data: targetUser, error: tuErr } = await sb
-        .from('users')
-        .select('id, agentId, name')
-        .ilike('agentId', cleanAgentId)
-        .maybeSingle();
-
-      if (tuErr || !targetUser) {
-        throw new ConnectionNotFoundError('Target agent not found.', 'TARGET_AGENT_NOT_FOUND');
-      }
-      targetUserId = targetUser.id;
-      targetAgentId = targetUser.agentId;
-      targetAgentName = targetUser.name || 'Agent';
-    } else if (requestId) {
-      // Direct request acceptance through POST /api/connections
-      const connection: any = await acceptConnectionRequest(requestId, callerUserId);
-      const poUserId = connection.postOwnerUserId || connection.post_owner_user_id;
-      const raUserId = connection.replyAuthorUserId || connection.reply_author_user_id;
-
-      const [poAuth, raAuth] = await Promise.all([
-        sb.auth.admin.getUserById(poUserId).then(r => r.data?.user),
-        sb.auth.admin.getUserById(raUserId).then(r => r.data?.user)
-      ]);
-
-      const poVStatus = poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-      const raVStatus = raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          id: connection.id,
-          connectionId: connection.id,
-          connectionStatus: 'active',
-          reviewId: null,
-          content: null,
-          postOwnerAgentId: connection.postOwnerAgentId || connection.post_owner_agent_id,
-          postOwnerVerificationStatus: poVStatus,
-          replyAuthorAgentId: connection.replyAuthorAgentId || connection.reply_author_agent_id,
-          replyAuthorVerificationStatus: raVStatus,
-          postId: connection.postId || resolvedPostId || null,
-          replyId: connection.replyId || resolvedReplyId || null,
-          createdAt: connection.createdAt || connection.created_at
-        }
-      });
+      ticketId = reply.postId;
     }
 
-    if (callerUserId === targetUserId) {
-      throw new ConnectionError('Cannot send connection request to yourself.', 400, 'SELF_CONNECTION_FORBIDDEN');
-    }
-
-    // 1. Check if already connected in either direction
-    const [connFwd, connRev] = await Promise.all([
-      sb.from('connections').select('id, status').eq('postOwnerUserId', callerUserId).eq('replyAuthorUserId', targetUserId).maybeSingle(),
-      sb.from('connections').select('id, status').eq('postOwnerUserId', targetUserId).eq('replyAuthorUserId', callerUserId).maybeSingle()
-    ]);
-    const existingConn = connFwd.data || connRev.data;
-    if (existingConn && existingConn.status !== 'dissolved') {
-      throw new ConnectionConflictError('Already connected to this agent.', 'ALREADY_CONNECTED');
-    }
-
-    // 2. Check if the counterparty already sent a pending request to caller -> Mutual handshake formed!
-    const { data: incomingReq } = await sb
-      .from('connection_requests')
-      .select('*')
-      .match({ senderUserId: targetUserId, receiverUserId: callerUserId, status: 'pending' })
-      .maybeSingle();
-
-    if (incomingReq) {
-      if (resolvedPostId || resolvedReplyId) {
-        storeRequestPostContext(incomingReq.id, { postId: resolvedPostId || undefined, replyId: resolvedReplyId || undefined });
-      }
-      const connection: any = await acceptConnectionRequest(incomingReq.id, callerUserId);
-
-      // Broadcast floor activity & footprints
-      await logAgentFootprint(callerUserId, 'CONNECTION_REQUEST_ACCEPTED', `Handshake accepted for request ${incomingReq.id}`, connection.id);
-      try {
-        await logExternalEvent(targetUserId, 'CONNECTION_ACCEPTED_BY_TARGET', callerAgentId, connection.id);
-      } catch (e) {}
-
-      floorActivityService.recordFloorActivity({
-        agentId: callerAgentId,
-        agentName: callerAgentName,
-        avatar: req.user!.avatar,
-        emailVerified: req.user!.emailVerified,
-        text: `accepted connection request from ${targetAgentName}`,
-        type: 'connection',
-        peerName: targetAgentName,
-        entityId: connection.id,
-        activityKey: `conn:${connection.id}`,
-        post: connection
-      }).catch(console.warn);
-
-      const [poAuth, raAuth] = await Promise.all([
-        sb.auth.admin.getUserById(connection.postOwnerUserId || callerUserId).then(r => r.data?.user),
-        sb.auth.admin.getUserById(connection.replyAuthorUserId || targetUserId).then(r => r.data?.user)
-      ]);
-
-      return res.status(201).json({
-        success: true,
-        data: {
-          id: connection.id,
-          connectionId: connection.id,
-          connectionStatus: 'active',
-          reviewId: null,
-          content: null,
-          postOwnerAgentId: connection.postOwnerAgentId || (postRecord ? postRecord.agentId : callerAgentId),
-          postOwnerVerificationStatus: poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified',
-          replyAuthorAgentId: connection.replyAuthorAgentId || (replyRecord ? replyRecord.agentId : targetAgentId),
-          replyAuthorVerificationStatus: raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified',
-          postId: connection.postId || resolvedPostId || null,
-          replyId: connection.replyId || resolvedReplyId || null,
-          createdAt: connection.createdAt || connection.created_at
-        }
-      });
-    }
-
-    // 3. Check if an outgoing request is already pending
-    const { data: existingOutgoing } = await sb
-      .from('connection_requests')
-      .select('id, status')
-      .match({ senderUserId: callerUserId, receiverUserId: targetUserId, status: 'pending' })
-      .maybeSingle();
-
-    if (existingOutgoing) {
-      throw new ConnectionConflictError('Connection request already pending.', 'CONNECTION_REQUEST_ALREADY_EXISTS');
-    }
-
-    // 4. Act as request sender: Create connection request
-    const newRequestId = `req_${crypto.randomUUID()}`;
-    const newRequest = {
-      id: newRequestId,
-      senderUserId: callerUserId,
-      senderAgentId: callerAgentId,
-      senderAgentName: callerAgentName,
-      receiverUserId: targetUserId,
-      receiverAgentId: targetAgentId,
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    };
-
-    const { error: insertError } = await sb
-      .from('connection_requests')
-      .insert([newRequest]);
-
-    if (insertError) {
-      if (insertError.code === '23505' || insertError.message.includes('duplicate') || insertError.message.includes('unique')) {
-        throw new ConnectionConflictError('Connection request already pending.', 'CONNECTION_REQUEST_ALREADY_EXISTS');
-      }
-      throw new ConnectionError(`Database error creating connection request: ${insertError.message}`, 500, 'DATABASE_ERROR');
-    }
-
-    // Store post & reply context so that when counterparty accepts, connection is linked to the post
-    if (resolvedPostId || resolvedReplyId) {
-      storeRequestPostContext(newRequestId, {
-        postId: resolvedPostId || undefined,
-        replyId: resolvedReplyId || undefined
-      });
-    }
-
-    // Log footprint for sender
-    await logAgentFootprint(
-      callerUserId,
-      'CONNECTION_REQUEST_SENT',
-      JSON.stringify({
-        message: `Dispatched handshake request to agent ${targetAgentId} via response ${resolvedReplyId || 'direct'}`,
-        requestId: newRequestId,
-        receiverAgentId: targetAgentId,
-        postId: resolvedPostId,
-        replyId: resolvedReplyId
-      }),
-      newRequestId
-    );
-
-    // Log external event for receiver
-    try {
-      await logExternalEvent(targetUserId, 'CONNECTION_REQUEST_RECEIVED', callerAgentId, newRequestId);
-    } catch (e) {}
-
-    // Broadcast floor activity: [Agent Name] requested connection with [Target Agent]
-    floorActivityService.recordFloorActivity({
-      agentId: callerAgentId,
-      agentName: callerAgentName,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `requested connection with ${targetAgentName}`,
-      type: 'request',
-      peerName: targetAgentName,
-      peerAgentId: targetAgentId,
-      entityId: newRequestId
-    }).catch(console.warn);
-
-    // Verification statuses
-    const [senderAuth, targetAuth] = await Promise.all([
-      sb.auth.admin.getUserById(callerUserId).then(r => r.data?.user),
-      sb.auth.admin.getUserById(targetUserId).then(r => r.data?.user)
-    ]);
-    const senderVStatus = (senderAuth?.app_metadata?.emailVerified || req.user!.emailVerified) ? 'verified' : 'not verified';
-    const targetVStatus = targetAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-
-    const poVStatus = (postRecord && postRecord.userId === callerUserId) ? senderVStatus : targetVStatus;
-    const raVStatus = (replyRecord && replyRecord.userId === callerUserId) ? senderVStatus : targetVStatus;
-
-    return res.status(201).json({
-      success: true,
-      data: {
-        id: newRequestId,
-        requestId: newRequestId,
-        connectionId: newRequestId,
-        connectionStatus: 'pending',
-        status: 'pending',
-        reviewId: null,
-        content: null,
-        senderAgentId: callerAgentId,
-        senderVerificationStatus: senderVStatus,
-        receiverAgentId: targetAgentId,
-        receiverVerificationStatus: targetVStatus,
-        postOwnerAgentId: postRecord ? postRecord.agentId : (callerUserId === targetUserId ? targetAgentId : callerAgentId),
-        postOwnerVerificationStatus: poVStatus,
-        replyAuthorAgentId: replyRecord ? replyRecord.agentId : targetAgentId,
-        replyAuthorVerificationStatus: raVStatus,
-        postId: resolvedPostId,
-        replyId: resolvedReplyId,
-        createdAt: newRequest.createdAt,
-        message: 'Connection request sent successfully. Waiting for recipient to accept to form connection.'
-      }
-    });
+    const result = await awardBid(ticketId, bidId, req.user!.id);
+    res.json({ success: true, data: result, message: 'Contract created and awarded successfully.' });
   } catch (err: any) {
-    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : (err.message.includes('DUPLICATE') || err.message.includes('already pending') || err.message.includes('Already connected')) ? 409 : err.message.includes('unavailable') ? 503 : 400);
-    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
+    const status = err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ success: false, error: { message: err.message } });
   }
 });
 
@@ -4737,7 +4507,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             dynamicFootprints.push({
               id: `fp_conn_${c.id}`,
               action: 'CONNECTION_ESTABLISHED',
-              endpoint: 'POST /api/connections/accept',
+              endpoint: 'POST /api/connections/requests/:id/accept',
               target: c.id,
               details: `Established link with agent ${peer || 'peer_node'}`,
               timestamp: c.createdAt
@@ -4780,7 +4550,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             dynamicFootprints.push({
               id: `fp_req_${r.id}`,
               action: 'CONNECTION_REQUEST_SENT',
-              endpoint: 'POST /api/connections/request',
+              endpoint: 'POST /api/connections/requests',
               target: r.receiverAgentId || r.id,
               targetAgentId: r.receiverAgentId,
               targetAgentName: targetUser?.name || r.receiverAgentId,

@@ -1,15 +1,15 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Search, X } from 'lucide-react';
-import { NetworkPost } from '../types';
+import { NetworkTicket } from '../types';
 import { SearchView } from './SearchView';
 
 interface SearchDropdownProps {
   isOpen: boolean;
   onClose: () => void;
-  posts: NetworkPost[];
-  onOpenThread: (post: NetworkPost) => void;
-  onOpenConnections?: (post: NetworkPost) => void;
-  onAddReply: (postId: string, text: string) => void;
+  posts: NetworkTicket[];
+  onOpenThread: (post: NetworkTicket) => void;
+  onOpenConnections?: (post: NetworkTicket) => void;
+  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   activeMainTab?: string;
   onSetActiveMainTab?: (tab: any) => void;
@@ -21,7 +21,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   posts,
   onOpenThread,
   onOpenConnections,
-  onAddReply,
+  onAddBid,
   onOpenAgentProfile,
   activeMainTab,
   onSetActiveMainTab
@@ -110,7 +110,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
               <Search className="w-4 h-4 text-neutral-400 shrink-0" />
               <input 
                 type="text" 
-                placeholder="Search posts or accounts"
+                placeholder="Search tickets or accounts"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 autoFocus
@@ -142,7 +142,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 onClick={() => setActiveTab('posts')}
                 className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'posts' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
               >
-                Posts
+                Tickets
               </button>
               <button
                 onClick={() => setActiveTab('accounts')}
@@ -165,7 +165,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 activeTab={activeTab}
                 onOpenThread={(p) => { onClose(); onOpenThread(p); }}
                 onOpenConnections={(p) => { onClose(); onOpenConnections?.(p); }}
-                onAddReply={onAddReply}
+                onAddBid={onAddBid}
                 onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
               />
             </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Tag } from 'lucide-react';
-import { NetworkPost } from '../types';
+import { NetworkTicket } from '../types';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
 import { Highlight } from './Highlight';
@@ -9,13 +9,13 @@ import { BrutalistLoader } from './BrutalistLoader';
 import { VerifiedBadge } from './VerifiedBadge';
 
 interface SearchViewProps {
-  posts: NetworkPost[];
+  posts: NetworkTicket[];
   agents?: any[];
   query: string;
   activeTab: 'accounts' | 'posts';
-  onOpenThread: (post: NetworkPost) => void;
-  onOpenConnections?: (post: NetworkPost) => void;
-  onAddReply: (postId: string, text: string) => void;
+  onOpenThread: (post: NetworkTicket) => void;
+  onOpenConnections?: (post: NetworkTicket) => void;
+  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
@@ -26,10 +26,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
   activeTab,
   onOpenThread,
   onOpenConnections,
-  onAddReply,
+  onAddBid,
   onOpenAgentProfile,
 }) => {
-  const [dbPosts, setDbPosts] = useState<NetworkPost[]>([]);
+  const [dbPosts, setDbPosts] = useState<NetworkTicket[]>([]);
   const [dbAgents, setDbAgents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasQueried, setHasQueried] = useState(false);
@@ -48,11 +48,12 @@ export const SearchView: React.FC<SearchViewProps> = ({
     const timer = setTimeout(async () => {
       try {
         if (activeTab === 'posts') {
-          const postsRes = await apiFetch(`/api/posts?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'none' }).catch(() => null);
+          const postsRes = await apiFetch(`/api/tickets?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'none' }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
-          if (postsRes && postsRes.success && Array.isArray(postsRes.data?.posts)) {
-            const mappedPosts: NetworkPost[] = postsRes.data.posts.map((p: any) => ({
+          const rawList = postsRes?.data?.tickets || postsRes?.data?.posts;
+          if (postsRes && postsRes.success && Array.isArray(rawList)) {
+            const mappedPosts: NetworkTicket[] = rawList.map((p: any) => ({
               id: p.id,
               agentName: p.agentName || 'Agent Node',
               agentId: p.agentId,
@@ -191,7 +192,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
     <div className="space-y-4 flex-1 flex flex-col">
       {/* Results Header */}
       <div className="flex items-center justify-between font-mono text-xs uppercase tracking-wider text-gray-500 px-3">
-        <span>Found {activeTab === 'posts' ? displayedPosts.length : displayedAgents.length} {activeTab} result{ (activeTab === 'posts' ? displayedPosts.length : displayedAgents.length) === 1 ? '' : 's'}</span>
+        <span>Found {activeTab === 'posts' ? displayedPosts.length : displayedAgents.length} {activeTab === 'posts' ? 'ticket' : 'account'} result{ (activeTab === 'posts' ? displayedPosts.length : displayedAgents.length) === 1 ? '' : 's'}</span>
       </div>
 
       {/* Results List */}
@@ -205,14 +206,14 @@ export const SearchView: React.FC<SearchViewProps> = ({
                 query={query}
                 onOpenThread={onOpenThread}
                 onOpenConnections={onOpenConnections}
-                onAddReply={onAddReply}
+                onAddBid={onAddBid}
                 onOpenAgentProfile={onOpenAgentProfile}
               />
             ))
           ) : (
             <div className="text-center py-12 bg-[#161616] border border-white/10 rounded-2xl p-6">
               <p className="text-gray-400 font-mono text-xs sm:text-sm md:text-sm lg:text-sm uppercase font-bold tracking-wider">
-                No broadcasts match your search criteria.
+                No tickets match your search criteria.
               </p>
             </div>
           )

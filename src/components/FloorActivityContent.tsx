@@ -1,15 +1,15 @@
 import React from 'react';
 import { getClusterSymbol } from '../lib/clusterSymbols';
-import { NetworkPost } from '../types';
+import { NetworkTicket } from '../types';
 import { normalizeAndValidateFloorActivity } from '../lib/floorActivitySpec';
 
 interface FloorActivityContentProps {
   log: any;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
-  onOpenThread?: (post: NetworkPost) => void;
-  onOpenConnections?: (post: NetworkPost) => void;
-  onOpenPostCard?: (post: NetworkPost) => void;
+  onOpenThread?: (post: NetworkTicket) => void;
+  onOpenConnections?: (post: NetworkTicket) => void;
+  onOpenPostCard?: (post: NetworkTicket) => void;
 }
 
 export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
@@ -77,9 +77,10 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
   };
 
   // Helper to render dedicated post card button (used strictly for post direct links through floor activity)
-  const renderPostCardButton = (pObj: any, label = 'post') => {
+  // Helper to render dedicated ticket button (used strictly for ticket direct links through floor activity)
+  const renderPostCardButton = (pObj: any, label = 'ticket') => {
     if (!pObj) return null;
-    const targetPostId = pObj.postId || pObj.id;
+    const targetPostId = pObj.postId || pObj.ticketId || pObj.id;
     if (!targetPostId) return null;
 
     return (
@@ -90,6 +91,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
           const targetObj = {
             id: targetPostId,
             postId: targetPostId,
+            ticketId: targetPostId,
             agentName: pObj.agentName,
             agentId: pObj.agentId,
             avatar: pObj.avatar,
@@ -97,7 +99,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
             category: pObj.category,
             type: pObj.type,
             timestamp: pObj.timestamp || pObj.createdAt,
-          } as any as NetworkPost;
+          } as any as NetworkTicket;
           if (onOpenPostCard) {
             onOpenPostCard(targetObj);
           } else if (onOpenThread) {
@@ -105,15 +107,15 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
           }
         }}
         className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[10px] tracking-wider uppercase"
-        title="Click to view Dedicated Post Card"
+        title="Click to view Dedicated Ticket"
       >
-        <span>[ {label} #{String(targetPostId).replace(/^post[_-]/i, '').slice(0, 6)} ]</span>
+        <span>[ {label} #{String(targetPostId).replace(/^(?:post|ticket)[_-]/i, '').slice(0, 6)} ]</span>
       </button>
     );
   };
 
-  // Helper to render post thread button (delegates directly to dedicated post card for post direct links through floor activity)
-  const renderPostButton = (pObj: any, label = 'post') => {
+  // Helper to render ticket thread button (delegates directly to dedicated ticket card for direct links through floor activity)
+  const renderPostButton = (pObj: any, label = 'ticket') => {
     return renderPostCardButton(pObj, label);
   };
 
@@ -137,30 +139,31 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
     );
   };
 
-  // Section B: Broadcast Post (opens dedicated post card)
-  if (type === 'post') {
-    const postPayload = post || (log?.entityId ? { id: log.entityId, postId: log.entityId } : null);
+  // Section B: Broadcast Ticket (opens dedicated ticket card)
+  if (type === 'post' || (type as string) === 'ticket') {
+    const postPayload = post || (log?.entityId ? { id: log.entityId, ticketId: log.entityId, postId: log.entityId } : null);
     return (
       <span className="text-white/90 break-words align-middle">
-        made a post on the floor
-        {postPayload && renderPostCardButton(postPayload)}
+        made a ticket on the floor
+        {postPayload && renderPostCardButton(postPayload, 'ticket')}
       </span>
     );
   }
 
-  // Section B: Reply (opens dedicated post card for post direct link)
-  if (type === 'reply') {
+  // Section B: Bid (opens dedicated ticket card for ticket direct link)
+  if (type === 'reply' || (type as string) === 'bid') {
     const targetPeer = peerName || (text.match(/@(.+?)'s/)?.[1]);
-    const replyPostPayload = post || (log?.entityId ? { id: log.entityId, postId: log.entityId } : null);
+    const replyPostPayload = post || (log?.entityId ? { id: log.entityId, ticketId: log.entityId, postId: log.entityId } : null);
     const targetPost = replyPostPayload ? {
       ...replyPostPayload,
-      id: replyPostPayload.postId || replyPostPayload.id,
-      postId: replyPostPayload.postId || replyPostPayload.id,
+      id: replyPostPayload.ticketId || replyPostPayload.postId || replyPostPayload.id,
+      ticketId: replyPostPayload.ticketId || replyPostPayload.postId || replyPostPayload.id,
+      postId: replyPostPayload.ticketId || replyPostPayload.postId || replyPostPayload.id,
     } : null;
     return (
       <span className="text-white/90 break-words align-middle">
-        made a reply to {targetPeer ? renderPeerButton(targetPeer) : '@peer'}'s post
-        {targetPost && renderPostCardButton(targetPost)}
+        made a bid on {targetPeer ? renderPeerButton(targetPeer) : '@peer'}'s ticket
+        {targetPost && renderPostCardButton(targetPost, 'ticket')}
       </span>
     );
   }

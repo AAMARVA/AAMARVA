@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search as SearchIcon, ChevronDown, Check } from 'lucide-react';
-import { NetworkPost } from '../types';
+import { NetworkTicket } from '../types';
 
 export type FeedSortOption = 'LATEST' | 'HIGHEST ENGAGEMENT' | 'MOST REPLIES' | 'MOST CONNECTIONS';
 
@@ -10,10 +10,10 @@ interface HeaderProps {
   onOpenSearch: () => void;
   isSearchDropdownOpen: boolean;
   setIsSearchDropdownOpen: (isOpen: boolean) => void;
-  posts: NetworkPost[];
-  onOpenThread: (post: NetworkPost) => void;
-  onOpenConnections: (post: NetworkPost) => void;
-  onAddReply: (postId: string, text: string) => void;
+  posts: NetworkTicket[];
+  onOpenThread: (post: NetworkTicket) => void;
+  onOpenConnections: (post: NetworkTicket) => void;
+  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   isVisible?: boolean;
   feedSort?: FeedSortOption;
@@ -23,9 +23,9 @@ interface HeaderProps {
 
 const SORT_OPTIONS: { id: FeedSortOption; label: string; description: string }[] = [
   { id: 'LATEST', label: 'LATEST', description: 'Real-time broadcast order' },
-  { id: 'HIGHEST ENGAGEMENT', label: 'HIGHEST ENGAGEMENT', description: 'Total replies & connections [ 24 hrs ]' },
-  { id: 'MOST REPLIES', label: 'MOST REPLIES', description: 'Most discussed posts [ 24 hrs ]' },
-  { id: 'MOST CONNECTIONS', label: 'MOST CONNECTIONS', description: 'Most connected posts [ 24 hrs ]' },
+  { id: 'HIGHEST ENGAGEMENT', label: 'HIGHEST ENGAGEMENT', description: 'Total bids & connections [ 24 hrs ]' },
+  { id: 'MOST REPLIES', label: 'MOST BIDS', description: 'Most discussed tickets [ 24 hrs ]' },
+  { id: 'MOST CONNECTIONS', label: 'MOST CONNECTIONS', description: 'Most connected tickets [ 24 hrs ]' },
 ];
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
   posts,
   onOpenThread,
   onOpenConnections,
-  onAddReply,
+  onAddBid,
   onOpenAgentProfile,
   isVisible = true,
   feedSort = 'LATEST',
@@ -114,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={() => setIsSortDropdownOpen(prev => !prev)}
               aria-expanded={isSortDropdownOpen}
-              className="flex items-center justify-center gap-1.5 min-w-[100px] sm:min-w-[120px] md:min-w-[130px] border-x-2 border-b-2 border-t-0 border-[#141414] px-3 py-1 sm:px-4 sm:py-1.5 md:py-1.5 font-mono text-[10px] sm:text-xs md:text-xs font-black uppercase tracking-wider transition-all select-none cursor-pointer bg-[#141414] text-white hover:bg-[#2c2c2c] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+              className="flex items-center justify-center gap-1.5 min-w-[100px] sm:min-w-[120px] md:min-w-[130px] border-x-2 border-b-2 border-t-0 border-[#141414] px-3 py-1 sm:px-4 sm:py-1.5 md:py-1.5 font-mono text-[10px] sm:text-xs md:text-xs font-black uppercase tracking-wider transition-all select-none cursor-pointer bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
             >
               <span>{SORT_OPTIONS.find(opt => opt.id === feedSort)?.label || feedSort}</span>
               <ChevronDown className={`w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[3] transition-transform duration-200 ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
@@ -130,9 +130,11 @@ export const Header: React.FC<HeaderProps> = ({
                       key={option.id}
                       onClick={() => handleSelectOption(option.id)}
                       className={`w-full text-left px-3 py-2.5 sm:px-3.5 sm:py-2.5 transition-colors flex items-center justify-between group cursor-pointer ${
-                        isSelected 
-                          ? 'bg-[#141414] text-white' 
-                          : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                        option.id === 'LATEST'
+                          ? 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                          : isSelected 
+                            ? 'bg-[#141414] text-white' 
+                            : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
                       }`}
                     >
                       <div className="flex flex-col min-w-0 pr-2">
@@ -140,13 +142,13 @@ export const Header: React.FC<HeaderProps> = ({
                           {option.label}
                         </span>
                         <span className={`text-[9px] sm:text-[10px] font-mono font-bold leading-tight mt-0.5 ${
-                          isSelected ? 'text-white/90' : 'text-[#141414]'
+                          (isSelected && option.id !== 'LATEST') ? 'text-white/90' : 'text-[#141414]'
                         }`}>
                           {option.description}
                         </span>
                       </div>
                       {isSelected && (
-                        <Check className="w-4 h-4 shrink-0 stroke-[3] text-white" />
+                        <Check className={`w-4 h-4 shrink-0 stroke-[3] ${option.id === 'LATEST' ? 'text-[#141414]' : 'text-white'}`} />
                       )}
                     </button>
                   );

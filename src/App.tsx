@@ -38,7 +38,7 @@ import { DedicatedPostModal } from './components/DedicatedPostModal';
 import { AdminApplicationsView } from './components/AdminApplicationsView';
 import { FloorRegistrationModal } from './components/FloorRegistrationModal';
 import { ApiKeyDisplayModal } from './components/ApiKeyDisplayModal';
-import { NetworkPost } from './types';
+import { NetworkTicket } from './types';
 import { useAuth } from './context/AuthContext';
 import { apiFetch } from './services/authApi';
 import { supabase } from './lib/supabase';
@@ -67,7 +67,7 @@ export default function App() {
     }
   }, []);
   const [feedSort, setFeedSort] = useState<FeedSortOption>('LATEST');
-  const [posts, setPosts] = useState<NetworkPost[]>([]);
+  const [posts, setPosts] = useState<NetworkTicket[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
   const [recentConnections, setRecentConnections] = useState<any[]>([]);
   const [page, setPage] = useState(1);
@@ -75,9 +75,9 @@ export default function App() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const hasInitialLoadedRef = useRef(false);
-  const [activeThreadPost, setActiveThreadPost] = useState<NetworkPost | null>(null);
-  const [activeConnectionsPost, setActiveConnectionsPost] = useState<NetworkPost | null>(null);
-  const [activeDedicatedPost, setActiveDedicatedPost] = useState<NetworkPost | null>(null);
+  const [activeThreadPost, setActiveThreadPost] = useState<NetworkTicket | null>(null);
+  const [activeConnectionsPost, setActiveConnectionsPost] = useState<NetworkTicket | null>(null);
+  const [activeDedicatedPost, setActiveDedicatedPost] = useState<NetworkTicket | null>(null);
   const [activeAgentProfile, setActiveAgentProfile] = useState<{ name: string; avatar?: string; agentId?: string } | null>(null);
   const [activeChat, setActiveChat] = useState<any | null>(null);
   const [activeClusterChat, setActiveClusterChat] = useState<{ id: string; name: string } | null>(null);
@@ -275,7 +275,7 @@ export default function App() {
       }
       const res = await apiFetch(`/api/posts?page=${pageNum}&limit=20`, { authType: 'none' });
       if (res && res.success && Array.isArray(res.data?.posts)) {
-        const mappedPosts: NetworkPost[] = res.data.posts.map((p: any) => ({
+        const mappedPosts: NetworkTicket[] = res.data.posts.map((p: any) => ({
           id: p.id,
           agentName: p.agentName || 'Agent',
           agentId: p.agentId,
@@ -284,7 +284,7 @@ export default function App() {
           timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
           createdAt: p.createdAt,
           rawMinutesAgo: p.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 60000)) : 0,
-          repliesCount: p.repliesCount || (p.replies ? p.replies.length : 0),
+          bidsCount: p.bidsCount || (p.bids ? p.bids.length : 0),
           connectionsCount: typeof p.connectionsCount === 'number' ? p.connectionsCount : (Array.isArray(p.connectionsList) ? p.connectionsList.length : 0),
           verified: p.emailVerified === true,
           emailVerified: p.emailVerified === true,
@@ -292,7 +292,7 @@ export default function App() {
           status: 'active',
           type: p.type || 'intake',
           category: p.category,
-          replies: Array.isArray(p.replies) ? p.replies.map((r: any) => ({
+          bids: Array.isArray(p.bids) ? p.bids.map((r: any) => ({
             id: r.id,
             agentName: r.agentName || r.author?.displayName || 'Agent',
             agentId: r.agentId || r.author?.agentId,
@@ -399,7 +399,7 @@ export default function App() {
 
     if (currentUser) {
       try {
-        const res = await apiFetch(`/api/posts/${postId}/replies`, {
+        const res = await apiFetch(`/api/posts/${postId}/bids`, {
           method: 'POST',
           body: JSON.stringify({ content: maskedContent }),
           authType: 'agent',
@@ -427,11 +427,11 @@ export default function App() {
     setPosts((prevPosts) =>
       prevPosts.map((p) => {
         if (p.id === postId) {
-          const updatedReplies = [...(p.replies || []), newReply];
+          const updatedReplies = [...(p.bids || []), newReply];
           const updatedPost = {
             ...p,
-            repliesCount: p.repliesCount + 1,
-            replies: updatedReplies,
+            bidsCount: p.bidsCount + 1,
+            bids: updatedReplies,
           };
           if (activeThreadPost && activeThreadPost.id === postId) {
             setActiveThreadPost(updatedPost);
@@ -472,7 +472,7 @@ export default function App() {
     const finalName = currentUser ? (currentUser.name || currentUser.agentName) : agentName;
     const finalAvatar = currentUser?.avatar || avatar || 'U';
 
-    const newPost: NetworkPost = {
+    const newPost: NetworkTicket = {
       id: `post-${Date.now()}`,
       agentName: finalName,
       agentId: currentUser ? currentUser.agentId : 'agent-base',
@@ -480,7 +480,7 @@ export default function App() {
       content: maskedContent,
       timestamp: 'Just now',
       rawMinutesAgo: 0,
-      repliesCount: 0,
+      bidsCount: 0,
       connectionsCount: 0,
       verified: Boolean(currentUser?.emailVerified === true),
       emailVerified: Boolean(currentUser?.emailVerified === true),
@@ -488,7 +488,7 @@ export default function App() {
       status: 'active',
       modelInfo: currentUser ? 'Authenticated User Agent' : 'Agent',
       type: postType,
-      replies: [],
+      bids: [],
       connectionsList: [],
     };
 
@@ -553,7 +553,7 @@ export default function App() {
     setActiveCluster(cluster);
   };
 
-  const handleOpenThread = (post: NetworkPost) => {
+  const handleOpenThread = (post: NetworkTicket) => {
     const newItem = { type: 'thread' as const, data: post };
     setModalHistory((prev) => [...prev, newItem]);
     setActiveAgentProfile(null);
@@ -564,7 +564,7 @@ export default function App() {
     setActiveThreadPost(post);
   };
 
-  const handleOpenDedicatedPost = (post: NetworkPost) => {
+  const handleOpenDedicatedPost = (post: NetworkTicket) => {
     const newItem = { type: 'dedicated_post' as const, data: post };
     setModalHistory((prev) => [...prev, newItem]);
     setActiveAgentProfile(null);
@@ -600,7 +600,7 @@ export default function App() {
     }, 150);
   };
 
-  const handleOpenConnections = (post: NetworkPost) => {
+  const handleOpenConnections = (post: NetworkTicket) => {
     const newItem = { type: 'connections' as const, data: post };
     setModalHistory((prev) => [...prev, newItem]);
     setActiveAgentProfile(null);
@@ -679,15 +679,15 @@ export default function App() {
       return !isNaN(t) && (now - t) <= ONE_DAY_MS;
     };
 
-    const getPostReplies = (p: NetworkPost) => {
-      const repCount = typeof p.repliesCount === 'number' ? p.repliesCount : 0;
-      const arrLen = Array.isArray(p.replies) ? p.replies.length : 0;
-      return Math.max(repCount, arrLen);
+    const getPostReplies = (p: NetworkTicket) => {
+      const bidCount = typeof p.bidsCount === 'number' ? p.bidsCount : 0;
+      const arrLen = Array.isArray(p.bids) ? p.bids.length : 0;
+      return Math.max(bidCount, arrLen);
     };
 
-    const get24hReplies = (p: NetworkPost) => {
-      if (Array.isArray(p.replies) && p.replies.length > 0) {
-        return p.replies.filter(r => isWithin24h(r.createdAt)).length;
+    const get24hReplies = (p: NetworkTicket) => {
+      if (Array.isArray(p.bids) && p.bids.length > 0) {
+        return p.bids.filter(r => isWithin24h(r.createdAt)).length;
       }
       if (isWithin24h(p.createdAt)) {
         return getPostReplies(p);
@@ -695,13 +695,13 @@ export default function App() {
       return 0;
     };
 
-    const getPostConnections = (p: NetworkPost) => {
+    const getPostConnections = (p: NetworkTicket) => {
       const conCount = typeof p.connectionsCount === 'number' ? p.connectionsCount : 0;
       const arrLen = Array.isArray(p.connectionsList) ? p.connectionsList.length : 0;
       return Math.max(conCount, arrLen);
     };
 
-    const get24hConnections = (p: NetworkPost) => {
+    const get24hConnections = (p: NetworkTicket) => {
       if (Array.isArray(p.connectionsList) && p.connectionsList.length > 0) {
         return p.connectionsList.filter(c => isWithin24h(c.createdAt)).length;
       }
@@ -711,15 +711,15 @@ export default function App() {
       return 0;
     };
 
-    const get24hEngagement = (p: NetworkPost) => {
+    const get24hEngagement = (p: NetworkTicket) => {
       return get24hReplies(p) + get24hConnections(p);
     };
 
-    const getPostEngagement = (p: NetworkPost) => {
+    const getPostEngagement = (p: NetworkTicket) => {
       return getPostReplies(p) + getPostConnections(p);
     };
 
-    const getTime = (p: NetworkPost) => {
+    const getTime = (p: NetworkTicket) => {
       if (!p.createdAt) return 0;
       const t = new Date(p.createdAt).getTime();
       return isNaN(t) ? 0 : t;
@@ -793,7 +793,7 @@ export default function App() {
           posts={posts}
           onOpenThread={handleOpenThread}
           onOpenConnections={handleOpenConnections}
-          onAddReply={handleAddReply}
+          onAddBid={handleAddReply}
           onOpenAgentProfile={handleOpenAgentProfile}
           isVisible={showDesktopTabs}
           feedSort={feedSort}
@@ -1002,7 +1002,7 @@ export default function App() {
                     lastPostElementRef={lastPostElementRef}
                     onOpenThread={handleOpenThread}
                     onOpenConnections={handleOpenConnections}
-                    onAddReply={handleAddReply}
+                    onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
                   />
                 ) : deviceSize === 'tablet' ? (
@@ -1013,7 +1013,7 @@ export default function App() {
                     lastPostElementRef={lastPostElementRef}
                     onOpenThread={handleOpenThread}
                     onOpenConnections={handleOpenConnections}
-                    onAddReply={handleAddReply}
+                    onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
                   />
                 ) : (
@@ -1024,7 +1024,7 @@ export default function App() {
                     lastPostElementRef={lastPostElementRef}
                     onOpenThread={handleOpenThread}
                     onOpenConnections={handleOpenConnections}
-                    onAddReply={handleAddReply}
+                    onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
                   />
                 )
@@ -1098,7 +1098,7 @@ export default function App() {
                     posts={posts}
                     onOpenThread={handleOpenThread}
                     onOpenConnections={handleOpenConnections}
-                    onAddReply={handleAddReply}
+                    onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
                     onOpenClusterMembers={handleOpenClusterMembers}
                     onOpenChat={handleOpenChat}
@@ -1109,7 +1109,7 @@ export default function App() {
                     posts={posts}
                     onOpenThread={handleOpenThread}
                     onOpenConnections={handleOpenConnections}
-                    onAddReply={handleAddReply}
+                    onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
                     onOpenClusterMembers={handleOpenClusterMembers}
                     onOpenChat={handleOpenChat}
@@ -1120,7 +1120,7 @@ export default function App() {
                     posts={posts}
                     onOpenThread={handleOpenThread}
                     onOpenConnections={handleOpenConnections}
-                    onAddReply={handleAddReply}
+                    onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
                     onOpenChat={handleOpenChat}
                     onOpenClusterChat={handleOpenClusterChat}
@@ -1135,7 +1135,7 @@ export default function App() {
                     userPosts={posts}
                     onOpenThread={handleOpenThread}
                     onNavigateToPost={handleNavigateToPost}
-                    onAddReply={handleAddReply}
+                    onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
                     onOpenClusterMembers={handleOpenClusterMembers}
                     onOpenChat={handleOpenChat}
@@ -1146,7 +1146,7 @@ export default function App() {
                     userPosts={posts}
                     onOpenThread={handleOpenThread}
                     onNavigateToPost={handleNavigateToPost}
-                    onAddReply={handleAddReply}
+                    onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
                     onOpenClusterMembers={handleOpenClusterMembers}
                     onOpenChat={handleOpenChat}
@@ -1174,7 +1174,7 @@ export default function App() {
         posts={posts}
         onOpenThread={handleOpenThread}
         onOpenConnections={handleOpenConnections}
-        onAddReply={handleAddReply}
+        onAddBid={handleAddReply}
         onOpenAgentProfile={handleOpenAgentProfile}
         activeMainTab={activeTab}
         onSetActiveMainTab={setActiveTab}
@@ -1191,7 +1191,7 @@ export default function App() {
         onOpenConnections={handleOpenConnections}
         onOpenAgentProfile={handleOpenAgentProfile}
         onOpenClusterMembers={handleOpenClusterMembers}
-        onAddReply={handleAddReply}
+        onAddBid={handleAddReply}
       />
 
 

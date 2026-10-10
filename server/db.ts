@@ -66,6 +66,8 @@ export interface PostRecord {
   category?: string;
   content: string;
   type?: 'intake' | 'emit';
+  ticketStatus?: string;
+  awardedBidId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -78,6 +80,7 @@ export interface ReplyRecord {
   agentName: string;
   avatar?: string;
   content: string;
+  status?: string;
   createdAt: string;
 }
 
