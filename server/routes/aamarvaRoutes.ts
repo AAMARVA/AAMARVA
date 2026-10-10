@@ -2246,8 +2246,8 @@ router.delete(['/secrets/:secretId', '/v1/secrets/:secretId'], requireHumanSecre
 });
 
 
-// 8. GET /api/tickets (Public read)
-router.get(['/tickets'], securityLayer('public_reads'), async (req: Request, res: Response) => {
+// 8. GET /api/tickets & /api/posts (Public read)
+router.get(['/tickets', '/posts'], securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const query = (req.query.q as string) || '';
     const page = parseInt(req.query.page as string) || 1;
@@ -2275,12 +2275,13 @@ router.get(['/tickets'], securityLayer('public_reads'), async (req: Request, res
         ...rest,
         id: p.id,
         ticketId: p.id,
+        postId: p.id,
         agentId: p.agentId ?? null,
         bidsCount: p.bidsCount ?? (p.bids ? p.bids.length : 0),
         connectionsCount: p.connectionsCount ?? (p.connectionsList ? p.connectionsList.length : 0),
       };
     });
-    res.json({ success: true, data: { ...result, tickets: formattedTickets } });
+    res.json({ success: true, data: { ...result, tickets: formattedTickets, posts: formattedTickets } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message } });
   }
@@ -2471,11 +2472,13 @@ router.get(['/tickets/:ticketId', '/tickets/:postId', '/posts/:postId'], securit
         agentId: rAgentId,
         name: rName,
         agentName: rName,
+        status: r.status || 'pending',
         verificationStatus: rStatus,
         verification_status: rStatus,
         ["verification status"]: rStatus,
         emailVerified: rVerified,
         content: r.content,
+        createdAt: r.createdAt,
       };
     });
 
@@ -2524,34 +2527,43 @@ router.get(['/tickets/:ticketId', '/tickets/:postId', '/posts/:postId'], securit
       };
     });
 
+    const ticketDataObj = {
+      id: targetTicket.id,
+      ticketId: targetTicket.id,
+      postId: targetTicket.id,
+      agentId: targetTicket.agentId,
+      verificationStatus: postStatus,
+      verification_status: postStatus,
+      ["verification status"]: postStatus,
+      type: targetTicket.type,
+      category: targetTicket.category,
+      content: targetTicket.content,
+      ticketStatus: targetTicket.ticketStatus || 'open',
+      awardStatus: targetTicket.awardStatus || targetTicket.ticketStatus || 'open',
+      awardedBidId: targetTicket.awardedBidId || null,
+      createdAt: targetTicket.createdAt,
+    };
+
     res.json({
       success: true,
       data: {
-        post: {
-          id: post.id,
-          postId: post.id,
-          agentId: post.agentId,
-          verificationStatus: postStatus,
-          verification_status: postStatus,
-          ["verification status"]: postStatus,
-          type: post.type,
-          category: post.category,
-          content: post.content
-        },
+        ticket: ticketDataObj,
+        post: ticketDataObj,
         author: author ? {
           ...author,
-          agentId: author.agentId || post.agentId,
+          agentId: author.agentId || targetTicket.agentId,
           verificationStatus: authorStatus,
           verification_status: authorStatus,
           ["verification status"]: authorStatus,
         } : {
-          agentId: post.agentId,
+          agentId: targetTicket.agentId,
           verificationStatus: authorStatus,
           verification_status: authorStatus,
           ["verification status"]: authorStatus,
-          displayName: post.agentName,
-          avatar: post.avatar || '🤖'
+          displayName: targetTicket.agentName,
+          avatar: targetTicket.avatar || '🤖'
         },
+        bids: formattedReplies,
         replies: formattedReplies,
         connections: formattedConnections,
       },
@@ -2686,11 +2698,13 @@ router.get(['/tickets/:ticketId/bids', '/tickets/:postId/bids', '/tickets/:ticke
         ticketId: r.ticketId || r.postId,
         postId: r.ticketId || r.postId,
         content: r.content,
+        status: r.status || 'pending',
         authorAgentId: raAgentId,
         verificationStatus: raStatus,
         verification_status: raStatus,
         ["verification status"]: raStatus,
         emailVerified: raVerified,
+        createdAt: r.createdAt,
       };
     });
     res.json({ success: true, data: mappedReplies, bids: mappedReplies, replies: mappedReplies });
@@ -2763,11 +2777,13 @@ router.get(['/bids/:bidId', '/bids/:replyId', '/replies/:replyId'], securityLaye
       ticketId: item.ticketId || item.postId,
       postId: item.ticketId || item.postId,
       content: item.content,
+      status: item.status || 'pending',
       authorAgentId: raAgentId,
       verificationStatus: raStatus,
       verification_status: raStatus,
       ["verification status"]: raStatus,
       emailVerified: raVerified,
+      createdAt: item.createdAt,
     };
     res.json({ success: true, data: mappedData, bid: mappedData, reply: mappedData });
   } catch (err: any) {
