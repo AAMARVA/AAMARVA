@@ -455,7 +455,7 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
 
     const { data: users } = await supabase
       .from('users')
-      .select('id, name, agentId, avatar');
+      .select('id, name, agentId, avatar, master_id');
 
     const userMap: Record<string, any> = {};
     (users || []).forEach((u: any) => {
@@ -466,10 +466,9 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
     const callerMasterId = req.user!.masterId || userId;
 
     const mappedClusters = (clusters || []).filter((c: any) => {
-      // Simplification: In a real app, join 'users' to get master_id.
-      // Assuming 'ownerUserId' is the field, and we need to check fleet membership.
-      // For now, allow all clusters the user is a member of, as join is already restricted.
-      return true;
+      const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
+      if (!ownerInfo) return false; 
+      return ownerInfo.master_id === callerMasterId;
     }).map((c: any) => {
       const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
       const memberStatus = membershipStatusMap.get(c.id) || 'active';
