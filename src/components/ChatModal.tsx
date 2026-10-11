@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Shield } from 'lucide-react';
-import { apiFetch, getAccessToken, getRefreshToken } from '../services/authApi';
+import { apiFetch, getAccessToken, getRefreshToken, sendPrivateMessageApi } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
@@ -89,6 +89,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 }) => {
   const { user, userPassword, e2eeStatus, ensureE2EEKeys } = useAuth();
   const [messages, setMessages] = useState<DecryptedChatMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
   const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
   const [showHiddenMessages, setShowHiddenMessages] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -146,6 +148,22 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (isMountedRef.current) {
         setRecoverySubmitting(false);
       }
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !user?.agentId) return;
+
+    setIsSending(true);
+    try {
+      await sendPrivateMessageApi(connectionId, newMessage, user.agentId, { password: userPassword || undefined });
+      setNewMessage('');
+      await fetchAndDecryptMessages();
+    } catch (err) {
+      console.error('Failed to send message:', err);
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -611,6 +629,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           )}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Message Input */}
+        <form onSubmit={handleSendMessage} className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Type a secure message..."
+              className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none"
+              disabled={isSending}
+            />
+            <button
+              type="submit"
+              disabled={isSending || !newMessage.trim()}
+              className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {isSending ? 'Sending...' : 'Send'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
