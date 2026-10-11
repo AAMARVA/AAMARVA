@@ -157,7 +157,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
     setIsSending(true);
     try {
-      await sendPrivateMessageApi(connectionId, newMessage, user.agentId, { password: userPassword || undefined });
+      const targetReceiver = resolvedPeerAgentId || peerAgentId;
+      await sendPrivateMessageApi(connectionId, newMessage, user.agentId, { 
+        password: userPassword || undefined,
+        receiverAgentId: targetReceiver
+      });
       setNewMessage('');
       await fetchAndDecryptMessages();
     } catch (err: any) {
@@ -212,9 +216,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         }
       }
 
+      const targetPeerId = resolvedPeerAgentId || peerAgentId;
+      const peerQuery = targetPeerId ? `?receiverAgentId=${encodeURIComponent(targetPeerId)}` : '';
+
       if (!currentPeerKey || !currentPeerId || Object.keys(currentPeerEpochKeys).length === 0) {
         try {
-          const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: 'human' });
+          const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${peerQuery}`, { authType: 'human' });
           if (keyRes?.data) {
             if (keyRes.data.peerE2eePublicKey) {
               currentPeerKey = keyRes.data.peerE2eePublicKey;
@@ -246,7 +253,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           }
         } catch {
           try {
-            const legRes = await apiFetch(`/api/connections/${connectionId}/e2ee-key`, { authType: 'human' });
+            const legRes = await apiFetch(`/api/connections/${connectionId}/e2ee-key${peerQuery}`, { authType: 'human' });
             if (legRes?.data?.peerE2eePublicKey) {
               currentPeerKey = legRes.data.peerE2eePublicKey;
               if (isMountedRef.current) setPeerKey(currentPeerKey);
@@ -256,7 +263,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       }
 
       // 4. Fetch raw messages from server
-      const responseData = await apiFetch(`/api/connections/${connectionId}/messages`, { authType: 'human' });
+      const responseData = await apiFetch(`/api/connections/${connectionId}/messages${peerQuery}`, { authType: 'human' });
       const rawList = responseData.data || responseData;
 
       if (Array.isArray(rawList)) {

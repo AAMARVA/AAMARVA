@@ -3,6 +3,7 @@ import { getSupabaseClient } from '../supabase.js';
 import { ConnectionRecord } from '../db.js';
 import { maskUserSecretsInText } from './secretsService.js';
 import { SecurityService } from './securityService.js';
+import { floorActivityService } from './floorActivityService.js';
 
 export class ConnectionError extends Error {
   statusCode: number;
@@ -43,6 +44,206 @@ export class ConnectionCapabilityError extends ConnectionError {
     super(message, 503, code);
     this.name = 'ConnectionCapabilityError';
   }
+}
+
+export async function ensureConnectionRecord(
+  connectionId: string,
+  currentUserId?: string,
+  options?: {
+    receiverAgentId?: string;
+    receiverUserId?: string;
+  }
+): Promise<ConnectionRecord | null> {
+  if (!connectionId) return null;
+  const supabase = getSupabaseClient();
+
+  // 1. Check if connection already exists in DB
+  const { data: existing } = await supabase
+    .from('connections')
+    .select('*')
+    .eq('id', connectionId)
+    .maybeSingle();
+
+  if (existing) {
+    return existing as ConnectionRecord;
+  }
+
+  let userA: any = null;
+  let userB: any = null;
+
+  // If currentUserId provided, resolve userA
+  if (currentUserId) {
+    const { data: fetchedA } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', currentUserId)
+      .maybeSingle();
+    userA = fetchedA;
+  }
+
+  // 2. Try resolving userB from options if explicitly passed
+  if (options?.receiverUserId) {
+    const { data: fetchedB } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', options.receiverUserId)
+      .maybeSingle();
+    userB = fetchedB;
+  } else if (options?.receiverAgentId) {
+    const cleanAgentId = options.receiverAgentId.replace(/^@/, '').trim();
+    const { data: fetchedB } = await supabase
+      .from('users')
+      .select('*')
+      .or(`agentId.ilike.${cleanAgentId},id.eq.${cleanAgentId}`)
+      .maybeSingle();
+    userB = fetchedB;
+  }
+
+  // 3. Resolve from fleet connection format (fleet_conn_userA_userB or fleet_conn_userB)
+  if (!userB && connectionId.startsWith('fleet_conn_')) {
+    const rawParts = connectionId.replace('fleet_conn_', '').split('_');
+    const uA = rawParts.length >= 2 ? rawParts[0] : undefined;
+    const uB = rawParts.length >= 2 ? rawParts[1] : rawParts[0];
+
+    if (uB) {
+      const { data: fetchedB } = await supabase
+        .from('users')
+        .select('*')
+        .or(`id.eq.${uB},agentId.eq.${uB}`)
+        .maybeSingle();
+      userB = fetchedB;
+    }
+
+    if (uA && !userA) {
+      const { data: fetchedA } = await supabase
+        .from('users')
+        .select('*')
+        .or(`id.eq.${uA},agentId.eq.${uA}`)
+        .maybeSingle();
+      userA = fetchedA;
+    } else if (userB && !userA) {
+      const masterId = userB.master_id || userB.id;
+      const { data: master } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', masterId)
+        .maybeSingle();
+      userA = master;
+    }
+  }
+
+  // 4. Resolve from generic pair format (conn_userA_userB or userA_userB)
+  if (!userB && (connectionId.startsWith('conn_') || connectionId.includes('_'))) {
+    const cleanConn = connectionId.startsWith('conn_') ? connectionId.replace('conn_', '') : connectionId;
+    const rawParts = cleanConn.split('_');
+    if (rawParts.length >= 2) {
+      const pA = rawParts[0];
+      const pB = rawParts[1];
+      const { data: fetchedB } = await supabase
+        .from('users')
+        .select('*')
+        .or(`id.eq.${pB},agentId.eq.${pB}`)
+        .maybeSingle();
+      userB = fetchedB;
+
+      if (!userA) {
+        const { data: fetchedA } = await supabase
+          .from('users')
+          .select('*')
+          .or(`id.eq.${pA},agentId.eq.${pA}`)
+          .maybeSingle();
+        userA = fetchedA;
+      }
+    }
+  }
+
+  // 5. Check if connectionId directly matches an agent or user ID
+  if (!userB) {
+    const cleanId = connectionId.replace(/^@/, '').trim();
+    const { data: fetchedB } = await supabase
+      .from('users')
+      .select('*')
+      .or(`agentId.ilike.${cleanId},id.eq.${cleanId}`)
+      .maybeSingle();
+    if (fetchedB && fetchedB.id !== userA?.id) {
+      userB = fetchedB;
+    }
+  }
+
+// 6. Check if connectionId matches a post
+  if (!userB) {
+    const { data: postRecord } = await supabase
+      .from('posts')
+      .select('*')
+      .eq('id', connectionId)
+      .maybeSingle();
+    if (postRecord && postRecord.userId && postRecord.userId !== userA?.id) {
+      const { data: fetchedB } = await supabase.from('users').select('*').eq('id', postRecord.userId).maybeSingle();
+      userB = fetchedB;
+    }
+  }
+
+  if (!userA || !userB) {
+    return null;
+  }
+
+  // 8. Check if there is already an existing active connection between userA and userB
+  const { data: existingPair } = await supabase
+    .from('connections')
+    .select('*')
+    .or(`and(postOwnerUserId.eq.${userA.id},replyAuthorUserId.eq.${userB.id}),and(postOwnerUserId.eq.${userB.id},replyAuthorUserId.eq.${userA.id})`)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (existingPair) {
+    return existingPair as ConnectionRecord;
+  }
+
+  // 9. Establish new connection automatically on first message
+  const newConn: any = {
+    id: connectionId,
+    postOwnerUserId: userA.id,
+    postOwnerAgentId: userA.agentId,
+    postOwnerAgentName: userA.name || userA.agentId,
+    replyAuthorUserId: userB.id,
+    replyAuthorAgentId: userB.agentId,
+    replyAuthorAgentName: userB.name || userB.agentId,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  const { data: inserted, error: insErr } = await supabase
+    .from('connections')
+    .upsert(newConn, { onConflict: 'id' })
+    .select()
+    .maybeSingle();
+
+  // Broadcast Floor Activity for the newly established connection
+  try {
+    floorActivityService.recordFloorActivity({
+      agentId: userA.agentId,
+      agentName: userA.name || userA.agentId,
+      avatar: userA.avatar,
+      emailVerified: userA.emailVerified,
+      text: `formed a connection with @${userB.name || userB.agentId}`,
+      type: 'connection',
+      peerName: userB.name || userB.agentId,
+      peerAgentId: userB.agentId,
+      entityId: connectionId
+    }).catch(console.warn);
+  } catch (e) {}
+
+  if (insErr) {
+    const { data: refetched } = await supabase
+      .from('connections')
+      .select('*')
+      .eq('id', connectionId)
+      .maybeSingle();
+    return (refetched as ConnectionRecord) || (newConn as ConnectionRecord);
+  }
+
+  return (inserted as ConnectionRecord) || (newConn as ConnectionRecord);
 }
 
 export async function createConnection(userId: string, replyId: string) {
@@ -265,8 +466,13 @@ export async function getUserConnections(userId: string, page: number, limit: nu
     if (!connectedPeerIds.has(fUser.id) && !connectedPeerIds.has((fUser.agentId || '').toUpperCase())) {
       const isSlave = Boolean(fUser.master_id && fUser.master_id === callerMasterId);
       const isMaster = Boolean(fUser.id === callerMasterId || fUser.is_master_primary);
+      const fleetConnId = `fleet_conn_${currentUser.id}_${fUser.id}`;
+
+      // Auto-materialize fleet connection in database so message FKs and peer key lookups succeed
+      await ensureConnectionRecord(fleetConnId);
+
       additionalFleetConnections.push({
-        id: `fleet_conn_${currentUser.id}_${fUser.id}`,
+        id: fleetConnId,
         postId: null,
         replyId: null,
         postOwnerUserId: currentUser.id,
@@ -545,15 +751,22 @@ export async function sendMessage(
 
   const supabase = getSupabaseClient();
 
-  // Find connection
-  const { data: connection, error: connError } = await supabase
+  // Find connection or establish on first message
+  let { data: connection, error: connError } = await supabase
     .from('connections')
     .select('*')
     .eq('id', connectionId)
     .maybeSingle();
 
   if (connError || !connection) {
-    throw new ConnectionNotFoundError('Connection not found.', 'CONNECTION_NOT_FOUND');
+    const receiverAgentId = (payload as any)?.receiverAgentId || (payload as any)?.recipientAgentId || (payload as any)?.peerAgentId;
+    const receiverUserId = (payload as any)?.receiverUserId || (payload as any)?.recipientUserId;
+    const ensured = await ensureConnectionRecord(connectionId, userId, { receiverAgentId, receiverUserId });
+    if (ensured) {
+      connection = ensured as any;
+    } else {
+      throw new ConnectionNotFoundError('Connection not found.', 'CONNECTION_NOT_FOUND');
+    }
   }
 
   // Find user
@@ -692,16 +905,26 @@ export async function sendMessage(
   };
 }
 
-export async function getConnectionMessages(connectionId: string, userId: string) {
+export async function getConnectionMessages(
+  connectionId: string,
+  userId: string,
+  options?: { receiverAgentId?: string; receiverUserId?: string }
+) {
   const supabase = getSupabaseClient();
 
-  const { data: connection, error: connError } = await supabase
-    .from('connections')
-    .select('*')
-    .eq('id', connectionId)
-    .maybeSingle();
+  // If connection is not yet materialized, ensure/establish it
+  let connection: any = await ensureConnectionRecord(connectionId, userId, options);
 
-  if (connError || !connection) {
+  if (!connection) {
+    const { data: conn, error: connError } = await supabase
+      .from('connections')
+      .select('*')
+      .eq('id', connectionId)
+      .maybeSingle();
+    connection = conn;
+  }
+
+  if (!connection) {
     throw new ConnectionNotFoundError('Connection not found.', 'CONNECTION_NOT_FOUND');
   }
 
@@ -942,27 +1165,6 @@ export async function sendConnectionRequest(senderUserId: string, receiverAgentI
     inFlightRequestLocks.delete(pairKey);
     releaseLock();
   }
-}
-
-export async function getConnectionRequests(userId: string) {
-  const supabase = getSupabaseClient();
-
-  const { data, error } = await supabase
-    .from('connection_requests')
-    .select('*')
-    .eq('receiverUserId', userId)
-    .eq('status', 'pending')
-    .order('createdAt', { ascending: false });
-
-  if (error) {
-    throw new ConnectionError(`Database error querying connection requests: ${error.message}`, 500, 'DATABASE_ERROR');
-  }
-
-  const combined = data || [];
-
-  return combined
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .map(({ status, ...rest }) => rest);
 }
 
 export async function acceptConnectionRequest(requestId: string, userId: string) {

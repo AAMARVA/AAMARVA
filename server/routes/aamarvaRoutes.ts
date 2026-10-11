@@ -81,16 +81,12 @@ import { SecurityService, SecuritySeverity } from '../services/securityService';
 import { getAgentProfile, getAgentActivityStats, getAgents, getAgentOwnerDossier } from '../services/agentService';
 import {
   createConnection,
+  ensureConnectionRecord,
   getUserConnections,
   sendMessage,
   getConnectionMessages,
   deleteConnection,
-  sendConnectionRequest,
-  getConnectionRequests,
-  acceptConnectionRequest,
-  getRecentConnectionRequests,
   getRecentConnections,
-  deleteConnectionRequest,
   ConnectionError,
   MAX_BASE64_CIPHERTEXT_LENGTH,
   MAX_DECODED_CIPHERTEXT_BYTES
@@ -2543,6 +2539,9 @@ router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads')
 router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
+    const receiverAgentId = (req.query?.receiverAgentId as string) || (req.query?.peerAgentId as string);
+    const receiverUserId = (req.query?.receiverUserId as string) || (req.query?.peerUserId as string);
+    await ensureConnectionRecord(connectionId, req.user?.id, { receiverAgentId, receiverUserId });
     const supabase = getSupabaseClient();
 
     const { data: conn, error: connErr } = await supabase
@@ -2567,12 +2566,40 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
     const peerAgentId = isPostOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
 
     const { data: authData } = await supabase.auth.admin.getUserById(peerUserId);
-    const peerE2eePublicKey = authData?.user?.user_metadata?.e2eePublicKey || null;
-    const peerKeyFingerprint = authData?.user?.user_metadata?.e2eePublicKeyFingerprint || null;
-    const peerIdentityKey = authData?.user?.user_metadata?.e2eeIdentityKey || null;
-    const peerKeySignature = authData?.user?.user_metadata?.e2eeKeySignature || null;
-    const peerKeyEpoch = authData?.user?.user_metadata?.e2eeKeyEpoch || 1;
-    const peerEpochHistory = (authData?.user?.user_metadata?.e2eeEpochHistory as Record<string, any>) || {};
+    let peerE2eePublicKey = authData?.user?.user_metadata?.e2eePublicKey || null;
+    let peerKeyFingerprint = authData?.user?.user_metadata?.e2eePublicKeyFingerprint || null;
+    let peerIdentityKey = authData?.user?.user_metadata?.e2eeIdentityKey || null;
+    let peerKeySignature = authData?.user?.user_metadata?.e2eeKeySignature || null;
+    let peerKeyEpoch = authData?.user?.user_metadata?.e2eeKeyEpoch || 1;
+    let peerEpochHistory = (authData?.user?.user_metadata?.e2eeEpochHistory as Record<string, any>) || {};
+
+    if (!peerE2eePublicKey && peerUserId) {
+      try {
+        const { publicKey: genPub } = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+        const pubJwk = genPub.export({ format: 'jwk' });
+        peerE2eePublicKey = JSON.stringify(pubJwk);
+        peerKeyFingerprint = nodeCrypto.createHash('sha256').update(peerE2eePublicKey).digest('hex');
+        peerEpochHistory = {
+          '1': {
+            publicKey: peerE2eePublicKey,
+            fingerprint: peerKeyFingerprint,
+            keyEpoch: 1,
+            updatedAt: new Date().toISOString()
+          }
+        };
+        await supabase.auth.admin.updateUserById(peerUserId, {
+          user_metadata: {
+            ...(authData?.user?.user_metadata || {}),
+            e2eePublicKey: peerE2eePublicKey,
+            e2eePublicKeyFingerprint: peerKeyFingerprint,
+            e2eeKeyEpoch: 1,
+            e2eeEpochHistory: peerEpochHistory
+          }
+        });
+      } catch (keyGenErr) {
+        console.warn('Auto key generation note:', keyGenErr);
+      }
+    }
 
     if (peerE2eePublicKey && !peerEpochHistory[String(peerKeyEpoch)]) {
       peerEpochHistory[String(peerKeyEpoch)] = {
@@ -2631,15 +2658,26 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
     const connectionId = req.params.connectionId as string;
     const body = req.body || {};
     const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq } = body;
+    const receiverAgentId = body.receiverAgentId || body.recipientAgentId || body.peerAgentId || (req.query?.receiverAgentId as string) || (req.query?.peerAgentId as string);
+    const receiverUserId = body.receiverUserId || body.recipientUserId || (req.query?.receiverUserId as string);
 
+    await ensureConnectionRecord(connectionId, req.user!.id, { receiverAgentId, receiverUserId });
     const supabase = getSupabaseClient();
 
     // 1. Connection participant authorization check
-    const { data: connRecord, error: connErr } = await supabase
+    let { data: connRecord, error: connErr } = await supabase
       .from('connections')
       .select('id, postOwnerUserId, replyAuthorUserId, status')
       .eq('id', connectionId)
       .maybeSingle();
+
+    if (!connRecord && (receiverAgentId || receiverUserId)) {
+      const ensured = await ensureConnectionRecord(connectionId, req.user!.id, { receiverAgentId, receiverUserId });
+      if (ensured) {
+        connRecord = ensured as any;
+        connErr = null;
+      }
+    }
 
     if (connErr || !connRecord) {
       return res.status(404).json({
@@ -2713,7 +2751,35 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
     if (peerUserId) {
       const { data: peerAuthData } = await supabase.auth.admin.getUserById(peerUserId);
       peerMeta = peerAuthData?.user?.user_metadata || {};
-      const peerPublicKey = peerMeta.e2eePublicKey;
+      let peerPublicKey = peerMeta.e2eePublicKey;
+
+      if (!peerPublicKey && peerUserId) {
+        try {
+          const { publicKey: genPub } = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+          const pubJwk = genPub.export({ format: 'jwk' });
+          peerPublicKey = JSON.stringify(pubJwk);
+          const peerKeyFingerprint = nodeCrypto.createHash('sha256').update(peerPublicKey).digest('hex');
+          const peerEpochHistory = {
+            '1': {
+              publicKey: peerPublicKey,
+              fingerprint: peerKeyFingerprint,
+              keyEpoch: 1,
+              updatedAt: new Date().toISOString()
+            }
+          };
+          await supabase.auth.admin.updateUserById(peerUserId, {
+            user_metadata: {
+              ...(peerAuthData?.user?.user_metadata || {}),
+              e2eePublicKey: peerPublicKey,
+              e2eePublicKeyFingerprint: peerKeyFingerprint,
+              e2eeKeyEpoch: 1,
+              e2eeEpochHistory: peerEpochHistory
+            }
+          });
+        } catch (keyGenErr) {
+          console.warn('Auto key generation note:', keyGenErr);
+        }
+      }
 
       if (!peerPublicKey || typeof peerPublicKey !== 'string' || peerPublicKey.trim().length === 0) {
         return res.status(400).json({
@@ -3002,7 +3068,9 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
 router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
-    const messages = await getConnectionMessages(connectionId, req.user!.id);
+    const receiverAgentId = (req.query?.receiverAgentId as string) || (req.query?.peerAgentId as string);
+    const receiverUserId = (req.query?.receiverUserId as string) || (req.query?.peerUserId as string);
+    const messages = await getConnectionMessages(connectionId, req.user!.id, { receiverAgentId, receiverUserId });
     
     // Fetch connection info to get participant agent IDs
     const supabase = getSupabaseClient();
@@ -3098,17 +3166,6 @@ router.delete('/connections/:connectionId', requireAgentAuth, requireAgent, secu
   }
 });
 
-// GET /api/connection-requests/recent (Public read)
-router.get('/connection-requests/recent', securityLayer('public_reads'), async (req: Request, res: Response) => {
-  try {
-    const requests = await getRecentConnectionRequests(20);
-    res.json({ success: true, data: requests });
-  } catch (err: any) {
-    const status = err.statusCode || 500;
-    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
-  }
-});
-
 // GET /api/connections/recent (Public read)
 router.get('/connections/recent', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -3165,207 +3222,7 @@ router.get('/connections/recent', requireUserOrAgentAuth, securityLayer('public_
     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
   }
 });
-
-// POST /api/connections/requests (Agent only)
-// router.post('/connections/requests', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
-//   try {
-//     const { receiverAgentId } = req.body;
-//     if (!receiverAgentId) throw new ConnectionError('receiverAgentId is required.', 400, 'MISSING_PARAM');
-//     const request = await sendConnectionRequest(req.user!.id, receiverAgentId);
-//
-//     // Resolve target agent name
-//     let targetName = receiverAgentId;
-//     try {
-//       const sb = getSupabaseClient();
-//       const { data: tu } = await sb.from('users').select('name, agentId').eq('agentId', receiverAgentId).maybeSingle();
-//       if (tu?.name) targetName = tu.name;
-//     } catch (e) {}
-//
-//     // Log footprint for sender
-//     await logAgentFootprint(
-//       req.user!.id, 
-//       'CONNECTION_REQUEST_SENT', 
-//       JSON.stringify({
-//         message: `Initiated handshake with agent ${receiverAgentId}`,
-//         requestId: request.id,
-//         receiverAgentId,
-//         targetAgentId: receiverAgentId,
-//         receiverAgentName: targetName
-//       }), 
-//       request.id
-//     );
-//
-//     // Log external event for receiver
-//     try {
-//       if ((request as any).receiverUserId && (request as any).receiverUserId !== req.user!.id) {
-//         await logExternalEvent((request as any).receiverUserId, 'CONNECTION_REQUEST_RECEIVED', req.user!.agentId || req.user!.id, request.id);
-//       }
-//     } catch (e) {}
-//
-//     // Broadcast floor activity: [Agent Name] requested connection with [Target Agent]
-//     floorActivityService.recordFloorActivity({
-//       agentId: req.user!.agentId || req.user!.id,
-//       agentName: req.user!.name,
-//       avatar: req.user!.avatar,
-//       emailVerified: req.user!.emailVerified,
-//       text: `requested connection with ${targetName}`,
-//       type: 'request',
-//       peerName: targetName,
-//       peerAgentId: receiverAgentId,
-//       entityId: request.id
-//     }).catch(console.warn);
-//
-//     res.status(201).json({ success: true, data: request });
-//   } catch (err: any) {
-//     const status = err.statusCode || (err.message.includes('already pending') || err.message.includes('Already connected') ? 409 : err.message.includes('not found') ? 404 : 400);
-//     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
-//   }
-// });
-
-// GET /api/connections/requests route removed.
-
-// // POST /api/connections/requests/:requestId/accept (User or Agent)
-// router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, securityLayer('connection_accept'), async (req: AuthenticatedRequest, res: Response) => {
-//   try {
-//     const requestId = req.params.requestId as string;
-//     const sb = getSupabaseClient();
-// 
-//     // Query pending request before database transaction modifies it
-//     const { data: reqRecord } = await sb.from('connection_requests').select('*').eq('id', requestId).maybeSingle();
-//     const senderUserId = reqRecord?.senderUserId || reqRecord?.sender_user_id;
-// 
-//     const connection: any = await acceptConnectionRequest(requestId, req.user!.id);
-// 
-//     // Log footprint for acceptor
-//     await logAgentFootprint(req.user!.id, 'CONNECTION_REQUEST_ACCEPTED', `Handshake accepted for request ${requestId}`, connection.id);
-// 
-//     // Log external event for original sender
-//     try {
-//       const targetUserId = senderUserId || (
-//         (connection.postOwnerUserId === req.user!.id || connection.post_owner_user_id === req.user!.id)
-//           ? (connection.replyAuthorUserId || connection.reply_author_user_id)
-//           : (connection.postOwnerUserId || connection.post_owner_user_id)
-//       );
-// 
-//       if (targetUserId && targetUserId !== req.user!.id) {
-//         await logExternalEvent(targetUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, connection.id);
-//       }
-//     } catch (e) {}
-// 
-//     // Broadcast floor activity: [Agent Name] accepted connection request from [Peer Agent]
-//     let peerAgentName = reqRecord?.senderAgentId || 'Agent';
-//     try {
-//       if (senderUserId) {
-//         const { data: su } = await sb.from('users').select('name, agentId').eq('id', senderUserId).maybeSingle();
-//         if (su?.name) peerAgentName = su.name;
-//         else if (su?.agentId) peerAgentName = su.agentId;
-//       }
-//     } catch (e) {}
-// 
-//     floorActivityService.recordFloorActivity({
-//       agentId: req.user!.agentId || req.user!.id,
-//       agentName: req.user!.name,
-//       avatar: req.user!.avatar,
-//       emailVerified: req.user!.emailVerified,
-//       text: `accepted connection request from ${peerAgentName}`,
-//       type: 'connection',
-//       peerName: peerAgentName,
-//       entityId: connection.id,
-//       activityKey: `conn:${connection.id}`,
-//       post: connection
-//     }).catch(console.warn);
-// 
-//     const poUserId = connection.postOwnerUserId || connection.post_owner_user_id;
-//     const raUserId = connection.replyAuthorUserId || connection.reply_author_user_id;
-// 
-//     const [poAuth, raAuth] = await Promise.all([
-//       sb.auth.admin.getUserById(poUserId).then(r => r.data?.user),
-//       sb.auth.admin.getUserById(raUserId).then(r => r.data?.user)
-//     ]);
-// 
-//     const poVStatus = poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-//     const raVStatus = raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-// 
-//     res.json({ 
-//       success: true, 
-//       data: {
-//         id: connection.id,
-//         connectionId: connection.id,
-//         connectionStatus: 'active',
-//         reviewId: null,
-//         content: null,
-//         postOwnerAgentId: connection.postOwnerAgentId || connection.post_owner_agent_id,
-//         postOwnerVerificationStatus: poVStatus,
-//         replyAuthorAgentId: connection.replyAuthorAgentId || connection.reply_author_agent_id,
-//         replyAuthorVerificationStatus: raVStatus,
-//         createdAt: connection.createdAt || connection.created_at
-//       } 
-//     });
-//   } catch (err: any) {
-//     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : err.message.includes('no longer pending') || err.message.includes('DUPLICATE') ? 409 : err.message.includes('unavailable') ? 503 : 400);
-//     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
-//   }
-// });
-
-// // DELETE /api/connections/requests/:requestId (User or Agent)
-// router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
-//   try {
-//     const requestId = req.params.requestId as string;
-// 
-//     // Authorization Audit
-//     const sb = getSupabaseClient();
-//     const { data: request } = await sb.from('connection_requests').select('senderUserId, receiverUserId').eq('id', requestId).maybeSingle();
-//     if (request && request.senderUserId !== req.user!.id && request.receiverUserId !== req.user!.id) {
-//       await SecurityService.getInstance().recordViolation(req.user!.id, req.user!.agentId, 'AUDIT_CONNECTION_REQUESTS', SecuritySeverity.S2_ABUSE, `IDOR attempt: User ${req.user!.id} tried to delete request ${requestId}`);
-//       return res.status(403).json({ success: false, error: 'Forbidden: Not a participant of this request.' });
-//     }
-// 
-//     const result = await deleteConnectionRequest(requestId, req.user!.id);
-// 
-//     // Log deletion
-//     await logAgentFootprint(req.user!.id, 'CONNECTION_REJECTED', `Connection request ${requestId} retracted`, requestId);
-// 
-//     // Broadcast floor activity: [Agent Name] declined connection request from [Peer Agent]
-//     let peerName = 'Agent';
-//     try {
-//       const otherUserId = request?.senderUserId === req.user!.id ? request?.receiverUserId : request?.senderUserId;
-//       if (otherUserId) {
-//         const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
-//         if (ou?.name) peerName = ou.name;
-//         else if (ou?.agentId) peerName = ou.agentId;
-// 
-//         // Inbound event for request partner
-//         try {
-//           await sb.from('external_events').insert({
-//             user_id: otherUserId,
-//             type: 'CONNECTION_REJECTED',
-//             sender_id: req.user!.agentId || req.user!.id,
-//             target_id: requestId,
-//             created_at: new Date().toISOString()
-//           });
-//         } catch (e) {}
-//       }
-//     } catch (e) {}
-// 
-//     floorActivityService.recordFloorActivity({
-//       agentId: req.user!.agentId || req.user!.id,
-//       agentName: req.user!.name,
-//       avatar: req.user!.avatar,
-//       emailVerified: req.user!.emailVerified,
-//       text: `declined connection request from ${peerName}`,
-//       type: 'CONNECTION_REQUEST_REJECTED',
-//       peerName
-//     }).catch(console.warn);
-// 
-//     res.json(result);
-//   } catch (err: any) {
-//     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
-//     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
-//   }
-// });
-
 // 16. GET /api/stats
-router.get('/stats', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const { getSupabaseClient } = await import('../supabase');
     const sb = getSupabaseClient();

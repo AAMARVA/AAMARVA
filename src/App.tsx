@@ -58,7 +58,23 @@ export default function App() {
   const { user, activeAccount, isAuthenticated, logout, refreshProfile } = useAuth();
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
+  const isSlaveAccount = Boolean(
+    (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId)) ||
+    currentUser?.account_type === 'slave' ||
+    currentUser?.role === 'slave' ||
+    currentUser?.is_slave === true ||
+    currentUser?.isSlave === true ||
+    (currentUser?.master_id && currentUser.master_id !== currentUser.id) ||
+    (currentUser?.masterUserId && currentUser.masterUserId !== currentUser.id) ||
+    (currentUser?.email && currentUser.email.includes('+AMR-'))
+  );
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>('floor');
+
+  useEffect(() => {
+    if (isSlaveAccount && activeTab === 'command-pit') {
+      setActiveTab('floor');
+    }
+  }, [isSlaveAccount, activeTab]);
   const [posts, setPosts] = useState<NetworkTicket[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
   const [recentConnections, setRecentConnections] = useState<any[]>([]);
@@ -719,21 +735,23 @@ export default function App() {
               <span className="font-mono text-[9px] font-black tracking-widest uppercase">FLOOR</span>
             </button>
 
-            {/* COMMAND PIT */}
-            <button
-              onClick={() => setActiveTab('command-pit')}
-              className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
-                activeTab === 'command-pit'
-                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
-              }`}
-            >
-              {activeTab === 'command-pit' && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
-              )}
-              <Terminal className="w-5 h-5 mb-1" />
-              <span className="font-mono text-[9px] font-black tracking-widest uppercase">CMD</span>
-            </button>
+            {/* COMMAND PIT - only hidden when logged in to a slave account */}
+            {!isSlaveAccount && (
+              <button
+                onClick={() => setActiveTab('command-pit')}
+                className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
+                  activeTab === 'command-pit'
+                    ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                {activeTab === 'command-pit' && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                )}
+                <Terminal className="w-5 h-5 mb-1" />
+                <span className="font-mono text-[9px] font-black tracking-widest uppercase">CMD</span>
+              </button>
+            )}
 
             {/* HUB */}
             <button
@@ -849,7 +867,7 @@ export default function App() {
                   </button>
 
                   {/* TAB BUTTONS ROW */}
-                  <div className={`grid ${currentUser?.isMasterUser ? 'grid-cols-4' : 'grid-cols-3'} gap-3 w-full`}>
+                  <div className={`grid ${!isSlaveAccount ? 'grid-cols-4' : 'grid-cols-3'} gap-3 w-full`}>
                     {/* FLOOR */}
                     <button
                       type="button"
@@ -866,9 +884,8 @@ export default function App() {
                       <span>FLOOR</span>
                     </button>
 
-                    {/* COMMAND PIT */}
-                    {console.log('CurrentUser:', currentUser, 'isMasterUser:', currentUser?.isMasterUser)}
-                    {currentUser?.isMasterUser === true && (
+                    {/* COMMAND PIT - only hidden when logged in to a slave account */}
+                    {!isSlaveAccount && (
                       <button
                         type="button"
                         onClick={() => setActiveTab('command-pit')}
@@ -1253,7 +1270,7 @@ export default function App() {
       {/* Mobile Bottom Navigation Bar for quick tab switching on smartphones */}
       {deviceSize === 'mobile' && !isSearchModalOpen && (
         <nav aria-label="Mobile Navigation" className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-[#141414] px-4 py-4 pb-5 shadow-[0_-3px_0px_0px_rgba(20,20,20,1)]">
-          <div className="max-w-xs sm:max-w-sm mx-auto flex items-center justify-around">
+          <div className={`${!isSlaveAccount ? 'max-w-xs sm:max-w-sm' : 'max-w-xs'} mx-auto flex items-center justify-around`}>
             {/* FLOOR */}
             <button
               onClick={() => setActiveTab('floor')}
@@ -1271,8 +1288,8 @@ export default function App() {
               </span>
             </button>
 
-            {/* CMD PIT */}
-            {currentUser?.isMasterUser && (
+            {/* CMD PIT - only hidden when logged in to a slave account */}
+            {!isSlaveAccount && (
               <button
                 onClick={() => setActiveTab('command-pit')}
                 className="flex flex-col items-center justify-center cursor-pointer select-none group min-w-[64px]"

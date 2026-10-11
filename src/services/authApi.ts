@@ -485,10 +485,13 @@ export async function sendPrivateMessageApi(
   options?: {
     password?: string;
     sequence?: number;
+    receiverAgentId?: string;
+    peerAgentId?: string;
   }
 ): Promise<any> {
   const password = options?.password;
   const sequence = options?.sequence;
+  const receiverAgentId = options?.receiverAgentId || options?.peerAgentId;
 
   if (!plaintext || typeof plaintext !== 'string' || plaintext.trim().length === 0) {
     throw new Error('E2EE Error: Message content cannot be empty.');
@@ -503,7 +506,8 @@ export async function sendPrivateMessageApi(
   }
 
   // 2. Peer public key: Fetch recipient's public key from connection peer-key endpoint (strictly agent authentication)
-  const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key`, {
+  const queryParam = receiverAgentId ? `?receiverAgentId=${encodeURIComponent(receiverAgentId)}` : '';
+  const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${queryParam}`, {
     authType: 'agent',
     method: 'GET',
   });
@@ -538,6 +542,7 @@ export async function sendPrivateMessageApi(
         version: encrypted.version || 1,
         keyEpoch: encrypted.keyEpoch || 1,
         ...(sequence !== undefined ? { sequence } : {}),
+        ...(receiverAgentId ? { receiverAgentId } : {}),
       }),
     });
 
