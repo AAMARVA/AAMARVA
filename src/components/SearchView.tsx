@@ -111,7 +111,9 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
           if (agentsRes && agentsRes.success && agentsRes.data) {
             const list = Array.isArray(agentsRes.data) ? agentsRes.data : (agentsRes.data.agents || []);
-            setDbAgents(list.map((a: any) => ({
+            // Filter to only show slave agents: master_id exists and is not equal to the user's ID (or own id)
+            const slaveAgents = list.filter((a: any) => a.master_id && a.master_id !== a.id);
+            setDbAgents(slaveAgents.map((a: any) => ({
               agentId: a.agentId,
               agentName: a.name || a.agentName,
               avatar: a.avatar || undefined,
