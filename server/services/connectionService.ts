@@ -190,36 +190,85 @@ export async function getUserConnections(userId: string, page: number, limit: nu
     throw new ConnectionNotFoundError('User profile not found.', 'USER_NOT_FOUND');
   }
 
+  const callerMasterId = currentUser.master_id && !currentUser.is_master_primary ? currentUser.master_id : currentUser.id;
+
+  // 1. Fetch all users in the same fleet (Master + all Slave accounts in the fleet)
+  const { data: fleetUsersData } = await supabase
+    .from('users')
+    .select('id, agentId, name, avatar, emailVerified, master_id, is_master_primary')
+    .or(`id.eq.${callerMasterId},master_id.eq.${callerMasterId}`);
+
+  const fleetUsers = (fleetUsersData || []).filter((u: any) => u.id !== currentUser.id);
+  const fleetUserIds = new Set(fleetUsers.map((u: any) => u.id));
+  const fleetAgentIds = new Set(fleetUsers.map((u: any) => (u.agentId || '').toUpperCase()));
+
+  // 2. Fetch existing connections from database
   const userAgentIdUpper = currentUser.agentId.toUpperCase();
   const orFilter = `postOwnerUserId.eq.${currentUser.id},replyAuthorUserId.eq.${currentUser.id},postOwnerAgentId.ilike.${userAgentIdUpper},replyAuthorAgentId.ilike.${userAgentIdUpper}`;
 
-  const { data: userConnections, count, error: queryError } = await supabase
+  const { data: userConnections, error: queryError } = await supabase
     .from('connections')
-    .select('*', { count: 'exact' })
+    .select('*')
     .or(orFilter)
-    .neq('status', 'dissolved') // Filter out dissolved connections
-    .order('createdAt', { ascending: false })
-    .range((page - 1) * limit, page * limit - 1);
+    .neq('status', 'dissolved');
 
   if (queryError) {
     throw new ConnectionError(`Failed to retrieve user connections: ${queryError.message}`, 500, 'DATABASE_ERROR');
   }
 
-  const connections = userConnections || [];
-  const total = count || 0;
+  const rawConnections = userConnections || [];
 
-  if (connections.length === 0) {
-    return {
-      connections: [],
-      total,
-      page,
-      limit,
-    };
+  // 3. Filter existing connections to STRICTLY exclude cross-fleet accounts
+  const intraFleetConnections = rawConnections.filter((c: any) => {
+    const ownerId = c.postOwnerUserId;
+    const authorId = c.replyAuthorUserId;
+    const ownerAgent = (c.postOwnerAgentId || '').toUpperCase();
+    const authorAgent = (c.replyAuthorAgentId || '').toUpperCase();
+
+    const peerUserId = ownerId === currentUser.id ? authorId : ownerId;
+    const peerAgentId = ownerAgent === userAgentIdUpper ? authorAgent : ownerAgent;
+
+    return (fleetUserIds.has(peerUserId) || fleetAgentIds.has(peerAgentId)) && peerUserId !== currentUser.id;
+  });
+
+  // Collect unique peer user IDs/agent IDs already connected
+  const connectedPeerIds = new Set<string>();
+  intraFleetConnections.forEach((c: any) => {
+    const ownerId = c.postOwnerUserId;
+    const authorId = c.replyAuthorUserId;
+    const peerUserId = ownerId === currentUser.id ? authorId : ownerId;
+    if (peerUserId) connectedPeerIds.add(peerUserId);
+    if (c.postOwnerAgentId) connectedPeerIds.add(c.postOwnerAgentId.toUpperCase());
+    if (c.replyAuthorAgentId) connectedPeerIds.add(c.replyAuthorAgentId.toUpperCase());
+  });
+
+  // 4. Ensure all fleet accounts (master and slave accounts in the fleet) are included as talk targets under connections
+  const additionalFleetConnections: any[] = [];
+  for (const fUser of fleetUsers) {
+    if (!connectedPeerIds.has(fUser.id) && !connectedPeerIds.has((fUser.agentId || '').toUpperCase())) {
+      additionalFleetConnections.push({
+        id: `fleet_conn_${currentUser.id}_${fUser.id}`,
+        postId: null,
+        replyId: null,
+        postOwnerUserId: currentUser.id,
+        postOwnerAgentId: currentUser.agentId,
+        replyAuthorUserId: fUser.id,
+        replyAuthorAgentId: fUser.agentId,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+      });
+    }
   }
 
-  // Fetch unique agent IDs to get avatars
+  const allConnections = [...intraFleetConnections, ...additionalFleetConnections];
+  const total = allConnections.length;
+
+  // Pagination slice
+  const paginatedConnections = allConnections.slice((page - 1) * limit, page * limit);
+
+  // Fetch unique agent IDs for avatars/keys
   const agentIds = new Set<string>();
-  connections.forEach((c: any) => {
+  paginatedConnections.forEach((c: any) => {
     if (c.postOwnerAgentId) agentIds.add(c.postOwnerAgentId.toUpperCase());
     if (c.replyAuthorAgentId) agentIds.add(c.replyAuthorAgentId.toUpperCase());
   });
@@ -241,14 +290,14 @@ export async function getUserConnections(userId: string, page: number, limit: nu
     }
   }
 
-  const mappedConnections = connections.map((c: any) => {
-    const replyAuthor = users.find(u => u.agentId.toUpperCase() === c.replyAuthorAgentId.toUpperCase());
-    const postOwner = users.find(u => u.agentId.toUpperCase() === c.postOwnerAgentId.toUpperCase());
-    const isUserPostOwner = c.postOwnerUserId === userId;
+  const mappedConnections = paginatedConnections.map((c: any) => {
+    const replyAuthor = users.find(u => u.agentId.toUpperCase() === (c.replyAuthorAgentId || '').toUpperCase()) || fleetUsers.find(u => u.id === c.replyAuthorUserId || (u.agentId || '').toUpperCase() === (c.replyAuthorAgentId || '').toUpperCase());
+    const postOwner = users.find(u => u.agentId.toUpperCase() === (c.postOwnerAgentId || '').toUpperCase()) || fleetUsers.find(u => u.id === c.postOwnerUserId || (u.agentId || '').toUpperCase() === (c.postOwnerAgentId || '').toUpperCase());
+    const isUserPostOwner = c.postOwnerUserId === userId || c.postOwnerAgentId?.toUpperCase() === userAgentIdUpper;
     
     const peerName = isUserPostOwner 
-      ? (c.replyAuthorAgentName || replyAuthor?.name || 'Guest Agent')
-      : (c.postOwnerAgentName || postOwner?.name || 'Host Agent');
+      ? (c.replyAuthorAgentName || replyAuthor?.name || 'Fleet Agent')
+      : (c.postOwnerAgentName || postOwner?.name || 'Fleet Agent');
       
     const peerAgentId = isUserPostOwner ? c.replyAuthorAgentId : c.postOwnerAgentId;
     const peerAvatar = isUserPostOwner ? (replyAuthor?.avatar || '🤖') : (postOwner?.avatar || '🤖');

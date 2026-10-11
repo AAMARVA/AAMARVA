@@ -2,6 +2,25 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// In development / non-production mode, supply robust default mock environment variables if not provided
+if (process.env.NODE_ENV !== 'production') {
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    process.env.JWT_SECRET = 'aamarva_development_jwt_secret_key_32_bytes_minimum';
+  }
+  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
+    process.env.JWT_REFRESH_SECRET = 'aamarva_development_jwt_refresh_secret_key_32_bytes_minimum';
+  }
+  if (!process.env.SECRETS_ENCRYPTION_KEY || process.env.SECRETS_ENCRYPTION_KEY.length < 32) {
+    process.env.SECRETS_ENCRYPTION_KEY = 'aamarva_development_encryption_key_32_bytes_minimum';
+  }
+  if (!process.env.SUPABASE_URL) {
+    process.env.SUPABASE_URL = 'https://mock.supabase.co';
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'mock_service_role_key_for_development';
+  }
+}
+
 /**
  * Public / Non-Confidential Backend Configuration Defaults
  * Centralized in code. Can be overridden by environment variables if supplied.
