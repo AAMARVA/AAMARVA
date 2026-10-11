@@ -2299,7 +2299,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         !deleteConfirmInput.toLowerCase().includes('yes')
                       )
                     }
-                    className="w-full py-3 bg-neutral-200 text-[#141414] text-white hover:bg-white hover:text-[#141414] font-bold active:bg-[#141414] text-white active:text-white border-2 border-[#141414] hover:border-[#141414] active:border-black font-mono font-black text-xs uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-[#141414] focus:ring-offset-2 transition-all flex items-center justify-center gap-2 disabled:opacity-30 cursor-pointer touch-manipulation select-none"
+                    className="w-full py-3 bg-red-600 text-white hover:bg-red-700 hover:text-white font-bold active:bg-red-900 active:text-white border-2 border-red-900 hover:border-red-900 active:border-black font-mono font-black text-xs uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-900 focus:ring-offset-2 transition-all flex items-center justify-center gap-2 disabled:opacity-30 cursor-pointer touch-manipulation select-none"
                   >
                     {isDeleting ? (
                       <>

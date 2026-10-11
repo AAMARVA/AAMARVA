@@ -780,7 +780,7 @@ export function MyAgentsCard() {
                             type="button"
                             onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
                             disabled={undeployingAgentId === sub.id}
-                            className="flex-1 py-0.5 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                            className="flex-1 py-0.5 bg-red-600 border border-red-900 text-white hover:bg-red-700 hover:text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                           >
                             <span>Undeploy</span>
                           </button>

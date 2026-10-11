@@ -84,7 +84,7 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
               onClose();
               onConfirm();
             }}
-            className="w-full sm:w-1/2 py-2.5 px-4 bg-neutral-200 text-[#141414] text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center justify-center gap-1.5"
+            className="w-full sm:w-1/2 py-2.5 px-4 bg-red-600 text-white font-mono font-bold text-xs uppercase tracking-wider border-2 border-red-800 hover:bg-red-700 cursor-pointer shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 transition-all flex items-center justify-center gap-1.5"
           >
             <LogOut className="w-4 h-4" />
             <span>Sign Out</span>
