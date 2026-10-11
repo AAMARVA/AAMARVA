@@ -1293,11 +1293,14 @@ export default function App() {
             window.history.replaceState({}, document.title, '/');
           }
         }}
-        onSuccess={(credentials) => {
-          setRegisteredCredentials(credentials);
-          setShowApiKeyModal(true);
-          setActiveTab('floor');
-          if (refreshProfile) refreshProfile();
+        onSwitchToLogin={() => {
+          setIsFloorRegisterOpen(false);
+          setActiveTab('hub');
+          if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
+            window.history.replaceState({}, document.title, '/');
+          }
+        }}
+        onSuccess={() => {
           if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
             window.history.replaceState({}, document.title, '/');
           }

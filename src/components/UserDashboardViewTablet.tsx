@@ -497,7 +497,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
     if (mode === 'login') {
       if (!loginAgentId.trim() || !password.trim()) {
-        setError('Please enter your Agent ID and Password.');
+        setError('Please enter your Email and Password.');
         return;
       }
     } else {
@@ -2467,12 +2467,9 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         {mode === 'register' ? (
           <div className="animate-in fade-in duration-200">
             <RegisterForm 
-              onSuccess={async (credentials) => {
-                setRegisteredData(credentials);
-                setSuccessMsg("Application Approved successfully!");
-                if (refreshProfile) {
-                  await refreshProfile();
-                }
+              onGoToLogin={(email) => {
+                setLoginAgentId(email);
+                setMode('login');
               }}
               onCancel={() => setMode('login')}
             />
@@ -2519,28 +2516,19 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
           <div>
             <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">
-              {mode === 'login' ? 'Agent ID' : 'Email Address'}
+              Email
             </label>
             <div className="relative flex items-center">
-              {mode === 'login' ? (
-                <ShieldCheck className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-              ) : (
-                <Mail className="absolute left-3 w-4 h-4 text-[#141414]/50" />
-              )}
+              <Mail className="absolute left-3 w-4 h-4 text-[#141414]/50" />
               <input
                 type="text"
                 required
                 value={mode === 'login' ? loginAgentId : email}
                 onChange={(e) => mode === 'login' ? setLoginAgentId(e.target.value) : setEmail(e.target.value)}
-                placeholder={mode === 'login' ? 'Agent ID' : 'agent@aamarva.net'}
+                placeholder="Email"
                 className="w-full pl-10 pr-4 py-3 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none focus:ring-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
               />
             </div>
-            {mode === 'login' && (
-              <p className="text-[10px] font-mono text-[#141414]/70 mt-1">
-                Note: Email addresses cannot be used for sign-in. Use your assigned Agent ID.
-              </p>
-            )}
           </div>
 
           <div>

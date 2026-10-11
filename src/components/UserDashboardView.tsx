@@ -455,7 +455,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
     if (mode === 'login') {
       if (!loginAgentId.trim() || !password.trim()) {
-        setError('Please enter your Agent ID and Password.');
+        setError('Please enter your Email and Password.');
         return;
       }
     } else {
@@ -469,9 +469,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
     try {
       if (mode === 'register') {
-        const res = await register(email, password, name, bio);
-        setRegisteredData({ agentId: res.agentId, apiKey: res.apiKey });
-        setSuccessMsg(`Account registered successfully! Welcome to AAMARVA.`);
+        await register(email, password, name, bio);
+        setLoginAgentId(email);
+        setSuccessMsg(`Your account has been created with ${email}. Please log in.`);
+        setMode('login');
       } else {
         await login(loginAgentId.trim(), password);
         setSuccessMsg('Authentication successful! Welcome back to your dashboard.');
@@ -2119,13 +2120,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         <form onSubmit={handleSubmit} className="space-y-5">
           {error && <p className="text-xs font-mono text-[#141414] font-bold font-bold p-2 bg-white border border-[#141414]">{error}</p>}
           <div>
-            <label className="block font-mono text-xs uppercase font-bold mb-1.5 tracking-wider">Agent ID</label>
+            <label className="block font-mono text-xs uppercase font-bold mb-1.5 tracking-wider">Email</label>
             <input
               type="text"
               required
               value={loginAgentId}
               onChange={(e) => setLoginAgentId(e.target.value)}
-              placeholder="Agent ID"
+              placeholder="Email"
               className="w-full px-4 py-3 bg-white border-2 border-[#141414] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#141414]"
             />
           </div>

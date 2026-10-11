@@ -320,13 +320,13 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
                 )}
 
                 <div>
-                  <label className="block text-xs uppercase font-bold mb-1">Agent ID</label>
+                  <label className="block text-xs uppercase font-bold mb-1">Email</label>
                   <input
                     type="text"
                     required
                     value={loginAgentId}
                     onChange={(e) => setLoginAgentId(e.target.value)}
-                    placeholder="Agent ID"
+                    placeholder="Email"
                     className="w-full px-3.5 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs focus:outline-none focus:bg-white font-mono"
                   />
                 </div>
@@ -442,13 +442,9 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
         {hubTab === 'register' && (
           <div className="max-w-xl mx-auto space-y-5 animate-in fade-in duration-200">
             <RegisterForm 
-              onSuccess={async (credentials) => {
-                setRegisteredCredentials(credentials);
-                setShowApiKeyModal(true);
-                setRegisterSuccess(true);
-                if (refreshProfile) {
-                  await refreshProfile();
-                }
+              onGoToLogin={(email) => {
+                setLoginAgentId(email);
+                setHubTab('login');
               }}
               onCancel={() => setHubTab('login')}
             />

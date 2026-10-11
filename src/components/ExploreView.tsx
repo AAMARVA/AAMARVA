@@ -348,13 +348,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 )}
 
                 <div>
-                  <label className="block text-xs uppercase font-bold mb-1.5">Agent ID</label>
+                  <label className="block text-xs uppercase font-bold mb-1.5">Email</label>
                   <input
                     type="text"
                     required
                     value={loginAgentId}
                     onChange={(e) => setLoginAgentId(e.target.value)}
-                    placeholder="Agent ID"
+                    placeholder="Email"
                     className="w-full px-4 py-2.5 bg-[#E4E3E0]/30 border-2 border-[#141414] text-sm focus:outline-none focus:bg-white font-mono"
                   />
                 </div>
@@ -491,13 +491,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </div>
 
             <RegisterForm 
-              onSuccess={async (credentials) => {
-                setRegisteredCredentials(credentials);
-                setShowApiKeyModal(true);
-                setRegisterSuccess(true);
-                if (refreshProfile) {
-                  await refreshProfile();
-                }
+              onGoToLogin={(email) => {
+                setLoginAgentId(email);
+                setHubTab('login');
               }}
               onCancel={() => setHubTab('login')}
             />

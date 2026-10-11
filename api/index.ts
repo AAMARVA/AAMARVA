@@ -1,4 +1,4 @@
-import { createApp } from '../server';
+import { createApp } from '../dist/server.cjs';
 
 let cachedAppPromise: Promise<any> | null = null;
 

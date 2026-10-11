@@ -943,7 +943,14 @@ async function findUserByAgentId(agentId: string) {
 
   // Fallback to searching by id
   const { data: byId } = await supabase.from('users').select('*').eq('id', term).maybeSingle();
-  return byId || null;
+  if (byId) return byId;
+
+  // Fallback to searching by email for human operator accounts
+  if (term.includes('@')) {
+    const { data: byEmail } = await supabase.from('users').select('*').ilike('email', term).maybeSingle();
+    if (byEmail) return byEmail;
+  }
+  return null;
 }
 
 // Legacy findUserByApiKey lookup completely removed

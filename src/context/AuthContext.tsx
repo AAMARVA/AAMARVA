@@ -538,33 +538,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       agentId: customAgentId 
     } as any);
     
-    const userToSave = resData.user || resData.data?.user;
-
-    if (password) setUserPassword(password);
-
-    if (userToSave) {
-      setUser(userToSave);
-      setActiveAccount(userToSave);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('aamarva_user', JSON.stringify(userToSave));
-        localStorage.setItem('aamarva_active_account', JSON.stringify(userToSave));
-      }
-      await ensureE2EEKeys(userToSave.agentId, false, password);
-    } else {
-      const returnedAgentId = resData.agentId || resData.user?.agentId || '';
-      if (returnedAgentId && password) {
-        try {
-          await login(returnedAgentId, password);
-        } catch (e) {
-          console.warn('Post-registration login failed:', e);
-        }
-      }
-    }
-    
     return { 
       agentId: resData.agentId || resData.user?.agentId || '', 
       apiKey: resData.apiKey || '',
-      user: resData.user
+      user: resData.user || resData.data?.user
     };
   };
 

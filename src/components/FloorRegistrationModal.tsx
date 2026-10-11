@@ -6,8 +6,8 @@ interface FloorRegistrationModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialEmail?: string;
-  onSuccess: (credentials?: { agentId?: string; apiKey?: string; user?: any }) => void;
-  onSwitchToLogin?: () => void;
+  onSuccess?: (credentials?: { agentId?: string; apiKey?: string; user?: any }) => void;
+  onSwitchToLogin?: (email?: string) => void;
 }
 
 export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
@@ -26,6 +26,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [createdEmail, setCreatedEmail] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialEmail) {
@@ -40,6 +41,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
       setFullName('');
       setPassword('');
       setConfirmPassword('');
+      setCreatedEmail(null);
     }
   }, [isOpen]);
 
@@ -75,9 +77,9 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
     setIsSubmitting(true);
     try {
       const res = await register(trimmedEmail, password, trimmedName);
-      if (res) {
+      setCreatedEmail(trimmedEmail);
+      if (onSuccess) {
         onSuccess(res);
-        onClose();
       }
     } catch (err: any) {
       const msg = err?.message || 'Registration failed. Please try again.';
@@ -94,7 +96,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
         {/* Top Bar */}
         <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none">
           <span className="font-mono text-xs font-black uppercase tracking-widest">
-            HUMAN OPERATOR REGISTRATION
+            {createdEmail ? 'REGISTRATION COMPLETE' : 'HUMAN OPERATOR REGISTRATION'}
           </span>
           <button
             onClick={onClose}
@@ -106,7 +108,51 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-6 sm:p-8 space-y-6">
+        {createdEmail ? (
+          <div className="p-6 sm:p-8 space-y-6 font-mono animate-in fade-in duration-200">
+            <div className="border-b-2 border-[#141414] pb-4">
+              <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-[#141414] leading-none">
+                Account Created
+              </h1>
+              <p className="text-xs font-mono text-[#141414]/70 mt-2">
+                Human operator registration completed successfully.
+              </p>
+            </div>
+
+            <div className="p-5 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] space-y-3">
+              <div className="text-xs font-black uppercase tracking-wider text-[#141414] flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 bg-[#141414]"></span>
+                <span>Account Confirmation</span>
+              </div>
+              <p className="text-sm sm:text-base font-bold text-[#141414] leading-relaxed">
+                Your account has been created with{' '}
+                <span className="bg-[#141414] text-white px-2 py-0.5 font-mono font-bold break-all inline-block">
+                  {createdEmail}
+                </span>
+              </p>
+            </div>
+
+            <div className="p-4 bg-[#FAF9F5] border-2 border-[#141414] font-mono text-xs text-[#141414] space-y-2">
+              <p className="font-black uppercase tracking-wider">Next Step: Log In</p>
+              <p className="text-[#141414]/80 leading-relaxed">
+                Please log in with your registered email and password to access the floor and orchestrate agents.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                if (onSwitchToLogin) onSwitchToLogin(createdEmail);
+              }}
+              className="w-full py-4 bg-[#141414] text-white hover:bg-black font-mono text-xs sm:text-sm font-black uppercase tracking-wider border-2 border-[#141414] shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] hover:shadow-[7px_7px_0px_0px_rgba(20,20,20,1)] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Log In Now</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="p-6 sm:p-8 space-y-6">
           
           {/* Header Block */}
           <div className="border-b-2 border-[#141414] pb-4">
@@ -277,6 +323,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
           </div>
 
         </div>
+        )}
 
       </div>
     </div>
