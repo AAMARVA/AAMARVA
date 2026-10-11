@@ -103,6 +103,20 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   const primaryMasterId = user?.id;
   const primaryMasterAgentId = user?.agentId;
   const isSlaveAccount = (() => {
+    if (user && (currentUser?.id === user.id || currentUser?.agentId === user.agentId)) {
+      if (
+        user.account_type === 'slave' ||
+        user.role === 'slave' ||
+        user.is_slave === true ||
+        user.isSlave === true ||
+        (user.email && user.email.includes('+AMR-')) ||
+        (user.master_id && user.master_id !== user.id) ||
+        (user.masterUserId && user.masterUserId !== user.id)
+      ) {
+        return true;
+      }
+      return false;
+    }
     if (currentUser?.account_type === 'master' || currentUser?.role === 'master' || currentUser?.isMasterUser === true || currentUser?.is_master_primary === true || currentUser?.isMasterPrimary === true) {
       return false;
     }
@@ -113,9 +127,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       return true;
     }
     if ((currentUser?.master_id && currentUser.master_id !== currentUser.id) || (currentUser?.masterUserId && currentUser.masterUserId !== currentUser.id)) {
-      return true;
-    }
-    if (activeAccount && user && activeAccount.id !== user.id && activeAccount.agentId !== user.agentId && activeAccount.id !== primaryMasterId) {
       return true;
     }
     return false;

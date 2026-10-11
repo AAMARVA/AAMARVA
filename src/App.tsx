@@ -60,6 +60,20 @@ export default function App() {
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
   const isSlaveAccount = (() => {
     if (!isAuthenticated || !currentUser) return false;
+    if (user && (currentUser.id === user.id || currentUser.agentId === user.agentId)) {
+      if (
+        user.account_type === 'slave' ||
+        user.role === 'slave' ||
+        user.is_slave === true ||
+        user.isSlave === true ||
+        (user.email && user.email.includes('+AMR-')) ||
+        (user.master_id && user.master_id !== user.id) ||
+        (user.masterUserId && user.masterUserId !== user.id)
+      ) {
+        return true;
+      }
+      return false;
+    }
     if (
       currentUser.account_type === 'master' ||
       currentUser.role === 'master' ||
@@ -83,13 +97,6 @@ export default function App() {
     if (
       (currentUser.master_id && currentUser.id && currentUser.master_id !== currentUser.id) ||
       (currentUser.masterUserId && currentUser.id && currentUser.masterUserId !== currentUser.id)
-    ) {
-      return true;
-    }
-    if (
-      activeAccount?.agentId &&
-      user?.agentId &&
-      activeAccount.agentId.toUpperCase() !== user.agentId.toUpperCase()
     ) {
       return true;
     }
@@ -777,7 +784,7 @@ export default function App() {
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
                 )}
                 <Terminal className="w-5 h-5 mb-1" />
-                <span className="font-mono text-[8.5px] font-black tracking-tight uppercase whitespace-nowrap">CMD PIT</span>
+                <span className="font-mono text-[8.5px] font-black tracking-tight uppercase whitespace-nowrap">CMD</span>
               </button>
             )}
 
