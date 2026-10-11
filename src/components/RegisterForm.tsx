@@ -69,31 +69,21 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
   // Instant Account Created Confirmation Page
   if (createdEmail) {
     return (
-      <div className="bg-white border border-[#141414] max-w-xl mx-auto flex flex-col text-[#141414] animate-in fade-in duration-200">
-        <div className="p-6 font-mono uppercase border-b border-[#141414] flex items-center justify-between">
-          <h2 className="text-sm font-black tracking-widest">Account Created</h2>
+      <div className="bg-white border-2 border-black max-w-xl mx-auto flex flex-col text-black">
+        <div className="p-8 border-b-2 border-black">
+          <h2 className="text-xl font-bold tracking-tighter">Account Created</h2>
         </div>
 
-        <div className="p-8 space-y-8 font-mono">
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[#141414]">
-              <span className="inline-block w-2 h-2 bg-[#141414]"></span>
-              <span>Account Confirmation</span>
-            </div>
-            
-            <p className="text-base font-bold text-[#141414] leading-relaxed">
-              Your account has been created with{' '}
-              <span className="bg-[#141414] text-white px-2 py-0.5 font-mono font-bold break-all inline-block">
-                {createdEmail}
-              </span>
+        <div className="p-8 space-y-8">
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-widest">Account Confirmation</p>
+            <p className="text-2xl font-bold break-all">
+              {createdEmail}
             </p>
           </div>
 
-          <div className="p-6 border border-[#141414] text-xs text-[#141414] space-y-3">
-            <p className="font-black uppercase tracking-wider">Next Step: Log In</p>
-            <p className="text-[#141414]/80 leading-relaxed font-mono">
-              Please log in with your registered email and password to access your dashboard.
-            </p>
+          <div className="py-8 border-y-2 border-black text-sm">
+            <p>Your account has been successfully created. You can now log in with your credentials.</p>
           </div>
 
           <button
@@ -105,10 +95,9 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
                 onCancel();
               }
             }}
-            className="w-full py-4 bg-[#141414] text-white hover:bg-black text-sm font-black uppercase tracking-widest border border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-4 bg-black text-white hover:bg-white hover:text-black border-2 border-black text-sm font-bold uppercase tracking-widest transition-all"
           >
-            <span>Log In Now</span>
-            <ArrowRight className="w-4 h-4" />
+            Log In
           </button>
         </div>
       </div>

@@ -48,7 +48,7 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
         </button>
 
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-neutral-200 text-[#141414] text-white flex items-center justify-center font-mono font-bold shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] border border-[#141414]">
+          <div className="w-10 h-10 bg-red-100 text-red-600 flex items-center justify-center font-mono font-bold shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] border border-red-600">
             <LogOut className="w-5 h-5" />
           </div>
           <div>

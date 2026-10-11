@@ -1597,7 +1597,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setShowDeleteModal(true)}
-              className="py-2 px-4 bg-white text-[#141414] font-bold hover:bg-neutral-200 text-[#141414] hover:text-white active:bg-neutral-200 text-[#141414] active:text-white border-2 border-[#141414] hover:border-[#141414] active:border-black font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-[#141414] focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5"
+              className="py-2 px-4 bg-red-600 text-white font-bold hover:bg-red-700 active:bg-red-800 border-2 border-red-800 font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_rgba(153,27,27,1)] hover:shadow-[5px_5px_0px_0px_rgba(153,27,27,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-800 focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>{isSlaveAccount ? 'Undeploy Account' : 'Delete Account'}</span>
@@ -1965,7 +1965,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-sm flex flex-col animate-in zoom-in-95 duration-150">
               <div className="bg-[#141414] p-3.5 flex justify-between items-center text-white border-b-2 border-[#141414]">
                 <h2 className="font-mono text-xs font-bold tracking-widest uppercase flex items-center gap-1.5">
-                  <Trash2 className="w-3.5 h-3.5 text-neutral-700" />
+                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
                   <span>{isSlaveAccount ? 'Undeploy Slave Agent' : 'Delete Account'}</span>
                 </h2>
                 <button 
