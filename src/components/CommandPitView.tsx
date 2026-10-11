@@ -14,6 +14,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
 }) => {
   const [activeConnections, setActiveConnections] = useState<any[]>([]);
   const [clusters, setClusters] = useState<any[]>([]);
+  const [mobileTab, setMobileTab] = useState<'connections' | 'clusters'>('connections');
   const [isNewClusterOpen, setIsNewClusterOpen] = useState(false);
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
@@ -182,20 +183,50 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   };
 
   return (
-    <div className="p-4 space-y-6">
-      <h2 className="font-mono text-xl font-black uppercase text-[#141414]">Command Pit</h2>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative min-h-[450px]">
-        {/* Connections */}
-        <div className="space-y-3 pr-0 md:pr-6">
-          <div className="flex items-center justify-between">
+    <div className="h-[calc(100dvh-175px)] sm:h-[calc(100dvh-150px)] md:h-[calc(100dvh-135px)] max-h-[calc(100dvh-135px)] flex flex-col p-2 sm:p-4 md:p-6 overflow-hidden">
+      {/* Title */}
+      <div className="shrink-0 mb-3 flex items-center justify-between">
+        <h2 className="font-mono text-lg sm:text-xl font-black uppercase text-[#141414]">Command Pit</h2>
+      </div>
+
+      {/* Mobile Selector for Small Screens */}
+      <div className="flex md:hidden items-center border-2 border-[#141414] mb-3 shrink-0 p-0.5 bg-[#E4E3E0]/40 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
+        <button
+          type="button"
+          onClick={() => setMobileTab('connections')}
+          className={`flex-1 py-1.5 px-2 font-mono text-xs font-bold uppercase transition-all cursor-pointer ${
+            mobileTab === 'connections'
+              ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+              : 'text-[#141414] hover:bg-[#141414]/10'
+          }`}
+        >
+          Connections ({activeConnections.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab('clusters')}
+          className={`flex-1 py-1.5 px-2 font-mono text-xs font-bold uppercase transition-all cursor-pointer ${
+            mobileTab === 'clusters'
+              ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+              : 'text-[#141414] hover:bg-[#141414]/10'
+          }`}
+        >
+          Clusters ({clusters.length})
+        </button>
+      </div>
+
+      {/* Two-Column Grid Area */}
+      <div className="flex-1 min-h-0 relative grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 h-full">
+        {/* Connections Column */}
+        <div className={`flex-col h-full min-h-0 pr-0 md:pr-6 ${mobileTab !== 'connections' ? 'hidden md:flex' : 'flex'}`}>
+          <div className="flex items-center justify-between shrink-0 mb-2.5">
             <h3 className="font-mono text-sm font-black uppercase text-[#141414]">
               Connections ({activeConnections.length})
             </h3>
           </div>
-          {activeConnections.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              {activeConnections.map((conn) => (
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">
+            {activeConnections.length > 0 ? (
+              activeConnections.map((conn) => (
                 <div
                   key={conn.id || conn.agentId}
                   className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] transition-all"
@@ -244,28 +275,27 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                         peerE2eePublicKey: conn.peerE2eePublicKey,
                       })}
                       className="bg-[#141414] text-white py-1 px-3 text-[10px] font-mono font-bold hover:bg-black/80 transition-colors shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
-                      title={`Open chat with ${conn.agentName}`}
+                      title={`Command ${conn.agentName}`}
                     >
-                      CHAT
+                      COMMAND
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-6 border-2 border-dashed border-[#141414]/30 text-center text-[#141414]/50 font-mono text-xs">
-              NO CONNECTIONS
-            </div>
-          )}
+              ))
+            ) : (
+              <div className="p-6 border-2 border-dashed border-[#141414]/30 text-center text-[#141414]/50 font-mono text-xs">
+                NO CONNECTIONS
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Divider Line extending to bottom */}
-        <div className="hidden md:block absolute left-1/2 inset-y-0 w-[2px] bg-[#141414]/30 -ml-[1px]" />
-        <div className="block md:hidden h-[2px] bg-[#141414]/30 my-4" />
+        {/* Divider Line extending cleanly to bottom */}
+        <div className="hidden md:block absolute left-1/2 inset-y-0 w-[2px] bg-[#141414]/30 -ml-[1px] pointer-events-none" />
 
-        {/* Clusters */}
-        <div className="space-y-3 pl-0 md:pl-6">
-          <div className="flex items-center justify-between">
+        {/* Clusters Column */}
+        <div className={`flex-col h-full min-h-0 pl-0 md:pl-6 ${mobileTab !== 'clusters' ? 'hidden md:flex' : 'flex'}`}>
+          <div className="flex items-center justify-between shrink-0 mb-2.5">
             <h3 className="font-mono text-sm font-black uppercase text-[#141414]">Clusters ({clusters.length})</h3>
             <button
               onClick={() => setIsNewClusterOpen(true)}
@@ -276,20 +306,20 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
             </button>
           </div>
 
-          {clusters.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              {clusters.map((cluster) => (
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">
+            {clusters.length > 0 ? (
+              clusters.map((cluster) => (
                 <div key={cluster.id} className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
                   <span className="font-black text-xs uppercase">{cluster.name}</span>
                   {cluster.description && (
                     <p className="text-[11px] text-[#141414]/70 mt-1 line-clamp-2">{cluster.description}</p>
                   )}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-6 border-2 border-dashed border-[#141414]/30 text-center text-[#141414]/50 font-mono text-xs">NO CLUSTERS</div>
-          )}
+              ))
+            ) : (
+              <div className="p-6 border-2 border-dashed border-[#141414]/30 text-center text-[#141414]/50 font-mono text-xs">NO CLUSTERS</div>
+            )}
+          </div>
         </div>
       </div>
 
