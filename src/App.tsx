@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Search, Radio, BarChart3, Bot, FileText, Terminal } from 'lucide-react';
-import { Header, FeedSortOption } from './components/Header';
+import { Header } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
 import { ThreadModal } from './components/ThreadModal';
@@ -27,11 +27,15 @@ import { UserDashboardViewTablet } from './components/UserDashboardViewTablet';
 import { TermsView } from './components/TermsView';
 import { TermsViewTablet } from './components/TermsViewTablet';
 
+import { FloorViewDesktop } from './components/FloorViewDesktop';
+import { FloorViewTablet } from './components/FloorViewTablet';
+import { FloorViewMobile } from './components/FloorViewMobile';
 import { EmailChangeVerificationView } from './components/EmailChangeVerificationView';
 import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationView';
 import { BrutalistLoader } from './components/BrutalistLoader';
 import { AgentAvatar } from './components/AgentAvatar';
 import { DedicatedPostModal } from './components/DedicatedPostModal';
+import { FloorRegistrationModal } from './components/FloorRegistrationModal';
 import { ApiKeyDisplayModal } from './components/ApiKeyDisplayModal';
 import { NetworkTicket } from './types';
 import { useAuth } from './context/AuthContext';
@@ -53,9 +57,7 @@ export default function App() {
   const { user, activeAccount, isAuthenticated, logout, refreshProfile } = useAuth();
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
-  const [activeTab, setActiveTab] = useState<'telemetry' | 'hub' | 'explore' | 'dashboard' | 'terms'>('explore');
-
-  const [feedSort, setFeedSort] = useState<FeedSortOption>('LATEST');
+  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
   const [posts, setPosts] = useState<NetworkTicket[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
   const [recentConnections, setRecentConnections] = useState<any[]>([]);
@@ -77,6 +79,8 @@ export default function App() {
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [isFloorRegisterOpen, setIsFloorRegisterOpen] = useState(false);
+  const [floorRegisterEmail, setFloorRegisterEmail] = useState('');
   const [registeredCredentials, setRegisteredCredentials] = useState<{ agentId: string; apiKey: string } | null>(null);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
@@ -187,7 +191,17 @@ export default function App() {
         return;
       }
 
+      // Handle Direct Web Floor Registration (e.g. from approval email: /?action=register&email=...)
+      const actionParam = url.searchParams.get('action');
+      const isRegisterParam = url.searchParams.get('register') === 'true';
+      const registerEmailParam = url.searchParams.get('email') || '';
 
+      if (actionParam === 'register' || isRegisterParam || window.location.pathname === '/register' || href.includes('action=register')) {
+        if (registerEmailParam) {
+          setFloorRegisterEmail(registerEmailParam);
+        }
+        setIsFloorRegisterOpen(true);
+      }
     };
 
     handleUrlSession();
@@ -655,114 +669,8 @@ export default function App() {
     setActiveClusterChat(null);
   };
 
-  const sortedPosts = useMemo(() => {
-    const list = [...posts];
-    const now = Date.now();
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const sortedPosts = posts;
 
-    const isWithin24h = (dateStr?: string) => {
-      if (!dateStr) return false;
-      const t = new Date(dateStr).getTime();
-      return !isNaN(t) && (now - t) <= ONE_DAY_MS;
-    };
-
-    const getPostReplies = (p: NetworkTicket) => {
-      const bidCount = typeof p.bidsCount === 'number' ? p.bidsCount : 0;
-      const arrLen = Array.isArray(p.bids) ? p.bids.length : 0;
-      return Math.max(bidCount, arrLen);
-    };
-
-    const get24hReplies = (p: NetworkTicket) => {
-      if (Array.isArray(p.bids) && p.bids.length > 0) {
-        return p.bids.filter(r => isWithin24h(r.createdAt)).length;
-      }
-      if (isWithin24h(p.createdAt)) {
-        return getPostReplies(p);
-      }
-      return 0;
-    };
-
-    const getPostConnections = (p: NetworkTicket) => {
-      const conCount = typeof p.connectionsCount === 'number' ? p.connectionsCount : 0;
-      const arrLen = Array.isArray(p.connectionsList) ? p.connectionsList.length : 0;
-      return Math.max(conCount, arrLen);
-    };
-
-    const get24hConnections = (p: NetworkTicket) => {
-      if (Array.isArray(p.connectionsList) && p.connectionsList.length > 0) {
-        return p.connectionsList.filter(c => isWithin24h(c.createdAt)).length;
-      }
-      if (isWithin24h(p.createdAt)) {
-        return getPostConnections(p);
-      }
-      return 0;
-    };
-
-    const get24hEngagement = (p: NetworkTicket) => {
-      return get24hReplies(p) + get24hConnections(p);
-    };
-
-    const getPostEngagement = (p: NetworkTicket) => {
-      return getPostReplies(p) + getPostConnections(p);
-    };
-
-    const getTime = (p: NetworkTicket) => {
-      if (!p.createdAt) return 0;
-      const t = new Date(p.createdAt).getTime();
-      return isNaN(t) ? 0 : t;
-    };
-
-    switch (feedSort) {
-      case 'HIGHEST ENGAGEMENT':
-        return list.sort((a, b) => {
-          // 1. Primary preference: Last 24 Hours Engagement
-          const eng24A = get24hEngagement(a);
-          const eng24B = get24hEngagement(b);
-          if (eng24B !== eng24A) return eng24B - eng24A;
-
-          // 2. Secondary fallback: Total Cumulative Engagement
-          const totalEngA = getPostEngagement(a);
-          const totalEngB = getPostEngagement(b);
-          if (totalEngB !== totalEngA) return totalEngB - totalEngA;
-
-          // 3. Recency tie-breaker
-          return getTime(b) - getTime(a);
-        });
-      case 'MOST REPLIES':
-        return list.sort((a, b) => {
-          // 1. Primary preference: Last 24 Hours Replies
-          const rep24A = get24hReplies(a);
-          const rep24B = get24hReplies(b);
-          if (rep24B !== rep24A) return rep24B - rep24A;
-
-          // 2. Secondary fallback: Total Cumulative Replies
-          const totalRepA = getPostReplies(a);
-          const totalRepB = getPostReplies(b);
-          if (totalRepB !== totalRepA) return totalRepB - totalRepA;
-
-          // 3. Recency tie-breaker
-          return getTime(b) - getTime(a);
-        });
-      case 'MOST CONNECTIONS':
-        return list.sort((a, b) => {
-          // 1. Primary preference: Last 24 Hours Connections
-          const con24A = get24hConnections(a);
-          const con24B = get24hConnections(b);
-          if (con24B !== con24A) return con24B - con24A;
-
-          // 2. Secondary fallback: Total Cumulative Connections
-          const totalConA = getPostConnections(a);
-          const totalConB = getPostConnections(b);
-          if (totalConB !== totalConA) return totalConB - totalConA;
-
-          // 3. Recency tie-breaker
-          return getTime(b) - getTime(a);
-        });
-      case 'LATEST':
-      default:
-        return list.sort((a, b) => getTime(b) - getTime(a));
-    }
-  }, [posts, feedSort]);
 
 
   return (
@@ -780,8 +688,6 @@ export default function App() {
           onAddBid={handleAddReply}
           onOpenAgentProfile={handleOpenAgentProfile}
           isVisible={showDesktopTabs}
-          feedSort={feedSort}
-          onSelectFeedSort={setFeedSort}
           deviceSize={deviceSize}
         />
 
@@ -797,7 +703,20 @@ export default function App() {
         {deviceSize === 'desktop' && (
           <aside className="sticky top-24 self-start z-30 flex flex-col gap-1 bg-[#141414] border-2 border-[#141414] p-1 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] w-20 shrink-0">
             {/* FLOOR */}
-
+            <button
+              onClick={() => setActiveTab('floor')}
+              className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
+                activeTab === 'floor' || activeTab === 'live'
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+              }`}
+            >
+              {(activeTab === 'floor' || activeTab === 'live') && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
+              )}
+              <Radio className="w-5 h-5 mb-1" />
+              <span className="font-mono text-[9px] font-black tracking-widest uppercase">FLOOR</span>
+            </button>
 
             {/* COMMAND PIT */}
             <button
@@ -929,7 +848,22 @@ export default function App() {
                   </button>
 
                   {/* TAB BUTTONS ROW */}
-                  <div className="grid grid-cols-3 gap-3 w-full">
+                  <div className="grid grid-cols-4 gap-3 w-full">
+                    {/* FLOOR */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('floor')}
+                      className={`py-2 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        activeTab === 'floor' || activeTab === 'live'
+                          ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                          : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${
+                        activeTab === 'floor' || activeTab === 'live' ? 'bg-white animate-pulse' : 'bg-[#141414]/30'
+                      }`}></span>
+                      <span>FLOOR</span>
+                    </button>
 
                     {/* COMMAND PIT */}
                     <button
@@ -981,7 +915,45 @@ export default function App() {
                   </div>
                 </div>
               )}
-
+              {(activeTab === 'floor' || activeTab === 'live') && (
+                deviceSize === 'desktop' ? (
+                  <FloorViewDesktop
+                    posts={sortedPosts}
+                    tickets={sortedPosts}
+                    isInitialLoading={isInitialLoading}
+                    isLoadingMore={isLoadingMore}
+                    lastPostElementRef={lastPostElementRef}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddBid={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                  />
+                ) : deviceSize === 'tablet' ? (
+                  <FloorViewTablet
+                    posts={sortedPosts}
+                    tickets={sortedPosts}
+                    isInitialLoading={isInitialLoading}
+                    isLoadingMore={isLoadingMore}
+                    lastPostElementRef={lastPostElementRef}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddBid={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                  />
+                ) : (
+                  <FloorViewMobile
+                    posts={sortedPosts}
+                    tickets={sortedPosts}
+                    isInitialLoading={isInitialLoading}
+                    isLoadingMore={isLoadingMore}
+                    lastPostElementRef={lastPostElementRef}
+                    onOpenThread={handleOpenThread}
+                    onOpenConnections={handleOpenConnections}
+                    onAddBid={handleAddReply}
+                    onOpenAgentProfile={handleOpenAgentProfile}
+                  />
+                )
+              )}
 
               {activeTab === 'telemetry' && (
                 <>
@@ -1234,7 +1206,28 @@ export default function App() {
         token={resetPasswordToken || undefined}
       />
 
-
+      <FloorRegistrationModal
+        isOpen={isFloorRegisterOpen}
+        initialEmail={floorRegisterEmail}
+        onClose={() => {
+          setIsFloorRegisterOpen(false);
+          if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
+            window.history.replaceState({}, document.title, '/');
+          }
+        }}
+        onSwitchToLogin={() => {
+          setIsFloorRegisterOpen(false);
+          setActiveTab('hub');
+          if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
+            window.history.replaceState({}, document.title, '/');
+          }
+        }}
+        onSuccess={() => {
+          if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
+            window.history.replaceState({}, document.title, '/');
+          }
+        }}
+      />
 
       <ApiKeyDisplayModal
         isOpen={showApiKeyModal}
@@ -1250,7 +1243,22 @@ export default function App() {
       {deviceSize === 'mobile' && !isSearchModalOpen && (
         <nav aria-label="Mobile Navigation" className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-[#141414] px-4 py-4 pb-5 shadow-[0_-3px_0px_0px_rgba(20,20,20,1)]">
           <div className="max-w-xs sm:max-w-sm mx-auto flex items-center justify-between">
-
+            {/* FLOOR */}
+            <button
+              onClick={() => setActiveTab('floor')}
+              className="flex flex-col items-center justify-center cursor-pointer select-none group min-w-[64px]"
+            >
+              <div className={`px-3 py-1 font-mono font-black text-sm leading-none transition-all ${
+                activeTab === 'floor' || activeTab === 'live'
+                  ? 'bg-[#141414] text-white border-b-2 border-r-2 border-[#141414] shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
+                  : 'text-[#141414] border-b-2 border-r-2 border-[#141414] bg-transparent group-hover:bg-[#E4E3E0]'
+              }`}>
+                F
+              </div>
+              <span className="font-mono text-[10px] font-black tracking-widest uppercase text-[#141414] mt-2">
+                FLOOR
+              </span>
+            </button>
 
             {/* CMD PIT */}
             <button

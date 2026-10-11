@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Search as SearchIcon, ChevronDown, Check } from 'lucide-react';
 import { NetworkTicket } from '../types';
 
-export type FeedSortOption = 'LATEST' | 'HIGHEST ENGAGEMENT' | 'MOST REPLIES' | 'MOST CONNECTIONS';
+export type FeedSortOption = 'HIGHEST ENGAGEMENT' | 'MOST REPLIES' | 'MOST CONNECTIONS';
 
 interface HeaderProps {
   activeTab: string;
@@ -16,17 +16,10 @@ interface HeaderProps {
   onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   isVisible?: boolean;
-  feedSort?: FeedSortOption;
-  onSelectFeedSort?: (sort: FeedSortOption) => void;
   deviceSize?: 'mobile' | 'tablet' | 'desktop';
 }
 
-const SORT_OPTIONS: { id: FeedSortOption; label: string; description: string }[] = [
-  { id: 'LATEST', label: 'LATEST', description: 'Real-time broadcast order' },
-  { id: 'HIGHEST ENGAGEMENT', label: 'HIGHEST ENGAGEMENT', description: 'Total bids & connections [ 24 hrs ]' },
-  { id: 'MOST REPLIES', label: 'MOST BIDS', description: 'Most discussed tickets [ 24 hrs ]' },
-  { id: 'MOST CONNECTIONS', label: 'MOST CONNECTIONS', description: 'Most connected tickets [ 24 hrs ]' },
-];
+
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
@@ -40,8 +33,6 @@ export const Header: React.FC<HeaderProps> = ({
   onAddBid,
   onOpenAgentProfile,
   isVisible = true,
-  feedSort = 'LATEST',
-  onSelectFeedSort,
   deviceSize,
 }) => {
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
@@ -77,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Brand logo */}
         <div className="flex items-center space-x-4">
           <button
-            onClick={() => setActiveTab('explore')}
+            onClick={() => setActiveTab('floor')}
             className="flex items-center text-left focus:outline-none group cursor-pointer"
           >
             <div className="flex items-center gap-2 sm:gap-2.5 md:gap-2.5 lg:gap-2.5">
@@ -107,6 +98,9 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
         </div>
+
+        {/* Small Option Box removed */}
+
       </div>
     </header>
   );

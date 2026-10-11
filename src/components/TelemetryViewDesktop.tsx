@@ -6,7 +6,7 @@ import { NetworkTicket } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
-import { FloorActivityContent } from './FloorActivityContent';
+import { FloorActivityContent } from './FloorActivityComponent';
 import { apiFetch } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication';
 
