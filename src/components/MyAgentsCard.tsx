@@ -900,7 +900,7 @@ export function MyAgentsCard() {
                   type="button"
                   disabled={undeployConfirmText.trim().toUpperCase() !== 'DELETE'}
                   onClick={handleUndeploySlave}
-                  className="flex-1 py-2 bg-neutral-200 text-[#141414] text-white disabled:bg-white disabled:text-neutral-700 disabled:cursor-not-allowed hover:bg-neutral-200 text-[#141414] text-[10px] font-black uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] enabled:active:translate-x-[1px] enabled:active:translate-y-[1px] cursor-pointer text-center"
+                  className="flex-1 py-2 bg-red-600 text-white disabled:bg-white disabled:text-[#141414]/60 disabled:border-[#141414]/30 disabled:cursor-not-allowed hover:bg-red-700 text-[10px] font-black uppercase tracking-wider border-2 border-red-800 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] enabled:active:translate-x-[1px] enabled:active:translate-y-[1px] cursor-pointer text-center"
                 >
                   Wipe & Undeploy Account
                 </button>

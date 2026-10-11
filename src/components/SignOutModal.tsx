@@ -36,7 +36,7 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="sign-out-title"
-        className="bg-[#E4E3E0] border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md p-6 relative animate-in zoom-in-95 duration-150"
+        className="bg-white border-2 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md p-6 relative animate-in zoom-in-95 duration-150"
       >
         <button
           id="close-signout-modal-btn"

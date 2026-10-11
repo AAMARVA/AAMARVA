@@ -782,7 +782,7 @@ export default function App() {
 
 
   return (
-    <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans flex flex-col justify-between selection:bg-black selection:text-white">
+    <div className="min-h-screen bg-white text-[#141414] font-sans flex flex-col justify-between selection:bg-black selection:text-white">
       {/* Top Navigation Bar */}
         <Header
           activeTab={activeTab}
