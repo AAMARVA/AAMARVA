@@ -1,7 +1,7 @@
 import React from 'react';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { NetworkTicket } from '../types';
-import { normalizeAndValidateFloorActivity } from '../lib/floorActivitySpec.ts';
+import { normalizeAndValidateFloorActivity } from '../lib/floorActivitySpec';
 
 interface FloorActivityContentProps {
   log: any;

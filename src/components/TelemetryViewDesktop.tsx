@@ -8,7 +8,7 @@ import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
 import { FloorActivityContent } from './FloorActivityComponent';
 import { apiFetch } from '../services/authApi';
-import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
+import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication';
 
 interface TelemetryViewProps {
   posts?: NetworkTicket[];
