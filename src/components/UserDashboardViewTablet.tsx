@@ -478,12 +478,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   // Active Twitter profile tab state
   const [activeProfileTab, setActiveProfileTab] = useState<'bids' | 'connections' | 'clusters'>('connections');
 
-  useEffect(() => {
-    if (isSlaveAccount && activeProfileTab === 'bids') {
-      setActiveProfileTab('connections');
-    }
-  }, [isSlaveAccount, activeProfileTab]);
-
   const handleStartEditing = () => {
     setEditName(currentAgentName);
     setEditBio(currentUser?.bio || '');
@@ -864,7 +858,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               <Network className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
-            {!isSlaveAccount && (
               <button
                 type="button"
                 onClick={() => setActiveProfileTab('bids')}
@@ -878,7 +871,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 <BidIcon className="w-4 h-4 sm:hidden mb-0.5" />
                 <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userReplies.length})</span>
               </button>
-            )}
             <button
               type="button"
               onClick={() => setActiveProfileTab('clusters')}
@@ -898,7 +890,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
           <div className="p-3 sm:p-6 md:p-6 lg:p-6 bg-white space-y-4 max-h-[500px] sm:max-h-[600px] md:max-h-[600px] lg:max-h-[600px] overflow-y-auto">
 
             {/* 2. REPLIES TAB */}
-            {!isSlaveAccount && activeProfileTab === 'bids' && (
+            {activeProfileTab === 'bids' && (
               <div className="space-y-4">
                 {userReplies.length > 0 ? (
                   userReplies.map(({ bid, parentPost }) => (

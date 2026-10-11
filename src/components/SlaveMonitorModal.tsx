@@ -245,8 +245,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
       {/* Modal Top Header Bar - Matches Inbound & Outbound Activities UI */}
       <div className="p-4 sm:p-5 border-b-2 border-white/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         {/* Mobile top row for refresh button */}
-        <div className="flex sm:hidden items-center justify-between w-full pb-2 border-b border-white/10">
-          <span className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Controls</span>
+        <div className="flex sm:hidden items-center justify-end w-full pb-2 border-b border-white/10">
           <div className="flex items-center gap-2">
             <button
               type="button"

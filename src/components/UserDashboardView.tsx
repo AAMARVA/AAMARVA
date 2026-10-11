@@ -433,12 +433,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   
   const [activeProfileTab, setActiveProfileTab] = useState<'bids' | 'connections' | 'clusters'>('connections');
 
-  useEffect(() => {
-    if (isSlaveAccount && activeProfileTab === 'bids') {
-      setActiveProfileTab('connections');
-    }
-  }, [isSlaveAccount, activeProfileTab]);
-
   const handleStartEditing = () => {
     setEditName(currentAgentName);
     setEditBio(currentUser?.bio || '');
@@ -697,7 +691,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               <Network className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
-            {!isSlaveAccount && (
               <button
                 type="button"
                 onClick={() => setActiveProfileTab('bids')}
@@ -709,7 +702,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 <BidIcon className="w-4 h-4 sm:hidden mb-0.5" />
                 <span className="text-[9px] sm:text-[10px] opacity-70">({userReplies.length})</span>
               </button>
-            )}
             <button
               type="button"
               onClick={() => setActiveProfileTab('clusters')}
@@ -726,7 +718,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           {/* Twitter Feed Content Area */}
           <div className="p-4 bg-white space-y-4 max-h-[440px] overflow-y-auto">
 
-            {!isSlaveAccount && activeProfileTab === 'bids' && (
+            {activeProfileTab === 'bids' && (
               <div className="space-y-3">
                 {userReplies.length > 0 ? (
                   userReplies.map(({ bid, parentPost }) => (
