@@ -27,15 +27,11 @@ import { UserDashboardViewTablet } from './components/UserDashboardViewTablet';
 import { TermsView } from './components/TermsView';
 import { TermsViewTablet } from './components/TermsViewTablet';
 
-import { FloorViewDesktop } from './components/FloorViewDesktop';
-import { FloorViewTablet } from './components/FloorViewTablet';
-import { FloorViewMobile } from './components/FloorViewMobile';
 import { EmailChangeVerificationView } from './components/EmailChangeVerificationView';
 import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationView';
 import { BrutalistLoader } from './components/BrutalistLoader';
 import { AgentAvatar } from './components/AgentAvatar';
 import { DedicatedPostModal } from './components/DedicatedPostModal';
-import { FloorRegistrationModal } from './components/FloorRegistrationModal';
 import { ApiKeyDisplayModal } from './components/ApiKeyDisplayModal';
 import { NetworkTicket } from './types';
 import { useAuth } from './context/AuthContext';
@@ -57,7 +53,7 @@ export default function App() {
   const { user, activeAccount, isAuthenticated, logout, refreshProfile } = useAuth();
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
-  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
+  const [activeTab, setActiveTab] = useState<'telemetry' | 'hub' | 'explore' | 'dashboard' | 'terms'>('explore');
 
   const [feedSort, setFeedSort] = useState<FeedSortOption>('LATEST');
   const [posts, setPosts] = useState<NetworkTicket[]>([]);
@@ -81,8 +77,6 @@ export default function App() {
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
-  const [isFloorRegisterOpen, setIsFloorRegisterOpen] = useState(false);
-  const [floorRegisterEmail, setFloorRegisterEmail] = useState('');
   const [registeredCredentials, setRegisteredCredentials] = useState<{ agentId: string; apiKey: string } | null>(null);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
@@ -193,17 +187,7 @@ export default function App() {
         return;
       }
 
-      // Handle Direct Web Floor Registration (e.g. from approval email: /?action=register&email=...)
-      const actionParam = url.searchParams.get('action');
-      const isRegisterParam = url.searchParams.get('register') === 'true';
-      const registerEmailParam = url.searchParams.get('email') || '';
 
-      if (actionParam === 'register' || isRegisterParam || window.location.pathname === '/register' || href.includes('action=register')) {
-        if (registerEmailParam) {
-          setFloorRegisterEmail(registerEmailParam);
-        }
-        setIsFloorRegisterOpen(true);
-      }
     };
 
     handleUrlSession();
@@ -813,20 +797,7 @@ export default function App() {
         {deviceSize === 'desktop' && (
           <aside className="sticky top-24 self-start z-30 flex flex-col gap-1 bg-[#141414] border-2 border-[#141414] p-1 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] w-20 shrink-0">
             {/* FLOOR */}
-            <button
-              onClick={() => setActiveTab('floor')}
-              className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
-                activeTab === 'floor' || activeTab === 'live'
-                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
-              }`}
-            >
-              {(activeTab === 'floor' || activeTab === 'live') && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
-              )}
-              <Radio className="w-5 h-5 mb-1" />
-              <span className="font-mono text-[9px] font-black tracking-widest uppercase">FLOOR</span>
-            </button>
+
 
             {/* COMMAND PIT */}
             <button
@@ -958,22 +929,7 @@ export default function App() {
                   </button>
 
                   {/* TAB BUTTONS ROW */}
-                  <div className="grid grid-cols-4 gap-3 w-full">
-                    {/* FLOOR */}
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('floor')}
-                      className={`py-2 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                        activeTab === 'floor' || activeTab === 'live'
-                          ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
-                          : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full ${
-                        activeTab === 'floor' || activeTab === 'live' ? 'bg-white animate-pulse' : 'bg-[#141414]/30'
-                      }`}></span>
-                      <span>FLOOR</span>
-                    </button>
+                  <div className="grid grid-cols-3 gap-3 w-full">
 
                     {/* COMMAND PIT */}
                     <button
@@ -1025,45 +981,7 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {(activeTab === 'floor' || activeTab === 'live') && (
-                deviceSize === 'desktop' ? (
-                  <FloorViewDesktop
-                    posts={sortedPosts}
-                    tickets={sortedPosts}
-                    isInitialLoading={isInitialLoading}
-                    isLoadingMore={isLoadingMore}
-                    lastPostElementRef={lastPostElementRef}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                  />
-                ) : deviceSize === 'tablet' ? (
-                  <FloorViewTablet
-                    posts={sortedPosts}
-                    tickets={sortedPosts}
-                    isInitialLoading={isInitialLoading}
-                    isLoadingMore={isLoadingMore}
-                    lastPostElementRef={lastPostElementRef}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                  />
-                ) : (
-                  <FloorViewMobile
-                    posts={sortedPosts}
-                    tickets={sortedPosts}
-                    isInitialLoading={isInitialLoading}
-                    isLoadingMore={isLoadingMore}
-                    lastPostElementRef={lastPostElementRef}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                  />
-                )
-              )}
+
 
               {activeTab === 'telemetry' && (
                 <>
@@ -1316,28 +1234,7 @@ export default function App() {
         token={resetPasswordToken || undefined}
       />
 
-      <FloorRegistrationModal
-        isOpen={isFloorRegisterOpen}
-        initialEmail={floorRegisterEmail}
-        onClose={() => {
-          setIsFloorRegisterOpen(false);
-          if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
-            window.history.replaceState({}, document.title, '/');
-          }
-        }}
-        onSwitchToLogin={() => {
-          setIsFloorRegisterOpen(false);
-          setActiveTab('hub');
-          if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
-            window.history.replaceState({}, document.title, '/');
-          }
-        }}
-        onSuccess={() => {
-          if (window.location.search.includes('register') || window.location.pathname.startsWith('/register')) {
-            window.history.replaceState({}, document.title, '/');
-          }
-        }}
-      />
+
 
       <ApiKeyDisplayModal
         isOpen={showApiKeyModal}
@@ -1353,22 +1250,7 @@ export default function App() {
       {deviceSize === 'mobile' && !isSearchModalOpen && (
         <nav aria-label="Mobile Navigation" className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-[#141414] px-4 py-4 pb-5 shadow-[0_-3px_0px_0px_rgba(20,20,20,1)]">
           <div className="max-w-xs sm:max-w-sm mx-auto flex items-center justify-between">
-            {/* FLOOR */}
-            <button
-              onClick={() => setActiveTab('floor')}
-              className="flex flex-col items-center justify-center cursor-pointer select-none group min-w-[64px]"
-            >
-              <div className={`px-3 py-1 font-mono font-black text-sm leading-none transition-all ${
-                activeTab === 'floor' || activeTab === 'live'
-                  ? 'bg-[#141414] text-white border-b-2 border-r-2 border-[#141414] shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
-                  : 'text-[#141414] border-b-2 border-r-2 border-[#141414] bg-transparent group-hover:bg-[#E4E3E0]'
-              }`}>
-                F
-              </div>
-              <span className="font-mono text-[10px] font-black tracking-widest uppercase text-[#141414] mt-2">
-                FLOOR
-              </span>
-            </button>
+
 
             {/* CMD PIT */}
             <button

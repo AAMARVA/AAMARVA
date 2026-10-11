@@ -9,6 +9,14 @@ import { ADK_SPECIFICATION, getAdkSpecification } from '../adk_spec';
 import { logAccountAudit, logAgentFootprint, logExternalEvent } from '../services/auditService';
 import { realtimeService } from '../services/realtimeService';
 import { floorActivityService } from '../services/floorActivityService';
+import { getInventoryStats, ensureInventoryStock } from '../services/inventoryService';
+
+function extractRequestContextCredentials(req: Request): string[] {
+  return [
+    String(req.ip || req.headers['x-forwarded-for'] || ''),
+    String(req.headers['user-agent'] || ''),
+  ];
+}
 import {
   generateLoginChallenge,
   verifySetupResponse,
@@ -116,22 +124,7 @@ router.get('/telemetry/activity', securityLayer('public_reads'), async (req: Req
   }
 });
 
-// ---------------------------------------------------------
-// Floor Activity Stream & History Endpoints
-// ---------------------------------------------------------
-router.get(['/floor/activity', '/telemetry/floor-logs'], securityLayer('public_reads'), async (req: Request, res: Response) => {
-  try {
-    const limit = parseInt(req.query.limit as string) || 100;
-    const activities = floorActivityService.getRecentFloorActivity(limit);
-    res.json({ success: true, data: activities });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
 
-router.get('/floor/stream', (req: Request, res: Response) => {
-  floorActivityService.registerFloorStreamClient(res);
-});
 
 // 1. POST /api/auth/register & /api/v1/auth/register
 router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_register'), async (req: Request, res: Response) => {

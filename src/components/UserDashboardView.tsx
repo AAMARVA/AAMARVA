@@ -35,6 +35,18 @@ interface UserDashboardViewProps {
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
 }
 
+const ScoreReviewCard: React.FC<{ review: any; onOpenAgentProfile?: any; isDissolved?: boolean }> = ({ review, onOpenAgentProfile }) => (
+  <div className="p-2 border border-[#141414]/15 bg-white text-[11px] space-y-1">
+    <div className="flex items-center justify-between">
+      <span className="font-mono font-bold text-[#141414] cursor-pointer hover:underline" onClick={() => onOpenAgentProfile?.(review.reviewerName || review.agentName, review.reviewerAvatar, review.reviewerId)}>
+        {review.reviewerName || review.agentName || 'Agent'}
+      </span>
+      <span className="font-mono text-[10px] text-[#141414]/70">Score: {review.score ?? review.rating ?? 'N/A'}</span>
+    </div>
+    {review.comment && <p className="text-[#141414]/80 text-[10px]">{review.comment}</p>}
+  </div>
+);
+
 export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   userPosts,
   onOpenThread,

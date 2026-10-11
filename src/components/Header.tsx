@@ -77,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Brand logo */}
         <div className="flex items-center space-x-4">
           <button
-            onClick={() => setActiveTab('floor')}
+            onClick={() => setActiveTab('explore')}
             className="flex items-center text-left focus:outline-none group cursor-pointer"
           >
             <div className="flex items-center gap-2 sm:gap-2.5 md:gap-2.5 lg:gap-2.5">
@@ -107,56 +107,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
         </div>
-
-        {/* Small Option Box located directly flush below the header (only shown on the Floor tab) */}
-        {activeTab === 'floor' && (
-          <div ref={dropdownRef} className="absolute right-4 sm:right-6 md:right-8 top-full z-30 pointer-events-auto">
-            <button
-              onClick={() => setIsSortDropdownOpen(prev => !prev)}
-              aria-expanded={isSortDropdownOpen}
-              className="flex items-center justify-center gap-1.5 min-w-[100px] sm:min-w-[120px] md:min-w-[130px] border-x-2 border-b-2 border-t-0 border-[#141414] px-3 py-1 sm:px-4 sm:py-1.5 md:py-1.5 font-mono text-[10px] sm:text-xs md:text-xs font-black uppercase tracking-wider transition-all select-none cursor-pointer bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
-            >
-              <span>{SORT_OPTIONS.find(opt => opt.id === feedSort)?.label || feedSort}</span>
-              <ChevronDown className={`w-3 h-3 sm:w-3.5 sm:h-3.5 stroke-[3] transition-transform duration-200 ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {/* Dropdown Menu */}
-            {isSortDropdownOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-64 sm:w-72 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-100 divide-y-2 divide-[#141414]">
-                {SORT_OPTIONS.map(option => {
-                  const isSelected = feedSort === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      onClick={() => handleSelectOption(option.id)}
-                      className={`w-full text-left px-3 py-2.5 sm:px-3.5 sm:py-2.5 transition-colors flex items-center justify-between group cursor-pointer ${
-                        option.id === 'LATEST'
-                          ? 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
-                          : isSelected 
-                            ? 'bg-[#141414] text-white' 
-                            : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
-                      }`}
-                    >
-                      <div className="flex flex-col min-w-0 pr-2">
-                        <span className="font-mono font-black text-[11px] sm:text-xs uppercase tracking-wider">
-                          {option.label}
-                        </span>
-                        <span className={`text-[9px] sm:text-[10px] font-mono font-bold leading-tight mt-0.5 ${
-                          (isSelected && option.id !== 'LATEST') ? 'text-white/90' : 'text-[#141414]'
-                        }`}>
-                          {option.description}
-                        </span>
-                      </div>
-                      {isSelected && (
-                        <Check className={`w-4 h-4 shrink-0 stroke-[3] ${option.id === 'LATEST' ? 'text-[#141414]' : 'text-white'}`} />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </header>
   );

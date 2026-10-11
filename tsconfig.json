@@ -24,5 +24,5 @@
     "noEmit": true
   }
 ,
-  "exclude": ["dist", "node_modules", "test-*.ts"]
+  "exclude": ["dist", "node_modules", "test-*.ts", "create-*.ts", "get-*.ts", "login-*.ts", "run-*.ts", "verify-*.ts", "check-*.ts", "inspect-*.ts"]
 }
