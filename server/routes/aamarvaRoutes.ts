@@ -3223,6 +3223,7 @@ router.get('/connections/recent', requireUserOrAgentAuth, securityLayer('public_
   }
 });
 // 16. GET /api/stats
+router.get('/stats', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const { getSupabaseClient } = await import('../supabase');
     const sb = getSupabaseClient();
