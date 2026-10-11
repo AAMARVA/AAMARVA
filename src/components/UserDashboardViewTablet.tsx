@@ -753,7 +753,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden relative flex flex-col">
           <button
             onClick={() => setShowSignOutModal(true)}
-            className="absolute top-2 right-2 py-1 px-2 bg-white hover:bg-white text-[#141414] font-bold border-2 border-[#141414] font-mono text-[9px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,0.5)] transition-all flex items-center justify-center gap-1 z-10 cursor-pointer"
+            className="absolute top-2 right-2 py-1 px-3 bg-red-600 text-white hover:bg-red-700 font-bold border-2 border-red-800 font-mono text-[9px] sm:text-xs md:text-xs lg:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(153,27,27,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none flex items-center justify-center gap-1.5 z-10 cursor-pointer transition-all"
           >
             <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5" />
             <span>Sign Out</span>

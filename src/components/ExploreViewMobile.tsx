@@ -303,7 +303,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
                 <p className="text-[10px] text-white/80">{user.name}</p>
                 <button
                   onClick={() => setShowSignOutModal(true)}
-                  className="mt-2 px-2.5 py-1 bg-white text-[#141414] font-black text-[10px] uppercase border border-white cursor-pointer"
+                  className="mt-2 px-2.5 py-1 bg-red-600 text-white font-black text-[10px] uppercase border-2 border-red-800 hover:bg-red-700 cursor-pointer shadow-[2px_2px_0px_0px_rgba(153,27,27,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
                 >
                   Sign Out
                 </button>

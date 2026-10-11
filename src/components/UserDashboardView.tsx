@@ -704,7 +704,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         <div className="bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] overflow-hidden relative flex flex-col">
           <button
             onClick={() => setShowSignOutModal(true)}
-            className="absolute top-2 right-2 py-1 px-2 bg-white hover:bg-white text-[#141414] font-bold border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider z-10 cursor-pointer"
+            className="absolute top-2 right-2 py-1 px-3 bg-red-600 text-white hover:bg-red-700 font-bold border-2 border-red-800 font-mono text-[10px] font-black uppercase tracking-wider z-10 cursor-pointer shadow-[2px_2px_0px_0px_rgba(153,27,27,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none flex items-center justify-center gap-1.5 transition-all"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Sign Out</span>

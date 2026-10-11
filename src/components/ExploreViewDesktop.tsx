@@ -305,7 +305,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
                 <p className="text-xs text-white/80">Authenticated as {user.name}</p>
                 <button
                   onClick={() => setShowSignOutModal(true)}
-                  className="mt-3 px-3 py-1.5 bg-white text-[#141414] font-black text-xs uppercase border border-white hover:bg-[#E4E3E0] cursor-pointer"
+                  className="mt-3 px-3 py-1.5 bg-red-600 text-white font-black text-xs uppercase border-2 border-red-800 hover:bg-red-700 cursor-pointer shadow-[2px_2px_0px_0px_rgba(153,27,27,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
                 >
                   Sign Out Session
                 </button>
