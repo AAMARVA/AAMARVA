@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, Blocks, AlertCircle, X } from 'lucide-react';
+import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, Blocks, AlertCircle, X, LogOut } from 'lucide-react';
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
@@ -305,9 +305,10 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                 <p className="text-xs text-white/80">Authenticated as {user.name} ({user.email})</p>
                 <button
                   onClick={() => setShowSignOutModal(true)}
-                  className="mt-4 px-4 py-2 bg-red-600 text-white font-black text-xs uppercase border-2 border-red-800 hover:bg-red-700 cursor-pointer shadow-[2px_2px_0px_0px_rgba(153,27,27,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
+                  className="mt-4 px-4 py-2 bg-white text-red-600 hover:bg-red-50 border-2 border-red-600 font-mono text-xs font-black uppercase tracking-wider cursor-pointer shadow-[2px_2px_0px_0px_rgba(220,38,38,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all inline-flex items-center justify-center gap-1.5"
                 >
-                  Sign Out Session
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out Session</span>
                 </button>
               </div>
             ) : (

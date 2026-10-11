@@ -1603,7 +1603,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => setShowDeleteModal(true)}
-              className="py-2 px-4 bg-red-600 text-white font-bold hover:bg-red-700 active:bg-red-800 border-2 border-red-800 font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_rgba(153,27,27,1)] hover:shadow-[5px_5px_0px_0px_rgba(153,27,27,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none focus:outline-none focus:ring-2 focus:ring-red-800 focus:ring-offset-2 transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5"
+              className="py-2 px-4 bg-white text-red-600 border-2 border-red-600 shadow-[3px_3px_0px_0px_rgba(220,38,38,1)] hover:bg-red-600 hover:text-white hover:border-[#141414] hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>{isSlaveAccount ? 'Undeploy Account' : 'Delete Account'}</span>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, AlertCircle, X } from 'lucide-react';
+import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, AlertCircle, X, LogOut } from 'lucide-react';
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
@@ -303,9 +303,10 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
                 <p className="text-[10px] text-white/80">{user.name}</p>
                 <button
                   onClick={() => setShowSignOutModal(true)}
-                  className="mt-2 px-2.5 py-1 bg-white text-red-600 font-black text-[10px] uppercase border-2 border-red-600 hover:bg-red-50 cursor-pointer transition-all"
+                  className="mt-2 px-2.5 py-1 bg-white text-red-600 font-black text-[10px] uppercase border-2 border-red-600 hover:bg-red-50 cursor-pointer transition-all inline-flex items-center justify-center gap-1.5"
                 >
-                  Sign Out
+                  <LogOut className="w-3 h-3" />
+                  <span>Sign Out</span>
                 </button>
               </div>
             ) : (
