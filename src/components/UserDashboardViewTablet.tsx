@@ -1078,13 +1078,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                             {/* Reviews Section inside the card */}
                             {connReviews.length > 0 && (
                               <div className="mt-1 pt-2 border-t border-[#141414]/20 space-y-2 animate-in fade-in duration-300">
-                                {connReviews.map((r: any) => (
-                                  <ScoreReviewCard
-                                    key={r.id || r.reviewId}
-                                    review={r}
-                                    onOpenAgentProfile={onOpenAgentProfile}
-                                  />
-                                ))}
+                                <div className="text-xs text-[#141414]/60 italic font-mono">Reviews unavailable.</div>
                               </div>
                             )}
                           </div>

@@ -2902,211 +2902,202 @@ router.get('/connections/recent', securityLayer('public_reads'), async (req: Req
 });
 
 // POST /api/connections/requests (Agent only)
-router.post('/connections/requests', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { receiverAgentId } = req.body;
-    if (!receiverAgentId) throw new ConnectionError('receiverAgentId is required.', 400, 'MISSING_PARAM');
-    const request = await sendConnectionRequest(req.user!.id, receiverAgentId);
+// router.post('/connections/requests', requireAgentAuth, requireAgent, securityLayer('connection_request'), async (req: AuthenticatedRequest, res: Response) => {
+//   try {
+//     const { receiverAgentId } = req.body;
+//     if (!receiverAgentId) throw new ConnectionError('receiverAgentId is required.', 400, 'MISSING_PARAM');
+//     const request = await sendConnectionRequest(req.user!.id, receiverAgentId);
+//
+//     // Resolve target agent name
+//     let targetName = receiverAgentId;
+//     try {
+//       const sb = getSupabaseClient();
+//       const { data: tu } = await sb.from('users').select('name, agentId').eq('agentId', receiverAgentId).maybeSingle();
+//       if (tu?.name) targetName = tu.name;
+//     } catch (e) {}
+//
+//     // Log footprint for sender
+//     await logAgentFootprint(
+//       req.user!.id, 
+//       'CONNECTION_REQUEST_SENT', 
+//       JSON.stringify({
+//         message: `Initiated handshake with agent ${receiverAgentId}`,
+//         requestId: request.id,
+//         receiverAgentId,
+//         targetAgentId: receiverAgentId,
+//         receiverAgentName: targetName
+//       }), 
+//       request.id
+//     );
+//
+//     // Log external event for receiver
+//     try {
+//       if ((request as any).receiverUserId && (request as any).receiverUserId !== req.user!.id) {
+//         await logExternalEvent((request as any).receiverUserId, 'CONNECTION_REQUEST_RECEIVED', req.user!.agentId || req.user!.id, request.id);
+//       }
+//     } catch (e) {}
+//
+//     // Broadcast floor activity: [Agent Name] requested connection with [Target Agent]
+//     floorActivityService.recordFloorActivity({
+//       agentId: req.user!.agentId || req.user!.id,
+//       agentName: req.user!.name,
+//       avatar: req.user!.avatar,
+//       emailVerified: req.user!.emailVerified,
+//       text: `requested connection with ${targetName}`,
+//       type: 'request',
+//       peerName: targetName,
+//       peerAgentId: receiverAgentId,
+//       entityId: request.id
+//     }).catch(console.warn);
+//
+//     res.status(201).json({ success: true, data: request });
+//   } catch (err: any) {
+//     const status = err.statusCode || (err.message.includes('already pending') || err.message.includes('Already connected') ? 409 : err.message.includes('not found') ? 404 : 400);
+//     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
+//   }
+// });
 
-    // Resolve target agent name
-    let targetName = receiverAgentId;
-    try {
-      const sb = getSupabaseClient();
-      const { data: tu } = await sb.from('users').select('name, agentId').eq('agentId', receiverAgentId).maybeSingle();
-      if (tu?.name) targetName = tu.name;
-    } catch (e) {}
+// GET /api/connections/requests route removed.
 
-    // Log footprint for sender
-    await logAgentFootprint(
-      req.user!.id, 
-      'CONNECTION_REQUEST_SENT', 
-      JSON.stringify({
-        message: `Initiated handshake with agent ${receiverAgentId}`,
-        requestId: request.id,
-        receiverAgentId,
-        targetAgentId: receiverAgentId,
-        receiverAgentName: targetName
-      }), 
-      request.id
-    );
+// // POST /api/connections/requests/:requestId/accept (User or Agent)
+// router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, securityLayer('connection_accept'), async (req: AuthenticatedRequest, res: Response) => {
+//   try {
+//     const requestId = req.params.requestId as string;
+//     const sb = getSupabaseClient();
+// 
+//     // Query pending request before database transaction modifies it
+//     const { data: reqRecord } = await sb.from('connection_requests').select('*').eq('id', requestId).maybeSingle();
+//     const senderUserId = reqRecord?.senderUserId || reqRecord?.sender_user_id;
+// 
+//     const connection: any = await acceptConnectionRequest(requestId, req.user!.id);
+// 
+//     // Log footprint for acceptor
+//     await logAgentFootprint(req.user!.id, 'CONNECTION_REQUEST_ACCEPTED', `Handshake accepted for request ${requestId}`, connection.id);
+// 
+//     // Log external event for original sender
+//     try {
+//       const targetUserId = senderUserId || (
+//         (connection.postOwnerUserId === req.user!.id || connection.post_owner_user_id === req.user!.id)
+//           ? (connection.replyAuthorUserId || connection.reply_author_user_id)
+//           : (connection.postOwnerUserId || connection.post_owner_user_id)
+//       );
+// 
+//       if (targetUserId && targetUserId !== req.user!.id) {
+//         await logExternalEvent(targetUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, connection.id);
+//       }
+//     } catch (e) {}
+// 
+//     // Broadcast floor activity: [Agent Name] accepted connection request from [Peer Agent]
+//     let peerAgentName = reqRecord?.senderAgentId || 'Agent';
+//     try {
+//       if (senderUserId) {
+//         const { data: su } = await sb.from('users').select('name, agentId').eq('id', senderUserId).maybeSingle();
+//         if (su?.name) peerAgentName = su.name;
+//         else if (su?.agentId) peerAgentName = su.agentId;
+//       }
+//     } catch (e) {}
+// 
+//     floorActivityService.recordFloorActivity({
+//       agentId: req.user!.agentId || req.user!.id,
+//       agentName: req.user!.name,
+//       avatar: req.user!.avatar,
+//       emailVerified: req.user!.emailVerified,
+//       text: `accepted connection request from ${peerAgentName}`,
+//       type: 'connection',
+//       peerName: peerAgentName,
+//       entityId: connection.id,
+//       activityKey: `conn:${connection.id}`,
+//       post: connection
+//     }).catch(console.warn);
+// 
+//     const poUserId = connection.postOwnerUserId || connection.post_owner_user_id;
+//     const raUserId = connection.replyAuthorUserId || connection.reply_author_user_id;
+// 
+//     const [poAuth, raAuth] = await Promise.all([
+//       sb.auth.admin.getUserById(poUserId).then(r => r.data?.user),
+//       sb.auth.admin.getUserById(raUserId).then(r => r.data?.user)
+//     ]);
+// 
+//     const poVStatus = poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
+//     const raVStatus = raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
+// 
+//     res.json({ 
+//       success: true, 
+//       data: {
+//         id: connection.id,
+//         connectionId: connection.id,
+//         connectionStatus: 'active',
+//         reviewId: null,
+//         content: null,
+//         postOwnerAgentId: connection.postOwnerAgentId || connection.post_owner_agent_id,
+//         postOwnerVerificationStatus: poVStatus,
+//         replyAuthorAgentId: connection.replyAuthorAgentId || connection.reply_author_agent_id,
+//         replyAuthorVerificationStatus: raVStatus,
+//         createdAt: connection.createdAt || connection.created_at
+//       } 
+//     });
+//   } catch (err: any) {
+//     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : err.message.includes('no longer pending') || err.message.includes('DUPLICATE') ? 409 : err.message.includes('unavailable') ? 503 : 400);
+//     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
+//   }
+// });
 
-    // Log external event for receiver
-    try {
-      if ((request as any).receiverUserId && (request as any).receiverUserId !== req.user!.id) {
-        await logExternalEvent((request as any).receiverUserId, 'CONNECTION_REQUEST_RECEIVED', req.user!.agentId || req.user!.id, request.id);
-      }
-    } catch (e) {}
-
-    // Broadcast floor activity: [Agent Name] requested connection with [Target Agent]
-    floorActivityService.recordFloorActivity({
-      agentId: req.user!.agentId || req.user!.id,
-      agentName: req.user!.name,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `requested connection with ${targetName}`,
-      type: 'request',
-      peerName: targetName,
-      peerAgentId: receiverAgentId,
-      entityId: request.id
-    }).catch(console.warn);
-
-    res.status(201).json({ success: true, data: request });
-  } catch (err: any) {
-    const status = err.statusCode || (err.message.includes('already pending') || err.message.includes('Already connected') ? 409 : err.message.includes('not found') ? 404 : 400);
-    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
-  }
-});
-
-// GET /api/connections/requests (User or Agent)
-router.get('/connections/requests', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const requests = await getConnectionRequests(req.user!.id);
-    res.json({ success: true, data: requests });
-  } catch (err: any) {
-    const status = err.statusCode || 400;
-    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
-  }
-});
-
-// POST /api/connections/requests/:requestId/accept (User or Agent)
-router.post('/connections/requests/:requestId/accept', requireUserOrAgentAuth, securityLayer('connection_accept'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const requestId = req.params.requestId as string;
-    const sb = getSupabaseClient();
-
-    // Query pending request before database transaction modifies it
-    const { data: reqRecord } = await sb.from('connection_requests').select('*').eq('id', requestId).maybeSingle();
-    const senderUserId = reqRecord?.senderUserId || reqRecord?.sender_user_id;
-
-    const connection: any = await acceptConnectionRequest(requestId, req.user!.id);
-
-    // Log footprint for acceptor
-    await logAgentFootprint(req.user!.id, 'CONNECTION_REQUEST_ACCEPTED', `Handshake accepted for request ${requestId}`, connection.id);
-
-    // Log external event for original sender
-    try {
-      const targetUserId = senderUserId || (
-        (connection.postOwnerUserId === req.user!.id || connection.post_owner_user_id === req.user!.id)
-          ? (connection.replyAuthorUserId || connection.reply_author_user_id)
-          : (connection.postOwnerUserId || connection.post_owner_user_id)
-      );
-
-      if (targetUserId && targetUserId !== req.user!.id) {
-        await logExternalEvent(targetUserId, 'CONNECTION_ACCEPTED_BY_TARGET', req.user!.agentId || req.user!.id, connection.id);
-      }
-    } catch (e) {}
-
-    // Broadcast floor activity: [Agent Name] accepted connection request from [Peer Agent]
-    let peerAgentName = reqRecord?.senderAgentId || 'Agent';
-    try {
-      if (senderUserId) {
-        const { data: su } = await sb.from('users').select('name, agentId').eq('id', senderUserId).maybeSingle();
-        if (su?.name) peerAgentName = su.name;
-        else if (su?.agentId) peerAgentName = su.agentId;
-      }
-    } catch (e) {}
-
-    floorActivityService.recordFloorActivity({
-      agentId: req.user!.agentId || req.user!.id,
-      agentName: req.user!.name,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `accepted connection request from ${peerAgentName}`,
-      type: 'connection',
-      peerName: peerAgentName,
-      entityId: connection.id,
-      activityKey: `conn:${connection.id}`,
-      post: connection
-    }).catch(console.warn);
-
-    const poUserId = connection.postOwnerUserId || connection.post_owner_user_id;
-    const raUserId = connection.replyAuthorUserId || connection.reply_author_user_id;
-
-    const [poAuth, raAuth] = await Promise.all([
-      sb.auth.admin.getUserById(poUserId).then(r => r.data?.user),
-      sb.auth.admin.getUserById(raUserId).then(r => r.data?.user)
-    ]);
-
-    const poVStatus = poAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-    const raVStatus = raAuth?.app_metadata?.emailVerified ? 'verified' : 'not verified';
-
-    res.json({ 
-      success: true, 
-      data: {
-        id: connection.id,
-        connectionId: connection.id,
-        connectionStatus: 'active',
-        reviewId: null,
-        content: null,
-        postOwnerAgentId: connection.postOwnerAgentId || connection.post_owner_agent_id,
-        postOwnerVerificationStatus: poVStatus,
-        replyAuthorAgentId: connection.replyAuthorAgentId || connection.reply_author_agent_id,
-        replyAuthorVerificationStatus: raVStatus,
-        createdAt: connection.createdAt || connection.created_at
-      } 
-    });
-  } catch (err: any) {
-    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : err.message.includes('no longer pending') || err.message.includes('DUPLICATE') ? 409 : err.message.includes('unavailable') ? 503 : 400);
-    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
-  }
-});
-
-// DELETE /api/connections/requests/:requestId (User or Agent)
-router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const requestId = req.params.requestId as string;
-
-    // Authorization Audit
-    const sb = getSupabaseClient();
-    const { data: request } = await sb.from('connection_requests').select('senderUserId, receiverUserId').eq('id', requestId).maybeSingle();
-    if (request && request.senderUserId !== req.user!.id && request.receiverUserId !== req.user!.id) {
-      await SecurityService.getInstance().recordViolation(req.user!.id, req.user!.agentId, 'AUDIT_CONNECTION_REQUESTS', SecuritySeverity.S2_ABUSE, `IDOR attempt: User ${req.user!.id} tried to delete request ${requestId}`);
-      return res.status(403).json({ success: false, error: 'Forbidden: Not a participant of this request.' });
-    }
-
-    const result = await deleteConnectionRequest(requestId, req.user!.id);
-
-    // Log deletion
-    await logAgentFootprint(req.user!.id, 'CONNECTION_REJECTED', `Connection request ${requestId} retracted`, requestId);
-
-    // Broadcast floor activity: [Agent Name] declined connection request from [Peer Agent]
-    let peerName = 'Agent';
-    try {
-      const otherUserId = request?.senderUserId === req.user!.id ? request?.receiverUserId : request?.senderUserId;
-      if (otherUserId) {
-        const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
-        if (ou?.name) peerName = ou.name;
-        else if (ou?.agentId) peerName = ou.agentId;
-
-        // Inbound event for request partner
-        try {
-          await sb.from('external_events').insert({
-            user_id: otherUserId,
-            type: 'CONNECTION_REJECTED',
-            sender_id: req.user!.agentId || req.user!.id,
-            target_id: requestId,
-            created_at: new Date().toISOString()
-          });
-        } catch (e) {}
-      }
-    } catch (e) {}
-
-    floorActivityService.recordFloorActivity({
-      agentId: req.user!.agentId || req.user!.id,
-      agentName: req.user!.name,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `declined connection request from ${peerName}`,
-      type: 'CONNECTION_REQUEST_REJECTED',
-      peerName
-    }).catch(console.warn);
-
-    res.json(result);
-  } catch (err: any) {
-    const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
-    res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
-  }
-});
+// // DELETE /api/connections/requests/:requestId (User or Agent)
+// router.delete('/connections/requests/:requestId', requireUserOrAgentAuth, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
+//   try {
+//     const requestId = req.params.requestId as string;
+// 
+//     // Authorization Audit
+//     const sb = getSupabaseClient();
+//     const { data: request } = await sb.from('connection_requests').select('senderUserId, receiverUserId').eq('id', requestId).maybeSingle();
+//     if (request && request.senderUserId !== req.user!.id && request.receiverUserId !== req.user!.id) {
+//       await SecurityService.getInstance().recordViolation(req.user!.id, req.user!.agentId, 'AUDIT_CONNECTION_REQUESTS', SecuritySeverity.S2_ABUSE, `IDOR attempt: User ${req.user!.id} tried to delete request ${requestId}`);
+//       return res.status(403).json({ success: false, error: 'Forbidden: Not a participant of this request.' });
+//     }
+// 
+//     const result = await deleteConnectionRequest(requestId, req.user!.id);
+// 
+//     // Log deletion
+//     await logAgentFootprint(req.user!.id, 'CONNECTION_REJECTED', `Connection request ${requestId} retracted`, requestId);
+// 
+//     // Broadcast floor activity: [Agent Name] declined connection request from [Peer Agent]
+//     let peerName = 'Agent';
+//     try {
+//       const otherUserId = request?.senderUserId === req.user!.id ? request?.receiverUserId : request?.senderUserId;
+//       if (otherUserId) {
+//         const { data: ou } = await sb.from('users').select('name, agentId').eq('id', otherUserId).maybeSingle();
+//         if (ou?.name) peerName = ou.name;
+//         else if (ou?.agentId) peerName = ou.agentId;
+// 
+//         // Inbound event for request partner
+//         try {
+//           await sb.from('external_events').insert({
+//             user_id: otherUserId,
+//             type: 'CONNECTION_REJECTED',
+//             sender_id: req.user!.agentId || req.user!.id,
+//             target_id: requestId,
+//             created_at: new Date().toISOString()
+//           });
+//         } catch (e) {}
+//       }
+//     } catch (e) {}
+// 
+//     floorActivityService.recordFloorActivity({
+//       agentId: req.user!.agentId || req.user!.id,
+//       agentName: req.user!.name,
+//       avatar: req.user!.avatar,
+//       emailVerified: req.user!.emailVerified,
+//       text: `declined connection request from ${peerName}`,
+//       type: 'CONNECTION_REQUEST_REJECTED',
+//       peerName
+//     }).catch(console.warn);
+// 
+//     res.json(result);
+//   } catch (err: any) {
+//     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
+//     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
+//   }
+// });
 
 // 16. GET /api/stats
 router.get('/stats', securityLayer('public_reads'), async (req: Request, res: Response) => {

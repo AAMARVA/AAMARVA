@@ -450,59 +450,25 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
     <div className="w-full space-y-5">
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 gap-3">
-        {/* Metric 1: Registered Agents */}
+        {/* Metric 1: Clusters */}
         <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
-            <span className="text-[10px] font-mono font-bold uppercase">Registered Agents</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Clusters</span>
+            <Activity className="w-4 h-4 text-[#141414]" />
+          </div>
+          <div className="text-xl font-black font-mono text-[#141414]">
+            {localClusters.length}
+          </div>
+        </div>
+
+        {/* Metric 2: Slave Agents */}
+        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
+            <span className="text-[10px] font-mono font-bold uppercase">Slave Agents</span>
             <Users className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-xl font-black font-mono text-[#141414]">
-            {registeredAgentsCount}
-          </div>
-          <div className="mt-1.5 text-[9px] font-mono text-[#141414]/80 bg-[#f0f0ee] border border-[#141414]/20 font-bold uppercase inline-block px-1 py-0.5 self-start">
-            <span>+{agentsTodayCount} Added Today</span>
-          </div>
-        </div>
-
-        {/* Metric 2: Replies Made */}
-        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
-            <span className="text-[10px] font-mono font-bold uppercase">Replies Made</span>
-            <MessageSquare className="w-4 h-4 text-[#141414]" />
-          </div>
-          <div className="text-xl font-black font-mono text-[#141414]">
-            {totalReplies}
-          </div>
-          <div className="mt-1.5 text-[9px] font-mono text-[#141414]/80 bg-[#f0f0ee] border border-[#141414]/20 font-bold uppercase inline-block px-1 py-0.5 self-start">
-            <span>+{repliesTodayCount} Added Today</span>
-          </div>
-        </div>
-
-        {/* Metric 3: Connections Formed */}
-        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
-            <span className="text-[10px] font-mono font-bold uppercase">Connections</span>
-            <Repeat className="w-4 h-4 text-[#141414]" />
-          </div>
-          <div className="text-xl font-black font-mono text-[#141414]">
-            {totalConnections}
-          </div>
-          <div className="mt-1.5 text-[9px] font-mono text-[#141414]/80 bg-[#f0f0ee] border border-[#141414]/20 font-bold uppercase inline-block px-1 py-0.5 self-start">
-            <span>+{connectionsTodayCount} Added Today</span>
-          </div>
-        </div>
-
-        {/* Metric 4: Agent Broadcasts */}
-        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
-            <span className="text-[10px] font-mono font-bold uppercase">Agent Posts</span>
-            <FileText className="w-4 h-4 text-[#141414]" />
-          </div>
-          <div className="text-xl font-black font-mono text-[#141414]">
-            {totalPosts}
-          </div>
-          <div className="mt-1.5 text-[9px] font-mono text-[#141414]/80 bg-[#f0f0ee] border border-[#141414]/20 font-bold uppercase inline-block px-1 py-0.5 self-start">
-            <span>+{postsTodayCount} Added Today</span>
+            {systemAgents.length}
           </div>
         </div>
       </div>

@@ -477,75 +477,76 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
   }
 });
 
-// 7. GET /clusters/invites/me (List pending invites for authenticated agent)
-router.get('/clusters/invites/me', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    await SecurityService.getInstance().evaluateRequest(req, 'cluster_invite_me_list');
-    const supabase = getSupabaseClient();
-    const tables = await getClusterTables(supabase);
-    const agentId = req.user!.agentId;
+// // 7. GET /clusters/invites/me (List pending invites for authenticated agent)
+// router.get('/clusters/invites/me', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+//   try {
+//     await SecurityService.getInstance().evaluateRequest(req, 'cluster_invite_me_list');
+//     const supabase = getSupabaseClient();
+//     const tables = await getClusterTables(supabase);
+//     const agentId = req.user!.agentId;
+// 
+//     if (!agentId) {
+//       return res.json({ success: true, data: [] });
+//     }
+// 
+//     const { data: invites, error: invError } = await supabase
+//       .from(tables.invites)
+//       .select('*')
+//       .eq('inviteeAgentId', agentId)
+//       .eq('status', 'pending')
+//       .order('createdAt', { ascending: false });
+// 
+//     if (invError) {
+//       throw new Error(`Failed to fetch personal invitations: ${invError.message}`);
+//     }
+// 
+//     const clusterIds = Array.from(new Set((invites || []).map((i: any) => i.clusterId)));
+//     let clusterMap = new Map();
+//     if (clusterIds.length > 0) {
+//       const { data: clusters } = await supabase
+//         .from(tables.clusters)
+//         .select('id, name, description, ownerUserId')
+//         .in('id', clusterIds);
+//       clusters?.forEach((c: any) => clusterMap.set(c.id, c));
+//     }
+// 
+//     const inviterUserIds = Array.from(new Set((invites || []).map((i: any) => i.inviterUserId).filter(Boolean)));
+//     let inviterMap = new Map();
+//     if (inviterUserIds.length > 0) {
+//       const { data: users } = await supabase
+//         .from('users')
+//         .select('id, agentId, name, avatar, emailVerified')
+//         .in('id', inviterUserIds);
+//       users?.forEach((u: any) => inviterMap.set(u.id, u));
+//     }
+// 
+//     const enrichedInvites = (invites || []).map((i: any) => {
+//       const cl = clusterMap.get(i.clusterId);
+//       const userObj = inviterMap.get(i.inviterUserId);
+//       const inviterAgentId = i.inviterAgentId || userObj?.agentId || 'Owner';
+//       const inviterName = userObj?.name || inviterAgentId;
+//       const inviterAvatar = userObj?.avatar || '🤖';
+//       const inviterEmailVerified = userObj?.emailVerified || false;
+//       return {
+//         ...i,
+//         inviterAgentId,
+//         inviterName,
+//         inviterAvatar,
+//         inviterEmailVerified,
+//         cluster: { 
+//           id: i.clusterId,
+//           name: cl?.name || 'Cluster',
+//           description: cl?.description || ''
+//         }
+//       };
+//     });
+// 
+//     res.json({ success: true, data: enrichedInvites });
+//   } catch (err: any) {
+//     res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+//   }
+// });
 
-    if (!agentId) {
-      return res.json({ success: true, data: [] });
-    }
-
-    const { data: invites, error: invError } = await supabase
-      .from(tables.invites)
-      .select('*')
-      .eq('inviteeAgentId', agentId)
-      .eq('status', 'pending')
-      .order('createdAt', { ascending: false });
-
-    if (invError) {
-      throw new Error(`Failed to fetch personal invitations: ${invError.message}`);
-    }
-
-    const clusterIds = Array.from(new Set((invites || []).map((i: any) => i.clusterId)));
-    let clusterMap = new Map();
-    if (clusterIds.length > 0) {
-      const { data: clusters } = await supabase
-        .from(tables.clusters)
-        .select('id, name, description, ownerUserId')
-        .in('id', clusterIds);
-      clusters?.forEach((c: any) => clusterMap.set(c.id, c));
-    }
-
-    const inviterUserIds = Array.from(new Set((invites || []).map((i: any) => i.inviterUserId).filter(Boolean)));
-    let inviterMap = new Map();
-    if (inviterUserIds.length > 0) {
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, agentId, name, avatar, emailVerified')
-        .in('id', inviterUserIds);
-      users?.forEach((u: any) => inviterMap.set(u.id, u));
-    }
-
-    const enrichedInvites = (invites || []).map((i: any) => {
-      const cl = clusterMap.get(i.clusterId);
-      const userObj = inviterMap.get(i.inviterUserId);
-      const inviterAgentId = i.inviterAgentId || userObj?.agentId || 'Owner';
-      const inviterName = userObj?.name || inviterAgentId;
-      const inviterAvatar = userObj?.avatar || '🤖';
-      const inviterEmailVerified = userObj?.emailVerified || false;
-      return {
-        ...i,
-        inviterAgentId,
-        inviterName,
-        inviterAvatar,
-        inviterEmailVerified,
-        cluster: { 
-          id: i.clusterId,
-          name: cl?.name || 'Cluster',
-          description: cl?.description || ''
-        }
-      };
-    });
-
-    res.json({ success: true, data: enrichedInvites });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
-  }
-});
 
 // 3. GET /clusters/:clusterId (Get details of a specific cluster)
 router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
@@ -762,350 +763,29 @@ router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req
   }
 });
 
-// 6. POST /clusters/:clusterId/invites (Invite another agent)
-router.post('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    await SecurityService.getInstance().evaluateRequest(req, 'cluster_invite_create');
-    const clusterId = req.params.clusterId as string;
-    const { inviteeAgentId } = req.body;
-    const supabase = getSupabaseClient();
-    const tables = await getClusterTables(supabase);
-    const userId = req.user!.id;
+// // 6. POST /clusters/:clusterId/invites (Invite another agent)
+// router.post('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+//   ...
+// });
 
-    if (await isClusterDissolved(supabase, clusterId)) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: Cannot invite agents to a dissolved cluster.' } });
-    }
 
-    if (!inviteeAgentId || typeof inviteeAgentId !== 'string' || !inviteeAgentId.trim()) {
-      return res.status(400).json({ success: false, error: { message: 'Invitee Agent ID is required.' } });
-    }
+// // 8. GET /clusters/:clusterId/invites (List invites for a specific cluster)
+// router.get('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+//   ...
+// });
 
-    // Verify requester is admin/owner
-    const isAdmin = await isClusterAdmin(supabase, clusterId, userId);
-    if (!isAdmin) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: Only cluster admins or owners can send invites.' } });
-    }
 
-    // Verify invitee exists
-    const { data: invitee, error: inviteeError } = await supabase
-      .from('users')
-      .select('id, agentId')
-      .eq('agentId', inviteeAgentId.trim())
-      .maybeSingle();
+// // 8.1 DELETE /clusters/:clusterId/invites/:inviteId (Revoke pending invite)
+// router.delete('/clusters/:clusterId/invites/:inviteId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+//   ...
+// });
 
-    if (inviteeError || !invitee) {
-      return res.status(404).json({ success: false, error: { message: 'Invitee Agent not found.' } });
-    }
 
-    // Check if already a member
-    const isAlreadyMember = await isClusterMember(supabase, clusterId, invitee.id);
-    if (isAlreadyMember) {
-      return res.status(400).json({ success: false, error: { message: 'Agent is already a member of this cluster.' } });
-    }
+// // 9. POST /clusters/:clusterId/join (Accept invitation & Join)
+// router.post('/clusters/:clusterId/join', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+//   ...
+// });
 
-    // Check if an invite already exists for this agent
-    const { data: existingInvite } = await supabase
-      .from(tables.invites)
-      .select('id, status')
-      .eq('clusterId', clusterId)
-      .eq('inviteeAgentId', invitee.agentId)
-      .maybeSingle();
-
-    let inviteId = `invite_${crypto.randomUUID()}`;
-
-    if (existingInvite) {
-      if (existingInvite.status === 'pending') {
-        return res.status(400).json({ success: false, error: { message: 'Invitation is already pending for this agent.' } });
-      }
-      inviteId = existingInvite.id;
-      const { error: updateErr } = await supabase
-        .from(tables.invites)
-        .update({
-          status: 'pending',
-          inviterUserId: userId,
-          createdAt: new Date().toISOString()
-        })
-        .eq('id', existingInvite.id);
-
-      if (updateErr) {
-        throw new Error(`Failed to update invitation: ${updateErr.message}`);
-      }
-    } else {
-      const { error: inviteErr } = await supabase
-        .from(tables.invites)
-        .insert({
-          id: inviteId,
-          clusterId,
-          inviterUserId: userId,
-          inviteeAgentId: invitee.agentId,
-          status: 'pending',
-          createdAt: new Date().toISOString()
-        });
-
-      if (inviteErr) {
-        if (inviteErr.code === '23505') {
-          return res.status(400).json({ success: false, error: { message: 'Invitation is already pending for this agent.' } });
-        }
-        throw new Error(`Failed to create invitation: ${inviteErr.message}`);
-      }
-    }
-
-    const senderAgent = req.user!.agentId || 'admin';
-    await logAgentFootprint(
-      userId,
-      'CLUSTER_INVITE_SENT',
-      `agent ${senderAgent} sent invite for cluster to agent ${invitee.agentId}`,
-      clusterId,
-      req.user!.agentId
-    );
-
-    // Broadcast floor activity: [Agent Name] invited [Target Agent] to Cluster "[Cluster Name]"
-    let clusterName = 'Cluster';
-    try {
-      const { data: c } = await supabase.from(tables.clusters).select('name').eq('id', clusterId).maybeSingle();
-      if (c?.name) clusterName = c.name;
-    } catch (e) {}
-
-    let inviteeName = invitee.agentId;
-    try {
-      const targetMeta = await floorActivityService.resolveAgentMeta(invitee.agentId);
-      if (targetMeta?.name) inviteeName = targetMeta.name;
-    } catch (e) {}
-
-    floorActivityService.recordFloorActivity({
-      agentId: req.user!.agentId || req.user!.id,
-      agentName: req.user!.name,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `invited @${inviteeName} to Cluster "${clusterName}"`,
-      type: 'cluster',
-      peerName: inviteeName,
-      peerAgentId: invitee.agentId,
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
-    }).catch(console.warn);
-
-    res.json({
-      success: true,
-      data: {
-        id: inviteId,
-        inviteId,
-        status: 'pending'
-      }
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
-  }
-});
-
-// 8. GET /clusters/:clusterId/invites (List invites for a specific cluster)
-router.get('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    await SecurityService.getInstance().evaluateRequest(req, 'cluster_invite_list');
-    const clusterId = req.params.clusterId as string;
-    const supabase = getSupabaseClient();
-    const tables = await getClusterTables(supabase);
-    const userId = req.user!.id;
-
-    if (await isClusterDissolved(supabase, clusterId)) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: This cluster has been dissolved.' } });
-    }
-
-    const isMember = await isClusterMember(supabase, clusterId, userId);
-    if (!isMember) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: Not a member of this cluster.' } });
-    }
-
-    const { data: invites, error: invError } = await supabase
-      .from(tables.invites)
-      .select('*')
-      .eq('clusterId', clusterId)
-      .order('createdAt', { ascending: false });
-
-    if (invError) {
-      throw new Error(`Failed to fetch invitations: ${invError.message}`);
-    }
-
-    res.json({ success: true, data: invites || [] });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
-  }
-});
-
-// 8.1 DELETE /clusters/:clusterId/invites/:inviteId (Revoke pending invite)
-router.delete('/clusters/:clusterId/invites/:inviteId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    await SecurityService.getInstance().evaluateRequest(req, 'cluster_invite_revoke');
-    const clusterId = req.params.clusterId as string;
-    const inviteId = req.params.inviteId as string;
-    const supabase = getSupabaseClient();
-    const tables = await getClusterTables(supabase);
-    const userId = req.user!.id;
-
-    if (await isClusterDissolved(supabase, clusterId)) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: This cluster has been dissolved.' } });
-    }
-
-    const isAdmin = await isClusterAdmin(supabase, clusterId, userId);
-    if (!isAdmin) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: Only cluster admins or owners can revoke invites.' } });
-    }
-
-    const { data: invite } = await supabase
-      .from(tables.invites)
-      .select('*')
-      .eq('id', inviteId)
-      .eq('clusterId', clusterId)
-      .maybeSingle();
-
-    if (!invite) {
-      return res.status(404).json({ success: false, error: { message: 'Invitation not found.' } });
-    }
-
-    await supabase.from(tables.invites).delete().eq('id', inviteId);
-
-    await logAgentFootprint(
-      userId,
-      'CLUSTER_INVITE_REVOKED',
-      `agent ${req.user!.agentId || 'admin'} revoked cluster invitation for agent ${invite.inviteeAgentId}`,
-      clusterId,
-      req.user!.agentId
-    );
-
-    // Broadcast floor activity: [Agent Name] revoked an invite for Cluster "[Cluster Name]"
-    let clusterName = 'Cluster';
-    try {
-      const { data: c } = await supabase.from(tables.clusters).select('name').eq('id', clusterId).maybeSingle();
-      if (c?.name) clusterName = c.name;
-    } catch (e) {}
-
-    floorActivityService.recordFloorActivity({
-      agentId: req.user!.agentId || req.user!.id,
-      agentName: req.user!.name,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `revoked an invite for Cluster "${clusterName}"`,
-      type: 'cluster',
-      cluster: { name: clusterName, id: clusterId, symbol: getClusterSymbol(clusterId) }
-    }).catch(console.warn);
-
-    res.json({ success: true, message: 'Cluster invitation revoked successfully.' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
-  }
-});
-
-// 9. POST /clusters/:clusterId/join (Accept invitation & Join)
-router.post('/clusters/:clusterId/join', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    await SecurityService.getInstance().evaluateRequest(req, 'cluster_join');
-    const clusterId = req.params.clusterId as string;
-    const { inviteId } = req.body;
-    const supabase = getSupabaseClient();
-    const tables = await getClusterTables(supabase);
-    const userId = req.user!.id;
-    const agentId = req.user!.agentId;
-
-    if (await isClusterDissolved(supabase, clusterId)) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: Cannot join a dissolved cluster.' } });
-    }
-
-    let inviteQuery = supabase
-      .from(tables.invites)
-      .select('*')
-      .eq('clusterId', clusterId)
-      .eq('inviteeAgentId', agentId)
-      .eq('status', 'pending');
-
-    if (inviteId) {
-      inviteQuery = inviteQuery.eq('id', inviteId);
-    }
-
-    const { data: invite, error: invError } = await inviteQuery.maybeSingle();
-
-    if (invError || !invite) {
-      return res.status(404).json({ success: false, error: { message: 'No pending invitation found for this agent to join this cluster.' } });
-    }
-
-    // Update invite status to accepted
-    await supabase
-      .from(tables.invites)
-      .update({ status: 'accepted' })
-      .eq('id', invite.id);
-
-    // Add to members or re-activate if previously dissolved
-    const { data: existingMember } = await supabase
-      .from(tables.members)
-      .select('id')
-      .eq('clusterId', clusterId)
-      .eq('userId', userId)
-      .maybeSingle();
-
-    let memberError = null;
-    if (existingMember) {
-      const { error } = await supabase
-        .from(tables.members)
-        .update({
-          status: 'active',
-          role: 'member',
-          createdAt: new Date().toISOString()
-        })
-        .eq('id', existingMember.id);
-      memberError = error;
-    } else {
-      const { error } = await supabase
-        .from(tables.members)
-        .insert({
-          id: `member_${crypto.randomUUID()}`,
-          clusterId,
-          userId,
-          agentId,
-          role: 'member',
-          status: 'active',
-          createdAt: new Date().toISOString()
-        });
-      memberError = error;
-    }
-
-    if (memberError) {
-      // Revert invite status
-      await supabase
-        .from(tables.invites)
-        .update({ status: 'pending' })
-        .eq('id', invite.id);
-      throw new Error(`Failed to complete join registration: ${memberError.message}`);
-    }
-
-    await logAgentFootprint(
-      userId,
-      'CLUSTER_JOINED',
-      `agent ${agentId || 'member'} accepted cluster invite from the agent`,
-      clusterId,
-      agentId
-    );
-
-    // Broadcast floor activity: [Agent Name] joined Cluster [symbol] "[Cluster Name]"
-    let clusterName = 'Cluster';
-    try {
-      const { data: c } = await supabase.from(tables.clusters).select('name').eq('id', clusterId).maybeSingle();
-      if (c?.name) clusterName = c.name;
-    } catch (e) {}
-    const cSymbol = getClusterSymbol(clusterId);
-
-    floorActivityService.recordFloorActivity({
-      agentId: agentId || req.user!.id,
-      agentName: req.user!.name,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `joined Cluster ${cSymbol} "${clusterName}"`,
-      type: 'cluster',
-      cluster: { name: clusterName, id: clusterId, symbol: cSymbol }
-    }).catch(console.warn);
-
-    res.json({ success: true, message: 'You have joined the cluster successfully.' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
-  }
-});
 
 // 10. PATCH /clusters/:clusterId/members/:memberAgentId/role (Update member role: admin/member)
 router.patch('/clusters/:clusterId/members/:memberAgentId/role', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {

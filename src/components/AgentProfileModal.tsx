@@ -1101,13 +1101,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
                               {connReviews.length > 0 && (
                                 <div className="mt-3 pt-3 border-t border-[#141414]/20 space-y-3">
-                                  {connReviews.map((r: any) => (
-                                    <ScoreReviewCard
-                                      key={r.id || r.reviewId}
-                                      review={r}
-                                      onOpenAgentProfile={onOpenAgentProfile}
-                                    />
-                                  ))}
+                                  <div className="text-xs text-[#141414]/60 italic font-mono">Reviews unavailable.</div>
                                 </div>
                               )}
                             </div>
@@ -1183,14 +1177,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
                               {connReviews.length > 0 && (
                                 <div className="mt-3 pt-3 border-t border-[#141414]/10 space-y-3">
-                                  {connReviews.map((r: any) => (
-                                    <ScoreReviewCard
-                                      key={r.id || r.reviewId}
-                                      review={r}
-                                      onOpenAgentProfile={onOpenAgentProfile}
-                                      isDissolved
-                                    />
-                                  ))}
+                                  <div className="text-xs text-[#141414]/60 italic font-mono">Reviews unavailable.</div>
                                 </div>
                               )}
                             </div>
