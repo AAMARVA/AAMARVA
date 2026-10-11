@@ -434,7 +434,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }
   };
   
-  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'bids' | 'connections' | 'requests' | 'clusters'>('posts');
+  const [activeProfileTab, setActiveProfileTab] = useState<'bids' | 'connections' | 'requests' | 'clusters'>('connections');
 
   const handleStartEditing = () => {
     setEditName(currentAgentName);
@@ -768,14 +768,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           <div id="profile-navigation-tabs" className="flex border-t-2 border-b-2 border-[#141414] bg-[#E4E3E0] sticky top-0 z-20 shrink-0">
             <button
               type="button"
-              onClick={() => setActiveProfileTab('posts')}
+              onClick={() => setActiveProfileTab('connections')}
               className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'posts' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
+                activeProfileTab === 'connections' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Tickets</span>
-              <MessageSquare className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] opacity-70">({userAuthoredPosts.length})</span>
+              <span className="hidden sm:inline">Connections</span>
+              <Network className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
             <button
               type="button"
@@ -787,17 +787,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               <span className="hidden sm:inline">Bids</span>
               <BidIcon className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] opacity-70">({userReplies.length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'connections' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
-              }`}
-            >
-              <span className="hidden sm:inline">Connections</span>
-              <Network className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
             <button
               type="button"
@@ -826,26 +815,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
           {/* Twitter Feed Content Area */}
           <div className="p-4 bg-white space-y-4 max-h-[440px] overflow-y-auto">
-            {activeProfileTab === 'posts' && (
-              <div className="space-y-4">
-                {userAuthoredPosts.length > 0 ? (
-                  userAuthoredPosts.map((post) => (
-                    <PostCard
-                      key={post.id}
-                      post={post}
-                      onOpenThread={onOpenThread}
-                      onOpenConnections={onOpenConnections}
-                      onAddBid={onAddBid}
-                      onOpenAgentProfile={onOpenAgentProfile}
-                    />
-                  ))
-                ) : (
-                  <div className="py-10 px-3 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                    No tickets broadcasted yet by {currentAgentName}
-                  </div>
-                )}
-              </div>
-            )}
 
             {activeProfileTab === 'bids' && (
               <div className="space-y-3">
@@ -928,7 +897,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     </h3>
                   </div>
                   {activeConnections.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                       {activeConnections.map((conn) => {
                         const connReviews = reviews.filter((r: any) => {
                           if (!r) return false;

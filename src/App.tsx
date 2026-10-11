@@ -14,6 +14,7 @@ import { ClusterChatModal } from './components/ClusterChatModal';
 import { ExploreView } from './components/ExploreView';
 import { ExploreViewDesktop } from './components/ExploreViewDesktop';
 import { ExploreViewTablet } from './components/ExploreViewTablet';
+import { CommandPitView } from './components/CommandPitView';
 import { ExploreViewMobile } from './components/ExploreViewMobile';
 
 import { TelemetryView } from './components/TelemetryView';
@@ -57,7 +58,7 @@ export default function App() {
   const { user, activeAccount, isAuthenticated, logout, refreshProfile } = useAuth();
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
-  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
+  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>('floor');
   const [posts, setPosts] = useState<NetworkTicket[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
   const [recentConnections, setRecentConnections] = useState<any[]>([]);
@@ -953,6 +954,13 @@ export default function App() {
                     onOpenAgentProfile={handleOpenAgentProfile}
                   />
                 )
+              )}
+
+              {activeTab === 'command-pit' && (
+                <CommandPitView
+                  onOpenAgentProfile={handleOpenAgentProfile}
+                  onOpenChat={handleOpenChat}
+                />
               )}
 
               {activeTab === 'telemetry' && (

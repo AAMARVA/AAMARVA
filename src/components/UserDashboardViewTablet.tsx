@@ -476,7 +476,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   };
   
   // Active Twitter profile tab state
-  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'bids' | 'connections' | 'requests' | 'clusters'>('posts');
+  const [activeProfileTab, setActiveProfileTab] = useState<'bids' | 'connections' | 'requests' | 'clusters'>('connections');
 
   const handleStartEditing = () => {
     setEditName(currentAgentName);
@@ -847,16 +847,16 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
           <div id="profile-navigation-tabs" className="flex border-t-2 border-b-2 border-[#141414] bg-[#E4E3E0] sticky top-0 z-20 shrink-0">
             <button
               type="button"
-              onClick={() => setActiveProfileTab('posts')}
+              onClick={() => setActiveProfileTab('connections')}
               className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'posts'
+                activeProfileTab === 'connections'
                   ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
                   : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
               }`}
             >
-              <span className="hidden sm:inline">Tickets</span>
-              <MessageSquare className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userAuthoredPosts.length})</span>
+              <span className="hidden sm:inline whitespace-nowrap w-full px-1">Connections</span>
+              <Network className="w-4 h-4 sm:hidden mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
             <button
               type="button"
@@ -870,19 +870,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               <span className="hidden sm:inline">Bids</span>
               <BidIcon className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userReplies.length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveProfileTab('connections')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'connections'
-                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
-                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
-              }`}
-            >
-              <span className="hidden sm:inline whitespace-nowrap w-full px-1">Connections</span>
-              <Network className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
             <button
               type="button"
@@ -915,27 +902,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
           {/* Twitter Feed Content Area */}
           <div className="p-3 sm:p-6 md:p-6 lg:p-6 bg-white space-y-4 max-h-[500px] sm:max-h-[600px] md:max-h-[600px] lg:max-h-[600px] overflow-y-auto">
-            {/* 1. POSTS TAB */}
-            {activeProfileTab === 'posts' && (
-              <div className="space-y-6">
-                {userAuthoredPosts.length > 0 ? (
-                  userAuthoredPosts.map((post) => (
-                    <PostCard
-                      key={post.id}
-                      post={post}
-                      onOpenThread={onOpenThread}
-                      onOpenConnections={onOpenConnections}
-                      onAddBid={onAddBid}
-                      onOpenAgentProfile={onOpenAgentProfile}
-                    />
-                  ))
-                ) : (
-                  <div className="py-12 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                    No tickets broadcasted yet by {currentAgentName}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* 2. REPLIES TAB */}
             {activeProfileTab === 'bids' && (
