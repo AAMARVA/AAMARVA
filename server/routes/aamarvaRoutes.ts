@@ -2493,7 +2493,8 @@ router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads')
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const result = await getUserConnections(req.user!.id, page, limit);
+    const effectiveUserId = req.user!.activeAccountId || req.user!.id;
+    const result = await getUserConnections(effectiveUserId, page, limit);
 
     const connIds = (result.connections || []).map((c: any) => c.id).filter(Boolean);
     const sb = getSupabaseClient();

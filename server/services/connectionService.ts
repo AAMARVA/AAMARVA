@@ -192,13 +192,18 @@ export async function getUserConnections(userId: string, page: number, limit: nu
 
   const callerMasterId = currentUser.master_id && !currentUser.is_master_primary ? currentUser.master_id : currentUser.id;
 
-  // 1. Fetch all users in the same fleet (Master + all Slave accounts in the fleet)
-  const { data: fleetUsersData } = await supabase
-    .from('users')
-    .select('id, agentId, name, avatar, emailVerified, master_id, is_master_primary')
-    .or(`id.eq.${callerMasterId},master_id.eq.${callerMasterId}`);
+  // 1. Fetch Master user record & all Slave accounts in the fleet
+  const [masterRes, slaveRes] = await Promise.all([
+    supabase.from('users').select('id, agentId, name, avatar, emailVerified, master_id, is_master_primary').eq('id', callerMasterId).maybeSingle(),
+    supabase.from('users').select('id, agentId, name, avatar, emailVerified, master_id, is_master_primary').eq('master_id', callerMasterId)
+  ]);
 
-  const fleetUsers = (fleetUsersData || []).filter((u: any) => u.id !== currentUser.id);
+  const fleetUsersData = [
+    ...(masterRes.data ? [masterRes.data] : []),
+    ...(slaveRes.data || [])
+  ];
+
+  const fleetUsers = fleetUsersData.filter((u: any) => u.id !== currentUser.id);
   const fleetUserIds = new Set(fleetUsers.map((u: any) => u.id));
   const fleetAgentIds = new Set(fleetUsers.map((u: any) => (u.agentId || '').toUpperCase()));
 
