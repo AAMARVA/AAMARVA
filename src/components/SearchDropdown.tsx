@@ -11,6 +11,8 @@ interface SearchDropdownProps {
   onOpenConnections?: (post: NetworkTicket) => void;
   onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
+  onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
   activeMainTab?: string;
   onSetActiveMainTab?: (tab: any) => void;
 }
@@ -23,11 +25,13 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   onOpenConnections,
   onAddBid,
   onOpenAgentProfile,
+  onOpenClusterMembers,
+  onOpenClusterChat,
   activeMainTab,
   onSetActiveMainTab
 }) => {
   const [query, setQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'accounts' | 'posts'>('posts');
+  const [activeTab, setActiveTab] = useState<'agents' | 'clusters' | 'posts'>('agents');
   const [agents, setAgents] = useState<any[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -110,7 +114,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
               <Search className="w-4 h-4 text-neutral-400 shrink-0" />
               <input 
                 type="text" 
-                placeholder="Search tickets or accounts"
+                placeholder="Search agent, cluster, or ticket"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 autoFocus
@@ -134,21 +138,27 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
           </div>
         </div>
 
-        {/* Search Filter Tabs when typing */}
+        {/* Search Filter Tabs when typing: Agent, Cluster, Ticket */}
         {query.trim().length > 0 && (
           <div className="flex border-b border-white/10 bg-black shrink-0 px-4 sm:px-6">
-            <div className="flex w-full sm:w-auto gap-8">
+            <div className="flex w-full justify-between sm:justify-start sm:gap-12">
+              <button
+                onClick={() => setActiveTab('agents')}
+                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'agents' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+              >
+                Agent
+              </button>
+              <button
+                onClick={() => setActiveTab('clusters')}
+                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'clusters' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+              >
+                Cluster
+              </button>
               <button
                 onClick={() => setActiveTab('posts')}
                 className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'posts' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
               >
-                Tickets
-              </button>
-              <button
-                onClick={() => setActiveTab('accounts')}
-                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'accounts' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
-              >
-                Accounts
+                Ticket
               </button>
             </div>
           </div>
@@ -167,6 +177,8 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 onOpenConnections={(p) => { onClose(); onOpenConnections?.(p); }}
                 onAddBid={onAddBid}
                 onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
+                onOpenClusterMembers={(cluster) => { onClose(); onOpenClusterMembers?.(cluster); }}
+                onOpenClusterChat={(cluster) => { onClose(); onOpenClusterChat?.(cluster); }}
               />
             </div>
           ) : (

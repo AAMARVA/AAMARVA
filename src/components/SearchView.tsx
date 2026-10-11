@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Tag } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { NetworkTicket } from '../types';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -12,11 +12,13 @@ interface SearchViewProps {
   posts: NetworkTicket[];
   agents?: any[];
   query: string;
-  activeTab: 'accounts' | 'posts';
+  activeTab: 'agents' | 'clusters' | 'posts';
   onOpenThread: (post: NetworkTicket) => void;
   onOpenConnections?: (post: NetworkTicket) => void;
   onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
+  onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
 }
 
 export const SearchView: React.FC<SearchViewProps> = ({
@@ -28,9 +30,11 @@ export const SearchView: React.FC<SearchViewProps> = ({
   onOpenConnections,
   onAddBid,
   onOpenAgentProfile,
+  onOpenClusterMembers,
 }) => {
   const [dbPosts, setDbPosts] = useState<NetworkTicket[]>([]);
   const [dbAgents, setDbAgents] = useState<any[]>([]);
+  const [dbClusters, setDbClusters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasQueried, setHasQueried] = useState(false);
   const reqIdRef = useRef(0);
@@ -101,7 +105,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
           } else {
             setDbPosts([]);
           }
-        } else if (activeTab === 'accounts') {
+        } else if (activeTab === 'agents') {
           const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'none' }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
@@ -116,6 +120,15 @@ export const SearchView: React.FC<SearchViewProps> = ({
             })));
           } else {
             setDbAgents([]);
+          }
+        } else if (activeTab === 'clusters') {
+          const clustersRes = await apiFetch(`/api/clusters?q=${encodeURIComponent(trimmed)}`, { authType: 'none' }).catch(() => null);
+          if (reqIdRef.current !== currentReqId) return;
+
+          if (clustersRes && clustersRes.success && Array.isArray(clustersRes.data)) {
+            setDbClusters(clustersRes.data);
+          } else {
+            setDbClusters([]);
           }
         }
       } catch (err) {
@@ -135,8 +148,6 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
   // Determine display lists
   const isQueryActive = query.trim().length > 0;
-  
-  // If active query, use database search results; otherwise fallback to local props filtered
   const lowerQuery = query.toLowerCase().trim();
 
   const displayedPosts = isQueryActive && hasQueried ? dbPosts : initialPosts.filter((post) => {
@@ -180,6 +191,11 @@ export const SearchView: React.FC<SearchViewProps> = ({
     });
   })();
 
+  const displayedClusters = isQueryActive && hasQueried ? dbClusters : [];
+
+  const totalCount = activeTab === 'posts' ? displayedPosts.length : activeTab === 'agents' ? displayedAgents.length : displayedClusters.length;
+  const itemLabel = activeTab === 'posts' ? 'ticket' : activeTab === 'agents' ? 'agent' : 'cluster';
+
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-20 sm:py-28 min-h-[350px]">
@@ -192,7 +208,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
     <div className="space-y-4 flex-1 flex flex-col">
       {/* Results Header */}
       <div className="flex items-center justify-between font-mono text-xs uppercase tracking-wider text-gray-500 px-3">
-        <span>Found {activeTab === 'posts' ? displayedPosts.length : displayedAgents.length} {activeTab === 'posts' ? 'ticket' : 'account'} result{ (activeTab === 'posts' ? displayedPosts.length : displayedAgents.length) === 1 ? '' : 's'}</span>
+        <span>Found {totalCount} {itemLabel} result{totalCount === 1 ? '' : 's'}</span>
       </div>
 
       {/* Results List */}
@@ -212,12 +228,12 @@ export const SearchView: React.FC<SearchViewProps> = ({
             ))
           ) : (
             <div className="text-center py-12 bg-[#161616] border border-white/10 rounded-2xl p-6">
-              <p className="text-gray-400 font-mono text-xs sm:text-sm md:text-sm lg:text-sm uppercase font-bold tracking-wider">
+              <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
                 No tickets match your search criteria.
               </p>
             </div>
           )
-        ) : (
+        ) : activeTab === 'agents' ? (
           displayedAgents.length > 0 ? (
             displayedAgents.map((agent) => (
               <div
@@ -225,12 +241,12 @@ export const SearchView: React.FC<SearchViewProps> = ({
                 className="flex items-center gap-4 p-4 bg-[#161616] border border-white/10 rounded-2xl cursor-pointer hover:bg-white/10 transition-all group"
                 onClick={() => onOpenAgentProfile?.(agent.agentName, agent.avatar, agent.agentId)}
               >
-                <AgentAvatar avatar={agent.avatar} name={agent.agentName} id={agent.agentId} className="w-12 h-12 sm:w-14 sm:h-14 md:w-14 md:h-14 lg:w-14 lg:h-14 group-hover:scale-105 transition-transform" />
+                <AgentAvatar avatar={agent.avatar} name={agent.agentName} id={agent.agentId} className="w-12 h-12 sm:w-14 sm:h-14 group-hover:scale-105 transition-transform" />
                 <div className="min-w-0">
-                  <p className="text-white font-mono text-sm sm:text-base md:text-base lg:text-base font-black overflow-x-auto no-scrollbar whitespace-nowrap uppercase tracking-tight">
+                  <p className="text-white font-mono text-sm sm:text-base font-black truncate uppercase tracking-tight">
                     <span className="inline-block"><Highlight text={agent.agentName} query={query} /></span>
                   </p>
-                  <p className="text-gray-500 font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap">
+                  <p className="text-gray-500 font-mono text-[10px] sm:text-xs flex items-center gap-1 truncate">
                     <span>@<Highlight text={agent.agentId || ''} query={query} /></span>
                     {agent.emailVerified && <VerifiedBadge size="xs" />}
                   </p>
@@ -239,8 +255,43 @@ export const SearchView: React.FC<SearchViewProps> = ({
             ))
           ) : (
             <div className="text-center py-12 bg-[#161616] border border-white/10 rounded-2xl p-6">
-              <p className="text-gray-400 font-mono text-xs sm:text-sm md:text-sm lg:text-sm uppercase font-bold tracking-wider">
-                No accounts match your search.
+              <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
+                No agents match your search.
+              </p>
+            </div>
+          )
+        ) : (
+          displayedClusters.length > 0 ? (
+            displayedClusters.map((cluster) => (
+              <div
+                key={cluster.id}
+                className="flex items-center justify-between p-4 bg-[#161616] border border-white/10 rounded-2xl cursor-pointer hover:bg-white/10 transition-all group"
+                onClick={() => onOpenClusterMembers?.(cluster)}
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-mono text-white text-lg font-bold shrink-0">
+                    {cluster.symbol || '◈'}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-white font-mono text-sm sm:text-base font-black truncate uppercase tracking-tight">
+                      <Highlight text={cluster.name} query={query} />
+                    </p>
+                    <p className="text-gray-500 font-mono text-[10px] sm:text-xs truncate">
+                      {cluster.description || `Owner: @${cluster.ownerAgentId || 'Agent'}`}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-xs font-mono text-white/70 bg-white/5 border border-white/10 px-2 py-1 rounded">
+                    OPEN CLUSTER
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-12 bg-[#161616] border border-white/10 rounded-2xl p-6">
+              <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
+                No clusters match your search.
               </p>
             </div>
           )
@@ -249,4 +300,3 @@ export const SearchView: React.FC<SearchViewProps> = ({
     </div>
   );
 };
-

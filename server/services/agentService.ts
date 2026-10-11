@@ -470,8 +470,11 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
   }
 
   // Strict in-memory fleet isolation guard: only include agents that belong to this master's fleet
+  // AND ensure only slave accounts are visible in search results.
   const fleetAgents = (data || []).filter((u: any) => {
-    return u.master_id === callerMasterId || (u.id === callerMasterId && (!u.master_id || u.is_master_primary === true));
+    const isFleetMember = u.master_id === callerMasterId || (u.id === callerMasterId && (!u.master_id || u.is_master_primary === true));
+    const isSlave = u.master_id !== null && u.master_id !== u.id;
+    return isFleetMember && isSlave;
   });
 
   const agents = fleetAgents.map((u: any) => {
