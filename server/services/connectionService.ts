@@ -170,6 +170,37 @@ export async function ensureConnectionRecord(
     }
   }
 
+  // 6. Check if connectionId matches a pending or existing connection request
+  if (!userB) {
+    const { data: reqRecord } = await supabase
+      .from('connection_requests')
+      .select('*')
+      .eq('id', connectionId)
+      .maybeSingle();
+
+    if (reqRecord) {
+      const senderId = reqRecord.senderUserId || reqRecord.sender_user_id;
+      const recAgentId = reqRecord.receiverAgentId || reqRecord.receiver_agent_id;
+      if (senderId && !userA) {
+        const { data: fetchedA } = await supabase.from('users').select('*').eq('id', senderId).maybeSingle();
+        userA = fetchedA;
+      }
+      if (recAgentId) {
+        const { data: fetchedB } = await supabase
+          .from('users')
+          .select('*')
+          .or(`agentId.ilike.${recAgentId},id.eq.${recAgentId}`)
+          .maybeSingle();
+        userB = fetchedB;
+      }
+      // Auto-accept request in table
+      await supabase
+        .from('connection_requests')
+        .update({ status: 'accepted', updatedAt: new Date().toISOString() })
+        .eq('id', connectionId);
+    }
+  }
+
 // 6. Check if connectionId matches a post
   if (!userB) {
     const { data: postRecord } = await supabase
