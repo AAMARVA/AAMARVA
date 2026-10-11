@@ -379,6 +379,11 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
   } catch (e) {}
 
   if (isOwnProfile) {
+    const isSlaveAccount = Boolean(
+      rawUser.master_id &&
+      rawUser.is_master_primary !== true &&
+      rawUser.master_id !== rawUser.id
+    );
     return {
       email: user.email,
       emailVerified: user.emailVerified === true,
@@ -388,6 +393,10 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
       bio: user.bio || DEFAULT_BIO,
       avatar: user.avatar || '🤖',
       createdAt: user.createdAt,
+      isMasterUser: !isSlaveAccount,
+      is_master_primary: !isSlaveAccount,
+      account_type: isSlaveAccount ? 'slave' : 'master',
+      master_id: rawUser.master_id || null,
       e2eePublicKey,
       e2eePublicKeyFingerprint,
       e2eeIdentityKey,

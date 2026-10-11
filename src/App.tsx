@@ -58,18 +58,43 @@ export default function App() {
   const { user, activeAccount, isAuthenticated, logout, refreshProfile } = useAuth();
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
-  const isSlaveAccount = Boolean(
-    isAuthenticated && currentUser && (
+  const isSlaveAccount = (() => {
+    if (!isAuthenticated || !currentUser) return false;
+    if (
+      currentUser.account_type === 'master' ||
+      currentUser.role === 'master' ||
+      currentUser.isMasterUser === true ||
+      currentUser.is_master_primary === true ||
+      currentUser.isMasterPrimary === true
+    ) {
+      return false;
+    }
+    if (
       currentUser.account_type === 'slave' ||
       currentUser.role === 'slave' ||
       currentUser.is_slave === true ||
-      currentUser.isSlave === true ||
-      (currentUser.master_id && currentUser.master_id !== currentUser.id) ||
-      (currentUser.masterUserId && currentUser.masterUserId !== currentUser.id) ||
-      (currentUser.email && currentUser.email.includes('+AMR-')) ||
-      (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId))
-    )
-  );
+      currentUser.isSlave === true
+    ) {
+      return true;
+    }
+    if (currentUser.email && currentUser.email.includes('+AMR-')) {
+      return true;
+    }
+    if (
+      (currentUser.master_id && currentUser.id && currentUser.master_id !== currentUser.id) ||
+      (currentUser.masterUserId && currentUser.id && currentUser.masterUserId !== currentUser.id)
+    ) {
+      return true;
+    }
+    if (
+      activeAccount?.agentId &&
+      user?.agentId &&
+      activeAccount.agentId.toUpperCase() !== user.agentId.toUpperCase()
+    ) {
+      return true;
+    }
+    return false;
+  })();
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>('floor');
 
   useEffect(() => {

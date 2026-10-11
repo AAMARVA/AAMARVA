@@ -567,12 +567,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const masterId = currentUser?.master_id || currentUser?.masterUserId || user?.id;
 
     const isSlave = !!(
-      (currentUser?.master_id && currentUser.master_id !== currentUser.id) ||
-      (currentUser?.masterUserId && currentUser.masterUserId !== currentUser.id) ||
+      (currentUser?.master_id && currentUser?.id && currentUser.master_id !== currentUser.id) ||
+      (currentUser?.masterUserId && currentUser?.id && currentUser.masterUserId !== currentUser.id) ||
       currentUser?.account_type === 'slave' ||
       currentUser?.role === 'slave' ||
       (currentUser?.email && currentUser.email.includes('+AMR-')) ||
-      (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId))
+      (activeAccount?.agentId && user?.agentId && activeAccount.agentId.toUpperCase() !== user.agentId.toUpperCase())
     );
 
     if (isSlave) {
