@@ -849,7 +849,7 @@ export default function App() {
                   </button>
 
                   {/* TAB BUTTONS ROW */}
-                  <div className="grid grid-cols-4 gap-3 w-full">
+                  <div className={`grid ${currentUser?.isMasterUser ? 'grid-cols-4' : 'grid-cols-3'} gap-3 w-full`}>
                     {/* FLOOR */}
                     <button
                       type="button"
@@ -867,20 +867,23 @@ export default function App() {
                     </button>
 
                     {/* COMMAND PIT */}
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('command-pit')}
-                      className={`py-2 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                        activeTab === 'command-pit'
-                          ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
-                          : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full ${
-                        activeTab === 'command-pit' ? 'bg-white animate-pulse' : 'bg-[#141414]/30'
-                      }`}></span>
-                      <span>COMMAND PIT</span>
-                    </button>
+                    {console.log('CurrentUser:', currentUser, 'isMasterUser:', currentUser?.isMasterUser)}
+                    {currentUser?.isMasterUser === true && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('command-pit')}
+                        className={`py-2 px-3 font-mono font-black text-xs uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          activeTab === 'command-pit'
+                            ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                            : 'bg-white text-[#141414] hover:bg-[#E4E3E0] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${
+                          activeTab === 'command-pit' ? 'bg-white animate-pulse' : 'bg-[#141414]/30'
+                        }`}></span>
+                        <span>COMMAND PIT</span>
+                      </button>
+                    )}
 
                     {/* TELEMETRY */}
                     <button
@@ -1125,7 +1128,6 @@ export default function App() {
         onOpenAgentProfile={handleOpenAgentProfile}
         onOpenClusterMembers={handleOpenClusterMembers}
         onAddBid={handleAddReply}
-        onOpenChat={handleOpenChat}
       />
 
 
@@ -1251,7 +1253,7 @@ export default function App() {
       {/* Mobile Bottom Navigation Bar for quick tab switching on smartphones */}
       {deviceSize === 'mobile' && !isSearchModalOpen && (
         <nav aria-label="Mobile Navigation" className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-[#141414] px-4 py-4 pb-5 shadow-[0_-3px_0px_0px_rgba(20,20,20,1)]">
-          <div className="max-w-xs sm:max-w-sm mx-auto flex items-center justify-between">
+          <div className="max-w-xs sm:max-w-sm mx-auto flex items-center justify-around">
             {/* FLOOR */}
             <button
               onClick={() => setActiveTab('floor')}
@@ -1270,21 +1272,23 @@ export default function App() {
             </button>
 
             {/* CMD PIT */}
-            <button
-              onClick={() => setActiveTab('command-pit')}
-              className="flex flex-col items-center justify-center cursor-pointer select-none group min-w-[64px]"
-            >
-              <div className={`px-3 py-1 font-mono font-black text-sm leading-none transition-all ${
-                activeTab === 'command-pit'
-                  ? 'bg-[#141414] text-white border-b-2 border-r-2 border-[#141414] shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
-                  : 'text-[#141414] border-b-2 border-r-2 border-[#141414] bg-transparent group-hover:bg-[#E4E3E0]'
-              }`}>
-                C
-              </div>
-              <span className="font-mono text-[10px] font-black tracking-widest uppercase text-[#141414] mt-2">
-                CMD
-              </span>
-            </button>
+            {currentUser?.isMasterUser && (
+              <button
+                onClick={() => setActiveTab('command-pit')}
+                className="flex flex-col items-center justify-center cursor-pointer select-none group min-w-[64px]"
+              >
+                <div className={`px-3 py-1 font-mono font-black text-sm leading-none transition-all ${
+                  activeTab === 'command-pit'
+                    ? 'bg-[#141414] text-white border-b-2 border-r-2 border-[#141414] shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)]'
+                    : 'text-[#141414] border-b-2 border-r-2 border-[#141414] bg-transparent group-hover:bg-[#E4E3E0]'
+                }`}>
+                  C
+                </div>
+                <span className="font-mono text-[10px] font-black tracking-widest uppercase text-[#141414] mt-2">
+                  CMD
+                </span>
+              </button>
+            )}
 
             {/* TELEMETRY */}
             <button

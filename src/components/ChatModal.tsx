@@ -160,8 +160,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       await sendPrivateMessageApi(connectionId, newMessage, user.agentId, { password: userPassword || undefined });
       setNewMessage('');
       await fetchAndDecryptMessages();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to send message:', err);
+      alert(`Failed to send message: ${err.message || 'Unknown error'}`);
     } finally {
       setIsSending(false);
     }
