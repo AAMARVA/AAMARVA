@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
+import { BrutalistLoader } from './BrutalistLoader';
 import { Plus, X } from 'lucide-react';
 
 interface CommandPitViewProps {
@@ -14,6 +15,8 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
 }) => {
   const [activeConnections, setActiveConnections] = useState<any[]>([]);
   const [clusters, setClusters] = useState<any[]>([]);
+  const [isLoadingConnections, setIsLoadingConnections] = useState<boolean>(true);
+  const [isLoadingClusters, setIsLoadingClusters] = useState<boolean>(true);
   const [mobileTab, setMobileTab] = useState<'connections' | 'clusters'>('connections');
   const [isNewClusterOpen, setIsNewClusterOpen] = useState(false);
   const [newClusterName, setNewClusterName] = useState('');
@@ -22,16 +25,21 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   const [createClusterError, setCreateClusterError] = useState<string | null>(null);
 
   const fetchClusters = useCallback(() => {
+    setIsLoadingClusters(true);
     apiFetch('/api/clusters', { authType: 'human' })
       .then((res) => {
         if (res?.success && Array.isArray(res.data)) {
           setClusters(res.data);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        setIsLoadingClusters(false);
+      });
   }, []);
 
   const fetchConnectionsAndFleet = useCallback(async () => {
+    setIsLoadingConnections(true);
     try {
       const [connRes, masterRes] = await Promise.allSettled([
         apiFetch('/api/connections', { authType: 'human' }),
@@ -129,6 +137,8 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
       setActiveConnections(mergedList);
     } catch (err) {
       console.warn('Failed to fetch connections and fleet:', err);
+    } finally {
+      setIsLoadingConnections(false);
     }
   }, []);
 
@@ -186,7 +196,9 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
     <div className="h-[calc(100dvh-175px)] sm:h-[calc(100dvh-150px)] md:h-[calc(100dvh-135px)] max-h-[calc(100dvh-135px)] flex flex-col p-2 sm:p-4 md:p-6 overflow-hidden">
       {/* Title */}
       <div className="shrink-0 mb-3 flex items-center justify-between">
-        <h2 className="font-mono text-lg sm:text-xl font-black uppercase text-[#141414]">Command Pit</h2>
+        <h2 className="font-mono text-lg sm:text-xl font-black uppercase text-[#141414] inline-block border-b-2 border-[#141414] pb-1">
+          Command Pit
+        </h2>
       </div>
 
       {/* Mobile Selector for Small Screens */}
@@ -225,7 +237,11 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
             </h3>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">
-            {activeConnections.length > 0 ? (
+            {isLoadingConnections ? (
+              <div className="py-12 flex flex-col items-center justify-center">
+                <BrutalistLoader text="Synchronizing Connections" size="sm" />
+              </div>
+            ) : activeConnections.length > 0 ? (
               activeConnections.map((conn) => (
                 <div
                   key={conn.id || conn.agentId}
@@ -307,7 +323,11 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">
-            {clusters.length > 0 ? (
+            {isLoadingClusters ? (
+              <div className="py-12 flex flex-col items-center justify-center">
+                <BrutalistLoader text="Synchronizing Clusters" size="sm" />
+              </div>
+            ) : clusters.length > 0 ? (
               clusters.map((cluster) => (
                 <div key={cluster.id} className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
                   <span className="font-black text-xs uppercase">{cluster.name}</span>
