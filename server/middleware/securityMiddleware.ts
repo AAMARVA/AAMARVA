@@ -37,7 +37,7 @@ export const securityMiddleware = (req: Request, res: Response, next: NextFuncti
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https:",
     connectSrc,
-    "frame-ancestors 'self' https://*.aistudio.google.com https://aistudio.google.com",
+    "frame-ancestors 'self' https://*.aistudio.google.com https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.run.app",
     "object-src 'none'",
     "base-uri 'self'"
   ].join('; ');

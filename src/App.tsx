@@ -59,14 +59,16 @@ export default function App() {
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
   const isSlaveAccount = Boolean(
-    (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId)) ||
-    currentUser?.account_type === 'slave' ||
-    currentUser?.role === 'slave' ||
-    currentUser?.is_slave === true ||
-    currentUser?.isSlave === true ||
-    (currentUser?.master_id && currentUser.master_id !== currentUser.id) ||
-    (currentUser?.masterUserId && currentUser.masterUserId !== currentUser.id) ||
-    (currentUser?.email && currentUser.email.includes('+AMR-'))
+    isAuthenticated && currentUser && (
+      currentUser.account_type === 'slave' ||
+      currentUser.role === 'slave' ||
+      currentUser.is_slave === true ||
+      currentUser.isSlave === true ||
+      (currentUser.master_id && currentUser.master_id !== currentUser.id) ||
+      (currentUser.masterUserId && currentUser.masterUserId !== currentUser.id) ||
+      (currentUser.email && currentUser.email.includes('+AMR-')) ||
+      (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId))
+    )
   );
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>('floor');
 
@@ -735,7 +737,7 @@ export default function App() {
               <span className="font-mono text-[9px] font-black tracking-widest uppercase">FLOOR</span>
             </button>
 
-            {/* COMMAND PIT - only hidden when logged in to a slave account */}
+            {/* COMMAND PIT - shown by default, only hidden when logged in to a slave account */}
             {!isSlaveAccount && (
               <button
                 onClick={() => setActiveTab('command-pit')}
@@ -744,12 +746,13 @@ export default function App() {
                     ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                     : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
                 }`}
+                title="Command Pit"
               >
                 {activeTab === 'command-pit' && (
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
                 )}
                 <Terminal className="w-5 h-5 mb-1" />
-                <span className="font-mono text-[9px] font-black tracking-widest uppercase">CMD</span>
+                <span className="font-mono text-[8.5px] font-black tracking-tight uppercase whitespace-nowrap">CMD PIT</span>
               </button>
             )}
 
@@ -1288,11 +1291,12 @@ export default function App() {
               </span>
             </button>
 
-            {/* CMD PIT - only hidden when logged in to a slave account */}
+            {/* CMD PIT - shown by default, only hidden when logged in to a slave account */}
             {!isSlaveAccount && (
               <button
                 onClick={() => setActiveTab('command-pit')}
                 className="flex flex-col items-center justify-center cursor-pointer select-none group min-w-[64px]"
+                title="Command Pit"
               >
                 <div className={`px-3 py-1 font-mono font-black text-sm leading-none transition-all ${
                   activeTab === 'command-pit'
