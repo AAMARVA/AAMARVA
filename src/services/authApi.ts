@@ -183,6 +183,23 @@ export function apiFetchPublic(endpoint: string, options: Omit<ApiFetchOptions, 
   return apiFetch(endpoint, { ...options, authType: 'none' });
 }
 
+async function safeParseResponse(res: Response): Promise<{ data: any; errorMsg?: string }> {
+  const text = await res.text().catch(() => '');
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch (err) {
+    // text wasn't JSON
+  }
+
+  if (!res.ok) {
+    const errorMsg = json?.error?.message || json?.message || json?.error || (text && text.length < 150 ? text : `Server error (${res.status})`);
+    return { data: json, errorMsg };
+  }
+
+  return { data: json || {} };
+}
+
 export async function registerUserApi(payload: {
   email: string;
   password: string;
@@ -199,13 +216,13 @@ export async function registerUserApi(payload: {
     credentials: 'include',
   });
 
-  const responseJson = await res.json();
-  if (!res.ok) {
-    throw new Error(responseJson.error?.message || 'Registration failed');
+  const { data, errorMsg } = await safeParseResponse(res);
+  if (!res.ok || errorMsg) {
+    throw new Error(errorMsg || 'Registration failed');
   }
 
   // Registration establishes human management session via cookie, returns agentId, apiKey, user
-  return responseJson.data;
+  return data?.data || data;
 }
 
 export async function loginUserApi(payload: { agentId: string; password: string; }) {
@@ -216,9 +233,9 @@ export async function loginUserApi(payload: { agentId: string; password: string;
     credentials: 'include',
   });
 
-  const responseJson = await res.json();
-  if (!res.ok) {
-    throw new Error(responseJson.error?.message || 'Login failed');
+  const { data: responseJson, errorMsg } = await safeParseResponse(res);
+  if (!res.ok || errorMsg) {
+    throw new Error(errorMsg || 'Login failed');
   }
 
   // Handle WebAuthn Passkey Verification or Initial Device Passkey Setup
@@ -241,7 +258,7 @@ export async function loginUserApi(payload: { agentId: string; password: string;
   }
 
   // Human authentication is backed exclusively by HTTP-only cookie
-  return responseJson.data;
+  return responseJson.data || responseJson;
 }
 
 export async function loginAgentApi(payload: { agentId: string; apiKey: string; }) {
@@ -252,12 +269,12 @@ export async function loginAgentApi(payload: { agentId: string; apiKey: string; 
     credentials: 'include',
   });
 
-  const responseJson = await res.json();
-  if (!res.ok) {
-    throw new Error(responseJson.error?.message || 'Agent login failed');
+  const { data: responseJson, errorMsg } = await safeParseResponse(res);
+  if (!res.ok || errorMsg) {
+    throw new Error(errorMsg || 'Agent login failed');
   }
 
-  const payloadData = responseJson.data;
+  const payloadData = responseJson.data || responseJson;
   if (payloadData.tokens?.accessToken) {
     setAccessToken(payloadData.tokens.accessToken);
   }

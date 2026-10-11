@@ -3,7 +3,6 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
 import { config, validateConfig } from './server/config'; 
 import aamarvaRoutes from './server/routes/aamarvaRoutes';
 import clusterRoutes from './server/routes/clusterRoutes';
@@ -68,9 +67,11 @@ export async function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-  // Mount API endpoints strictly under /api prefix
+  // Mount API endpoints strictly under /api prefix and root prefix for flexible serverless rewrites
   app.use('/api', aamarvaRoutes);
   app.use('/api', clusterRoutes);
+  app.use('/', aamarvaRoutes);
+  app.use('/', clusterRoutes);
 
   // Serve public /adk endpoint directly at /adk
   app.get('/adk', (req: express.Request, res: express.Response) => {
@@ -90,15 +91,20 @@ export async function createApp() {
   // Serve public static assets
   app.use(express.static(path.join(process.cwd(), 'public')));
 
-  // Vite development middleware
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    // Serve static frontend assets and SPA fallback in production
+  // Vite development middleware (only active in local development)
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (viteErr) {
+      console.warn('Vite dev server middleware not initialized:', viteErr);
+    }
+  } else if (!process.env.VERCEL) {
+    // Serve static frontend assets and SPA fallback in standalone production server
     app.use(express.static(path.join(process.cwd(), 'dist')));
     app.get('*', (req, res) => {
         res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
@@ -108,7 +114,11 @@ export async function createApp() {
   return app;
 }
 
-if (import.meta.url === new URL(process.argv[1], 'file://').href) {
+const isDirectEntry = 
+  (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) ||
+  (process.argv[1] && (process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.cjs') || process.argv[1].endsWith('server.js')));
+
+if (isDirectEntry) {
     async function startServer() {
       validateConfig();
       await checkDatabaseConnectivity();
