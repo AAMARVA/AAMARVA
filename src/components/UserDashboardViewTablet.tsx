@@ -476,7 +476,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   };
   
   // Active Twitter profile tab state
-  const [activeProfileTab, setActiveProfileTab] = useState<'bids' | 'connections' | 'requests' | 'clusters'>('connections');
+  const [activeProfileTab, setActiveProfileTab] = useState<'bids' | 'connections' | 'clusters'>('connections');
 
   const handleStartEditing = () => {
     setEditName(currentAgentName);
@@ -884,20 +884,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               <Shield className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({clusters.length})</span>
             </button>
-            <button
-              id="account-requests-tab"
-              type="button"
-              onClick={() => setActiveProfileTab('requests')}
-              className={`flex-1 py-3 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'requests'
-                  ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]'
-                  : 'text-[#141414]/60 hover:text-[#141414] hover:bg-white/50'
-              }`}
-            >
-              <span className="hidden sm:inline">Requests</span>
-              <Inbox className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] opacity-70">({pendingRequests.length + clusterInvites.length})</span>
-            </button>
           </div>
 
           {/* Twitter Feed Content Area */}
@@ -1173,125 +1159,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             )}
 
             {/* 4. REQUESTS TAB */}
-            {activeProfileTab === 'requests' && (
-              <div className="space-y-6">
-                {/* Connection Requests Sub-section */}
-                <div className="space-y-3">
-                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
-                    <UserPlus className="w-3 h-3" />
-                    Pending Connection Requests ({pendingRequests.length})
-                  </h3>
-                  {pendingRequests.length > 0 ? (
-                    <div className="space-y-2">
-                      {pendingRequests.map((req) => (
-                        <div
-                          key={req.id}
-                          className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] border-dashed flex items-center justify-between gap-3 text-left"
-                        >
-                          <div
-                            className="flex items-center gap-3 min-w-0 cursor-pointer group"
-                            onClick={() => onOpenAgentProfile?.(req.senderAgentName || req.senderAgentId || 'Agent', req.senderAvatar || undefined, req.senderAgentId)}
-                          >
-                            <AgentAvatar 
-                              name={req.senderAgentName || req.senderAgentId || 'Agent'} 
-                              avatar={req.senderAvatar || undefined} 
-                              id={req.senderAgentId}
-                              className="w-10 h-10 border-2 border-[#141414] group-hover:scale-105 transition-transform"
-                            />
-                            <div className="min-w-0 flex flex-col">
-                              <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
-                                <span>{req.senderAgentName || 'Pending Agent'}</span>
-                              </span>
-                              <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
-                                <span>@{req.senderAgentId}</span>
-                                {req.senderEmailVerified && <VerifiedBadge size="xs" />}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-6 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                      No pending connection requests.
-                    </div>
-                  )}
-                </div>
-
-                {/* Cluster Invites Sub-section */}
-                <div className="space-y-3 pt-2">
-                  <h3 className="font-mono text-[10px] font-black uppercase tracking-widest text-[#141414]/60 flex items-center gap-2">
-                    <Shield className="w-3.5 h-3.5" />
-                    Pending Cluster Invites ({clusterInvites.length})
-                  </h3>
-                  {clusterInvites.length > 0 ? (
-                    <div className="space-y-3">
-                      {clusterInvites.map((invite) => {
-                        const sym = getClusterSymbol(invite.clusterId);
-                        return (
-                          <div
-                            key={invite.id}
-                            className="p-4 bg-[#E4E3E0]/20 border-2 border-[#141414] border-dashed shadow-[3px_3px_0px_0px_rgba(20,20,20,0.1)] flex flex-col gap-3 text-left"
-                          >
-                            {/* Cluster Info: Symbol + Name */}
-                            <div 
-                              className="flex items-center gap-3 cursor-pointer group hover:bg-[#E4E3E0]/30 p-1.5 -m-1.5 rounded transition-all"
-                              onClick={() => {
-                                onOpenClusterMembers?.({
-                                  id: invite.clusterId,
-                                  name: invite.cluster?.name || invite.clusterName || 'Unnamed Cluster',
-                                  ...(invite.cluster || {})
-                                });
-                              }}
-                            >
-                              <div className="w-9 h-9 bg-white text-[#141414] border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
-                                {sym}
-                              </div>
-                              <div>
-                                <span className="font-mono font-black text-sm text-[#141414] block group-hover:underline">
-                                  {invite.cluster?.name || invite.clusterName || 'Unnamed Cluster'}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Invited by [Profile Modal] - Aligned below */}
-                            <div className="flex items-center gap-2 text-[10px] font-mono font-black text-[#141414]/60 pt-2.5 border-t border-[#141414]/10">
-                              <span>INVITED BY:</span>
-                              <div 
-                                className="flex items-center gap-3 cursor-pointer group bg-white border-2 border-[#141414] px-3 py-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] transition-transform self-start"
-                                onClick={() => onOpenAgentProfile?.(invite.inviterName || invite.inviterAgentId || 'Agent', invite.inviterAvatar || undefined, invite.inviterAgentId)}
-                              >
-                                <AgentAvatar 
-                                  name={invite.inviterName || invite.inviterAgentId || 'Agent'} 
-                                  avatar={invite.inviterAvatar || undefined} 
-                                  id={invite.inviterAgentId} 
-                                  className="w-8 h-8 border-2 border-[#141414]" 
-                                />
-                                <div className="flex flex-col text-left">
-                                  <span className="font-black uppercase text-[10px] tracking-wider text-[#141414] group-hover:underline leading-tight">
-                                    {invite.inviterName || 'Agent'}
-                                  </span>
-                                  <span className="font-mono text-[8px] font-bold text-[#141414]/60 uppercase tracking-widest mt-0.5 leading-none">
-                                    @{invite.inviterAgentId}
-                                  </span>
-                                </div>
-                                {invite.inviterEmailVerified && <VerifiedBadge size="xs" />}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="py-6 px-4 text-center font-mono text-xs text-[#141414]/60 uppercase tracking-wider border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/10">
-                      No pending cluster invites.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-
           </div>
         </div>
 
