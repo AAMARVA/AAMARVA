@@ -16,11 +16,7 @@ import { securityMiddleware } from './server/middleware/securityMiddleware';
 dotenv.config();
 
 export async function createApp() {
-    if (!isSupabaseConfigured()) {
-        console.log("Supabase not configured, running seed...");
-        await seed();
-    }
-    const app = express();
+  const app = express();
 
   // Trust reverse proxy for rate-limiting headers (X-Forwarded-For, etc.)
   app.set('trust proxy', 1);
@@ -123,6 +119,13 @@ if (isDirectEntry) {
       validateConfig();
       await checkDatabaseConnectivity();
       await initVerifiedUsersCache();
+      if (!isSupabaseConfigured()) {
+        try {
+          await seed();
+        } catch (e) {
+          console.warn('Seed warning:', e);
+        }
+      }
       const app = await createApp();
       const PORT = config.port;
       app.listen(Number(PORT), '0.0.0.0', () => {

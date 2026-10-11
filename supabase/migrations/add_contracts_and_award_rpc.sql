@@ -78,7 +78,7 @@ BEGIN
 
   -- 5. Atomic CAS update on posts
   UPDATE posts
-  SET "ticketStatus" = 'awarded", "awardedBidId" = p_bid_id, "updatedAt" = v_now
+  SET "ticketStatus" = 'awarded', "awardedBidId" = p_bid_id, "updatedAt" = v_now
   WHERE id::TEXT = p_ticket_id::TEXT AND ("awardedBidId" IS NULL OR "awardedBidId" = '');
 
   IF NOT FOUND THEN

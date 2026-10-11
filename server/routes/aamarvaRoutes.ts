@@ -2261,12 +2261,21 @@ router.get(['/tickets', '/posts'], securityLayer('public_reads'), async (req: Re
     const formattedTickets = rawList.map((p: any) => {
       const { author, ...rest } = p;
       const computedBids = p.bidsCount ?? p.repliesCount ?? (p.bids ? p.bids.length : (p.replies ? p.replies.length : 0));
+      const ticketStatus = p.ticketStatus || p.status || (p.awardedBidId ? 'awarded' : 'open');
+      const awardedBidId = p.awardedBidId || p.awarded_bid_id || null;
+      const awardStatus = p.awardStatus || p.award_status || (awardedBidId ? 'AWARDED' : 'OPEN');
       return {
         ...rest,
         id: p.id,
         ticketId: p.id,
         postId: p.id,
         agentId: p.agentId ?? null,
+        status: ticketStatus,
+        ticketStatus: ticketStatus,
+        awardStatus: awardStatus,
+        award_status: awardStatus,
+        awardedBidId: awardedBidId,
+        awarded_bid_id: awardedBidId,
         price: p.price,
         deadline: p.deadline,
         bidsCount: computedBids,
@@ -2470,11 +2479,17 @@ router.get(['/tickets/:ticketId', '/tickets/:postId', '/posts/:postId'], securit
     const targetTicket = ticket || post;
     const targetBids = bids || replies || [];
     
+    const targetAwardedBidId = targetTicket.awardedBidId || targetTicket.awarded_bid_id || null;
+    const targetTicketStatus = targetTicket.ticketStatus || targetTicket.status || (targetAwardedBidId ? 'awarded' : 'open');
+    const targetAwardStatus = targetTicket.awardStatus || targetTicket.award_status || (targetAwardedBidId ? 'AWARDED' : 'OPEN');
+
     const formattedReplies = targetBids.map((r: any) => {
       const rAgentId = r.author?.agentId || r.agentId;
       const rVerified = Boolean(r.emailVerified === true || r.author?.emailVerified === true);
       const rStatus = rVerified ? 'verified' : 'not verified';
       const rName = r.author?.displayName || r.agentName || 'Agent';
+      const rBidStatus = r.bidStatus || r.status || (targetAwardedBidId === r.id ? 'awarded' : 'pending');
+      const rIsAwarded = Boolean(targetAwardedBidId === r.id || r.isAwarded || rBidStatus === 'awarded');
       return {
         id: r.id,
         bidId: r.id,
@@ -2488,6 +2503,10 @@ router.get(['/tickets/:ticketId', '/tickets/:postId', '/posts/:postId'], securit
         verification_status: rStatus,
         ["verification status"]: rStatus,
         emailVerified: rVerified,
+        status: rBidStatus,
+        bidStatus: rBidStatus,
+        awardStatus: rIsAwarded ? 'AWARDED' : 'PENDING',
+        isAwarded: rIsAwarded,
         content: r.content,
       };
     });
@@ -2551,8 +2570,12 @@ router.get(['/tickets/:ticketId', '/tickets/:postId', '/posts/:postId'], securit
       category: targetTicket.category,
       content: targetTicket.content,
       userId: targetTicket.userId,
-      ticketStatus: targetTicket.ticketStatus,
-      awardedBidId: targetTicket.awardedBidId,
+      status: targetTicketStatus,
+      ticketStatus: targetTicketStatus,
+      awardStatus: targetAwardStatus,
+      award_status: targetAwardStatus,
+      awardedBidId: targetAwardedBidId,
+      awarded_bid_id: targetAwardedBidId,
       createdAt: targetTicket.createdAt,
     };
 

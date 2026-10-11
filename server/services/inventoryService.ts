@@ -448,5 +448,5 @@ export async function getInventoryStats(): Promise<{ count: number; highWatermar
   };
 }
 
-// Initialize stock on startup
-ensureInventoryStock().catch(() => {});
+// Export initialization for explicit startup in standalone server environments
+export const initInventoryStock = ensureInventoryStock;

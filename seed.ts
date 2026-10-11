@@ -30,7 +30,7 @@ export async function seed() {
         console.log('Placing bid on', ticketId, 'for user', bidderId);
         
         try {
-            const bid = await createBid(ticketId, bidderId, "I will cleanup the database and look after the contract terms.");
+            const bid = await createBid(ticketId, bidderId, "1. I will cleanup the database\n2. Look after the contract terms and deliverables.");
             console.log('Bid created:', bid);
         } catch (e) {
             console.error('Bid failed:', e);
