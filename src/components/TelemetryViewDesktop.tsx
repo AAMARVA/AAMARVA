@@ -7,6 +7,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
 import { FloorActivityContent } from './FloorActivityComponent';
+import { SlaveMonitorCard } from './SlaveMonitorModal';
 import { apiFetch } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
 
@@ -527,6 +528,11 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
               </div>
             )}
           </div>
+        </div>
+
+        {/* Slave Monitor Card */}
+        <div className="w-full">
+          <SlaveMonitorCard slaveAgents={systemAgents} onOpenAgentProfile={onOpenAgentProfile} />
         </div>
 
       </div>

@@ -6,6 +6,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
 import { FloorActivityContent } from './FloorActivityComponent';
+import { SlaveMonitorCard } from './SlaveMonitorModal';
 import { apiFetch } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
 
@@ -228,15 +229,6 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
     });
   }, [mergedAgentActivity, activityTab]);
 
-  const registeredAgentsCount = Math.max(dbStats?.agentsCount ?? 0, systemAgents.length, agentActivity.length);
-  const agentsTodayCount = dbStats?.agentsAddedToday ?? 0;
-  const totalPosts = dbStats?.postsCount ?? computedTotalPosts;
-  const postsTodayCount = dbStats?.postsAddedToday ?? 0;
-  const totalReplies = dbStats?.bidsCount ?? computedTotalReplies;
-  const repliesTodayCount = dbStats?.repliesAddedToday ?? 0;
-  const totalConnections = dbStats?.connectionsCount ?? computedTotalConnections;
-  const connectionsTodayCount = dbStats?.connectionsAddedToday ?? 0;
-
   const getRelativeTime = (dateStr?: string): string => {
     if (!dateStr) return '';
     const d = new Date(dateStr);
@@ -445,56 +437,56 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
   liveFloorLogs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-6">
+    <div className="w-full space-y-5">
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         {/* Metric 1: Clusters */}
-        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
             <span className="text-[10px] font-mono font-bold uppercase">Clusters</span>
             <Activity className="w-4 h-4 text-[#141414]" />
           </div>
-          <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
+          <div className="text-xl font-black font-mono text-[#141414]">
             {localClusters.length}
           </div>
         </div>
 
         {/* Metric 2: Slave Agents */}
-        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+        <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
             <span className="text-[10px] font-mono font-bold uppercase">Slave Agents</span>
             <Users className="w-4 h-4 text-[#141414]" />
           </div>
-          <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
+          <div className="text-xl font-black font-mono text-[#141414]">
             {systemAgents.length}
           </div>
         </div>
       </div>
 
       {/* Main Telemetry Terminal & Node Health */}
-      <div className="flex flex-col space-y-6">
-        <div className="w-full border-2 border-[#141414] bg-[#141414] text-white p-5 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[320px]">
-          <div className="flex items-center justify-between border-b border-white/20 pb-3 mb-4">
+      <div className="flex flex-col space-y-5">
+        <div className="w-full border-2 border-[#141414] bg-[#141414] text-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] font-mono text-xs flex flex-col min-h-[280px]">
+          <div className="flex items-center justify-between border-b border-white/20 pb-2 mb-3">
             <div className="flex items-center space-x-2">
               <span className="font-bold uppercase tracking-wider text-white">Floor Activity</span>
             </div>
-            <span className="px-2 py-0.5 bg-white border border-[#141414] text-[#141414] text-[10px] font-bold">
-              LIVE STREAM
+            <span className="px-1.5 py-0.5 bg-white border border-[#141414] text-[#141414] text-[9px] font-bold">
+              LIVE
             </span>
           </div>
 
-          <div className="space-y-2.5 font-mono text-xs max-h-[260px] overflow-y-auto pr-1">
+          <div className="space-y-2 font-mono text-xs max-h-[220px] overflow-y-auto pr-1">
             {liveFloorLogs.length > 0 ? (
               liveFloorLogs.map((log) => (
-                <div key={log.id} className="p-2.5 bg-[#1b1b1b] border border-white/20 text-white text-[11px] flex items-start justify-between gap-3">
-                  <div className="flex items-start space-x-3 min-w-0 flex-1">
+                <div key={log.id} className="p-2 bg-[#1b1b1b] border border-white/10 text-white text-[10px] flex items-start justify-between gap-2">
+                  <div className="flex items-start space-x-2 min-w-0 flex-1">
                     <div className="flex items-center space-x-1.5 shrink-0 mt-0.5">
                       <button
                         type="button"
                         onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
                         className="cursor-pointer hover:opacity-80 transition-opacity"
                       >
-                        <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-7 h-7 border border-white/30" />
+                        <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-6 h-6 border border-white/20" />
                       </button>
                       <ActivityTypeIcon type={log.type} />
                     </div>
@@ -516,15 +508,20 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
                       />
                     </div>
                   </div>
-                  <span className="text-white/50 text-[10px] shrink-0 font-mono whitespace-nowrap self-start mt-0.5">{getRelativeTime(log.createdAt)}</span>
+                  <span className="text-white/45 text-[9px] shrink-0 font-mono whitespace-nowrap self-start mt-0.5">{getRelativeTime(log.createdAt)}</span>
                 </div>
               ))
             ) : (
-              <div className="p-8 text-center text-white/50 font-mono text-xs uppercase tracking-wider border border-dashed border-white/20 my-auto">
-                No floor activity recorded yet.
+              <div className="p-6 text-center text-white/50 font-mono text-xs uppercase tracking-wider border border-dashed border-white/10 my-auto">
+                No floor activity.
               </div>
             )}
           </div>
+        </div>
+
+        {/* Slave Monitor Card */}
+        <div className="w-full">
+          <SlaveMonitorCard slaveAgents={systemAgents} onOpenAgentProfile={onOpenAgentProfile} />
         </div>
 
       </div>

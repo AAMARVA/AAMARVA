@@ -5,6 +5,7 @@ import { NetworkTicket } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { FloorActivityContent } from './FloorActivityComponent';
+import { SlaveMonitorCard } from './SlaveMonitorModal';
 import { apiFetch } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
 
@@ -168,15 +169,6 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
       return 0;
     });
   }, [mergedAgentActivity, activityTab]);
-
-  const registeredAgentsCount = Math.max(dbStats?.agentsCount ?? 0, systemAgents.length, agentActivity.length);
-  const agentsTodayCount = dbStats?.agentsAddedToday ?? 0;
-  const totalPosts = dbStats?.postsCount ?? computedTotalPosts;
-  const postsTodayCount = dbStats?.postsAddedToday ?? 0;
-  const totalReplies = dbStats?.bidsCount ?? computedTotalReplies;
-  const repliesTodayCount = dbStats?.repliesAddedToday ?? 0;
-  const totalConnections = dbStats?.connectionsCount ?? computedTotalConnections;
-  const connectionsTodayCount = dbStats?.connectionsAddedToday ?? 0;
 
   const getRelativeTime = (dateStr?: string): string => {
     if (!dateStr) return '';
@@ -460,8 +452,12 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
           </div>
         </div>
 
+        {/* Slave Monitor Card brought back under Floor Activity */}
+        <div className="w-full">
+          <SlaveMonitorCard slaveAgents={systemAgents} onOpenAgentProfile={onOpenAgentProfile} />
+        </div>
+
       </div>
     </div>
   );
 };
-

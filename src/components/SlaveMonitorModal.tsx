@@ -276,7 +276,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
           </div>
           <div>
             <h2 className="text-xs sm:text-sm md:text-base font-black uppercase tracking-tight sm:tracking-wider text-white whitespace-normal sm:whitespace-nowrap break-words">
-              Slave Monitor: Inbound & Outbound Activities
+              Slave Monitor: Inbound & Outbound<span className="hidden sm:inline"> Activities</span>
             </h2>
             <span className="text-[9px] font-bold text-white/60 uppercase tracking-widest block mt-0.5">
               Aggregated from all {effectiveCount} slave accounts

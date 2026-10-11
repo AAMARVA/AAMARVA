@@ -2493,8 +2493,7 @@ router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads')
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const effectiveUserId = req.user!.activeAccountId || req.user!.id;
-    const result = await getUserConnections(effectiveUserId, page, limit);
+    const result = await getUserConnections(req.user!.id, page, limit);
 
     const connIds = (result.connections || []).map((c: any) => c.id).filter(Boolean);
     const sb = getSupabaseClient();
@@ -2527,6 +2526,9 @@ router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads')
         postOwnerAgentId: c.postOwnerAgentId,
         replyAuthorAgentId: c.replyAuthorAgentId,
         createdAt: c.createdAt,
+        isMaster: c.isMaster,
+        isSlave: c.isSlave,
+        status: c.status || 'active',
         connectionStatus: c.status || 'active',
       };
     });

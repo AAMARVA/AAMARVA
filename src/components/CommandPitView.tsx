@@ -1,10 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { NetworkTicket } from '../types';
+import React, { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../services/authApi';
-import { ConnectionsModal } from './ConnectionsModal';
 import { AgentAvatar } from './AgentAvatar';
-import { MessageSquare, Users, Plus, X } from 'lucide-react';
-import { VerifiedBadge } from './VerifiedBadge';
+import { Plus, X } from 'lucide-react';
 
 interface CommandPitViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
@@ -17,14 +14,13 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
 }) => {
   const [activeConnections, setActiveConnections] = useState<any[]>([]);
   const [clusters, setClusters] = useState<any[]>([]);
-  const [reviews, setReviews] = useState<any[]>([]);
   const [isNewClusterOpen, setIsNewClusterOpen] = useState(false);
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
   const [creatingCluster, setCreatingCluster] = useState(false);
   const [createClusterError, setCreateClusterError] = useState<string | null>(null);
 
-  const fetchClusters = () => {
+  const fetchClusters = useCallback(() => {
     apiFetch('/api/clusters', { authType: 'human' })
       .then((res) => {
         if (res?.success && Array.isArray(res.data)) {
@@ -32,32 +28,126 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         }
       })
       .catch(() => {});
-  };
+  }, []);
+
+  const fetchConnectionsAndFleet = useCallback(async () => {
+    try {
+      const [connRes, masterRes] = await Promise.allSettled([
+        apiFetch('/api/connections', { authType: 'human' }),
+        apiFetch('/api/auth/master/accounts', { authType: 'human' }),
+      ]);
+
+      const connectionsMap = new Map<string, any>();
+
+      // 1. Process /api/connections
+      if (connRes.status === 'fulfilled' && connRes.value) {
+        const val = connRes.value;
+        const list = val?.data?.connections || val?.data || [];
+        if (Array.isArray(list)) {
+          list.forEach((c: any) => {
+            if (c && c.status !== 'dissolved') {
+              const aid = (c.agentId || c.agentName || '').toUpperCase();
+              if (aid) {
+                connectionsMap.set(aid, {
+                  id: c.id || c.connectionId,
+                  connectionId: c.connectionId || c.id,
+                  agentId: c.agentId,
+                  agentName: c.agentName || c.agentId,
+                  avatar: c.avatar,
+                  peerE2eePublicKey: c.peerE2eePublicKey,
+                  isMaster: Boolean(c.isMaster),
+                  isSlave: Boolean(c.isSlave),
+                  status: c.status || 'active',
+                });
+              }
+            }
+          });
+        }
+      }
+
+      // 2. Process /api/auth/master/accounts (Associated Agents: Master and Slave fleet)
+      if (masterRes.status === 'fulfilled' && masterRes.value?.success && masterRes.value?.data) {
+        const data = masterRes.value.data;
+        const currentActiveId = data.activeAgentId;
+        const masterAgent = data.masterAgent;
+        const slaveAgents = data.subAgents || data.slaveAgents || [];
+
+        // If master agent exists and is not currently the active context
+        if (masterAgent && masterAgent.agentId) {
+          const mKey = masterAgent.agentId.toUpperCase();
+          const isCurrent = masterAgent.id === currentActiveId || masterAgent.agentId === currentActiveId;
+          if (!isCurrent) {
+            const existing = connectionsMap.get(mKey);
+            connectionsMap.set(mKey, {
+              id: existing?.id || `fleet_conn_${masterAgent.id}`,
+              connectionId: existing?.connectionId || `fleet_conn_${masterAgent.id}`,
+              agentId: masterAgent.agentId,
+              agentName: masterAgent.name || masterAgent.agentId,
+              avatar: masterAgent.avatar,
+              peerE2eePublicKey: existing?.peerE2eePublicKey,
+              isMaster: true,
+              isSlave: false,
+              status: 'active',
+            });
+          }
+        }
+
+        // List all slave agents in the fleet (excluding active agent if switched)
+        if (Array.isArray(slaveAgents)) {
+          slaveAgents.forEach((s: any) => {
+            if (s && s.agentId) {
+              const sKey = s.agentId.toUpperCase();
+              const isCurrent = s.id === currentActiveId || s.agentId === currentActiveId;
+              if (!isCurrent) {
+                const existing = connectionsMap.get(sKey);
+                connectionsMap.set(sKey, {
+                  id: existing?.id || `fleet_conn_${s.id}`,
+                  connectionId: existing?.connectionId || `fleet_conn_${s.id}`,
+                  agentId: s.agentId,
+                  agentName: s.name || s.agentId,
+                  avatar: s.avatar,
+                  peerE2eePublicKey: existing?.peerE2eePublicKey,
+                  isMaster: false,
+                  isSlave: true,
+                  status: 'active',
+                });
+              }
+            }
+          });
+        }
+      }
+
+      const mergedList = Array.from(connectionsMap.values());
+      // Sort master accounts first, then slave accounts alphabetically
+      mergedList.sort((a, b) => {
+        if (a.isMaster && !b.isMaster) return -1;
+        if (!a.isMaster && b.isMaster) return 1;
+        return (a.agentName || '').localeCompare(b.agentName || '');
+      });
+
+      setActiveConnections(mergedList);
+    } catch (err) {
+      console.warn('Failed to fetch connections and fleet:', err);
+    }
+  }, []);
 
   useEffect(() => {
-    apiFetch('/api/connections', { authType: 'human' })
-      .then((res) => {
-        if (res?.data?.connections || Array.isArray(res?.data)) {
-          const list = res.data.connections || res.data;
-          setActiveConnections(list.filter((c: any) => c.status !== 'dissolved'));
-        }
-      })
-      .catch(() => {});
-
+    fetchConnectionsAndFleet();
     fetchClusters();
 
-    const fetchReviews = () => {
-      apiFetch('/api/counter-party-score', { authType: 'none' })
-        .then((res) => {
-          if (res?.success && res?.data) {
-            setReviews(res.data);
-          }
-        })
-        .catch(() => {});
+    const handleAccountUpdate = () => {
+      fetchConnectionsAndFleet();
+      fetchClusters();
     };
 
-    fetchReviews();
-  }, []);
+    window.addEventListener('account-changed', handleAccountUpdate);
+    window.addEventListener('aamarva-plan-updated', handleAccountUpdate);
+
+    return () => {
+      window.removeEventListener('account-changed', handleAccountUpdate);
+      window.removeEventListener('aamarva-plan-updated', handleAccountUpdate);
+    };
+  }, [fetchConnectionsAndFleet, fetchClusters]);
 
   const handleCreateCluster = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,23 +188,74 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative min-h-[450px]">
         {/* Connections */}
         <div className="space-y-3 pr-0 md:pr-6">
-          <h3 className="font-mono text-sm font-black uppercase text-[#141414]">Connections ({activeConnections.length})</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-mono text-sm font-black uppercase text-[#141414]">
+              Connections ({activeConnections.length})
+            </h3>
+          </div>
           {activeConnections.length > 0 ? (
             <div className="flex flex-col gap-3">
               {activeConnections.map((conn) => (
-                <div key={conn.id || conn.agentId} className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-                  <div className="flex items-center justify-between">
-                    <div onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)} className="flex items-center gap-2 cursor-pointer">
-                      <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]" />
-                      <span className="font-black text-xs uppercase">{conn.agentName}</span>
+                <div
+                  key={conn.id || conn.agentId}
+                  className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] transition-all"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div
+                      onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                      className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 hover:opacity-85 transition-opacity"
+                    >
+                      <AgentAvatar
+                        name={conn.agentName}
+                        avatar={conn.avatar}
+                        id={conn.agentId}
+                        className="w-9 h-9 border border-[#141414] shrink-0"
+                      />
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-black text-xs uppercase truncate text-[#141414]">
+                            {conn.agentName}
+                          </span>
+                          {conn.isMaster && (
+                            <span className="px-1.5 py-0.5 bg-[#141414] text-white text-[8px] font-mono font-bold tracking-wider uppercase">
+                              Master
+                            </span>
+                          )}
+                          {conn.isSlave && (
+                            <span className="px-1.5 py-0.5 bg-[#141414]/10 border border-[#141414]/30 text-[#141414] text-[8px] font-mono font-bold tracking-wider uppercase">
+                              Slave
+                            </span>
+                          )}
+                        </div>
+                        {conn.agentId && (
+                          <span className="font-mono text-[10px] text-[#141414]/60 truncate mt-0.5">
+                            @{conn.agentId.replace(/^@/, '')}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <button onClick={() => onOpenChat?.({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId })} className="bg-[#141414] text-white py-1 px-2 text-[10px] font-bold">CHAT</button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenChat?.({
+                        id: conn.id || conn.connectionId,
+                        agentName: conn.agentName,
+                        avatar: conn.avatar,
+                        agentId: conn.agentId,
+                        peerE2eePublicKey: conn.peerE2eePublicKey,
+                      })}
+                      className="bg-[#141414] text-white py-1 px-3 text-[10px] font-mono font-bold hover:bg-black/80 transition-colors shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                      title={`Open chat with ${conn.agentName}`}
+                    >
+                      CHAT
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="p-6 border-2 border-dashed border-[#141414]/30 text-center text-[#141414]/50 font-mono text-xs">NO CONNECTIONS</div>
+            <div className="p-6 border-2 border-dashed border-[#141414]/30 text-center text-[#141414]/50 font-mono text-xs">
+              NO CONNECTIONS
+            </div>
           )}
         </div>
 
@@ -128,7 +269,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
             <h3 className="font-mono text-sm font-black uppercase text-[#141414]">Clusters ({clusters.length})</h3>
             <button
               onClick={() => setIsNewClusterOpen(true)}
-              className="flex items-center gap-1 bg-[#141414] text-white px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+              className="flex items-center gap-1 bg-[#141414] text-white px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>NEW CLUSTER</span>
@@ -158,53 +299,58 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
           <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3">
               <h3 className="font-mono text-base font-black uppercase">Create New Cluster</h3>
-              <button onClick={() => setIsNewClusterOpen(false)} className="p-1 border border-[#141414] hover:bg-[#141414] hover:text-white transition-colors">
-                <X className="w-4 h-4" />
+              <button
+                onClick={() => setIsNewClusterOpen(false)}
+                className="p-1 hover:bg-[#141414]/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-[#141414]" />
               </button>
             </div>
 
             {createClusterError && (
-              <div className="p-2.5 bg-red-100 border-2 border-red-600 text-red-700 text-xs font-mono font-bold">
+              <div className="p-3 bg-red-100 border-2 border-red-500 text-red-700 font-mono text-xs">
                 {createClusterError}
               </div>
             )}
 
             <form onSubmit={handleCreateCluster} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="block font-mono text-xs font-black uppercase">Cluster Name</label>
+              <div className="space-y-1">
+                <label className="block font-mono text-xs font-bold uppercase text-[#141414]">Cluster Name</label>
                 <input
                   type="text"
                   value={newClusterName}
                   onChange={(e) => setNewClusterName(e.target.value)}
-                  placeholder="e.g. Alpha Operations"
-                  className="w-full px-3 py-2 border-2 border-[#141414] text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#141414]"
+                  placeholder="e.g. ALPHA ENCLAVE"
+                  className="w-full border-2 border-[#141414] p-2 font-mono text-xs bg-white text-[#141414] focus:outline-none"
+                  maxLength={50}
                   required
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="block font-mono text-xs font-black uppercase">Description (Optional)</label>
+              <div className="space-y-1">
+                <label className="block font-mono text-xs font-bold uppercase text-[#141414]">Description (Optional)</label>
                 <textarea
                   value={newClusterDescription}
                   onChange={(e) => setNewClusterDescription(e.target.value)}
-                  placeholder="Describe the purpose of this cluster..."
+                  placeholder="Cluster enclave purpose and directives..."
                   rows={3}
-                  className="w-full px-3 py-2 border-2 border-[#141414] text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#141414] custom-scrollbar"
+                  className="w-full border-2 border-[#141414] p-2 font-mono text-xs bg-white text-[#141414] focus:outline-none resize-none"
+                  maxLength={200}
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsNewClusterOpen(false)}
-                  className="px-4 py-2 border-2 border-[#141414] font-mono text-xs font-bold uppercase hover:bg-[#141414]/10"
+                  className="px-4 py-2 border-2 border-[#141414] font-mono text-xs font-bold uppercase hover:bg-[#141414]/10 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={creatingCluster}
-                  className="px-4 py-2 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-bold uppercase shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                  className="px-4 py-2 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-bold uppercase hover:bg-black/80 transition-colors disabled:opacity-50 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
                 >
                   {creatingCluster ? 'Creating...' : 'Create Cluster'}
                 </button>
