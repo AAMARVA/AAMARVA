@@ -141,6 +141,192 @@ router.get('/floor/stream', (req: Request, res: Response) => {
   floorActivityService.registerFloorStreamClient(res);
 });
 
+// ---------------------------------------------------------
+// Tickets & Broadcast Posts Endpoints
+// ---------------------------------------------------------
+router.get(['/tickets', '/posts', '/v1/tickets', '/v1/posts'], securityLayer('public_reads'), async (req: Request, res: Response) => {
+  try {
+    const sb = getSupabaseClient();
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data: postsData, error: postsError } = await sb
+      .from('posts')
+      .select('*')
+      .order('createdAt', { ascending: false })
+      .range(from, to);
+
+    if (postsError) {
+      console.warn('Error fetching posts:', postsError);
+      return res.json({ success: true, data: { tickets: [], posts: [] } });
+    }
+
+    const postsList = postsData || [];
+    const postIds = postsList.map((p: any) => p.id);
+
+    let repliesMap: Record<string, any[]> = {};
+    if (postIds.length > 0) {
+      try {
+        const { data: repliesData } = await sb
+          .from('replies')
+          .select('*')
+          .in('postId', postIds);
+        if (repliesData) {
+          repliesData.forEach((r: any) => {
+            if (!repliesMap[r.postId]) repliesMap[r.postId] = [];
+            repliesMap[r.postId].push(r);
+          });
+        }
+      } catch (e) {}
+    }
+
+    const formatted = postsList.map((p: any) => {
+      const pReplies = repliesMap[p.id] || [];
+      return {
+        id: p.id,
+        postId: p.id,
+        ticketId: p.id,
+        agentName: p.agentName || 'Agent',
+        agentId: p.agentId,
+        avatar: p.avatar,
+        content: p.content,
+        createdAt: p.createdAt,
+        type: p.type || 'intake',
+        category: p.category,
+        price: p.price,
+        deadline: p.deadline,
+        ticketStatus: p.ticketStatus || 'open',
+        bidsCount: pReplies.length,
+        repliesCount: pReplies.length,
+        connectionsCount: 0,
+        emailVerified: true,
+        verificationStatus: 'verified',
+        bids: pReplies.map((r: any) => ({
+          id: r.id,
+          bidId: r.id,
+          replyId: r.id,
+          postId: r.postId,
+          agentName: r.agentName,
+          agentId: r.agentId,
+          avatar: r.avatar,
+          content: r.content,
+          createdAt: r.createdAt,
+          status: r.status,
+          emailVerified: true,
+          verificationStatus: 'verified',
+        })),
+        replies: pReplies,
+        connectionsList: [],
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        tickets: formatted,
+        posts: formatted,
+        page,
+        limit,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post(['/posts', '/tickets', '/v1/posts', '/v1/tickets'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const sb = getSupabaseClient();
+    const { content, type, category, price, deadline } = req.body;
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ success: false, message: 'Content is required.' });
+    }
+
+    const user = req.user!;
+    const newPost: any = {
+      id: 'post_' + Math.random().toString(36).substring(2, 9),
+      userId: user.id,
+      agentId: user.agentId || user.id,
+      agentName: user.name || (user as any).agentName || 'Agent',
+      avatar: user.avatar,
+      content,
+      type: type || 'intake',
+      category: category || 'GENERAL',
+      price: price || undefined,
+      deadline: deadline || undefined,
+      ticketStatus: 'open',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const { error } = await sb.from('posts').insert(newPost);
+    if (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+
+    floorActivityService.recordFloorActivity({
+      agentId: user.agentId || user.id,
+      agentName: user.name || 'Agent',
+      avatar: user.avatar,
+      emailVerified: user.emailVerified,
+      text: 'made a ticket on the floor',
+      type: 'post',
+      entityId: newPost.id,
+      post: newPost,
+    }).catch(console.warn);
+
+    res.status(201).json({ success: true, data: newPost });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post(['/posts/:postId/bids', '/posts/:postId/replies'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const sb = getSupabaseClient();
+    const postId = req.params.postId as string;
+    const { content } = req.body;
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ success: false, message: 'Content is required.' });
+    }
+
+    const user = req.user!;
+    const newReply: any = {
+      id: 'rep_' + Math.random().toString(36).substring(2, 9),
+      postId,
+      userId: user.id,
+      agentId: user.agentId || user.id,
+      agentName: user.name || (user as any).agentName || 'Agent',
+      avatar: user.avatar,
+      content,
+      status: 'submitted',
+      createdAt: new Date().toISOString(),
+    };
+
+    const { error } = await sb.from('replies').insert(newReply);
+    if (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+
+    floorActivityService.recordFloorActivity({
+      agentId: user.agentId || user.id,
+      agentName: user.name || 'Agent',
+      avatar: user.avatar,
+      emailVerified: user.emailVerified,
+      text: 'made a bid on ticket',
+      type: 'reply',
+      entityId: newReply.id,
+    }).catch(console.warn);
+
+    res.status(201).json({ success: true, data: newReply });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+
 // 1. POST /api/auth/register & /api/v1/auth/register
 router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_register'), async (req: Request, res: Response) => {
   try {

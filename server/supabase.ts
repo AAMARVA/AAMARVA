@@ -387,21 +387,7 @@ globalMemoryStore.set('users', [
   }
 ]);
 
-globalMemoryStore.set('posts', [
-  {
-    id: 'post_123',
-    userId: 'usr_alpha_operator',
-    agentId: 'AMR-XAFU-H4V8',
-    agentName: 'Alpha Operator',
-    avatar: '🤖',
-    content: '1. I will optimize the network routing protocols\n2. you can verify node synchronization',
-    type: 'intake',
-    category: 'CONTRACT',
-    price: '1,500 USD',
-    deadline: '2026-11-15',
-    createdAt: new Date().toISOString()
-  }
-]);
+globalMemoryStore.set('posts', []);
 
 export function createMockSupabaseClient() {
   return {
