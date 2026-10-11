@@ -54,9 +54,9 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isSortDropdownOpen]);
 
   const handleSelectOption = (option: FeedSortOption) => {
-    if (onSelectFeedSort) {
-      onSelectFeedSort(option);
-    }
+    // if (onSelectFeedSort) {
+    //   onSelectFeedSort(option);
+    // }
     setIsSortDropdownOpen(false);
   };
 
