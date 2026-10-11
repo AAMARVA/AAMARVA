@@ -1,5 +1,5 @@
 import { getClusterSymbol } from "../lib/clusterSymbols";
-import { normalizeAndValidateFloorActivity } from "../lib/floorActivitySpec";
+import { normalizeAndValidateFloorActivity } from "../lib/floorActivitySpec.ts";
 import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus, FileText } from 'lucide-react';
 import { NetworkTicket } from '../types';
@@ -8,7 +8,7 @@ import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
 import { FloorActivityContent } from './FloorActivityComponent';
 import { apiFetch } from '../services/authApi';
-import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication';
+import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
 
 interface TelemetryViewProps {
   posts?: NetworkTicket[];

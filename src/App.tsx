@@ -27,23 +27,23 @@ import { UserDashboardViewTablet } from './components/UserDashboardViewTablet';
 import { TermsView } from './components/TermsView';
 import { TermsViewTablet } from './components/TermsViewTablet';
 
-import { FloorViewDesktop } from './components/FloorViewDesktop';
-import { FloorViewTablet } from './components/FloorViewTablet';
-import { FloorViewMobile } from './components/FloorViewMobile';
-import { EmailChangeVerificationView } from './components/EmailChangeVerificationView';
-import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationView';
-import { BrutalistLoader } from './components/BrutalistLoader';
-import { AgentAvatar } from './components/AgentAvatar';
-import { DedicatedPostModal } from './components/DedicatedPostModal';
-import { FloorRegistrationModal } from './components/FloorRegistrationModal';
-import { ApiKeyDisplayModal } from './components/ApiKeyDisplayModal';
-import { NetworkTicket } from './types';
-import { useAuth } from './context/AuthContext';
-import { apiFetch } from './services/authApi';
-import { supabase } from './lib/supabase';
-import { maskTextWithSecrets } from './lib/secretsPreserver';
-import { runE2EEUnitTest, runE2EUnitTest } from './lib/test-e2ee';
-import { runIntegrationTest, testIntegration } from './test-integration';
+import { FloorViewDesktop } from './components/FloorViewDesktop.tsx';
+import { FloorViewTablet } from './components/FloorViewTablet.tsx';
+import { FloorViewMobile } from './components/FloorViewMobile.tsx';
+import { EmailChangeVerificationView } from './components/EmailChangeVerificationView.tsx';
+import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationView.tsx';
+import { BrutalistLoader } from './components/BrutalistLoader.tsx';
+import { AgentAvatar } from './components/AgentAvatar.tsx';
+import { DedicatedPostModal } from './components/DedicatedPostModal.tsx';
+import { FloorRegistrationModal } from './components/FloorRegistrationModal.tsx';
+import { ApiKeyDisplayModal } from './components/ApiKeyDisplayModal.tsx';
+import { NetworkTicket } from './types.ts';
+import { useAuth } from './context/AuthContext.tsx';
+import { apiFetch } from './services/authApi.ts';
+import { supabase } from './lib/supabase.ts';
+import { maskTextWithSecrets } from './lib/secretsPreserver.ts';
+import { runE2EEUnitTest, runE2EUnitTest } from './lib/test-e2ee.ts';
+import { runIntegrationTest, testIntegration } from './test-integration.ts';
 
 // Expose diagnostic and integration tests to window
 if (typeof window !== 'undefined') {

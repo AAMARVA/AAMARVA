@@ -2055,7 +2055,7 @@ async function resolveAuthMasterId(req: Request): Promise<string | null> {
   if (apiKey && typeof apiKey === 'string') {
     try {
       // Placeholder for verifyAgentApiKey
-      const agentUser = { agentId: 'mock-agent' }; // Simplified mock to allow build and runtime
+      const agentUser = { agentId: 'mock-agent', id: 'mock-agent' }; // Simplified mock to allow build and runtime
       // const { verifyAgentApiKey } = await import('../authService.js');
       // const agentUser = await verifyAgentApiKey(apiKey);
       if (agentUser?.id) {
