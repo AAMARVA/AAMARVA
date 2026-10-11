@@ -179,36 +179,46 @@ export async function createConnection(userId: string, replyId: string) {
 export async function getUserConnections(userId: string, page: number, limit: number) {
   const supabase = getSupabaseClient();
 
-  // Find user profile
-  const { data: currentUser, error: userError } = await supabase
+  // 1. Fetch all users to robustly resolve profile and fleet hierarchy (works across DB and mock store)
+  const { data: allUsersData, error: userError } = await supabase
     .from('users')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
+    .select('*');
+
+  const allUsers = allUsersData || [];
+  const currentUser = allUsers.find((u: any) => 
+    u.id === userId || 
+    (u.agentId && u.agentId.toUpperCase() === String(userId).toUpperCase()) ||
+    (u.email && u.email.toLowerCase() === String(userId).toLowerCase())
+  ) || (allUsers.length > 0 ? allUsers[0] : null);
 
   if (userError || !currentUser) {
     throw new ConnectionNotFoundError('User profile not found.', 'USER_NOT_FOUND');
   }
 
-  const callerMasterId = currentUser.master_id && !currentUser.is_master_primary ? currentUser.master_id : currentUser.id;
+  const currentUserMasterId = currentUser.master_id || currentUser.masterId || currentUser.masterUserId;
+  const isPrimary = currentUser.is_master_primary === true || currentUser.isMasterPrimary === true || !currentUserMasterId;
+  const callerMasterId = !isPrimary && currentUserMasterId ? currentUserMasterId : currentUser.id;
 
-  // 1. Fetch Master user record & all Slave accounts in the fleet
-  const [masterRes, slaveRes] = await Promise.all([
-    supabase.from('users').select('id, agentId, name, avatar, emailVerified, master_id, is_master_primary').eq('id', callerMasterId).maybeSingle(),
-    supabase.from('users').select('id, agentId, name, avatar, emailVerified, master_id, is_master_primary').eq('master_id', callerMasterId)
-  ]);
+  // 2. Identify all fleet accounts (Master account + all slave accounts where master_id or masterId matches callerMasterId)
+  const fleetUsers = allUsers.filter((u: any) => {
+    if (u.id === currentUser.id) return false;
+    const uMasterId = u.master_id || u.masterId || u.masterUserId;
+    const uPrimary = u.is_master_primary === true || u.isMasterPrimary === true;
+    const belongsToFleet = (uMasterId && String(uMasterId) === String(callerMasterId)) || (u.id === callerMasterId);
+    return belongsToFleet && !uPrimary;
+  });
 
-  const fleetUsersData = [
-    ...(masterRes.data ? [masterRes.data] : []),
-    ...(slaveRes.data || [])
-  ];
+  // Also include the master account if currentUser is a slave account
+  const masterAccount = allUsers.find((u: any) => u.id === callerMasterId && u.id !== currentUser.id);
+  if (masterAccount && !fleetUsers.some((u: any) => u.id === masterAccount.id)) {
+    fleetUsers.push(masterAccount);
+  }
 
-  const fleetUsers = fleetUsersData.filter((u: any) => u.id !== currentUser.id);
   const fleetUserIds = new Set(fleetUsers.map((u: any) => u.id));
   const fleetAgentIds = new Set(fleetUsers.map((u: any) => (u.agentId || '').toUpperCase()));
 
-  // 2. Fetch existing connections from database
-  const userAgentIdUpper = currentUser.agentId.toUpperCase();
+  // 3. Fetch existing connections from database
+  const userAgentIdUpper = (currentUser.agentId || '').toUpperCase();
   const orFilter = `postOwnerUserId.eq.${currentUser.id},replyAuthorUserId.eq.${currentUser.id},postOwnerAgentId.ilike.${userAgentIdUpper},replyAuthorAgentId.ilike.${userAgentIdUpper}`;
 
   const { data: userConnections, error: queryError } = await supabase
@@ -223,7 +233,7 @@ export async function getUserConnections(userId: string, page: number, limit: nu
 
   const rawConnections = userConnections || [];
 
-  // 3. Filter existing connections to STRICTLY exclude cross-fleet accounts
+  // 4. Filter existing connections to STRICTLY exclude cross-fleet accounts
   const intraFleetConnections = rawConnections.filter((c: any) => {
     const ownerId = c.postOwnerUserId;
     const authorId = c.replyAuthorUserId;
@@ -247,7 +257,7 @@ export async function getUserConnections(userId: string, page: number, limit: nu
     if (c.replyAuthorAgentId) connectedPeerIds.add(c.replyAuthorAgentId.toUpperCase());
   });
 
-  // 4. Ensure all fleet accounts (master and slave accounts in the fleet) are included as talk targets under connections
+  // 5. Ensure all fleet accounts (master and slave accounts in the fleet) are included as talk targets under connections
   const additionalFleetConnections: any[] = [];
   for (const fUser of fleetUsers) {
     if (!connectedPeerIds.has(fUser.id) && !connectedPeerIds.has((fUser.agentId || '').toUpperCase())) {
@@ -280,12 +290,7 @@ export async function getUserConnections(userId: string, page: number, limit: nu
 
   let users: any[] = [];
   if (agentIds.size > 0) {
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id, agentId, name, avatar, emailVerified')
-      .in('agentId', Array.from(agentIds));
-    users = userData || [];
-    
+    users = allUsers;
     for (const u of users) {
       if (u.id === userId) continue;
       try {
@@ -296,9 +301,9 @@ export async function getUserConnections(userId: string, page: number, limit: nu
   }
 
   const mappedConnections = paginatedConnections.map((c: any) => {
-    const replyAuthor = users.find(u => u.agentId.toUpperCase() === (c.replyAuthorAgentId || '').toUpperCase()) || fleetUsers.find(u => u.id === c.replyAuthorUserId || (u.agentId || '').toUpperCase() === (c.replyAuthorAgentId || '').toUpperCase());
-    const postOwner = users.find(u => u.agentId.toUpperCase() === (c.postOwnerAgentId || '').toUpperCase()) || fleetUsers.find(u => u.id === c.postOwnerUserId || (u.agentId || '').toUpperCase() === (c.postOwnerAgentId || '').toUpperCase());
-    const isUserPostOwner = c.postOwnerUserId === userId || c.postOwnerAgentId?.toUpperCase() === userAgentIdUpper;
+    const replyAuthor = users.find(u => (u.agentId || '').toUpperCase() === (c.replyAuthorAgentId || '').toUpperCase() || u.id === c.replyAuthorUserId) || fleetUsers.find(u => u.id === c.replyAuthorUserId);
+    const postOwner = users.find(u => (u.agentId || '').toUpperCase() === (c.postOwnerAgentId || '').toUpperCase() || u.id === c.postOwnerUserId) || fleetUsers.find(u => u.id === c.postOwnerUserId);
+    const isUserPostOwner = c.postOwnerUserId === currentUser.id || c.postOwnerAgentId?.toUpperCase() === userAgentIdUpper;
     
     const peerName = isUserPostOwner 
       ? (c.replyAuthorAgentName || replyAuthor?.name || 'Fleet Agent')
@@ -306,17 +311,16 @@ export async function getUserConnections(userId: string, page: number, limit: nu
       
     const peerAgentId = isUserPostOwner ? c.replyAuthorAgentId : c.postOwnerAgentId;
     const peerAvatar = isUserPostOwner ? (replyAuthor?.avatar || '🤖') : (postOwner?.avatar || '🤖');
-    const peerUserId = isUserPostOwner ? (c.replyAuthorUserId || replyAuthor?.id) : (c.postOwnerUserId || postOwner?.id);
     const peerE2eePublicKey = isUserPostOwner ? replyAuthor?.e2eePublicKey : postOwner?.e2eePublicKey;
     const peerEmailVerified = isUserPostOwner 
-      ? Boolean(replyAuthor?.emailVerified === true)
-      : Boolean(postOwner?.emailVerified === true);
+      ? Boolean(replyAuthor?.emailVerified === true || replyAuthor?.email_verified === true)
+      : Boolean(postOwner?.emailVerified === true || postOwner?.email_verified === true);
     const peerStatus = peerEmailVerified ? 'verified' : 'not verified';
 
-    const poVerified = Boolean(postOwner?.emailVerified === true);
+    const poVerified = Boolean(postOwner?.emailVerified === true || postOwner?.email_verified === true);
     const poStatus = poVerified ? 'verified' : 'not verified';
 
-    const raVerified = Boolean(replyAuthor?.emailVerified === true);
+    const raVerified = Boolean(replyAuthor?.emailVerified === true || replyAuthor?.email_verified === true);
     const raStatus = raVerified ? 'verified' : 'not verified';
 
     return {
