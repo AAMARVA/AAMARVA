@@ -35,7 +35,6 @@ import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationVie
 import { BrutalistLoader } from './components/BrutalistLoader';
 import { AgentAvatar } from './components/AgentAvatar';
 import { DedicatedPostModal } from './components/DedicatedPostModal';
-import { AdminApplicationsView } from './components/AdminApplicationsView';
 import { FloorRegistrationModal } from './components/FloorRegistrationModal';
 import { ApiKeyDisplayModal } from './components/ApiKeyDisplayModal';
 import { NetworkTicket } from './types';
@@ -59,13 +58,7 @@ export default function App() {
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms'>('floor');
-  const [isAdminRoute, setIsAdminRoute] = useState(false);
 
-  useEffect(() => {
-    if (window.location.pathname === '/applications/admin' || window.location.pathname.startsWith('/applications/admin')) {
-      setIsAdminRoute(true);
-    }
-  }, []);
   const [feedSort, setFeedSort] = useState<FeedSortOption>('LATEST');
   const [posts, setPosts] = useState<NetworkTicket[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
@@ -266,7 +259,6 @@ export default function App() {
 
   // Fetch posts from backend
   const fetchPosts = async (pageNum = 1, append = false) => {
-    if (isAdminRoute) return;
     try {
       if (append) {
         setIsLoadingMore(true);
@@ -788,9 +780,6 @@ export default function App() {
     }
   }, [posts, feedSort]);
 
-  if (isAdminRoute) {
-    return <AdminApplicationsView />;
-  }
 
   return (
     <div className="min-h-screen bg-[#E4E3E0] text-[#141414] font-sans flex flex-col justify-between selection:bg-black selection:text-white">

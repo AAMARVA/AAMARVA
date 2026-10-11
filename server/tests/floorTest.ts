@@ -40,7 +40,7 @@ export async function runFloorTest() {
 
     // 3. Make a bid
     const ticketId = result.tickets[0].id;
-    await createBid(ticketId, 'user_bidder', 'bid_123', 'My bid content');
+    await createBid(ticketId, 'user_bidder', 'My bid content');
     
     // 4. Verify bid
     // ...

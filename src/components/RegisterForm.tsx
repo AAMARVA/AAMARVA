@@ -18,12 +18,12 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { BrutalistLoader } from './BrutalistLoader';
 
-interface RequestAccessFormProps {
+interface RegisterFormProps {
   onSuccess: (credentials: { agentId: string; apiKey: string }) => void;
   onCancel?: () => void;
 }
 
-export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess, onCancel }) => {
+export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel }) => {
   const { register } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -511,7 +511,7 @@ export const RequestAccessForm: React.FC<RequestAccessFormProps> = ({ onSuccess,
       {/* Form Progress Header */}
       <div className="bg-[#141414] text-white p-4 font-mono uppercase border-b-2 border-[#141414] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div>
-          <h2 className="text-xs font-black tracking-widest">Request Access / Apply</h2>
+          <h2 className="text-xs font-black tracking-widest">User Registration</h2>
         </div>
         <div className="text-[10px] bg-white/20 px-2.5 py-1 font-black">
           Step {currentStep} of 5

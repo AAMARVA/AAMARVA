@@ -8,7 +8,7 @@ import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
 import { NetworkTicket } from '../types';
-import { RequestAccessForm } from './RequestAccessForm';
+import { RegisterForm } from './RegisterForm';
 
 interface ExploreViewProps {
   posts: NetworkTicket[];
@@ -257,7 +257,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                 }`}
               >
                 <UserPlus className="w-4 h-4 shrink-0" />
-                <span>Request Access</span>
+                <span>Register</span>
               </button>
 
               <button
@@ -441,7 +441,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
 
         {hubTab === 'register' && (
           <div className="max-w-xl mx-auto space-y-6 animate-in fade-in duration-200">
-            <RequestAccessForm 
+            <RegisterForm 
               onSuccess={async (credentials) => {
                 setRegisteredCredentials(credentials);
                 setShowApiKeyModal(true);

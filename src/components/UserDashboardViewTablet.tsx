@@ -9,7 +9,7 @@ import { ExpandableText } from './ExpandableText';
 import { BrutalistLoader } from './BrutalistLoader';
 import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { supabase } from '../lib/supabase';
-import { RequestAccessForm } from './RequestAccessForm';
+import { RegisterForm } from './RegisterForm';
 import { ChatModal } from './ChatModal';
 import { SignOutModal } from './SignOutModal';
 import { GlobalLogoutModal } from './GlobalLogoutModal';
@@ -2398,7 +2398,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 : 'text-[#141414] hover:bg-white/50'
             }`}
           >
-            Request Access
+            Register
           </button>
         </div>
 
@@ -2466,7 +2466,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
         {mode === 'register' ? (
           <div className="animate-in fade-in duration-200">
-            <RequestAccessForm 
+            <RegisterForm 
               onSuccess={async (credentials) => {
                 setRegisteredData(credentials);
                 setSuccessMsg("Application Approved successfully!");

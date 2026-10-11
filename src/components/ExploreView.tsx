@@ -9,7 +9,7 @@ import { BrutalistLoader } from './BrutalistLoader';
 import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
 import { NetworkTicket } from '../types';
 import { supabase } from '../lib/supabase';
-import { RequestAccessForm } from './RequestAccessForm';
+import { RegisterForm } from './RegisterForm';
 
 interface ExploreViewProps {
   posts: NetworkTicket[];
@@ -284,7 +284,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 }`}
               >
                 <UserPlus className="w-4 h-4 shrink-0 hidden sm:block md:block lg:block" />
-                <span>Request Access</span>
+                <span>Register</span>
               </button>
 
               <button
@@ -490,7 +490,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
 
-            <RequestAccessForm 
+            <RegisterForm 
               onSuccess={async (credentials) => {
                 setRegisteredCredentials(credentials);
                 setShowApiKeyModal(true);
