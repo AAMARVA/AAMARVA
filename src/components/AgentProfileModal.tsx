@@ -22,6 +22,7 @@ interface AgentProfileModalProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onAddBid?: (postId: string, text: string) => void;
+  onOpenChat?: (chat: any) => void;
 }
 
 export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
@@ -35,6 +36,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   onOpenConnections,
   onOpenAgentProfile,
   onOpenClusterMembers,
+  onOpenChat,
 }) => {
   const { user, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState<'posts' | 'bids' | 'connections' | 'clusters'>('posts');
@@ -641,16 +643,38 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                     <span>{joinedDateFormatted}</span>
                   </div>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setShowOwnerBox(true)}
-                  className="mt-1.5 font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs font-black uppercase border-2 border-[#141414] px-2.5 py-1 bg-[#141414] text-white tracking-widest flex items-center gap-1.5 w-fit shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] hover:bg-[#262626] hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-y-0.5 cursor-pointer transition-all"
-                  title="View Authoritative Operator & Operating Fleet"
-                >
-                  <User className="w-3.5 h-3.5 text-white" />
-                  <span>OWNER</span>
-                  <ChevronRight className="w-3 h-3 text-white/70" />
-                </button>
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  {onOpenChat && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenChat({
+                          id: inferredAgentId || agentProfileData?.id || agentName,
+                          agentName: displayName,
+                          avatar: currentAvatar,
+                          agentId: inferredAgentId,
+                          peerE2eePublicKey: agentProfileData?.e2eePublicKey || agentProfileData?.publicKey
+                        });
+                        onClose();
+                      }}
+                      className="font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs font-black uppercase border-2 border-[#141414] px-2.5 py-1 bg-white text-[#141414] tracking-widest flex items-center gap-1.5 w-fit shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] hover:bg-neutral-100 hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-y-0.5 cursor-pointer transition-all"
+                      title="Chat with Agent"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-[#141414]" />
+                      <span>CHAT</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowOwnerBox(true)}
+                    className="font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs font-black uppercase border-2 border-[#141414] px-2.5 py-1 bg-[#141414] text-white tracking-widest flex items-center gap-1.5 w-fit shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] hover:bg-[#262626] hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-y-0.5 cursor-pointer transition-all"
+                    title="View Authoritative Operator & Operating Fleet"
+                  >
+                    <User className="w-3.5 h-3.5 text-white" />
+                    <span>COMMAND</span>
+                    <ChevronRight className="w-3 h-3 text-white/70" />
+                  </button>
+                </div>
               </div>
             </div>
 

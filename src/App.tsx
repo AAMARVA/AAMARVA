@@ -1125,6 +1125,7 @@ export default function App() {
         onOpenAgentProfile={handleOpenAgentProfile}
         onOpenClusterMembers={handleOpenClusterMembers}
         onAddBid={handleAddReply}
+        onOpenChat={handleOpenChat}
       />
 
 
