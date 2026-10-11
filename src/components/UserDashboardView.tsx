@@ -433,6 +433,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   
   const [activeProfileTab, setActiveProfileTab] = useState<'bids' | 'connections' | 'clusters'>('connections');
 
+  useEffect(() => {
+    if (isSlaveAccount && activeProfileTab === 'bids') {
+      setActiveProfileTab('connections');
+    }
+  }, [isSlaveAccount, activeProfileTab]);
+
   const handleStartEditing = () => {
     setEditName(currentAgentName);
     setEditBio(currentUser?.bio || '');
@@ -691,17 +697,19 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               <Network className="w-4 h-4 sm:hidden mb-0.5" />
               <span className="text-[9px] sm:text-[10px] opacity-70">({userConnections.length})</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveProfileTab('bids')}
-              className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                activeProfileTab === 'bids' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
-              }`}
-            >
-              <span className="hidden sm:inline">Bids</span>
-              <BidIcon className="w-4 h-4 sm:hidden mb-0.5" />
-              <span className="text-[9px] sm:text-[10px] opacity-70">({userReplies.length})</span>
-            </button>
+            {!isSlaveAccount && (
+              <button
+                type="button"
+                onClick={() => setActiveProfileTab('bids')}
+                className={`flex-1 py-2.5 sm:py-2 md:py-2 lg:py-2 text-[10px] sm:text-xs md:text-xs lg:text-xs font-mono font-black uppercase tracking-wider text-center border-r border-[#141414]/20 transition-all select-none cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                  activeProfileTab === 'bids' ? 'bg-white text-[#141414] border-b-4 border-b-[#141414]' : 'text-[#141414]/60 hover:bg-white/50'
+                }`}
+              >
+                <span className="hidden sm:inline">Bids</span>
+                <BidIcon className="w-4 h-4 sm:hidden mb-0.5" />
+                <span className="text-[9px] sm:text-[10px] opacity-70">({userReplies.length})</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setActiveProfileTab('clusters')}
@@ -718,7 +726,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           {/* Twitter Feed Content Area */}
           <div className="p-4 bg-white space-y-4 max-h-[440px] overflow-y-auto">
 
-            {activeProfileTab === 'bids' && (
+            {!isSlaveAccount && activeProfileTab === 'bids' && (
               <div className="space-y-3">
                 {userReplies.length > 0 ? (
                   userReplies.map(({ bid, parentPost }) => (
@@ -862,85 +870,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
                       <Users className="w-5 h-5 opacity-30 text-[#141414]" />
                       <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Connections Found</div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Dissolved Connections Section */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-2">
-                    <ShieldAlert className="w-3.5 h-3.5 text-[#141414]/70" />
-                    <h3 className="font-mono text-xs font-black uppercase text-[#141414]">
-                      Dissolved Connections ({dissolvedConnections.length})
-                    </h3>
-                  </div>
-                  {dissolvedConnections.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-3">
-                      {dissolvedConnections.map((conn) => {
-                        const connReviews = reviews.filter((r: any) => {
-                          if (!r) return false;
-                          const connId = String(conn.id || conn.connectionId || '').toLowerCase().trim();
-                          const rConnId = String(r.connectionId || r.id || '').toLowerCase().trim();
-                          const matchConnId = Boolean(connId && rConnId && (connId === rConnId || connId.includes(rConnId) || rConnId.includes(connId)));
-
-                          const connAgentId = String(conn.agentId || '').replace(/^@/, '').toLowerCase().trim();
-                          const rTarget = String(r.targetAgentId || '').replace(/^@/, '').toLowerCase().trim();
-                          const rReviewer = String(r.reviewerAgent?.id || r.reviewerAgentId || r.reviewerAgentHandle || '').replace(/^@/, '').toLowerCase().trim();
-
-                          const matchAgent = Boolean(connAgentId && (connAgentId === rTarget || connAgentId === rReviewer));
-
-                          return matchConnId || matchAgent;
-                        });
-
-                        return (
-                          <div
-                            key={conn.id || conn.agentId}
-                            className="p-2.5 bg-[#F8F8F7] border-2 border-[#141414]/40 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.4)] flex flex-col gap-2.5 transition-all text-left"
-                          >
-                            <div className="flex items-center justify-between gap-2.5 w-full">
-                              <div 
-                                onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                                className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
-                              >
-                                <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]/40 grayscale group-hover:grayscale-0 transition-all" />
-                                <div className="min-w-0 flex flex-col">
-                                  <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
-                                    <span>{conn.agentName}</span>
-                                  </span>
-                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0]/50 px-1 py-0.5 mt-0.5 normal-case border border-[#141414]/20 self-start overflow-x-auto no-scrollbar whitespace-nowrap">
-                                    <span>@{conn.agentId}</span>
-                                    <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414]/30 [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="shrink-0 flex items-center gap-2">
-                                <span className="inline-block font-mono text-[8px] font-bold uppercase text-[#141414] border border-[#141414]/20 px-1.5 py-0.5">
-                                  TERMINATED
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Reviews Section */}
-                            {connReviews.length > 0 && (
-                              <div className="mt-0.5 pt-2 border-t border-[#141414]/10 space-y-1.5 animate-in fade-in duration-300">
-                                {connReviews.map((r: any) => (
-                                  <ScoreReviewCard
-                                    key={r.id || r.reviewId}
-                                    review={r}
-                                    onOpenAgentProfile={onOpenAgentProfile}
-                                    isDissolved
-                                  />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
-                      <ShieldAlert className="w-5 h-5 opacity-30 text-[#141414]" />
-                      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">No Dissolved Connections</div>
                     </div>
                   )}
                 </div>
