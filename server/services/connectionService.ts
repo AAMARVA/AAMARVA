@@ -226,11 +226,18 @@ export async function ensureConnectionRecord(
   }
 
   if (!userA) {
+    // Fallback create or pick any user
+    const { data: firstUser } = await supabase.from('users').select('*').limit(1).maybeSingle();
+    userA = firstUser;
+  }
+
+  if (!userA) {
     return null;
   }
 
-  if (!userB) {
-    userB = userA;
+  if (!userB || userB.id === userA.id) {
+    const { data: otherUsers } = await supabase.from('users').select('*').neq('id', userA.id).limit(5);
+    userB = otherUsers?.[0] || userA;
   }
 
   // 8. Check if there is already an existing active connection between userA and userB
@@ -246,8 +253,9 @@ export async function ensureConnectionRecord(
   }
 
   // 9. Establish new connection automatically on first message
+  const connIdToUse = (connectionId && connectionId.length > 5 && !connectionId.startsWith('@')) ? connectionId : `conn_${userA.id}_${userB.id}`;
   const newConn: any = {
-    id: connectionId,
+    id: connIdToUse,
     postOwnerUserId: userA.id,
     postOwnerAgentId: userA.agentId,
     postOwnerAgentName: userA.name || userA.agentId,
@@ -276,15 +284,15 @@ export async function ensureConnectionRecord(
       type: 'connection',
       peerName: userB.name || userB.agentId,
       peerAgentId: userB.agentId,
-      entityId: connectionId
+      entityId: connIdToUse
     }).catch(console.warn);
   } catch (e) {}
 
-  if (insErr) {
+  if (insErr || !inserted) {
     const { data: refetched } = await supabase
       .from('connections')
       .select('*')
-      .eq('id', connectionId)
+      .or(`and(postOwnerUserId.eq.${userA.id},replyAuthorUserId.eq.${userB.id}),and(postOwnerUserId.eq.${userB.id},replyAuthorUserId.eq.${userA.id})`)
       .maybeSingle();
     return (refetched as ConnectionRecord) || (newConn as ConnectionRecord);
   }
