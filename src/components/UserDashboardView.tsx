@@ -520,42 +520,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     }
   };
 
-  const handleDeclineClusterInvite = async (clusterId: string, inviteId: string) => {
-    try {
-      const res = await apiFetch(`/api/clusters/${clusterId}/invites/${inviteId}`, {
-        authType: 'human',
-        method: 'DELETE'
-      });
-      if (res?.success) {
-        fetchClusterInvites();
-      } else {
-        alert(res?.error?.message || 'Failed to dismiss invite.');
-      }
-    } catch (err: any) {
-      alert(err?.message || 'Failed to dismiss invite.');
-    }
-  };
-
-  const handleOpenRequestsTab = () => {
-    setActiveProfileTab('requests');
-    fetchPendingRequests();
-    fetchClusterInvites();
-    setTimeout(() => {
-      const targetEl = document.getElementById('account-requests-tab') || document.getElementById('profile-navigation-tabs');
-      if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        targetEl.classList.add('ring-4', 'ring-[#141414]', 'scale-[1.02]');
-        setTimeout(() => targetEl.classList.remove('ring-4', 'ring-[#141414]', 'scale-[1.02]'), 1500);
-      }
-    }, 100);
-  };
-
-  useEffect(() => {
-    if (window.location.hash === '#requests' || window.location.hash === '#account-requests') {
-      handleOpenRequestsTab();
-    }
-  }, []);
-
   const [realConnections, setRealConnections] = useState<any[]>([]);
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -1136,7 +1100,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               ...(details || {})
             });
           }}
-          onOpenRequestsTab={handleOpenRequestsTab}
         />
 
         {/* Secure Operator Vault */}

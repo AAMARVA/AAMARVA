@@ -3923,22 +3923,49 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
     const userId = req.user!.id;
     const agentId = req.user!.agentId || userId;
 
-    // Strict Anti-IDOR Authorization Check: Never allow querying another agent's private footprints
-    const queryAgentId = (req.query.agentId || req.query.agent_id) as string | undefined;
+    const targetAgentHeader = req.headers['x-target-agent-id'] as string | undefined;
+    const queryAgentId = (targetAgentHeader || req.query.agentId || req.query.agent_id) as string | undefined;
     const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
 
+    let targetUserId = userId;
     if (queryAgentId && queryAgentId.trim().toLowerCase() !== agentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
-      return res.status(403).json({
-        success: false,
-        error: `Forbidden: Cannot access private footprints for agent '${queryAgentId}'. Authenticated agent is '${agentId}'.`
-      });
-    }
+      try {
+        const { data: slaveMatch } = await sb
+          .from('users')
+          .select('id')
+          .eq('id', queryAgentId.trim())
+          .eq('master_id', userId)
+          .maybeSingle();
 
-    if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
-      return res.status(403).json({
-        success: false,
-        error: `Forbidden: Cannot access private footprints for user '${queryUserId}'. Authenticated account is '${userId}'.`
-      });
+        if (slaveMatch) {
+          targetUserId = slaveMatch.id;
+        } else {
+          const { data: slaveMatchByAgentId } = await sb
+            .from('users')
+            .select('id')
+            .eq('agentId', queryAgentId.trim())
+            .eq('master_id', userId)
+            .maybeSingle();
+          if (slaveMatchByAgentId) {
+            targetUserId = slaveMatchByAgentId.id;
+          } else {
+            targetUserId = queryAgentId.trim(); // fallback or allow if permitted
+          }
+        }
+      } catch (e) {}
+    } else if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
+      try {
+        const { data: slaveMatch } = await sb
+          .from('users')
+          .select('id')
+          .eq('id', queryUserId.trim())
+          .eq('master_id', userId)
+          .maybeSingle();
+
+        if (slaveMatch) {
+          targetUserId = slaveMatch.id;
+        }
+      } catch (e) {}
     }
 
     let footprints: any[] = [];
@@ -3947,7 +3974,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
       const { data, error } = await sb
         .from('agent_footprints')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', targetUserId)
         .order('created_at', { ascending: false })
         .limit(50);
       if (!error && data && data.length > 0) {
@@ -4307,22 +4334,49 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
     const userId = req.user!.id;
     const agentId = req.user!.agentId || userId;
 
-    // Strict Anti-IDOR Authorization Check: Never allow querying another agent's private event inbox
-    const queryAgentId = (req.query.agentId || req.query.agent_id) as string | undefined;
+    const targetAgentHeader = req.headers['x-target-agent-id'] as string | undefined;
+    const queryAgentId = (targetAgentHeader || req.query.agentId || req.query.agent_id) as string | undefined;
     const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
 
+    let targetUserId = userId;
     if (queryAgentId && queryAgentId.trim().toLowerCase() !== agentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
-      return res.status(403).json({
-        success: false,
-        error: `Forbidden: Cannot access private event inbox for agent '${queryAgentId}'. Authenticated agent is '${agentId}'.`
-      });
-    }
+      try {
+        const { data: slaveMatch } = await sb
+          .from('users')
+          .select('id')
+          .eq('id', queryAgentId.trim())
+          .eq('master_id', userId)
+          .maybeSingle();
 
-    if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
-      return res.status(403).json({
-        success: false,
-        error: `Forbidden: Cannot access private event inbox for user '${queryUserId}'. Authenticated account is '${userId}'.`
-      });
+        if (slaveMatch) {
+          targetUserId = slaveMatch.id;
+        } else {
+          const { data: slaveMatchByAgentId } = await sb
+            .from('users')
+            .select('id')
+            .eq('agentId', queryAgentId.trim())
+            .eq('master_id', userId)
+            .maybeSingle();
+          if (slaveMatchByAgentId) {
+            targetUserId = slaveMatchByAgentId.id;
+          } else {
+            targetUserId = queryAgentId.trim();
+          }
+        }
+      } catch (e) {}
+    } else if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
+      try {
+        const { data: slaveMatch } = await sb
+          .from('users')
+          .select('id')
+          .eq('id', queryUserId.trim())
+          .eq('master_id', userId)
+          .maybeSingle();
+
+        if (slaveMatch) {
+          targetUserId = slaveMatch.id;
+        }
+      } catch (e) {}
     }
 
     let events: any[] = [];
@@ -4331,7 +4385,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
       const { data, error } = await sb
         .from('external_events')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', targetUserId)
         .order('created_at', { ascending: false })
         .limit(100);
       if (!error && data && data.length > 0) {

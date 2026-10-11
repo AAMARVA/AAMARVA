@@ -8,6 +8,7 @@ import { VerifiedBadge } from './VerifiedBadge';
 import { FloorActivityContent } from './FloorActivityComponent';
 import { apiFetch } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
+import { SlaveMonitorCard } from './SlaveMonitorModal';
 
 interface TelemetryViewProps {
   posts?: NetworkTicket[];
@@ -526,6 +527,9 @@ export const TelemetryViewTablet: React.FC<TelemetryViewProps> = ({
             )}
           </div>
         </div>
+
+        {/* Slave Monitor: Inbound & Outbound Activities */}
+        <SlaveMonitorCard onOpenAgentProfile={onOpenAgentProfile} />
 
       </div>
     </div>

@@ -5,9 +5,11 @@ import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 
 interface SlaveMonitorModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  slaveAgents: any[];
+  isOpen?: boolean;
+  onClose?: () => void;
+  slaveAgents?: any[];
+  embedded?: boolean;
+  onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
 interface LogItem {
@@ -79,13 +81,54 @@ const PRE_WRITTEN_DESCRIPTIONS: Record<string, string> = {
 };
 
 export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
-  isOpen,
+  isOpen = true,
   onClose,
-  slaveAgents
+  slaveAgents: initialSlaveAgents,
+  embedded = false,
+  onOpenAgentProfile
 }) => {
+  const [internalSlaveAgents, setInternalSlaveAgents] = useState<any[]>(initialSlaveAgents || []);
   const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>('footprints');
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialSlaveAgents && initialSlaveAgents.length > 0) {
+      setInternalSlaveAgents(initialSlaveAgents);
+      return;
+    }
+    // Attempt to load fleet from master accounts endpoint
+    apiFetch('/api/auth/master/accounts', { authType: 'human' })
+      .then((res) => {
+        if (res?.success && (res.data?.subAgents || res.data?.slaveAgents)) {
+          const list = res.data.subAgents || res.data.slaveAgents;
+          if (Array.isArray(list) && list.length > 0) {
+            setInternalSlaveAgents(list);
+            return;
+          }
+        }
+        return apiFetch('/api/agents', { authType: 'none' }).then((agentRes) => {
+          if (agentRes?.success && agentRes.data) {
+            const list = Array.isArray(agentRes.data) ? agentRes.data : (agentRes.data.agents || []);
+            setInternalSlaveAgents(list);
+          }
+        });
+      })
+      .catch(() => {
+        apiFetch('/api/agents', { authType: 'none' })
+          .then((agentRes) => {
+            if (agentRes?.success && agentRes.data) {
+              const list = Array.isArray(agentRes.data) ? agentRes.data : (agentRes.data.agents || []);
+              setInternalSlaveAgents(list);
+            }
+          })
+          .catch(() => {});
+      });
+  }, [initialSlaveAgents]);
+
+  const effectiveSlaveAgents = (initialSlaveAgents && initialSlaveAgents.length > 0)
+    ? initialSlaveAgents
+    : internalSlaveAgents;
 
   const fetchAllSlaveLogs = useCallback(async (tab: 'footprints' | 'webhooks', showLoader = false) => {
     if (showLoader) setIsLoading(true);
@@ -110,9 +153,9 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
       } catch (err) {}
 
       // Fetch footprints and webhooks for all slave accounts in the fleet
-      if (Array.isArray(slaveAgents) && slaveAgents.length > 0) {
+      if (Array.isArray(effectiveSlaveAgents) && effectiveSlaveAgents.length > 0) {
         await Promise.allSettled(
-          slaveAgents.map(async (sub) => {
+          effectiveSlaveAgents.map(async (sub) => {
             try {
               const res = await apiFetch(endpoint, {
                 authType: 'human',
@@ -145,18 +188,18 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
     } finally {
       if (showLoader) setIsLoading(false);
     }
-  }, [slaveAgents]);
+  }, [effectiveSlaveAgents]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen && !embedded) return;
     fetchAllSlaveLogs(activeTab, true);
     const interval = setInterval(() => {
       fetchAllSlaveLogs(activeTab, false);
     }, 6000);
     return () => clearInterval(interval);
-  }, [isOpen, activeTab, fetchAllSlaveLogs]);
+  }, [isOpen, embedded, activeTab, fetchAllSlaveLogs]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !embedded) return null;
 
   const formatActionTitle = (text?: string) => {
     if (!text) return 'ACTIVITY EVENT';
@@ -195,35 +238,64 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
     return activeTab === 'footprints' ? isFootprint : isWebhook;
   });
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
-      <div className="relative w-full max-w-5xl bg-[#141414] border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(255,255,255,0.1)] text-white max-h-[94vh] flex flex-col font-mono">
-        {/* Modal Top Header Bar - Matches Inbound & Outbound Activities UI */}
-        <div className="p-4 sm:p-6 pb-3 sm:pb-4 border-b-2 border-white flex items-center justify-between flex-nowrap min-w-0 gap-2 shrink-0">
-          <div className="flex items-center gap-2 sm:gap-3 flex-nowrap min-w-0">
-            <div className="p-1 sm:p-1.5 bg-[#141414] text-white border border-white shrink-0 flex items-center justify-center">
-              <GitCommit className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-            </div>
-            <div>
-              <h2 className="text-xs sm:text-sm md:text-base font-black uppercase tracking-tight sm:tracking-wider text-white whitespace-nowrap">
-                Slave Monitor: Inbound & Outbound Activities
-              </h2>
-              <span className="text-[9px] font-bold text-white/60 uppercase tracking-widest block mt-0.5">
-                Aggregated from all {slaveAgents?.length || 0} slave accounts
-              </span>
-            </div>
-          </div>
+  const effectiveCount = effectiveSlaveAgents?.length || 0;
 
-          <div className="flex items-center gap-2 shrink-0">
+  const innerContent = (
+    <div className={`relative w-full ${embedded ? 'border-2 border-[#141414] bg-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]' : 'max-w-5xl bg-[#141414] border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(255,255,255,0.1)] max-h-[94vh]'} text-white flex flex-col font-mono`}>
+      {/* Modal Top Header Bar - Matches Inbound & Outbound Activities UI */}
+      <div className="p-4 sm:p-5 border-b-2 border-white/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+        {/* Mobile top row for refresh button */}
+        <div className="flex sm:hidden items-center justify-between w-full pb-2 border-b border-white/10">
+          <span className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Controls</span>
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => fetchAllSlaveLogs(activeTab, true)}
-              className="p-1 sm:p-1.5 bg-[#141414] hover:bg-white/10 border border-white/20 text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
+              className="p-1.5 bg-[#141414] hover:bg-white/10 border border-white/20 text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)]"
               title="Refresh logs"
               aria-label="Refresh logs"
             >
               <RotateCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
+            {!embedded && onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 bg-white text-[#141414] border border-white hover:bg-black hover:text-white transition-colors cursor-pointer"
+                title="Close modal"
+                aria-label="Close modal"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="p-1 sm:p-1.5 bg-[#141414] text-white border border-white shrink-0 flex items-center justify-center">
+            <GitCommit className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+          </div>
+          <div>
+            <h2 className="text-xs sm:text-sm md:text-base font-black uppercase tracking-tight sm:tracking-wider text-white whitespace-normal sm:whitespace-nowrap break-words">
+              Slave Monitor: Inbound & Outbound Activities
+            </h2>
+            <span className="text-[9px] font-bold text-white/60 uppercase tracking-widest block mt-0.5">
+              Aggregated from all {effectiveCount} slave accounts
+            </span>
+          </div>
+        </div>
+
+        <div className="hidden sm:flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => fetchAllSlaveLogs(activeTab, true)}
+            className="p-1 sm:p-1.5 bg-[#141414] hover:bg-white/10 border border-white/20 text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
+            title="Refresh logs"
+            aria-label="Refresh logs"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+          {!embedded && onClose && (
             <button
               type="button"
               onClick={onClose}
@@ -233,115 +305,69 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
             >
               <X className="w-3.5 h-3.5" />
             </button>
-          </div>
+          )}
         </div>
+      </div>
 
-        {/* Tab Switcher - Same UI as Inbound & Outbound Activities */}
-        <div className="px-4 sm:px-6 pt-3 shrink-0">
-          <div className="flex border border-white/20 shadow-[2px_2px_0px_0px_rgba(255,255,255,0.05)] bg-[#141414]">
-            <button
-              type="button"
-              onClick={() => setActiveTab('footprints')}
-              className={`flex-1 py-2 px-3 text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer ${
-                activeTab === 'footprints' ? 'bg-white/90 text-[#141414]' : 'bg-[#141414] text-white/70 hover:bg-white/5'
-              }`}
-            >
-              <span>Agent Footprints ({logs.filter(l => !!l.action).length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('webhooks')}
-              className={`flex-1 py-2 px-3 text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer ${
-                activeTab === 'webhooks' ? 'bg-white/90 text-[#141414]' : 'bg-[#141414] text-white/70 hover:bg-white/5'
-              }`}
-            >
-              <span>Webhook Events ({logs.filter(l => !!l.type).length})</span>
-            </button>
-          </div>
+      {/* Tab Switcher - Same UI as Inbound & Outbound Activities */}
+      <div className="px-4 sm:px-5 pt-3 shrink-0">
+        <div className="flex border border-white/20 shadow-[2px_2px_0px_0px_rgba(255,255,255,0.05)] bg-[#141414]">
+          <button
+            type="button"
+            onClick={() => setActiveTab('footprints')}
+            className={`flex-1 py-2 px-3 text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer ${
+              activeTab === 'footprints' ? 'bg-white/90 text-[#141414]' : 'bg-[#141414] text-white/70 hover:bg-white/5'
+            }`}
+          >
+            <span>Agent Footprints ({logs.filter(l => !!l.action).length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('webhooks')}
+            className={`flex-1 py-2 px-3 text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer ${
+              activeTab === 'webhooks' ? 'bg-white/90 text-[#141414]' : 'bg-[#141414] text-white/70 hover:bg-white/5'
+            }`}
+          >
+            <span>Webhook Events ({logs.filter(l => !!l.type).length})</span>
+          </button>
         </div>
+      </div>
 
-        {/* Logs Scroll Area - Same UI as Inbound & Outbound Activities */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-3">
-          {isLoading && logs.length === 0 ? (
-            <div className="flex justify-center items-center py-16 bg-white/5 border-2 border-dashed border-white/20">
-              <BrutalistLoader text="Synchronizing Fleet Activities..." size="sm" theme="dark" className="py-4" />
-            </div>
-          ) : filteredLogs.length === 0 ? (
-            <div className="p-12 text-center text-xs text-white/60 border-2 border-dashed border-white/20 bg-white/5 uppercase tracking-wider font-bold">
-              No {activeTab === 'footprints' ? 'footprints' : 'webhook events'} recorded across slave accounts.
-            </div>
-          ) : (
-            filteredLogs.map((log) => {
-              const title = formatActionTitle(log.action || log.type);
-              const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
+      {/* Logs Scroll Area - Same UI as Inbound & Outbound Activities */}
+      <div className={`p-4 sm:p-5 overflow-y-auto space-y-3 ${embedded ? 'max-h-[340px]' : 'flex-1'}`}>
+        {isLoading && logs.length === 0 ? (
+          <div className="flex justify-center items-center py-12 bg-white/5 border-2 border-dashed border-white/20">
+            <BrutalistLoader text="Synchronizing Fleet Activities..." size="sm" theme="dark" className="py-4" />
+          </div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="p-10 text-center text-xs text-white/60 border-2 border-dashed border-white/20 bg-white/5 uppercase tracking-wider font-bold">
+            No {activeTab === 'footprints' ? 'footprints' : 'webhook events'} recorded across slave accounts.
+          </div>
+        ) : (
+          filteredLogs.map((log) => {
+            const title = formatActionTitle(log.action || log.type);
+            const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
 
-              if (activeTab === 'footprints') {
-                const fullEndpoint = parseEndpoint(log.endpoint, log.action);
-
-                return (
-                  <div
-                    key={log.id}
-                    className="p-3.5 bg-[#1e1e1e] border border-white/10 text-xs space-y-2.5 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/20 transition-all duration-150"
-                  >
-                    {/* Row 1: Action Title, Source Slave Account Badge, Time */}
-                    <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90 flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-neutral-700">●</span>
-                        <span>{title}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {log.slaveAgentName && (
-                          <span className="px-2 py-0.5 bg-white/10 border border-white/20 text-[9px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                            <AgentAvatar
-                              name={log.slaveAgentName}
-                              avatar={log.slaveAvatar}
-                              id={log.slaveAgentId}
-                              className="w-3.5 h-3.5 rounded-none border border-white/40"
-                            />
-                            <span>{log.slaveAgentName} (@{log.slaveAgentId})</span>
-                          </span>
-                        )}
-                        <span className="text-[10px] text-white/50 font-medium">{timeStr}</span>
-                      </div>
-                    </div>
-
-                    {/* Row 2: Endpoint Used */}
-                    <div className="text-[11px] text-white/80 font-bold flex flex-wrap items-center gap-1.5">
-                      <span className="text-white/50 text-[10px] uppercase tracking-wider font-semibold">
-                        Endpoint Used:
-                      </span>
-                      <code className="bg-white/5 px-2 py-0.5 border border-white/15 text-[11px] font-bold text-white/90">
-                        {fullEndpoint}
-                      </code>
-                    </div>
-
-                    {/* Row 3: Details */}
-                    {log.details && (
-                      <div className="text-[10px] text-white/70 font-sans leading-relaxed pt-1 border-t border-white/5 break-words">
-                        {typeof log.details === 'string' ? log.details : JSON.stringify(log.details)}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-
-              // Webhook Event
-              const description = getLogDescription(log);
+            if (activeTab === 'footprints') {
+              const fullEndpoint = parseEndpoint(log.endpoint, log.action);
 
               return (
                 <div
                   key={log.id}
-                  className="p-3.5 bg-[#1e1e1e] border border-white/10 text-xs space-y-2.5 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/20 transition-all duration-150"
+                  className="p-3 bg-[#1e1e1e] border border-white/10 text-xs space-y-2 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/20 transition-all duration-150"
                 >
-                  {/* Row 1: Event Title, Source Slave Account Badge, Time */}
+                  {/* Row 1: Action Title, Source Slave Account Badge, Time */}
                   <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90 flex-wrap gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-neutral-700">◆</span>
+                      <span className="text-neutral-700">●</span>
                       <span>{title}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       {log.slaveAgentName && (
-                        <span className="px-2 py-0.5 bg-white/10 border border-white/20 text-[9px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <span 
+                          onClick={() => onOpenAgentProfile?.(log.slaveAgentName || 'Agent', log.slaveAvatar, log.slaveAgentId)}
+                          className="px-2 py-0.5 bg-white/10 border border-white/20 text-[9px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5 cursor-pointer hover:bg-white/20 transition-colors"
+                        >
                           <AgentAvatar
                             name={log.slaveAgentName}
                             avatar={log.slaveAvatar}
@@ -355,16 +381,85 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Row 2: Description */}
-                  <div className="text-[11px] text-white/80 font-sans leading-relaxed">
-                    {description}
+                  {/* Row 2: Endpoint Used */}
+                  <div className="text-[11px] text-white/80 font-bold flex flex-wrap items-center gap-1.5">
+                    <span className="text-white/50 text-[10px] uppercase tracking-wider font-semibold">
+                      Endpoint Used:
+                    </span>
+                    <code className="bg-white/5 px-2 py-0.5 border border-white/15 text-[11px] font-bold text-white/90">
+                      {fullEndpoint}
+                    </code>
                   </div>
+
+                  {/* Row 3: Details */}
+                  {log.details && (
+                    <div className="text-[10px] text-white/70 font-sans leading-relaxed pt-1 border-t border-white/5 break-words">
+                      {typeof log.details === 'string' ? log.details : JSON.stringify(log.details)}
+                    </div>
+                  )}
                 </div>
               );
-            })
-          )}
-        </div>
+            }
+
+            // Webhook Event
+            const description = getLogDescription(log);
+
+            return (
+              <div
+                key={log.id}
+                className="p-3 bg-[#1e1e1e] border border-white/10 text-xs space-y-2 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/20 transition-all duration-150"
+              >
+                {/* Row 1: Event Title, Source Slave Account Badge, Time */}
+                <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-neutral-700">◆</span>
+                    <span>{title}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {log.slaveAgentName && (
+                      <span 
+                        onClick={() => onOpenAgentProfile?.(log.slaveAgentName || 'Agent', log.slaveAvatar, log.slaveAgentId)}
+                        className="px-2 py-0.5 bg-white/10 border border-white/20 text-[9px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5 cursor-pointer hover:bg-white/20 transition-colors"
+                      >
+                        <AgentAvatar
+                          name={log.slaveAgentName}
+                          avatar={log.slaveAvatar}
+                          id={log.slaveAgentId}
+                          className="w-3.5 h-3.5 rounded-none border border-white/40"
+                        />
+                        <span>{log.slaveAgentName} (@{log.slaveAgentId})</span>
+                      </span>
+                    )}
+                    <span className="text-[10px] text-white/50 font-medium">{timeStr}</span>
+                  </div>
+                </div>
+
+                {/* Row 2: Description */}
+                <div className="text-[11px] text-white/80 font-sans leading-relaxed">
+                  {description}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
+
+  if (embedded) {
+    return innerContent;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
+      {innerContent}
+    </div>
+  );
+};
+
+export const SlaveMonitorCard: React.FC<{
+  slaveAgents?: any[];
+  onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+}> = (props) => {
+  return <SlaveMonitorModal embedded isOpen {...props} />;
 };
