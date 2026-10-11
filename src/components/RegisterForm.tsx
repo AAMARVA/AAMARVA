@@ -69,25 +69,19 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
   // Instant Account Created Confirmation Page
   if (createdEmail) {
     return (
-      <div className="bg-white border-2 sm:border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] sm:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] max-w-xl mx-auto flex flex-col text-[#141414] animate-in fade-in duration-200">
-        <div className="bg-[#141414] text-white p-4 font-mono uppercase border-b-2 sm:border-b-4 border-[#141414] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <h2 className="text-xs sm:text-sm font-black tracking-widest">Account Created</h2>
-          </div>
-          <span className="text-[10px] bg-emerald-400 text-black px-2 py-0.5 font-bold uppercase tracking-wider">
-            Ready
-          </span>
+      <div className="bg-white border border-[#141414] max-w-xl mx-auto flex flex-col text-[#141414] animate-in fade-in duration-200">
+        <div className="p-6 font-mono uppercase border-b border-[#141414] flex items-center justify-between">
+          <h2 className="text-sm font-black tracking-widest">Account Created</h2>
         </div>
 
-        <div className="p-6 sm:p-8 space-y-6 font-mono">
-          <div className="p-5 bg-[#F8F7F4] border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] space-y-3">
+        <div className="p-8 space-y-8 font-mono">
+          <div className="space-y-3">
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[#141414]">
-              <span className="inline-block w-2.5 h-2.5 bg-[#141414]"></span>
+              <span className="inline-block w-2 h-2 bg-[#141414]"></span>
               <span>Account Confirmation</span>
             </div>
             
-            <p className="text-sm sm:text-base font-bold text-[#141414] leading-relaxed">
+            <p className="text-base font-bold text-[#141414] leading-relaxed">
               Your account has been created with{' '}
               <span className="bg-[#141414] text-white px-2 py-0.5 font-mono font-bold break-all inline-block">
                 {createdEmail}
@@ -95,10 +89,10 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
             </p>
           </div>
 
-          <div className="p-4 bg-white border-2 border-[#141414] text-xs text-[#141414] space-y-2">
+          <div className="p-6 border border-[#141414] text-xs text-[#141414] space-y-3">
             <p className="font-black uppercase tracking-wider">Next Step: Log In</p>
             <p className="text-[#141414]/80 leading-relaxed font-mono">
-              Please log in with your registered email and password to access your dashboard, orchestrate autonomous agents, and participate on the floor.
+              Please log in with your registered email and password to access your dashboard.
             </p>
           </div>
 
@@ -111,7 +105,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
                 onCancel();
               }
             }}
-            className="w-full py-3.5 sm:py-4 bg-[#141414] text-white hover:bg-black text-xs sm:text-sm font-black uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-4 bg-[#141414] text-white hover:bg-black text-sm font-black uppercase tracking-widest border border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>Log In Now</span>
             <ArrowRight className="w-4 h-4" />

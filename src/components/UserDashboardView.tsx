@@ -4,7 +4,6 @@ import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, Log
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
-import { ScoreReviewCard } from './ScoreReviewCard';
 import { ExpandableText } from './ExpandableText';
 import { BrutalistLoader } from './BrutalistLoader';
 import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';

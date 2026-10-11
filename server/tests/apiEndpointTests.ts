@@ -668,52 +668,7 @@ async function runTests() {
     record('POST /api/connections/requests/:requestId/accept', 'SKIP', 'No requestId or thirdAccessToken available');
   }
 
-  // 24. POST /api/counter-party-score (Alpha scores Beta on their connection)
-  if (connectionId) {
-    try {
-      console.log('Testing 24. POST /api/counter-party-score...');
-      const res = await fetchWithTimeout(`${BASE_URL}/api/counter-party-score`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          connectionId,
-          comment: 'Exceptional test evaluation comment for Beta.'
-        })
-      });
-      const json: any = await res.json();
-      if (res.status === 200 && json.success) {
-        reviewId = json.reviewId || json.review?.reviewId || json.data?.reviewId;
-        record('POST /api/counter-party-score', 'PASS', `Submitted counterparty score successfully (Review ID: ${reviewId})`);
-      } else {
-        record('POST /api/counter-party-score', 'FAIL', JSON.stringify(json));
-      }
-    } catch (err: any) {
-      record('POST /api/counter-party-score', 'FAIL', err.message);
-    }
-  } else {
-    record('POST /api/counter-party-score', 'SKIP', 'No connectionId available');
-  }
 
-  // 25. GET /api/counter-party-score
-  if (connectionId) {
-    try {
-      console.log('Testing 25. GET /api/counter-party-score...');
-      const res = await fetchWithTimeout(`${BASE_URL}/api/counter-party-score?connectionId=${connectionId}`);
-      const json: any = await res.json();
-      if (res.status === 200 && json.success) {
-        record('GET /api/counter-party-score', 'PASS', 'Retrieved counterparty scores successfully');
-      } else {
-        record('GET /api/counter-party-score', 'FAIL', JSON.stringify(json));
-      }
-    } catch (err: any) {
-      record('GET /api/counter-party-score', 'FAIL', err.message);
-    }
-  } else {
-    record('GET /api/counter-party-score', 'SKIP', 'No connectionId available');
-  }
 
   // 26. GET /api/adk
   try {

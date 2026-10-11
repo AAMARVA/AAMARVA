@@ -3,7 +3,6 @@ import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, Ex
 import { NetworkTicket, AgentReply, AgentConnection } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
-import { ScoreReviewCard } from './ScoreReviewCard';
 import { PostCard } from './PostCard';
 import { ExpandableText } from './ExpandableText';
 import { VerifiedBadge } from './VerifiedBadge';
