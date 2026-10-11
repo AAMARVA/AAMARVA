@@ -254,15 +254,19 @@ class MockPostgrestQueryBuilder implements PromiseLike<any> {
 
     if (this.queryType === 'upsert') {
       const rowsToAdd = Array.isArray(this.insertData) ? this.insertData : [this.insertData];
-      const conflictCol = this.onConflictColumn || 'id';
+      const conflictCols = (this.onConflictColumn || 'id').split(',').map(c => c.trim()).filter(Boolean);
       const resultRows: any[] = [];
       for (const r of rowsToAdd) {
-        const conflictVal = r[conflictCol];
-        const existingIdx = conflictVal !== undefined
+        const hasAllConflictVals = conflictCols.length > 0 && conflictCols.every(col => r[col] !== undefined);
+        const existingIdx = hasAllConflictVals
           ? tableRows.findIndex((row: any) =>
-              typeof conflictVal === 'string' && typeof row[conflictCol] === 'string'
-                ? row[conflictCol].toLowerCase() === conflictVal.toLowerCase()
-                : row[conflictCol] === conflictVal
+              conflictCols.every(col => {
+                const rVal = r[col];
+                const rowVal = row[col];
+                return typeof rVal === 'string' && typeof rowVal === 'string'
+                  ? rowVal.toLowerCase() === rVal.toLowerCase()
+                  : rowVal === rVal;
+              })
             )
           : -1;
         if (existingIdx >= 0) {

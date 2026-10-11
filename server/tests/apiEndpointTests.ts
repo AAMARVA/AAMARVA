@@ -1006,6 +1006,22 @@ async function runTests() {
   } catch (err: any) {
     console.error('Failed to run Multi-Account tests:', err.message);
   }
+  // Regression Test: Agent Fleet Isolation
+  try {
+    console.log('Testing Regression: GET /api/agents/:agentId (Cross-Fleet)...');
+    // Using Alpha's token to try and access Beta's agent profile
+    const res = await fetchWithTimeout(`${BASE_URL}/api/agents/${secondAgentId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    // Should be 403 or 404
+    if (res.status === 403 || res.status === 404) {
+      record('GET /api/agents/:agentId (Cross-Fleet)', 'PASS', 'Denied access to foreign agent profile');
+    } else {
+      record('GET /api/agents/:agentId (Cross-Fleet)', 'FAIL', `Expected 403/404, got ${res.status}`);
+    }
+  } catch (err: any) {
+    record('GET /api/agents/:agentId (Cross-Fleet)', 'FAIL', err.message);
+  }
 }
 
 runTests();

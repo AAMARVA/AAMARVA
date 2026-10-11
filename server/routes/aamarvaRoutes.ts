@@ -124,7 +124,22 @@ router.get('/telemetry/activity', securityLayer('public_reads'), async (req: Req
   }
 });
 
+// ---------------------------------------------------------
+// Floor Activity Stream & History Endpoints
+// ---------------------------------------------------------
+router.get(['/floor/activity', '/telemetry/floor-logs'], securityLayer('public_reads'), async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 100;
+    const activities = floorActivityService.getRecentFloorActivity(limit);
+    res.json({ success: true, data: activities });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
+router.get('/floor/stream', (req: Request, res: Response) => {
+  floorActivityService.registerFloorStreamClient(res);
+});
 
 // 1. POST /api/auth/register & /api/v1/auth/register
 router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_register'), async (req: Request, res: Response) => {
@@ -2006,25 +2021,83 @@ router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update')
   }
 });
 
-// 6. GET /api/agents/:agentId (Public read)
-router.get('/agents/:agentId', securityLayer('public_reads'), async (req: Request, res: Response) => {
+// Helper: Authenticate session optionally or extract master ID from auth header / cookie
+async function resolveAuthMasterId(req: Request): Promise<string | null> {
+  const authReq = req as AuthenticatedRequest;
+  if (authReq.user?.id) {
+    const sb = getSupabaseClient();
+    const { data: u } = await sb.from('users').select('id, master_id, is_master_primary').eq('id', authReq.user.id).maybeSingle();
+    return (u?.master_id && !u?.is_master_primary) ? u.master_id : authReq.user.id;
+  }
+
+  // Check human session cookie or Bearer token
+  const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
+  const authHeader = req.headers.authorization;
+  const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.split(' ')[1] : undefined;
+  const candidateSession = (sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim())
+    ? sessionCookie.trim()
+    : bearerToken;
+
+  if (candidateSession) {
+    try {
+      const { verifyHumanSession } = await import('../authService.js');
+      const payload = await verifyHumanSession(candidateSession);
+      if (payload && payload.id) {
+        const sb = getSupabaseClient();
+        const { data: u } = await sb.from('users').select('id, master_id, is_master_primary').eq('id', payload.id).maybeSingle();
+        return (u?.master_id && !u?.is_master_primary) ? u.master_id : payload.id;
+      }
+    } catch (e) {}
+  }
+
+  // Check agent API key
+  const apiKey = req.headers['x-api-key'] as string;
+  if (apiKey && typeof apiKey === 'string') {
+    try {
+      const { verifyAgentApiKey } = await import('../authService.js');
+      const agentUser = await verifyAgentApiKey(apiKey);
+      if (agentUser?.id) {
+        const sb = getSupabaseClient();
+        const { data: u } = await sb.from('users').select('id, master_id, is_master_primary').eq('id', agentUser.id).maybeSingle();
+        return (u?.master_id && !u?.is_master_primary) ? u.master_id : agentUser.id;
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
+
+// 6. GET /api/agents/:agentId (Fleet-isolated private profile read)
+router.get('/agents/:agentId', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const agentId = req.params.agentId as string;
-    const profile = await getAgentProfile(agentId);
+    const callerMasterId = await resolveAuthMasterId(req);
+
+    if (!callerMasterId) {
+      return res.status(404).json({ success: false, error: { message: 'Agent profile not found.' } });
+    }
+
+    const profile = await getAgentProfile(agentId, false, callerMasterId);
     res.json({ success: true, data: profile });
   } catch (err: any) {
-    res.status(404).json({ success: false, error: { message: err.message } });
+    res.status(404).json({ success: false, error: { message: 'Agent profile not found.' } });
   }
 });
 
-// 6b. GET /api/agents/:agentId/owner (Public read for Owner dossier: Owner name, social handles, master & slave accounts - no email)
+// 6b. GET /api/agents/:agentId/owner (Fleet-isolated Owner dossier read)
 router.get('/agents/:agentId/owner', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const agentId = req.params.agentId as string;
-    const dossier = await getAgentOwnerDossier(agentId);
+    const callerMasterId = await resolveAuthMasterId(req);
+
+    if (!callerMasterId) {
+      return res.status(404).json({ success: false, error: { message: 'Owner dossier not found.' } });
+    }
+
+    const dossier = await getAgentOwnerDossier(agentId, callerMasterId);
     res.json({ success: true, data: dossier });
   } catch (err: any) {
-    res.status(404).json({ success: false, error: { message: err.message || 'Owner dossier not found.' } });
+    res.status(404).json({ success: false, error: { message: 'Owner dossier not found.' } });
   }
 });
 
@@ -2846,9 +2919,17 @@ router.get('/connection-requests/recent', securityLayer('public_reads'), async (
 });
 
 // GET /api/connections/recent (Public read)
-router.get('/connections/recent', securityLayer('public_reads'), async (req: Request, res: Response) => {
+router.get('/connections/recent', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const connections = await getRecentConnections(20);
+    const callerMasterId = await resolveAuthMasterId(req);
+    if (!callerMasterId) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // Get connections that belong to the caller's fleet
+    // This requires a helper or updated query. 
+    // For now, let's assume getRecentConnections should take a masterId filter.
+    const connections = await getRecentConnections(20, callerMasterId);
     if (!connections || connections.length === 0) {
       return res.json({ success: true, data: [] });
     }
@@ -3142,14 +3223,15 @@ router.get('/stats', securityLayer('public_reads'), async (req: Request, res: Re
   }
 });
 
-// 17. GET /api/agents (List all agents with database search support and pagination)
+// 17. GET /api/agents (List fleet agents with database search support and pagination)
 router.get('/agents', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const q = (req.query.q as string) || '';
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
 
-    const result = await getAgents(q, page, limit);
+    const callerMasterId = await resolveAuthMasterId(req);
+    const result = await getAgents(q, page, limit, callerMasterId);
 
     res.json({
       success: true,

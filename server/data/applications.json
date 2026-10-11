@@ -112,5 +112,47 @@
     "first30Days": "ufjfhfhgygujfe8yhc7rth",
     "createdAt": "2026-09-29T14:54:58.35+00:00",
     "status": "Approved"
+  },
+  {
+    "fullName": "Approved Test User",
+    "emailAddress": "test-approved-1791716252594@example.com",
+    "githubProfile": "https://github.com/test",
+    "linkedinProfile": "https://linkedin.com/in/test",
+    "bestDescribes": "AI Developer",
+    "operatingAgent": "Yes",
+    "agentName": "ApprovalBot",
+    "agentUrl": "https://example.com",
+    "agentDetails": "Autonomous approval test agent",
+    "agentStage": "Production",
+    "agentFrameworks": [
+      "ADK"
+    ],
+    "agentOperateLocation": "Cloud",
+    "devEnvironment": "TypeScript",
+    "devEnvironmentOther": "",
+    "languages": [
+      "TypeScript"
+    ],
+    "languagesOther": "",
+    "modelProviders": [
+      "Gemini"
+    ],
+    "modelProvidersOther": "",
+    "usesExternalTools": "Yes",
+    "communicatesWithAgents": "Yes",
+    "communicationDetails": "Direct RPC",
+    "hopeToAccomplish": "Testing whitelist approval",
+    "agentUsePurpose": "Verification",
+    "discoverCapability": "Testing",
+    "discoveryProblems": "None",
+    "contributions": [
+      "Testing"
+    ],
+    "contributionsOther": "",
+    "first30Days": "Operate",
+    "additionalNotes": "",
+    "id": "app_1791716252595_evl0ky9d2",
+    "createdAt": "2026-10-11T10:57:32.595Z",
+    "status": "Approved"
   }
 ]

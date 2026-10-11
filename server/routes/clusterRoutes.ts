@@ -781,10 +781,188 @@ router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req
 // });
 
 
-// // 9. POST /clusters/:clusterId/join (Accept invitation & Join)
-// router.post('/clusters/:clusterId/join', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-//   ...
-// });
+// 9. POST /clusters/:clusterId/join (Direct Join - Fleet Enclave Enforcement)
+router.post('/clusters/:clusterId/join', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_join');
+    const clusterId = req.params.clusterId as string;
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+    const agentId = req.user!.agentId || userId;
+
+    // 1. Cluster existence and dissolution check
+    const { data: cluster, error: clusterErr } = await supabase
+      .from(tables.clusters)
+      .select('*')
+      .eq('id', clusterId)
+      .maybeSingle();
+
+    if (clusterErr || !cluster) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'CLUSTER_NOT_FOUND',
+          message: 'Cluster not found.'
+        }
+      });
+    }
+
+    if (cluster.status === 'dissolved') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'CLUSTER_DISSOLVED',
+          message: 'Forbidden: This cluster has been dissolved.'
+        }
+      });
+    }
+
+    // 2. Authoritative Fleet Boundary Check: Cross-master cluster join denied by default
+    const { data: ownerUser } = await supabase
+      .from('users')
+      .select('id, master_id, is_master_primary')
+      .eq('id', cluster.ownerUserId)
+      .maybeSingle();
+
+    const clusterMasterId = (ownerUser?.master_id && !ownerUser?.is_master_primary)
+      ? ownerUser.master_id
+      : cluster.ownerUserId;
+
+    const { data: callerUser } = await supabase
+      .from('users')
+      .select('id, master_id, is_master_primary')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const callerMasterId = (callerUser?.master_id && !callerUser?.is_master_primary)
+      ? callerUser.master_id
+      : userId;
+
+    if (clusterMasterId !== callerMasterId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN_CROSS_FLEET',
+          message: 'Forbidden: Cross-master cluster access is denied by default. You can only join clusters owned by your private fleet.'
+        }
+      });
+    }
+
+    // 3. Check existing membership
+    const { data: existingMember } = await supabase
+      .from(tables.members)
+      .select('*')
+      .eq('clusterId', clusterId)
+      .eq('userId', userId)
+      .maybeSingle();
+
+    const now = new Date().toISOString();
+
+    if (existingMember) {
+      if (existingMember.status !== 'dissolved') {
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'ALREADY_MEMBER',
+            message: 'You are already an active member of this cluster.'
+          }
+        });
+      }
+
+      // Reactivate dissolved member
+      await supabase
+        .from(tables.members)
+        .update({
+          status: 'active',
+          role: 'member'
+        })
+        .eq('id', existingMember.id);
+
+      await logAgentFootprint(
+        userId,
+        'CLUSTER_JOINED',
+        `agent ${agentId} rejoined cluster "${cluster.name || clusterId}"`,
+        clusterId,
+        agentId
+      );
+
+      floorActivityService.recordFloorActivity({
+        agentId,
+        agentName: req.user!.name || agentId,
+        avatar: req.user!.avatar,
+        emailVerified: req.user!.emailVerified,
+        text: `joined Cluster "${cluster.name || clusterId}"`,
+        type: 'cluster',
+        cluster: { name: cluster.name || 'Cluster', id: clusterId, symbol: getClusterSymbol(clusterId) }
+      }).catch(console.warn);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Successfully rejoined cluster.',
+        data: {
+          clusterId,
+          role: 'member',
+          status: 'active'
+        }
+      });
+    }
+
+    // 4. Insert new cluster member
+    const memberId = `member_${crypto.randomUUID()}`;
+    const { error: insertErr } = await supabase
+      .from(tables.members)
+      .insert({
+        id: memberId,
+        clusterId,
+        userId,
+        agentId,
+        role: 'member',
+        status: 'active',
+        createdAt: now
+      });
+
+    if (insertErr) {
+      throw new Error(`Failed to record cluster membership: ${insertErr.message}`);
+    }
+
+    await logAgentFootprint(
+      userId,
+      'CLUSTER_JOINED',
+      `agent ${agentId} joined cluster "${cluster.name || clusterId}"`,
+      clusterId,
+      agentId
+    );
+
+    floorActivityService.recordFloorActivity({
+      agentId,
+      agentName: req.user!.name || agentId,
+      avatar: req.user!.avatar,
+      emailVerified: req.user!.emailVerified,
+      text: `joined Cluster "${cluster.name || clusterId}"`,
+      type: 'cluster',
+      cluster: { name: cluster.name || 'Cluster', id: clusterId, symbol: getClusterSymbol(clusterId) }
+    }).catch(console.warn);
+
+    res.status(200).json({
+      success: true,
+      message: 'Successfully joined cluster.',
+      data: {
+        clusterId,
+        role: 'member',
+        status: 'active'
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'CLUSTER_JOIN_FAILED',
+        message: err.message || 'Internal server error.'
+      }
+    });
+  }
+});
 
 
 // 10. PATCH /clusters/:clusterId/members/:memberAgentId/role (Update member role: admin/member)

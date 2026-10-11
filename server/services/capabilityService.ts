@@ -251,29 +251,28 @@ export class CapabilityService {
       const sb = getSupabaseClient();
 
       // 1. Authoritative Validation: Look up target in users table
-      let targetUser: any = null;
       if (targetSlaveIdentifier === 'master' || targetSlaveIdentifier === masterUserId) {
-        const { data: masterRow } = await sb
-          .from('users')
-          .select('id, agentId, name, master_id, is_master_primary, status')
-          .eq('id', masterUserId)
-          .maybeSingle();
-        targetUser = masterRow;
-      } else {
-        const { data: foundUser } = await sb
-          .from('users')
-          .select('id, agentId, name, master_id, is_master_primary, status')
-          .or(`id.eq.${targetSlaveIdentifier},agentId.eq.${targetSlaveIdentifier}`)
-          .maybeSingle();
-        targetUser = foundUser;
+        throw new Error('Cannot activate slave capability on a master account. Capability increments only apply to slave agents.');
       }
+
+      const { data: foundUser } = await sb
+        .from('users')
+        .select('id, agentId, name, master_id, is_master_primary, status')
+        .or(`id.eq.${targetSlaveIdentifier},agentId.eq.${targetSlaveIdentifier}`)
+        .maybeSingle();
+
+      const targetUser = foundUser;
 
       if (!targetUser) {
         throw new Error(`Target Account '${targetSlaveIdentifier}' not found in database.`);
       }
 
-      // Verify ownership: Target slave must belong to this master (or is master itself)
-      if (targetUser.id !== masterUserId && targetUser.master_id && targetUser.master_id !== masterUserId) {
+      if (targetUser.id === masterUserId || targetUser.is_master_primary === true || !targetUser.master_id) {
+        throw new Error('Cannot activate slave capability on a master account. Capability increments only apply to slave agents.');
+      }
+
+      // Verify ownership: Target slave must belong to this master
+      if (targetUser.master_id !== masterUserId) {
         throw new Error(`Slave Agent is registered under a different Master account. Unauthorized.`);
       }
 

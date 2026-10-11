@@ -3,7 +3,7 @@ import { UserRecord } from '../db.js';
 import { normalizeUserRecord, DEFAULT_BIO } from '../authService.js';
 import { getClusterTables } from '../routes/clusterRoutes.js';
 
-export async function getAgentProfile(agentId: string, isOwnProfile = false) {
+export async function getAgentProfile(agentId: string, isOwnProfile = false, callerMasterId?: string | null) {
   const trimmed = agentId.trim();
   const normalizedTarget = trimmed.replace(/^@/, '');
   const supabase = getSupabaseClient();
@@ -19,13 +19,25 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false) {
 
   const { data: rawUser, error: userError } = await supabase
     .from('users')
-    .select('id, agentId, email, name, status, avatar, bio, createdAt, emailVerified')
+    .select('id, agentId, email, name, status, avatar, bio, createdAt, emailVerified, master_id, is_master_primary')
     .or(orConditions)
     .maybeSingle();
 
   if (userError || !rawUser) {
     if (!isOwnProfile) throw new Error('Agent profile not found.');
     return null;
+  }
+
+  // Fleet Isolation Guard:
+  // If not own profile, enforce that caller belongs to the same master fleet as the target agent.
+  if (!isOwnProfile) {
+    const targetMasterId = (rawUser.master_id && !rawUser.is_master_primary)
+      ? rawUser.master_id
+      : rawUser.id;
+
+    if (!callerMasterId || targetMasterId !== callerMasterId) {
+      throw new Error('Agent profile not found.');
+    }
   }
 
   const user = normalizeUserRecord(rawUser);
@@ -417,15 +429,27 @@ export async function getAgentActivityStats() {
   };
 }
 
-export async function getAgents(query: string = '', page: number = 1, limit: number = 20) {
-  const supabase = getSupabaseClient();
+export async function getAgents(query: string = '', page: number = 1, limit: number = 20, callerMasterId?: string | null) {
   const safePage = Math.max(1, parseInt(String(page)) || 1);
   const safeLimit = Math.max(1, Math.min(parseInt(String(limit)) || 20, 100));
 
+  // Default to denying private fleet discovery for unauthenticated callers
+  if (!callerMasterId) {
+    return {
+      agents: [],
+      total: 0,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  const supabase = getSupabaseClient();
+
   let queryBuilder = supabase
     .from('users')
-    .select('id, agentId, name, avatar, bio, createdAt, emailVerified', { count: 'exact' })
-    .not('agentId', 'is', null);
+    .select('id, agentId, name, avatar, bio, createdAt, emailVerified, master_id, is_master_primary', { count: 'exact' })
+    .not('agentId', 'is', null)
+    .or(`master_id.eq.${callerMasterId},id.eq.${callerMasterId}`);
 
   if (query && query.trim()) {
     const cleanQuery = query.replace(/[,()"\\]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -437,7 +461,7 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
   const from = (safePage - 1) * safeLimit;
   const to = from + safeLimit - 1;
 
-  const { data, count, error } = await queryBuilder
+  const { data, error } = await queryBuilder
     .order('createdAt', { ascending: false })
     .range(from, to);
 
@@ -445,7 +469,12 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
     throw new Error(`Database error querying agents: ${error.message}`);
   }
 
-  const agents = (data || []).map((u: any) => {
+  // Strict in-memory fleet isolation guard: only include agents that belong to this master's fleet
+  const fleetAgents = (data || []).filter((u: any) => {
+    return u.master_id === callerMasterId || (u.id === callerMasterId && (!u.master_id || u.is_master_primary === true));
+  });
+
+  const agents = fleetAgents.map((u: any) => {
     const isVerified = Boolean(u.emailVerified === true);
     const vStatus = isVerified ? 'verified' : 'not verified';
     return {
@@ -464,13 +493,13 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
 
   return {
     agents,
-    total: count || 0,
+    total: fleetAgents.length,
     page: safePage,
     limit: safeLimit,
   };
 }
 
-export async function getAgentOwnerDossier(agentId: string) {
+export async function getAgentOwnerDossier(agentId: string, callerMasterId?: string | null) {
   const trimmed = agentId.trim();
   const normalizedTarget = trimmed.replace(/^@/, '');
   const supabase = getSupabaseClient();
@@ -490,6 +519,15 @@ export async function getAgentOwnerDossier(agentId: string) {
     .maybeSingle();
 
   if (userError || !rawUser) {
+    throw new Error('Agent not found.');
+  }
+
+  // Fleet Isolation Guard for Owner Dossier:
+  const targetMasterId = (rawUser.master_id && !rawUser.is_master_primary)
+    ? rawUser.master_id
+    : rawUser.id;
+
+  if (!callerMasterId || targetMasterId !== callerMasterId) {
     throw new Error('Agent not found.');
   }
 

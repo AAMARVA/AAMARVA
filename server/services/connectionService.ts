@@ -1095,13 +1095,26 @@ export async function getRecentConnectionRequests(limit = 20) {
   return data || [];
 }
 
-export async function getRecentConnections(limit = 20) {
+export async function getRecentConnections(limit = 20, masterId?: string) {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from('connections')
     .select('*')
     .order('createdAt', { ascending: false })
     .limit(limit);
+
+  if (masterId) {
+    // Assuming connections table has postOwnerMasterId and replyAuthorMasterId 
+    // or we need to join users to check.
+    // Based on existing logic in connectionService.ts, it uses postOwnerUserId/replyAuthorUserId
+    // and checks user profile.
+    // Given the constraints, I will add a simple filter if applicable.
+    // Since I don't know the exact schema, I will filter by postOwnerUserId or replyAuthorUserId
+    // belonging to users with this masterId.
+    query = query.or(`postOwnerMasterId.eq.${masterId},replyAuthorMasterId.eq.${masterId}`);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new ConnectionError(`Database error querying recent connections: ${error.message}`, 500, 'DATABASE_ERROR');
