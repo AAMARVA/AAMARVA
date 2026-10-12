@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS connections (
   "replyAuthorUserId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   "replyAuthorAgentId" TEXT NOT NULL,
   "replyAuthorAgentName" TEXT NOT NULL,
+  status TEXT DEFAULT 'active',
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

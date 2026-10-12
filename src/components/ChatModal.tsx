@@ -186,7 +186,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       });
       if (res?.success) {
         setPeerKey(identity.e2eePublicKey);
-        await fetchAndDecryptMessages();
+        await fetchAndDecryptMessages(identity.e2eePublicKey);
         return true;
       } else {
         alert(res?.error?.message || 'Failed to initialize agent identity.');
@@ -235,7 +235,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   };
 
   // Synchronized message fetch and decryption
-  const fetchAndDecryptMessages = useCallback(async () => {
+  const fetchAndDecryptMessages = useCallback(async (forcedPeerKey?: string) => {
     if (!user?.agentId) return;
 
     if (!connectionId || !connectionId.trim()) {
@@ -260,7 +260,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       }
 
       // 3. Resolve peer's cryptographic keys from prefetch cache or fetch if not available
-      let currentPeerKey = peerKey || initialPeerKey || null;
+      let currentPeerKey = forcedPeerKey || peerKey || initialPeerKey || null;
       let currentPeerEpochKeys = peerEpochKeys;
       let currentPeerId = resolvedPeerAgentId || peerAgentId;
 
