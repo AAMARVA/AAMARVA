@@ -323,7 +323,7 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
 router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_create');
-    const { name, description } = req.body;
+    const { name, description, memberAgentIds } = req.body;
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ success: false, error: { message: 'Cluster name is required.' } });
     }
@@ -365,6 +365,34 @@ router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedReques
       // Cleanup cluster if member insert failed
       await supabase.from(tables.clusters).delete().eq('id', clusterId);
       throw new Error(`Failed to register cluster membership: ${memberError.message}`);
+    }
+
+    // Insert additional member agents if specified
+    if (Array.isArray(memberAgentIds) && memberAgentIds.length > 0) {
+      const cleanAgentIds = memberAgentIds.map(id => String(id).trim()).filter(Boolean);
+      if (cleanAgentIds.length > 0) {
+        const { data: targetUsers } = await supabase
+          .from('users')
+          .select('id, agentId')
+          .or(`agentId.in.(${cleanAgentIds.join(',')}),id.in.(${cleanAgentIds.join(',')})`);
+
+        if (targetUsers && targetUsers.length > 0) {
+          const memberInserts = targetUsers
+            .filter((u: any) => u.id !== userId)
+            .map((u: any) => ({
+              id: `member_${crypto.randomUUID()}`,
+              clusterId,
+              userId: u.id,
+              agentId: u.agentId,
+              role: 'member',
+              createdAt: now
+            }));
+
+          if (memberInserts.length > 0) {
+            await supabase.from(tables.members).insert(memberInserts);
+          }
+        }
+      }
     }
 
     await logAgentFootprint(

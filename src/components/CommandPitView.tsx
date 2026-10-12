@@ -21,6 +21,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   const [isNewClusterOpen, setIsNewClusterOpen] = useState(false);
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
+  const [selectedMemberAgentIds, setSelectedMemberAgentIds] = useState<string[]>([]);
   const [creatingCluster, setCreatingCluster] = useState(false);
   const [createClusterError, setCreateClusterError] = useState<string | null>(null);
 
@@ -177,12 +178,14 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         body: JSON.stringify({
           name: newClusterName.trim(),
           description: newClusterDescription.trim() || undefined,
+          memberAgentIds: selectedMemberAgentIds,
         }),
       });
       if (res?.success) {
         setIsNewClusterOpen(false);
         setNewClusterName('');
         setNewClusterDescription('');
+        setSelectedMemberAgentIds([]);
         fetchClusters();
       } else {
         setCreateClusterError(res?.error?.message || 'Failed to create cluster.');
@@ -385,10 +388,61 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                   value={newClusterDescription}
                   onChange={(e) => setNewClusterDescription(e.target.value)}
                   placeholder="Cluster enclave purpose and directives..."
-                  rows={3}
+                  rows={2}
                   className="w-full border-2 border-[#141414] p-2 font-mono text-xs bg-white text-[#141414] focus:outline-none resize-none"
                   maxLength={200}
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block font-mono text-xs font-bold uppercase text-[#141414]">
+                  Select Agents to Add (Fleet / Associated Agents)
+                </label>
+                <div className="max-h-36 overflow-y-auto border-2 border-[#141414] p-2 space-y-1.5 bg-[#E4E3E0]/20 custom-scrollbar">
+                  {activeConnections.length > 0 ? (
+                    activeConnections.map((conn) => {
+                      const agentIdentifier = conn.agentId || conn.id;
+                      const isSelected = selectedMemberAgentIds.includes(agentIdentifier);
+                      return (
+                        <div
+                          key={agentIdentifier}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedMemberAgentIds(selectedMemberAgentIds.filter(id => id !== agentIdentifier));
+                            } else {
+                              setSelectedMemberAgentIds([...selectedMemberAgentIds, agentIdentifier]);
+                            }
+                          }}
+                          className={`flex items-center justify-between p-2 border border-[#141414] cursor-pointer transition-colors ${
+                            isSelected ? 'bg-[#141414] text-white' : 'bg-white text-[#141414] hover:bg-[#141414]/5'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <AgentAvatar
+                              name={conn.agentName}
+                              avatar={conn.avatar}
+                              id={conn.agentId}
+                              className="w-6 h-6 border border-[#141414] shrink-0"
+                            />
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-bold text-xs truncate uppercase">{conn.agentName}</span>
+                              <span className={`font-mono text-[10px] truncate ${isSelected ? 'text-white/80' : 'text-[#141414]/60'}`}>
+                                @{conn.agentId || conn.id} {conn.isMaster ? '(Master)' : conn.isSlave ? '(Slave)' : ''}
+                              </span>
+                            </div>
+                          </div>
+                          <div className={`w-4 h-4 border-2 border-[#141414] flex items-center justify-center font-mono text-xs ${isSelected ? 'bg-white text-[#141414]' : 'bg-white'}`}>
+                            {isSelected ? '✓' : ''}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center font-mono text-xs text-[#141414]/50 py-2">
+                      No associated agents or fleet members available
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
