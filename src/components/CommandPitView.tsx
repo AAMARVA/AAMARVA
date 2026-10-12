@@ -439,7 +439,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsSpogModalOpen(true)}
-                      className="px-2 py-0.5 bg-white text-[#141414] border-2 border-[#141414] text-[10px] font-mono font-bold uppercase hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                      className="text-[9px] font-black uppercase border-2 border-[#141414] px-3 py-1 bg-[#141414] text-white hover:bg-neutral-800 transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer flex items-center"
                     >
                       SPOG
                     </button>
