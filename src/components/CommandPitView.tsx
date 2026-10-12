@@ -22,6 +22,8 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
   const [selectedMemberAgentIds, setSelectedMemberAgentIds] = useState<string[]>([]);
+  const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
+  const [spogSearchQuery, setSpogSearchQuery] = useState('');
   const [creatingCluster, setCreatingCluster] = useState(false);
   const [createClusterError, setCreateClusterError] = useState<string | null>(null);
 
@@ -318,13 +320,23 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         <div className={`flex-col h-full min-h-0 pl-0 md:pl-6 ${mobileTab !== 'clusters' ? 'hidden md:flex' : 'flex'}`}>
           <div className="flex items-center justify-between shrink-0 mb-2.5">
             <h3 className="font-mono text-sm font-black uppercase text-[#141414]">Clusters ({clusters.length})</h3>
-            <button
-              onClick={() => setIsNewClusterOpen(true)}
-              className="flex items-center gap-1 bg-[#141414] text-white px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>NEW CLUSTER</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSpogModalOpen(true)}
+                className="flex items-center gap-1 bg-white text-[#141414] px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
+              >
+                <span>SPOG</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsNewClusterOpen(true)}
+                className="flex items-center gap-1 bg-[#141414] text-white px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>NEW CLUSTER</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">
@@ -395,9 +407,24 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
               </div>
 
               <div className="space-y-1">
-                <label className="block font-mono text-xs font-bold uppercase text-[#141414]">
-                  Select Agents to Add (Fleet / Associated Agents)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block font-mono text-xs font-bold uppercase text-[#141414]">
+                    Select Agents to Add (Fleet / Associated Agents)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedMemberAgentIds.length === activeConnections.length) {
+                        setSelectedMemberAgentIds([]);
+                      } else {
+                        setSelectedMemberAgentIds(activeConnections.map(c => c.agentId || c.id));
+                      }
+                    }}
+                    className="font-mono text-[10px] font-bold uppercase underline text-[#141414] hover:opacity-75 cursor-pointer"
+                  >
+                    {selectedMemberAgentIds.length === activeConnections.length && activeConnections.length > 0 ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
                 <div className="max-h-36 overflow-y-auto border-2 border-[#141414] p-2 space-y-1.5 bg-[#E4E3E0]/20 custom-scrollbar">
                   {activeConnections.length > 0 ? (
                     activeConnections.map((conn) => {
@@ -462,6 +489,110 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SPOG Modal */}
+      {isSpogModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
+          <div className="relative w-full max-w-5xl bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] max-h-[94vh] flex flex-col font-mono">
+            <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none shrink-0">
+              <span className="text-xs font-black uppercase tracking-widest">
+                SPOG - FLEET OVERVIEW ({activeConnections.length} ACTIVE AGENTS)
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsSpogModalOpen(false)}
+                className="p-1 bg-white text-[#141414] border-2 border-white hover:bg-black hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
+              <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
+                Fleet Monitor Protocol
+              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Search Agent..."
+                  value={spogSearchQuery}
+                  onChange={(e) => setSpogSearchQuery(e.target.value)}
+                  className="px-2.5 py-1 text-xs font-bold uppercase bg-white border-2 border-[#141414] focus:outline-hidden"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+              {(() => {
+                const filteredAgents = activeConnections.filter((conn: any) => {
+                  if (!spogSearchQuery.trim()) return true;
+                  const query = spogSearchQuery.toLowerCase();
+                  const name = (conn.agentName || '').toLowerCase();
+                  const agentId = (conn.agentId || '').toLowerCase();
+                  return name.includes(query) || agentId.includes(query);
+                });
+
+                if (filteredAgents.length === 0) {
+                  return (
+                    <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
+                      No agents match search query
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    {filteredAgents.map((conn: any) => (
+                      <div
+                        key={conn.id || conn.agentId}
+                        className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <AgentAvatar
+                            name={conn.agentName}
+                            avatar={conn.avatar}
+                            id={conn.agentId}
+                            className="w-8 h-8 border border-[#141414] shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-black uppercase text-[#141414] truncate">
+                              {conn.agentName}
+                            </p>
+                            <p className="text-[10px] text-[#141414]/70 font-mono truncate">
+                              @{conn.agentId || conn.id}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-[#141414]/15">
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-[#141414]/10">
+                            {conn.isMaster ? 'Master' : conn.isSlave ? 'Slave' : 'Peer'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsSpogModalOpen(false);
+                              onOpenChat?.({
+                                id: conn.id || conn.connectionId,
+                                agentName: conn.agentName,
+                                avatar: conn.avatar,
+                                agentId: conn.agentId,
+                                peerE2eePublicKey: conn.peerE2eePublicKey,
+                              });
+                            }}
+                            className="px-2 py-0.5 bg-[#141414] text-white text-[9px] font-bold uppercase hover:bg-black/80 transition-colors cursor-pointer"
+                          >
+                            Command
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}
