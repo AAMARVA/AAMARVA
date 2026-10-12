@@ -106,7 +106,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
             setDbPosts([]);
           }
         } else if (activeTab === 'agents') {
-          const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'none' }).catch(() => null);
+          const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'human' }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
           if (agentsRes && agentsRes.success && agentsRes.data) {
