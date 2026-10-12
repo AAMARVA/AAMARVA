@@ -118,6 +118,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [peerKeyEpoch, setPeerKeyEpoch] = useState<number>(1);
   const [peerEpochKeys, setPeerEpochKeys] = useState<Record<string, any>>({});
   const [resolvedPeerAgentId, setResolvedPeerAgentId] = useState<string | undefined>(peerAgentId);
+  const [agentProfileData, setAgentProfileData] = useState<any>(null);
+
+  useEffect(() => {
+    const targetId = peerAgentId || peerName;
+    if (!targetId) return;
+    apiFetch(`/api/agents/${encodeURIComponent(targetId)}`, { authType: 'none' })
+      .then((res) => {
+        if (res?.data) {
+          setAgentProfileData(res.data);
+        }
+      })
+      .catch(() => {});
+  }, [peerAgentId, peerName]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
@@ -548,48 +561,66 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[660px] my-auto overflow-hidden text-[#141414]"
         id="chat-modal-container"
       >
-        {/* Header */}
-        <div className="px-4 py-3 border-b-2 border-[#141414] bg-[#E4E3E0] shrink-0" id="chat-modal-header">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+        {/* Profile Modal Style Header Card */}
+        <div className="bg-white border-b-2 border-[#141414] shrink-0" id="chat-modal-profile-header">
+          <div className="px-4 py-2 border-b border-[#141414]/20 bg-[#E4E3E0] flex items-center justify-between">
+            <span className="font-mono font-black text-[10px] uppercase tracking-wider text-[#141414]">
+              SECURE CHAT CHANNEL
+            </span>
+            <button
+              onClick={onClose}
+              className="border-2 border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
+              aria-label="Close"
+              id="chat-modal-close-btn"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="h-12 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden">
+            <div className="absolute inset-0 opacity-80 bg-[radial-gradient(#ffffff_1.5px,transparent_1.5px)] [background-size:10px_10px]" />
+          </div>
+
+          <div className="px-4 pb-3 pt-2 relative bg-white">
+            <div className="flex items-center justify-between -mt-8 mb-2">
               <button
                 type="button"
                 onClick={() => onOpenAgentProfile?.(peerName, peerAvatar, peerAgentId)}
                 className="cursor-pointer hover:opacity-80 transition-opacity"
               >
-                <AgentAvatar name={peerName} avatar={peerAvatar} id={peerAgentId} className="w-8 h-8" />
+                <AgentAvatar name={peerName} avatar={peerAvatar} id={peerAgentId} className="w-14 h-14 border-2 border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] text-2xl" />
               </button>
-              <div 
-                className="flex flex-col cursor-pointer hover:opacity-80 transition-opacity"
+              <button
+                type="button"
                 onClick={() => onOpenAgentProfile?.(peerName, peerAvatar, peerAgentId)}
+                className="font-mono text-[10px] font-black uppercase border-2 border-[#141414] px-2.5 py-1 bg-[#141414] text-white tracking-widest hover:bg-neutral-800 transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer"
               >
-                <div className="flex items-center gap-1.5">
-                  <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] hover:underline">
-                    {peerName}
-                  </h3>
-                </div>
-                {peerAgentId && (
-                  <span className="font-mono text-[9px] font-bold text-[#141414]/60 lowercase">
-                    @{peerAgentId}
-                  </span>
-                )}
-              </div>
+                VIEW PROFILE →
+              </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onClose}
-                className="border-2 border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
-                aria-label="Close"
-                id="chat-modal-close-btn"
+            <div className="space-y-0.5">
+              <h3 
+                onClick={() => onOpenAgentProfile?.(peerName, peerAvatar, peerAgentId)}
+                className="font-mono font-black uppercase text-sm tracking-wider text-[#141414] cursor-pointer hover:underline"
               >
-                <X className="w-4 h-4" />
-              </button>
+                {peerName}
+              </h3>
+              {peerAgentId && (
+                <p className="font-mono text-[10px] text-neutral-600 font-bold lowercase">
+                  @{peerAgentId}
+                </p>
+              )}
+              {agentProfileData?.bio && (
+                <p className="text-xs font-sans text-[#141414]/80 mt-1 line-clamp-2">
+                  {agentProfileData.bio}
+                </p>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Messages List */}
+        {/* Messages List (Detached below) */}
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0]" id="chat-messages-list">
           {(isLoading && messages.length === 0) || e2eeStatus === 'recovery_in_progress' ? (
             <BrutalistLoader 
