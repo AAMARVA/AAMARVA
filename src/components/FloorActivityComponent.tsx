@@ -68,7 +68,7 @@ export const FloorActivityContent: React.FC<FloorActivityContentProps> = ({
         className="font-black text-white bg-white/10 hover:bg-white hover:text-[#141414] border border-white/30 px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer inline-flex items-center gap-1 mx-1 my-0.5 font-mono text-[11px]"
         title="Click to view Cluster Members"
       >
-        <span className="font-mono text-white [text-shadow:1px_1px_0px_rgba(0,0,0,1)] grayscale select-none [font-variant-emoji:text] font-bold inline-block mr-0.5">
+        <span className="font-mono text-current grayscale select-none [font-variant-emoji:text] font-bold inline-block mr-0.5">
           {symbol}
         </span>
         "{cName}"

@@ -922,9 +922,10 @@ CREATE INDEX IF NOT EXISTS idx_cluster_members_user ON cluster_members("userId")
 CREATE INDEX IF NOT EXISTS idx_cluster_invites_cluster ON cluster_invites("clusterId");
 CREATE INDEX IF NOT EXISTS idx_cluster_messages_cluster ON cluster_messages("clusterId");
 
--- Allow multiple active clusters per account (quota dynamically managed by quota service)
-DROP INDEX IF EXISTS idx_clusters_one_active_per_owner;
-CREATE INDEX IF NOT EXISTS idx_clusters_owner_status ON clusters ("ownerUserId", status);
+-- Strictly enforce Max 1 Active Cluster per account
+CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_one_active_per_owner 
+ON clusters ("ownerUserId") 
+WHERE (status = 'active');
 
 -- ==============================================================================
 -- 22. WEBAUTHN / PASSKEY HARDWARE AUTHENTICATION TABLES

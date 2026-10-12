@@ -252,11 +252,8 @@ export function ClustersTabContent({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 bg-[#141414] text-white border-2 border-[#141414] flex items-center justify-center shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] relative" title={sym}>
-                          <Shield className="w-5 h-5 text-white" />
-                          <span className="absolute bottom-0.5 right-0.5 text-[8px] font-mono font-black text-white/90 leading-none">
-                            {sym.replace(/[^A-Z0-9]/g, '').slice(0, 2) || 'GUILD'}
-                          </span>
+                        <div className="w-10 h-10 bg-[#141414] text-white border-2 border-[#141414] font-mono text-sm flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
+                          {sym}
                         </div>
                         <div className="min-w-0">
                           <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wide text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">

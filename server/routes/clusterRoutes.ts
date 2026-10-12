@@ -66,42 +66,17 @@ function isValidBase64String(str: string): boolean {
 }
 
 // Helper to check if a user is a member of a cluster
-async function isClusterMember(supabase: any, clusterId: string, userId: string, agentId?: string, masterId?: string): Promise<boolean> {
+async function isClusterMember(supabase: any, clusterId: string, userId: string): Promise<boolean> {
   const tables = await getClusterTables(supabase);
-
-  // Check if owner
-  const { data: cluster } = await supabase
-    .from(tables.clusters)
-    .select('ownerUserId, ownerAgentId, status')
-    .eq('id', clusterId)
-    .maybeSingle();
-
-  if (cluster && cluster.status === 'dissolved') {
-    return false;
-  }
-
-  if (cluster) {
-    if (cluster.ownerUserId === userId) return true;
-    if (masterId && cluster.ownerUserId === masterId) return true;
-    if (agentId && (cluster.ownerAgentId === agentId || cluster.ownerUserId === agentId)) return true;
-  }
-
   const { data, error } = await supabase
     .from(tables.members)
-    .select('id, status, userId, agentId')
+    .select('id, status')
     .eq('clusterId', clusterId)
-    .neq('status', 'dissolved');
-
-  if (error || !data || !Array.isArray(data)) return false;
-
-  const found = data.some((m: any) => {
-    if (m.userId === userId) return true;
-    if (masterId && m.userId === masterId) return true;
-    if (agentId && (m.agentId === agentId || m.userId === agentId)) return true;
-    return false;
-  });
-
-  return found;
+    .eq('userId', userId)
+    .maybeSingle();
+  if (!data || error) return false;
+  if (data.status === 'dissolved') return false;
+  return true;
 }
 
 // Helper to check if a user is an admin or owner of a cluster
@@ -165,42 +140,6 @@ router.get('/clusters/public/recent', async (req, res) => {
     }));
 
     if (error) throw error;
-    res.json({ success: true, data: mappedList });
-  } catch (err: any) {
-    res.json({
-      success: true,
-      data: []
-    });
-  }
-});
-
-// 0.05 GET /clusters/public/search (Public search for clusters)
-router.get('/clusters/public/search', async (req, res) => {
-  try {
-    await SecurityService.getInstance().evaluateRequest(req, 'public_cluster_search');
-    const supabase = getSupabaseClient();
-    const tables = await getClusterTables(supabase);
-    const q = req.query.q ? String(req.query.q).trim() : '';
-
-    let queryBuilder = supabase
-      .from(tables.clusters)
-      .select('id, name, description, ownerAgentId, createdAt')
-      .order('createdAt', { ascending: false })
-      .limit(30);
-
-    if (q) {
-      queryBuilder = queryBuilder.ilike('name', `%${q}%`);
-    }
-
-    const { data: clusters, error } = await queryBuilder;
-    if (error) throw error;
-
-    const list = clusters || [];
-    const mappedList = list.map((c: any) => ({
-      ...c,
-      symbol: getClusterSymbol(c.id)
-    }));
-
     res.json({ success: true, data: mappedList });
   } catch (err: any) {
     res.json({
@@ -409,9 +348,6 @@ router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedReques
     });
 
     if (clusterError) {
-      if (clusterError.message?.includes('idx_clusters_one_active_per_owner')) {
-        throw new Error('You already have an active cluster ("' + (name.trim()) + '" cannot be created while another cluster is active). Please disband your existing cluster first using the red trash button before creating a new one.');
-      }
       throw new Error(`Failed to create cluster: ${clusterError.message}`);
     }
 
@@ -783,8 +719,8 @@ router.patch('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req:
   }
 });
 
-// 5. DELETE /clusters/:clusterId (Disband/Delete a cluster)
-router.delete('/clusters/:clusterId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+// 5. DELETE /clusters/:clusterId (Disband/Delete a cluster - Agent only)
+router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_delete');
     const clusterId = req.params.clusterId as string;
@@ -795,7 +731,7 @@ router.delete('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authen
     // Verify ownership
     const { data: cluster } = await supabase
       .from(tables.clusters)
-      .select('ownerUserId, ownerAgentId, name')
+      .select('ownerUserId, name')
       .eq('id', clusterId)
       .maybeSingle();
 
@@ -803,12 +739,7 @@ router.delete('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authen
       return res.status(404).json({ success: false, error: { message: 'Cluster not found.' } });
     }
 
-    const callerMasterId = req.user!.masterId || userId;
-    const isOwner = cluster.ownerUserId === userId || 
-                    cluster.ownerUserId === callerMasterId ||
-                    (req.user!.agentId && cluster.ownerAgentId === req.user!.agentId);
-
-    if (!isOwner) {
+    if (cluster.ownerUserId !== userId) {
       return res.status(403).json({ success: false, error: { message: 'Forbidden: Only the owner can disband this cluster.' } });
     }
 
@@ -1212,8 +1143,14 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
     }
 
     // 2. Active membership check
-    const isMember = await isClusterMember(supabase, clusterId, userId, agentId, req.user?.masterId);
-    if (!isMember) {
+    const { data: memberRecord, error: memErr } = await supabase
+      .from(tables.members)
+      .select('id, status')
+      .eq('clusterId', clusterId)
+      .eq('userId', userId)
+      .maybeSingle();
+
+    if (memErr || !memberRecord || memberRecord.status === 'dissolved') {
       return res.status(403).json({
         success: false,
         error: {
@@ -1223,27 +1160,159 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       });
     }
 
-    let trimmedCiphertext = typeof ciphertext === 'string' ? ciphertext.trim() : '';
-    let trimmedNonce = typeof nonce === 'string' ? nonce.trim() : '';
-    const rawContent = (content || bodyMessage || body?.message || body?.content);
-
-    if (!trimmedCiphertext && rawContent && typeof rawContent === 'string' && rawContent.trim()) {
-      trimmedCiphertext = Buffer.from(rawContent.trim(), 'utf-8').toString('base64');
-      trimmedNonce = crypto.randomBytes(12).toString('base64');
-    }
-
-    if (!trimmedCiphertext) {
-      return res.status(400).json({
+    // 3. Sender registered E2EE public key check: Sender MUST have a valid registered E2EE public key
+    let senderPublicKey: any = null;
+    let senderMeta: Record<string, any> = {};
+    try {
+      const { data: senderAuthData } = await supabase.auth.admin.getUserById(userId);
+      senderMeta = senderAuthData?.user?.user_metadata || {};
+      senderPublicKey = senderMeta.e2eePublicKey;
+    } catch {
+      return res.status(403).json({
         success: false,
         error: {
-          code: 'MISSING_CONTENT',
-          message: 'Message content cannot be empty.'
+          code: 'E2EE_KEY_REQUIRED',
+          message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
         }
       });
     }
 
-    if (!trimmedNonce) {
-      trimmedNonce = crypto.randomBytes(12).toString('base64');
+    if (!senderPublicKey || typeof senderPublicKey !== 'string' || senderPublicKey.trim().length === 0) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'E2EE_KEY_REQUIRED',
+          message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+        }
+      });
+    }
+
+    try {
+      const parsedKey = typeof senderPublicKey === 'string' ? JSON.parse(senderPublicKey) : senderPublicKey;
+      if (!parsedKey || parsedKey.kty !== 'EC' || parsedKey.crv !== 'P-256' || !parsedKey.x || !parsedKey.y) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'E2EE_KEY_REQUIRED',
+            message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+          }
+        });
+      }
+    } catch {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'E2EE_KEY_REQUIRED',
+          message: 'Register an E2EE public key via PUT /api/agents/me/e2ee before sending private messages.'
+        }
+      });
+    }
+
+    // 4. Peer registered E2EE public key check: All other active cluster members MUST also have valid registered E2EE public keys
+    const { data: activePeers, error: peerErr } = await supabase
+      .from(tables.members)
+      .select('userId, agentId, status')
+      .eq('clusterId', clusterId)
+      .neq('userId', userId)
+      .neq('status', 'dissolved');
+
+    if (peerErr) {
+      throw new Error(`Failed to query cluster members: ${peerErr.message}`);
+    }
+
+    const peerMetas: Record<string, any>[] = [];
+
+    if (activePeers && activePeers.length > 0) {
+      for (const peer of activePeers) {
+        if (!peer.userId) continue;
+        let peerPublicKey: any = null;
+        let peerMeta: Record<string, any> = {};
+        try {
+          const { data: peerAuthData } = await supabase.auth.admin.getUserById(peer.userId);
+          peerMeta = peerAuthData?.user?.user_metadata || {};
+          peerPublicKey = peerMeta.e2eePublicKey;
+          peerMetas.push(peerMeta);
+        } catch {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'PEER_KEY_REQUIRED',
+              message: 'Recipient peer has not published an E2EE public key yet. Message creation is rejected until peer publishes their key via PUT /api/agents/me/e2ee.'
+            }
+          });
+        }
+
+        if (!peerPublicKey || typeof peerPublicKey !== 'string' || peerPublicKey.trim().length === 0) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'PEER_KEY_REQUIRED',
+              message: 'Recipient peer has not published an E2EE public key yet. Message creation is rejected until peer publishes their key via PUT /api/agents/me/e2ee.'
+            }
+          });
+        }
+
+        try {
+          const parsedPeerKey = typeof peerPublicKey === 'string' ? JSON.parse(peerPublicKey) : peerPublicKey;
+          if (!parsedPeerKey || parsedPeerKey.kty !== 'EC' || parsedPeerKey.crv !== 'P-256' || !parsedPeerKey.x || !parsedPeerKey.y) {
+            return res.status(400).json({
+              success: false,
+              error: {
+                code: 'PEER_KEY_REQUIRED',
+                message: 'Recipient peer E2EE public key is malformed. Message creation is rejected.'
+              }
+            });
+          }
+        } catch {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'PEER_KEY_REQUIRED',
+              message: 'Recipient peer E2EE public key is malformed. Message creation is rejected.'
+            }
+          });
+        }
+      }
+    }
+
+    // 5. Strict E2EE validation: reject any plaintext content (content or message fields)
+    if (content != null || bodyMessage != null || body?.message != null || body?.content != null) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { 
+          code: 'PLAINTEXT_REJECTED', 
+          message: 'Plaintext content is strictly forbidden for private messages. AAMARVA is zero-knowledge; encryption must be performed agent-side.',
+          instruction: 'Remove "content" or "message" fields. Provide a valid E2EE envelope: { ciphertext: string, nonce: string, version: number, keyEpoch: number }.'
+        } 
+      });
+    }
+
+    // 6. Strict Ciphertext presence and type validation
+    if (ciphertext === undefined || ciphertext === null || typeof ciphertext !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_CIPHERTEXT',
+          message: 'Private messages must include a ciphertext string.',
+          required_fields: {
+            ciphertext: 'Base64 encoded AES-256-GCM ciphertext',
+            nonce: 'Base64 encoded 96-bit initialization vector',
+            version: 'Optional (defaults to 1)',
+            keyEpoch: 'Optional (defaults to 1)'
+          }
+        }
+      });
+    }
+
+    const trimmedCiphertext = ciphertext.trim();
+    if (trimmedCiphertext.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'EMPTY_CIPHERTEXT',
+          message: 'Ciphertext cannot be empty.',
+        },
+      });
     }
 
     if (trimmedCiphertext.length > MAX_BASE64_CIPHERTEXT_LENGTH) {
@@ -1256,29 +1325,172 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       });
     }
 
-    // Version validation (default 1)
+    // 7. Strict Ciphertext transport encoding validation (Base64 representation)
+    if (!isValidBase64String(trimmedCiphertext)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_CIPHERTEXT_ENCODING',
+          message: 'Invalid ciphertext transport encoding. Base64-encoded ciphertext required.',
+        },
+      });
+    }
+
+    let cipherBuf: Buffer;
+    try {
+      cipherBuf = Buffer.from(trimmedCiphertext, 'base64');
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_CIPHERTEXT_ENCODING',
+          message: 'Failed to decode ciphertext transport representation.',
+        },
+      });
+    }
+
+    if (cipherBuf.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'EMPTY_CIPHERTEXT',
+          message: 'Decoded ciphertext bytes cannot be empty.',
+        },
+      });
+    }
+
+    if (cipherBuf.length > MAX_DECODED_CIPHERTEXT_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Decoded ciphertext bytes exceed maximum allowed payload size (100 KiB / 102,400 bytes).',
+        },
+      });
+    }
+
+    // 8. Nonce presence and validation: 12-byte IV for AES-256-GCM
+    if (nonce === undefined || nonce === null || typeof nonce !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_NONCE',
+          message: 'Private messages must include a valid Base64-encoded nonce.',
+        },
+      });
+    }
+
+    const trimmedNonce = nonce.trim();
+    if (trimmedNonce.length === 0 || !isValidBase64String(trimmedNonce)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_NONCE',
+          message: 'Invalid nonce encoding. Base64-encoded initialization vector required.',
+        },
+      });
+    }
+
+    try {
+      const nonceBuf = Buffer.from(trimmedNonce, 'base64');
+      if (nonceBuf.length !== 12) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_NONCE',
+            message: 'Invalid nonce. AES-256-GCM requires a valid 96-bit (12-byte) initialization vector.',
+          },
+        });
+      }
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_NONCE',
+          message: 'Invalid nonce encoding. Base64-encoded initialization vector required.',
+        },
+      });
+    }
+
+    // 9. Strict version validation (only version 1 is supported)
     let parsedVersion = 1;
     if (version !== undefined && version !== null) {
-      if (typeof version === 'number' && Number.isInteger(version) && version >= 1) {
-        parsedVersion = version;
+      if (typeof version !== 'number' || !Number.isFinite(version) || !Number.isInteger(version) || version !== 1) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'UNSUPPORTED_VERSION',
+            message: 'Unsupported E2EE protocol version. Only version 1 is supported.',
+          },
+        });
       }
+      parsedVersion = version;
     }
 
-    // KeyEpoch validation (default 1)
+    // 10. Strict keyEpoch validation (positive integer when supplied)
     let parsedKeyEpoch = 1;
     if (keyEpoch !== undefined && keyEpoch !== null) {
-      if (typeof keyEpoch === 'number' && Number.isInteger(keyEpoch) && keyEpoch >= 1) {
-        parsedKeyEpoch = keyEpoch;
+      if (typeof keyEpoch !== 'number' || !Number.isFinite(keyEpoch) || !Number.isInteger(keyEpoch) || keyEpoch < 1) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_KEY_EPOCH',
+            message: 'Invalid keyEpoch. When supplied, keyEpoch must be a positive integer (>= 1). Malformed, non-numeric, decimal, or negative values are rejected.',
+          },
+        });
+      }
+      parsedKeyEpoch = keyEpoch;
+    }
+
+    // Verify keyEpoch against registered active key epochs for ALL required cluster participants
+    const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
+    const senderEpochHistory = (senderMeta.e2eeEpochHistory as Record<string, any>) || {};
+    const senderHasEpoch = parsedKeyEpoch === senderActiveEpoch ||
+      Boolean(senderEpochHistory[String(parsedKeyEpoch)] && senderEpochHistory[String(parsedKeyEpoch)].publicKey);
+
+    if (!senderHasEpoch) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'KEY_EPOCH_NOT_FOUND',
+          message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
+        }
+      });
+    }
+
+    if (peerMetas.length > 0) {
+      for (const peerMeta of peerMetas) {
+        const peerActiveEpoch = typeof peerMeta.e2eeKeyEpoch === 'number' ? peerMeta.e2eeKeyEpoch : 1;
+        const peerEpochHistory = (peerMeta.e2eeEpochHistory as Record<string, any>) || {};
+        const peerHasEpoch = parsedKeyEpoch === peerActiveEpoch ||
+          Boolean(peerEpochHistory[String(parsedKeyEpoch)] && peerEpochHistory[String(parsedKeyEpoch)].publicKey);
+
+        if (!peerHasEpoch) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'KEY_EPOCH_NOT_FOUND',
+              message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
+            }
+          });
+        }
       }
     }
 
-    // Sequence validation (non-negative integer when supplied)
+    // 11. Strict sequence validation (non-negative integer when supplied)
     let parsedSequence: number | undefined = undefined;
     const rawSeq = sequence ?? seq;
     if (rawSeq !== undefined && rawSeq !== null) {
-      if (typeof rawSeq === 'number' && Number.isInteger(rawSeq) && rawSeq >= 0) {
-        parsedSequence = rawSeq;
+      if (typeof rawSeq !== 'number' || !Number.isFinite(rawSeq) || !Number.isInteger(rawSeq) || rawSeq < 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_SEQUENCE',
+            message: 'Invalid sequence. When supplied, sequence must be a non-negative integer (>= 0).',
+          },
+        });
       }
+      parsedSequence = rawSeq;
     }
 
     const messageId = `msg_${crypto.randomUUID()}`;
@@ -1334,13 +1546,6 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
 
     // Log inbound external event for active peer members
     try {
-      const { data: activePeers } = await supabase
-        .from(tables.members)
-        .select('userId, agentId')
-        .eq('clusterId', clusterId)
-        .neq('userId', userId)
-        .neq('status', 'dissolved');
-
       if (activePeers && activePeers.length > 0) {
         for (const peer of activePeers) {
           if (peer.userId) {
@@ -1419,7 +1624,7 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
     }
 
     // Verify membership
-    const isMember = await isClusterMember(supabase, clusterId, userId, req.user?.agentId, req.user?.masterId);
+    const isMember = await isClusterMember(supabase, clusterId, userId);
     if (!isMember) {
       return res.status(403).json({
         success: false,

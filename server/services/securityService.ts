@@ -333,12 +333,12 @@ export const GLOBAL_SECURITY_POLICIES: Record<string, SecurityPolicy> = {
     endpoint: '/api/clusters (POST)',
     severity: SecuritySeverity.S2_ABUSE,
     isCritical: true,
-    rateLimit: { windowMs: 60 * 60 * 1000, max: 10 },
-    quota: { monthly: 100, daily: 30 },
+    rateLimit: { windowMs: 60 * 60 * 1000, max: 3 },
+    quota: { monthly: 3, daily: 1 },
     resourceConstraints: {
       table: 'clusters',
       ownerCol: 'ownerUserId',
-      max: 10,
+      max: 1,
       statusCol: 'status',
       activeStatus: 'active'
     },

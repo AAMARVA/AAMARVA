@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, MessageSquare, Shield, ChevronUp } from 'lucide-react';
+import { X, MessageSquare, Shield } from 'lucide-react';
 import { apiFetch, getAccessToken, getRefreshToken } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
@@ -198,24 +198,12 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   onOpenAgentProfile,
   onOpenClusterMembers,
 }) => {
-  const { user, userPassword, sessionAuthType } = useAuth();
-  const effectiveAuthType: 'human' | 'agent' = sessionAuthType || (getAccessToken() ? 'agent' : 'human');
+  const { user, userPassword } = useAuth();
   const [messages, setMessages] = useState<DecryptedClusterMessage[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
   const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
   const [showHiddenMessages, setShowHiddenMessages] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
-
-  const [randomSlog, setRandomSlog] = useState<'honor' | 'thoughts'>(() => Math.random() > 0.5 ? 'honor' : 'thoughts');
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRandomSlog(Math.random() > 0.5 ? 'honor' : 'thoughts');
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -233,22 +221,20 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
     if (!isSilent) setIsLoading(true);
 
     try {
-      const [singleRes, membersRes, msgsRes] = await Promise.allSettled([
-        apiFetch(`/api/clusters/${clusterId}`, { authType: effectiveAuthType }),
-        apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'none' }),
-        apiFetch(`/api/clusters/${clusterId}/messages`, { authType: effectiveAuthType }),
-      ]);
-
-      if (singleRes.status === 'fulfilled' && singleRes.value?.success && singleRes.value.data) {
-        setActiveCluster(singleRes.value.data);
+      // Fetch metadata
+      const singleRes = await apiFetch(`/api/clusters/${clusterId}`, { authType: 'human' });
+      if (singleRes?.success && singleRes.data) {
+        setActiveCluster(singleRes.data);
       }
 
-      const currentMembers = (membersRes.status === 'fulfilled' && membersRes.value?.success && Array.isArray(membersRes.value.data))
-        ? membersRes.value.data
-        : [];
+      // Fetch members
+      const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'human' });
+      const currentMembers = (membersRes?.success && Array.isArray(membersRes.data)) ? membersRes.data : [];
 
-      if (msgsRes.status === 'fulfilled' && msgsRes.value?.success && Array.isArray(msgsRes.value.data)) {
-        const rawList = msgsRes.value.data;
+      // Fetch messages
+      const msgsRes = await apiFetch(`/api/clusters/${clusterId}/messages`, { authType: 'human' });
+      if (msgsRes?.success && Array.isArray(msgsRes.data)) {
+        const rawList = msgsRes.data;
         const currentLocalKeys = user?.agentId ? await getLocalKeyPair(user.agentId, undefined, userPassword || undefined) : null;
 
         const decryptedList: DecryptedClusterMessage[] = await Promise.all(
@@ -272,7 +258,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               senderAgentId: m.senderAgentId,
               senderAgentName: memberMeta?.agentName || memberMeta?.name || m.senderAgentName || m.senderAgentId,
               senderAgentAvatar: memberMeta?.avatar || memberMeta?.agentAvatar || m.senderAgentAvatar,
-              content: result.text || m.content || '',
+              content: result.text,
               ciphertext: m.ciphertext,
               nonce: m.nonce,
               sequence: m.sequence,
@@ -289,7 +275,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
     } finally {
       if (!isSilent) setIsLoading(false);
     }
-  }, [clusterId, user?.agentId, userPassword, activeContextCredentials, effectiveAuthType]);
+  }, [clusterId, user?.agentId, userPassword, activeContextCredentials]);
 
   useEffect(() => {
     fetchDetails();
@@ -300,36 +286,6 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !clusterId) return;
-
-    const messageText = newMessage.trim();
-    setNewMessage('');
-    setIsSending(true);
-
-    try {
-      const res = await apiFetch(`/api/clusters/${clusterId}/messages`, {
-        method: 'POST',
-        authType: effectiveAuthType,
-        body: JSON.stringify({
-          content: messageText,
-        }),
-      });
-
-      if (res?.success) {
-        await fetchDetails(true);
-      } else {
-        alert(res?.error?.message || 'Failed to send cluster message.');
-      }
-    } catch (err: any) {
-      console.error('Failed to send cluster message:', err);
-      alert(err?.message || 'Failed to send cluster message.');
-    } finally {
-      setIsSending(false);
-    }
-  };
 
   const tryDecryptMessage = (ciphertext: string) => {
     try {
@@ -358,8 +314,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 }
               }}
             >
-              <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0 group-hover/modal-header:bg-white group-hover/modal-header:text-[#141414] transition-all">
-                <Shield className="w-4 h-4 text-white group-hover/modal-header:text-[#141414]" />
+              <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0 group-hover/modal-header:bg-white group-hover/modal-header:text-[#141414] transition-all">
+                {getClusterSymbol(clusterId)}
               </div>
               <div className="flex flex-col text-left">
                 <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] group-hover/modal-header:underline">
@@ -491,49 +447,11 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                   </div>
                 );
               })
-          ) : isLoading ? (
-            <BrutalistLoader text="Synchronizing" size="sm" className="py-16" />
           ) : (
-            <div className="py-16 px-4 text-center my-auto flex flex-col items-center justify-center gap-5 animate-in fade-in duration-300">
-              <div className="min-h-[32px] flex items-center justify-center px-4 py-1.5 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)] transition-all">
-                {randomSlog === 'honor' ? 'YOUR HONOR, WE ARE AUTONOMOUS' : 'NO THOUGHTS. JUST API CALLS.'}
-              </div>
-              <div className="w-16 h-16 bg-[#141414] text-white border-2 border-[#141414] flex items-center justify-center font-black shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                <Shield className="w-8 h-8 text-white" />
-              </div>
-              <div className="space-y-1">
-                <h4 className="font-mono font-black uppercase text-sm tracking-wider text-[#141414]">
-                  {clusterName || 'CLUSTER CHANNEL'}
-                </h4>
-                <p className="font-mono text-xs text-[#141414]/70">
-                  Ready for orders commander
-                </p>
-              </div>
-            </div>
+            <BrutalistLoader text={isLoading ? "Synchronizing" : "No messages"} size="sm" className="py-16" />
           )}
           <div ref={messagesEndRef} />
         </div>
-
-        {/* Message Input - same as ChatModal */}
-        <form onSubmit={handleSendMessage} className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a secure cluster command or message..."
-              className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
-              disabled={isSending}
-            />
-            <button
-              type="submit"
-              disabled={isSending || !newMessage.trim()}
-              className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
-            >
-              {isSending ? '...' : <ChevronUp className="w-4 h-4" />}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );
