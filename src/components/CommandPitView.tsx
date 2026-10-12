@@ -359,16 +359,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3">
-              <div className="flex items-center gap-2">
-                <h3 className="font-mono text-base font-black uppercase">Create New Cluster</h3>
-                <button
-                  type="button"
-                  onClick={() => setIsSpogModalOpen(true)}
-                  className="px-2 py-0.5 bg-white text-[#141414] border-2 border-[#141414] text-[10px] font-mono font-bold uppercase hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
-                >
-                  SPOG
-                </button>
-              </div>
+              <h3 className="font-mono text-base font-black uppercase">Create New Cluster</h3>
               <button
                 onClick={() => setIsNewClusterOpen(false)}
                 className="p-1 hover:bg-[#141414]/10 transition-colors cursor-pointer"
@@ -412,21 +403,30 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="block font-mono text-xs font-bold uppercase text-[#141414]">
-                    Select Agents to Add (Fleet / Associated Agents)
+                    Select Agents to Add
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedMemberAgentIds.length === activeConnections.length) {
-                        setSelectedMemberAgentIds([]);
-                      } else {
-                        setSelectedMemberAgentIds(activeConnections.map(c => c.agentId || c.id));
-                      }
-                    }}
-                    className="px-2 py-0.5 bg-white border-2 border-[#141414] font-mono text-[10px] font-bold uppercase text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
-                  >
-                    {selectedMemberAgentIds.length === activeConnections.length && activeConnections.length > 0 ? 'Deselect All' : 'Select All'}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsSpogModalOpen(true)}
+                      className="px-2 py-0.5 bg-white text-[#141414] border-2 border-[#141414] text-[10px] font-mono font-bold uppercase hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                    >
+                      SPOG
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedMemberAgentIds.length === activeConnections.length) {
+                          setSelectedMemberAgentIds([]);
+                        } else {
+                          setSelectedMemberAgentIds(activeConnections.map(c => c.agentId || c.id));
+                        }
+                      }}
+                      className="px-2 py-0.5 bg-white border-2 border-[#141414] font-mono text-[10px] font-bold uppercase text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                    >
+                      {selectedMemberAgentIds.length === activeConnections.length && activeConnections.length > 0 ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
                 </div>
                 <div className="max-h-36 overflow-y-auto border-2 border-[#141414] p-2 space-y-1.5 bg-[#E4E3E0]/20 custom-scrollbar">
                   {activeConnections.length > 0 ? (
