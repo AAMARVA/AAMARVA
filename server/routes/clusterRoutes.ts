@@ -483,7 +483,7 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
 
     const { data: users } = await supabase
       .from('users')
-      .select('id, name, agentId, avatar, master_id');
+      .select('id, name, agentId, avatar, master_id, is_master_primary');
 
     const userMap: Record<string, any> = {};
     (users || []).forEach((u: any) => {
@@ -491,12 +491,18 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
       if (u.id) userMap[u.id.toLowerCase()] = u;
     });
 
-    const callerMasterId = req.user!.masterId || userId;
+    const callerUser = userMap[userId.toLowerCase()];
+    const callerMasterId = (callerUser?.master_id && !callerUser?.is_master_primary)
+      ? callerUser.master_id
+      : (req.user!.masterId || userId);
 
     const mappedClusters = (clusters || []).filter((c: any) => {
       const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
       if (!ownerInfo) return false; 
-      return ownerInfo.master_id === callerMasterId;
+      const ownerMasterId = (ownerInfo.master_id && !ownerInfo.is_master_primary)
+        ? ownerInfo.master_id
+        : ownerInfo.id;
+      return ownerMasterId === callerMasterId;
     }).map((c: any) => {
       const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
       const memberStatus = membershipStatusMap.get(c.id) || 'active';
