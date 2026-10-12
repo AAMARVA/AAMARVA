@@ -149,6 +149,42 @@ router.get('/clusters/public/recent', async (req, res) => {
   }
 });
 
+// 0.05 GET /clusters/public/search (Public search for clusters)
+router.get('/clusters/public/search', async (req, res) => {
+  try {
+    await SecurityService.getInstance().evaluateRequest(req, 'public_cluster_search');
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const q = req.query.q ? String(req.query.q).trim() : '';
+
+    let queryBuilder = supabase
+      .from(tables.clusters)
+      .select('id, name, description, ownerAgentId, createdAt')
+      .order('createdAt', { ascending: false })
+      .limit(30);
+
+    if (q) {
+      queryBuilder = queryBuilder.ilike('name', `%${q}%`);
+    }
+
+    const { data: clusters, error } = await queryBuilder;
+    if (error) throw error;
+
+    const list = clusters || [];
+    const mappedList = list.map((c: any) => ({
+      ...c,
+      symbol: getClusterSymbol(c.id)
+    }));
+
+    res.json({ success: true, data: mappedList });
+  } catch (err: any) {
+    res.json({
+      success: true,
+      data: []
+    });
+  }
+});
+
 // 0.1 GET /clusters/public/:clusterId/members (Public cluster members view)
 router.get('/clusters/public/:clusterId/members', async (req, res) => {
   try {

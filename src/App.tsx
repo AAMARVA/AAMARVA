@@ -1170,6 +1170,8 @@ export default function App() {
         onOpenConnections={handleOpenConnections}
         onAddBid={handleAddReply}
         onOpenAgentProfile={handleOpenAgentProfile}
+        onOpenClusterMembers={handleOpenClusterMembers}
+        onOpenClusterChat={handleOpenClusterChat}
         activeMainTab={activeTab}
         onSetActiveMainTab={setActiveTab}
       />

@@ -27,6 +27,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
   const [selectedMemberAgentIds, setSelectedMemberAgentIds] = useState<string[]>([]);
+  const [slaveAgentsList, setSlaveAgentsList] = useState<any[]>([]);
   const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState('');
   const [creatingCluster, setCreatingCluster] = useState(false);
@@ -88,6 +89,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         const currentActiveId = data.activeAgentId;
         const masterAgent = data.masterAgent;
         const slaveAgents = data.subAgents || data.slaveAgents || [];
+        setSlaveAgentsList(slaveAgents);
 
         // List all slave agents in the fleet (excluding self)
         if (Array.isArray(slaveAgents)) {
@@ -525,7 +527,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
           <div className="relative w-full max-w-5xl bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] max-h-[94vh] flex flex-col font-mono">
             <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none shrink-0">
               <span className="text-xs font-black uppercase tracking-widest">
-                SPOG - FLEET OVERVIEW ({activeConnections.length} ACTIVE AGENTS)
+                SPOG - ({slaveAgentsList.length > 0 ? slaveAgentsList.length : activeConnections.length} TOTAL ACCOUNTS DEPLOYED)
               </span>
               <button
                 type="button"
@@ -540,84 +542,123 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
               <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
                 Fleet Monitor Protocol
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <input
                   type="text"
-                  placeholder="Search Agent..."
+                  placeholder="Search Slave..."
                   value={spogSearchQuery}
                   onChange={(e) => setSpogSearchQuery(e.target.value)}
                   className="px-2.5 py-1 text-xs font-bold uppercase bg-white border-2 border-[#141414] focus:outline-hidden"
                 />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const spogList = slaveAgentsList.length > 0 ? slaveAgentsList : activeConnections;
+                    const allIds = spogList.map((item: any) => item.agentId || item.id);
+                    setSelectedMemberAgentIds(Array.from(new Set([...selectedMemberAgentIds, ...allIds])));
+                  }}
+                  className="px-2.5 py-1 bg-white text-[#141414] border-2 border-[#141414] text-[10px] sm:text-xs font-mono font-bold uppercase hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const spogList = slaveAgentsList.length > 0 ? slaveAgentsList : activeConnections;
+                    const allIds = spogList.map((item: any) => item.agentId || item.id);
+                    setSelectedMemberAgentIds(selectedMemberAgentIds.filter((id) => !allIds.includes(id)));
+                  }}
+                  className="px-2.5 py-1 bg-white text-[#141414] border-2 border-[#141414] text-[10px] sm:text-xs font-mono font-bold uppercase hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
+                >
+                  Deselect All
+                </button>
               </div>
             </div>
 
             <div className="p-4 sm:p-6 overflow-y-auto flex-1">
               {(() => {
-                const filteredAgents = activeConnections.filter((conn: any) => {
+                const spogList = slaveAgentsList.length > 0 ? slaveAgentsList : activeConnections;
+                const filteredAgents = spogList.filter((item: any) => {
                   if (!spogSearchQuery.trim()) return true;
                   const query = spogSearchQuery.toLowerCase();
-                  const name = (conn.agentName || '').toLowerCase();
-                  const agentId = (conn.agentId || '').toLowerCase();
+                  const name = (item.name || item.agentName || '').toLowerCase();
+                  const agentId = (item.agentId || item.id || '').toLowerCase();
                   return name.includes(query) || agentId.includes(query);
                 });
 
                 if (filteredAgents.length === 0) {
                   return (
                     <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
-                      No agents match search query
+                      No slave agents match search query
                     </div>
                   );
                 }
 
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                    {filteredAgents.map((conn: any) => (
-                      <div
-                        key={conn.id || conn.agentId}
-                        className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <AgentAvatar
-                            name={conn.agentName}
-                            avatar={conn.avatar}
-                            id={conn.agentId}
-                            className="w-8 h-8 border border-[#141414] shrink-0"
-                          />
-                          <div className="min-w-0">
-                            <p className="text-xs font-black uppercase text-[#141414] truncate">
-                              {conn.agentName}
-                            </p>
-                            <p className="text-[10px] text-[#141414]/70 font-mono truncate">
-                              @{conn.agentId || conn.id}
-                            </p>
+                    {filteredAgents.map((item: any) => {
+                      const itemName = item.name || item.agentName || 'Slave Agent';
+                      const itemAgentId = item.agentId || item.id;
+                      const isSelected = selectedMemberAgentIds.includes(itemAgentId);
+                      return (
+                        <div
+                          key={item.id || item.agentId}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedMemberAgentIds(selectedMemberAgentIds.filter((id) => id !== itemAgentId));
+                            } else {
+                              setSelectedMemberAgentIds([...selectedMemberAgentIds, itemAgentId]);
+                            }
+                          }}
+                          className={`p-2.5 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2.5 cursor-pointer transition-all ${
+                            isSelected ? 'bg-[#141414] text-white' : 'bg-white text-[#141414] hover:bg-[#141414]/5'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <AgentAvatar
+                              name={itemName}
+                              avatar={item.avatar}
+                              id={itemAgentId}
+                              className={`w-8 h-8 border shrink-0 ${isSelected ? 'border-white' : 'border-[#141414]'}`}
+                            />
+                            <div className="min-w-0">
+                              <p className={`text-xs font-black uppercase truncate ${isSelected ? 'text-white' : 'text-[#141414]'}`}>
+                                {itemName}
+                              </p>
+                              <p className={`text-[10px] font-mono truncate ${isSelected ? 'text-white/70' : 'text-[#141414]/70'}`}>
+                                @{itemAgentId}
+                              </p>
+                            </div>
+                          </div>
+                          <div className={`flex items-center justify-between pt-2 border-t ${isSelected ? 'border-white/20' : 'border-[#141414]/15'}`}>
+                            <span className={`text-[10px] font-mono font-bold uppercase tracking-wider ${isSelected ? 'text-white/80' : 'text-[#141414]/70'}`}>
+                              {isSelected ? 'SELECTED' : 'SELECT'}
+                            </span>
+                            <div className={`w-5 h-5 border-2 flex items-center justify-center font-bold text-xs select-none ${
+                              isSelected ? 'border-white bg-white text-[#141414]' : 'border-[#141414] bg-white text-transparent'
+                            }`}>
+                              ✓
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between pt-2 border-t border-[#141414]/15">
-                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-[#141414]/10">
-                            {conn.isMaster ? 'Master' : conn.isSlave ? 'Slave' : 'Peer'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsSpogModalOpen(false);
-                              onOpenChat?.({
-                                id: conn.id || conn.connectionId,
-                                agentName: conn.agentName,
-                                avatar: conn.avatar,
-                                agentId: conn.agentId,
-                                peerE2eePublicKey: conn.peerE2eePublicKey,
-                              });
-                            }}
-                            className="px-2 py-0.5 bg-[#141414] text-white text-[9px] font-bold uppercase hover:bg-black/80 transition-colors cursor-pointer"
-                          >
-                            Command
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()}
+            </div>
+
+            <div className="bg-[#F5F4F0] px-4 py-2.5 border-t-2 border-[#141414] flex items-center justify-between shrink-0">
+              <span className="text-xs font-mono font-bold uppercase text-[#141414]">
+                {selectedMemberAgentIds.length} AGENT{selectedMemberAgentIds.length === 1 ? '' : 'S'} SELECTED
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsSpogModalOpen(false)}
+                className="px-4 py-1.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-bold uppercase hover:bg-black/80 transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+              >
+                Apply Selection
+              </button>
             </div>
           </div>
         </div>

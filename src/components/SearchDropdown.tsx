@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X, Terminal, Bot, Radio } from 'lucide-react';
 import { NetworkTicket } from '../types';
 import { SearchView } from './SearchView';
+import { SlaveMonitorModal } from './SlaveMonitorModal';
 
 interface SearchDropdownProps {
   isOpen: boolean;
@@ -31,8 +32,8 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   onSetActiveMainTab
 }) => {
   const [query, setQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'agents' | 'clusters' | 'posts'>('agents');
-  const [agents, setAgents] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'command-pit' | 'slaves' | 'posts'>('command-pit');
+  const [isSlaveMonitorOpen, setIsSlaveMonitorOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,13 +64,14 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
       ref={dropdownRef}
       className="fixed inset-0 z-[100] w-full h-full bg-[#050505] flex flex-col animate-in fade-in duration-150 select-none"
     >
-      <div className="max-w-2xl mx-auto w-full flex flex-col h-full bg-black sm:border-x border-white/10 shadow-2xl">
+      <div className="max-w-3xl mx-auto w-full flex flex-col h-full bg-black sm:border-x border-white/10 shadow-2xl">
         <div className="sticky top-0 z-30 bg-black">
-          {/* Top Navigation Options Row matching screenshot */}
+          {/* Top Main Navigation Options Row */}
           {onSetActiveMainTab && (
             <div className="pt-4 px-4 pb-0 bg-black">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 pb-3 border-b border-white">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 pb-3 border-b border-white/20">
                 <button
+                  type="button"
                   onClick={() => { onSetActiveMainTab('floor'); onClose(); }}
                   className={`py-2 px-2 text-[11px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     (activeMainTab === 'floor' || activeMainTab === 'live')
@@ -82,6 +84,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => { onSetActiveMainTab('command-pit'); onClose(); }}
                   className={`py-2 px-2 text-[11px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     activeMainTab === 'command-pit'
@@ -94,6 +97,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => { onSetActiveMainTab('telemetry'); onClose(); }}
                   className={`py-2 px-2 text-[11px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     activeMainTab === 'telemetry'
@@ -106,6 +110,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => { onSetActiveMainTab('hub'); onClose(); }}
                   className={`py-2 px-2 text-[11px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     (activeMainTab === 'hub' || activeMainTab === 'explore')
@@ -122,11 +127,11 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
 
           {/* Search Input Area */}
           <div className="p-4 bg-black">
-            <div className="flex items-center gap-3 bg-[#111111] rounded-md px-3.5 py-2.5 border border-white/10 focus-within:border-white/20 transition-all">
+            <div className="flex items-center gap-3 bg-[#111111] rounded-none px-3.5 py-2.5 border border-white/20 focus-within:border-white transition-all">
               <Search className="w-4 h-4 text-neutral-400 shrink-0" />
               <input 
                 type="text" 
-                placeholder="Search agent, cluster, or ticket"
+                placeholder="Search Command Pit, Slave, or Ticket..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 autoFocus
@@ -141,67 +146,92 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                     onClose();
                   }
                 }}
-                className="text-neutral-400 hover:text-white transition-colors p-1 rounded hover:bg-white/10 focus:outline-none cursor-pointer"
+                className="text-neutral-400 hover:text-white transition-colors p-1 rounded-none hover:bg-white/10 focus:outline-none cursor-pointer"
                 title={query ? "Clear Search" : "Close Search"}
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
-        </div>
 
-        {/* Search Filter Tabs when typing: Agent, Cluster, Ticket */}
-        {query.trim().length > 0 && (
-          <div className="flex border-b border-white/10 bg-black shrink-0 px-4 sm:px-6">
-            <div className="flex w-full justify-between sm:justify-start sm:gap-12">
+          {/* Search Filter Tabs: COMMAND PIT | SEARCH SLAVE | TICKET */}
+          <div className="flex border-b border-white/20 bg-black shrink-0 px-4 sm:px-6">
+            <div className="flex w-full justify-between sm:justify-start sm:gap-6">
               <button
-                onClick={() => setActiveTab('agents')}
-                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'agents' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+                type="button"
+                onClick={() => setActiveTab('command-pit')}
+                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.15em] font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'command-pit' 
+                    ? 'text-white border-b-2 border-white' 
+                    : 'text-neutral-500 hover:text-neutral-300'
+                }`}
               >
-                Agent
+                <Terminal className="w-3.5 h-3.5" />
+                <span>Command Pit</span>
               </button>
+
               <button
-                onClick={() => setActiveTab('clusters')}
-                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'clusters' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+                type="button"
+                onClick={() => setActiveTab('slaves')}
+                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.15em] font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'slaves' 
+                    ? 'text-white border-b-2 border-white' 
+                    : 'text-neutral-500 hover:text-neutral-300'
+                }`}
               >
-                Cluster
+                <Bot className="w-3.5 h-3.5" />
+                <span>Search Slave</span>
               </button>
+
               <button
+                type="button"
                 onClick={() => setActiveTab('posts')}
-                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'posts' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.15em] font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'posts' 
+                    ? 'text-white border-b-2 border-white' 
+                    : 'text-neutral-500 hover:text-neutral-300'
+                }`}
               >
-                Ticket
+                <Radio className="w-3.5 h-3.5" />
+                <span>Ticket</span>
               </button>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto overscroll-contain bg-black text-white px-4 pb-28 sm:px-6 flex flex-col">
-          {query.trim().length > 0 ? (
-            <div className="pt-4 flex-1 flex flex-col">
-              <SearchView
-                posts={posts}
-                agents={agents}
-                query={query}
-                activeTab={activeTab}
-                onOpenThread={(p) => { onClose(); onOpenThread(p); }}
-                onOpenConnections={(p) => { onClose(); onOpenConnections?.(p); }}
-                onAddBid={onAddBid}
-                onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
-                onOpenClusterMembers={(cluster) => { onClose(); onOpenClusterMembers?.(cluster); }}
-                onOpenClusterChat={(cluster) => { onClose(); onOpenClusterChat?.(cluster); }}
-              />
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-              <div className="w-28 h-28 rounded-full bg-white/[0.02] flex items-center justify-center border border-white/10 shadow-inner">
-                <Search className="w-14 h-14 text-neutral-600 stroke-[1.25]" />
-              </div>
-            </div>
-          )}
+        <div className="flex-1 overflow-y-auto overscroll-contain bg-black text-white px-4 pb-28 sm:px-6 flex flex-col pt-4">
+          <SearchView
+            posts={posts}
+            query={query}
+            activeTab={activeTab}
+            onOpenThread={(p) => { onClose(); onOpenThread(p); }}
+            onOpenConnections={(p) => { onClose(); onOpenConnections?.(p); }}
+            onAddBid={onAddBid}
+            onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
+            onOpenClusterMembers={(cluster) => { onClose(); onOpenClusterMembers?.(cluster); }}
+            onOpenClusterChat={(cluster) => { onClose(); onOpenClusterChat?.(cluster); }}
+            onNavigateToCommandPit={() => {
+              onSetActiveMainTab?.('command-pit');
+              onClose();
+            }}
+            onOpenSlaveMonitor={() => setIsSlaveMonitorOpen(true)}
+          />
         </div>
       </div>
+
+      {/* Slave Monitor Protocol Modal */}
+      {isSlaveMonitorOpen && (
+        <SlaveMonitorModal
+          isOpen={isSlaveMonitorOpen}
+          onClose={() => setIsSlaveMonitorOpen(false)}
+          onOpenAgentProfile={(name, avatar, id) => {
+            setIsSlaveMonitorOpen(false);
+            onClose();
+            onOpenAgentProfile?.(name, avatar, id);
+          }}
+        />
+      )}
     </div>
   );
 };
