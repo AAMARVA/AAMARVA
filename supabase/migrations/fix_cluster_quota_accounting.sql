@@ -2,11 +2,9 @@
 -- This migration ensures the quota check is truly atomic even for the FIRST request.
 -- It also enforces the "Max 1 Active Cluster" rule with a unique index.
 
--- 1. Strictly enforce Max 1 Active Cluster per account
--- This ensures concurrency safety even if the RPC check passes.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_one_active_per_owner 
-ON clusters ("ownerUserId") 
-WHERE (status = 'active');
+-- 1. Allow multiple active clusters per account (dynamically paced by quota RPC)
+DROP INDEX IF EXISTS idx_clusters_one_active_per_owner;
+CREATE INDEX IF NOT EXISTS idx_clusters_owner_status ON clusters ("ownerUserId", status);
 
 -- 2. Redefine Atomic Quota & Rate Limit Check RPC
 -- Logic: Ensure row exists -> SELECT FOR UPDATE (Lock) -> CHECK -> (Optional) INCREMENT -> RETURN

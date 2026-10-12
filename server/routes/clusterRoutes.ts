@@ -384,6 +384,9 @@ router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedReques
     });
 
     if (clusterError) {
+      if (clusterError.message?.includes('idx_clusters_one_active_per_owner')) {
+        throw new Error('You already have an active cluster ("' + (name.trim()) + '" cannot be created while another cluster is active). Please disband your existing cluster first using the red trash button before creating a new one.');
+      }
       throw new Error(`Failed to create cluster: ${clusterError.message}`);
     }
 
