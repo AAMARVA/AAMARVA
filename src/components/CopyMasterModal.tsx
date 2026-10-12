@@ -6,6 +6,7 @@ import { apiFetch } from '../services/authApi';
 interface CopyMasterModalProps {
   masterAgent: any;
   slaveAgents: any[];
+  nodeAgents?: any[];
   user: any;
   onClose: () => void;
 }
