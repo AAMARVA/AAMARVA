@@ -84,48 +84,42 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         const masterAgent = data.masterAgent;
         const slaveAgents = data.subAgents || data.slaveAgents || [];
 
-        // If master agent exists and is not currently the active context
+        // If master agent exists
         if (masterAgent && masterAgent.agentId) {
           const mKey = masterAgent.agentId.toUpperCase();
-          const isCurrent = masterAgent.id === currentActiveId || masterAgent.agentId === currentActiveId;
-          if (!isCurrent) {
-            const existing = connectionsMap.get(mKey);
-            const fallbackConnId = currentActiveId ? `conn_${currentActiveId}_${masterAgent.id}` : `conn_${masterAgent.id}_master`;
-            connectionsMap.set(mKey, {
-              id: existing?.id || existing?.connectionId || fallbackConnId,
-              connectionId: existing?.connectionId || existing?.id || fallbackConnId,
-              agentId: masterAgent.agentId,
-              agentName: masterAgent.name || masterAgent.agentId,
-              avatar: masterAgent.avatar,
-              peerE2eePublicKey: existing?.peerE2eePublicKey,
-              isMaster: true,
-              isSlave: false,
-              status: 'active',
-            });
-          }
+          const existing = connectionsMap.get(mKey);
+          const fallbackConnId = currentActiveId ? `conn_${currentActiveId}_${masterAgent.id}` : `conn_${masterAgent.id}_master`;
+          connectionsMap.set(mKey, {
+            id: existing?.id || existing?.connectionId || fallbackConnId,
+            connectionId: existing?.connectionId || existing?.id || fallbackConnId,
+            agentId: masterAgent.agentId,
+            agentName: masterAgent.name || masterAgent.agentId,
+            avatar: masterAgent.avatar,
+            peerE2eePublicKey: existing?.peerE2eePublicKey,
+            isMaster: true,
+            isSlave: false,
+            status: 'active',
+          });
         }
 
-        // List all slave agents in the fleet (excluding active agent if switched)
+        // List all slave agents in the fleet
         if (Array.isArray(slaveAgents)) {
           slaveAgents.forEach((s: any) => {
             if (s && s.agentId) {
               const sKey = s.agentId.toUpperCase();
-              const isCurrent = s.id === currentActiveId || s.agentId === currentActiveId;
-              if (!isCurrent) {
-                const existing = connectionsMap.get(sKey);
-                const fallbackConnId = currentActiveId ? `conn_${currentActiveId}_${s.id}` : `conn_${s.id}_fleet`;
-                connectionsMap.set(sKey, {
-                  id: existing?.id || existing?.connectionId || fallbackConnId,
-                  connectionId: existing?.connectionId || existing?.id || fallbackConnId,
-                  agentId: s.agentId,
-                  agentName: s.name || s.agentId,
-                  avatar: s.avatar,
-                  peerE2eePublicKey: existing?.peerE2eePublicKey,
-                  isMaster: false,
-                  isSlave: true,
-                  status: 'active',
-                });
-              }
+              const existing = connectionsMap.get(sKey);
+              const fallbackConnId = currentActiveId ? `conn_${currentActiveId}_${s.id}` : `conn_${s.id}_fleet`;
+              connectionsMap.set(sKey, {
+                id: existing?.id || existing?.connectionId || fallbackConnId,
+                connectionId: existing?.connectionId || existing?.id || fallbackConnId,
+                agentId: s.agentId,
+                agentName: s.name || s.agentId,
+                avatar: s.avatar,
+                peerE2eePublicKey: existing?.peerE2eePublicKey,
+                isMaster: false,
+                isSlave: true,
+                status: 'active',
+              });
             }
           });
         }
@@ -365,7 +359,16 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3">
-              <h3 className="font-mono text-base font-black uppercase">Create New Cluster</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-mono text-base font-black uppercase">Create New Cluster</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsSpogModalOpen(true)}
+                  className="px-2 py-0.5 bg-white text-[#141414] border-2 border-[#141414] text-[10px] font-mono font-bold uppercase hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                >
+                  SPOG
+                </button>
+              </div>
               <button
                 onClick={() => setIsNewClusterOpen(false)}
                 className="p-1 hover:bg-[#141414]/10 transition-colors cursor-pointer"
@@ -420,7 +423,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                         setSelectedMemberAgentIds(activeConnections.map(c => c.agentId || c.id));
                       }
                     }}
-                    className="font-mono text-[10px] font-bold uppercase underline text-[#141414] hover:opacity-75 cursor-pointer"
+                    className="px-2 py-0.5 bg-white border-2 border-[#141414] font-mono text-[10px] font-bold uppercase text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
                   >
                     {selectedMemberAgentIds.length === activeConnections.length && activeConnections.length > 0 ? 'Deselect All' : 'Select All'}
                   </button>
