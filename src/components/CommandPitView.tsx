@@ -554,6 +554,35 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                   onChange={(e) => setSpogSearchQuery(e.target.value)}
                   className="px-2.5 py-1 text-xs font-bold uppercase bg-white border-2 border-[#141414] focus:outline-hidden"
                 />
+                <button
+                  className="px-2.5 py-1 text-xs font-bold uppercase bg-[#141414] text-white border-2 border-[#141414]"
+                  onClick={() => {
+                    const filteredAgents = activeConnections.filter((conn: any) => {
+                      if (!spogSearchQuery.trim()) return true;
+                      const query = spogSearchQuery.toLowerCase();
+                      const name = (conn.agentName || '').toLowerCase();
+                      return name.includes(query);
+                    });
+                    const allAgentIds = filteredAgents.map((a: any) => a.agentId || a.id);
+                    const allSelected = allAgentIds.every((id: any) => selectedMemberAgentIds.includes(id));
+                    if (allSelected) {
+                      setSelectedMemberAgentIds([]);
+                    } else {
+                      setSelectedMemberAgentIds(allAgentIds);
+                    }
+                  }}
+                >
+                  {(() => {
+                    const filteredAgents = activeConnections.filter((conn: any) => {
+                      if (!spogSearchQuery.trim()) return true;
+                      const query = spogSearchQuery.toLowerCase();
+                      const name = (conn.agentName || '').toLowerCase();
+                      return name.includes(query);
+                    });
+                    const allSelected = filteredAgents.length > 0 && filteredAgents.every((a: any) => selectedMemberAgentIds.includes(a.agentId || a.id));
+                    return allSelected ? 'Deselect All' : 'Select All';
+                  })()}
+                </button>
               </div>
             </div>
 
