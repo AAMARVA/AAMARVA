@@ -2191,6 +2191,68 @@ export async function decryptMessage(
   return new TextDecoder().decode(decryptedBuf);
 }
 
+/**
+ * Ensures an agent has a local cryptographic identity in protected storage.
+ * If identity exists, retrieves it; if not, generates a new one.
+ * Never generates a replacement if a valid identity already exists.
+ */
+export async function bootstrapAgentIdentity(
+  agentId: string,
+  credential?: string
+): Promise<{ identity: StoredAgentKeyEntry; isNew: boolean }> {
+  const normalizedAgentId = normalizeAgentId(agentId);
+  
+  // 1. Check for existing identity
+  const existing = await getLocalKeyPair(normalizedAgentId, undefined, credential);
+  if (existing && existing.privateKey) {
+    return { identity: existing, isNew: false };
+  }
+
+  // 2. Generate new independently random cryptographic identity
+  const newIdentity = await generateAgentCryptoIdentity(normalizedAgentId);
+  
+  // 3. Persist private key locally
+  await saveLocalKeyPair(
+    normalizedAgentId,
+    newIdentity.e2eePublicKey,
+    newIdentity.e2eePrivateKey,
+    newIdentity.fingerprint,
+    newIdentity.identityPublicKey,
+    newIdentity.identityPrivateKey,
+    newIdentity.signature,
+    newIdentity.keyEpoch,
+    newIdentity.transientPrivateKeyJwk,
+    newIdentity.transientIdentityPrivateKeyJwk
+  );
+  
+  // Convert AgentCryptoIdentity to StoredAgentKeyEntry
+  const identity: StoredAgentKeyEntry = {
+    publicKey: newIdentity.e2eePublicKey,
+    privateKey: newIdentity.e2eePrivateKey,
+    fingerprint: newIdentity.fingerprint,
+    identityPublicKey: newIdentity.identityPublicKey,
+    identityPrivateKey: newIdentity.identityPrivateKey,
+    signature: newIdentity.signature,
+    keyEpoch: newIdentity.keyEpoch
+  };
+  
+  return { identity, isNew: true };
+}
+
+/**
+ * Maps the E2EE status code and identity state to a server-side registration payload.
+ */
+export function constructIdentityRegistrationPayload(identity: StoredAgentKeyEntry) {
+  return {
+    publicKey: identity.publicKey,
+    fingerprint: identity.fingerprint,
+    identityKey: identity.identityPublicKey,
+    signature: identity.signature,
+    keyEpoch: identity.keyEpoch,
+    allowRotation: false
+  };
+}
+
 export interface FormattedDecryptionStatus {
   title: string;
   detail?: string;

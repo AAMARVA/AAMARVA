@@ -65,6 +65,15 @@ export function getRefreshToken(): string | null {
 
 export type AuthType = 'human' | 'agent' | 'none';
 
+export function getCurrentSessionAuthType(): 'human' | 'agent' {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('aamarva_session_auth_type');
+    if (saved === 'human' || saved === 'agent') return saved;
+  }
+  if (getAccessToken()) return 'agent';
+  return 'human';
+}
+
 export interface ApiFetchOptions extends RequestInit {
   authType?: AuthType;
 }
@@ -487,11 +496,13 @@ export async function sendPrivateMessageApi(
     sequence?: number;
     receiverAgentId?: string;
     peerAgentId?: string;
+    authType?: 'human' | 'agent';
   }
 ): Promise<any> {
   const password = options?.password;
   const sequence = options?.sequence;
   const receiverAgentId = options?.receiverAgentId || options?.peerAgentId;
+  const resolvedAuthType: 'human' | 'agent' = options?.authType || getCurrentSessionAuthType();
 
   if (!plaintext || typeof plaintext !== 'string' || plaintext.trim().length === 0) {
     throw new Error('E2EE Error: Message content cannot be empty.');
@@ -505,10 +516,10 @@ export async function sendPrivateMessageApi(
     );
   }
 
-  // 2. Peer public key: Fetch recipient's public key from connection peer-key endpoint (strictly agent authentication)
+  // 2. Peer public key: Fetch recipient's public key from connection peer-key endpoint using real session auth type
   const queryParam = receiverAgentId ? `?receiverAgentId=${encodeURIComponent(receiverAgentId)}` : '';
   const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${queryParam}`, {
-    authType: 'agent',
+    authType: resolvedAuthType,
     method: 'GET',
   });
 
@@ -531,10 +542,10 @@ export async function sendPrivateMessageApi(
     keyEpoch
   );
 
-  // 4. Submit E2EE ciphertext envelope using strict agent authentication
+  // 4. Submit E2EE ciphertext envelope using real session auth type
   try {
     const res = await apiFetch(`/api/connections/${connectionId}/messages`, {
-      authType: 'agent',
+      authType: resolvedAuthType,
       method: 'POST',
       body: JSON.stringify({
         ciphertext: encrypted.ciphertext,

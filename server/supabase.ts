@@ -151,10 +151,11 @@ class MockPostgrestQueryBuilder implements PromiseLike<any> {
         if (parts.length < 3) return false;
         const col = parts[0];
         const op = parts[1];
-        const val = parts.slice(2).join('.');
+        const rawVal = parts.slice(2).join('.');
+        const val = rawVal.replace(/^["']|["']$/g, '');
         const rowVal = String(row[col] ?? '');
-        if (op === 'eq') return row[col] === val || rowVal === val;
-        if (op === 'neq') return row[col] !== val && rowVal !== val;
+        if (op === 'eq') return row[col] === val || rowVal === val || row[col] === rawVal || rowVal === rawVal;
+        if (op === 'neq') return row[col] !== val && rowVal !== val && row[col] !== rawVal && rowVal !== rawVal;
         if (op === 'ilike') {
           const clean = val.replace(/%/g, '').toLowerCase();
           return rowVal.toLowerCase().includes(clean);
@@ -354,6 +355,7 @@ class MockPostgrestQueryBuilder implements PromiseLike<any> {
 }
 
 const globalMemoryStore = new Map<string, any[]>();
+const mockAuthUsersStore = new Map<string, any>();
 
 // Pre-seed demo user so user lookup and agent identity work out of the box in development
 globalMemoryStore.set('users', [
@@ -475,38 +477,57 @@ export function createMockSupabaseClient() {
     },
     auth: {
       admin: {
-        getUserById: async (id: string) => ({
-          data: {
-            user: {
-              id,
-              email: 'operator@aamarva.com',
-              app_metadata: {},
-              user_metadata: {}
-            }
-          },
-          error: null
-        }),
+        getUserById: async (id: string) => {
+          const user = mockAuthUsersStore.get(id) || {
+            id,
+            email: 'operator@aamarva.com',
+            app_metadata: {},
+            user_metadata: {}
+          };
+          return { data: { user }, error: null };
+        },
         listUsers: async () => ({
-          data: { users: [] },
+          data: { users: Array.from(mockAuthUsersStore.values()) },
           error: null
         }),
-        updateUserById: async (id: string, attrs: any) => ({
-          data: { user: { id, ...attrs } },
-          error: null
-        }),
-        createUser: async (attrs: any) => ({
-          data: {
-            user: {
-              id: attrs.id || 'usr_' + Math.random().toString(36).substring(2, 9),
-              ...attrs
+        updateUserById: async (id: string, attrs: any) => {
+          const existing = mockAuthUsersStore.get(id) || {
+            id,
+            email: 'operator@aamarva.com',
+            app_metadata: {},
+            user_metadata: {}
+          };
+          const updated = {
+            ...existing,
+            ...attrs,
+            user_metadata: {
+              ...(existing.user_metadata || {}),
+              ...(attrs?.user_metadata || {})
+            },
+            app_metadata: {
+              ...(existing.app_metadata || {}),
+              ...(attrs?.app_metadata || {})
             }
-          },
-          error: null
-        }),
-        deleteUser: async (id: string) => ({
-          data: { user: { id } },
-          error: null
-        }),
+          };
+          mockAuthUsersStore.set(id, updated);
+          return { data: { user: updated }, error: null };
+        },
+        createUser: async (attrs: any) => {
+          const id = attrs.id || 'usr_' + Math.random().toString(36).substring(2, 9);
+          const user = {
+            id,
+            email: attrs.email || 'operator@aamarva.com',
+            app_metadata: attrs.app_metadata || {},
+            user_metadata: attrs.user_metadata || {},
+            ...attrs
+          };
+          mockAuthUsersStore.set(id, user);
+          return { data: { user }, error: null };
+        },
+        deleteUser: async (id: string) => {
+          mockAuthUsersStore.delete(id);
+          return { data: { user: { id } }, error: null };
+        },
       },
       signUp: async (credentials: any) => ({
         data: { user: { id: 'usr_new', email: credentials.email } },

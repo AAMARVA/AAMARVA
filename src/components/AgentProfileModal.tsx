@@ -648,8 +648,23 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        const matchingConn = (agentProfileData?.connections || []).find((c: any) => {
+                          const normUserAgent = (user?.agentId || '').toUpperCase();
+                          const normUserId = (user?.id || '').toLowerCase();
+                          const pOwner = (c.postOwnerAgentId || '').toUpperCase();
+                          const rAuthor = (c.replyAuthorAgentId || '').toUpperCase();
+                          const pUser = (c.postOwnerUserId || '').toLowerCase();
+                          const rUser = (c.replyAuthorUserId || '').toLowerCase();
+                          return (pOwner === normUserAgent || rAuthor === normUserAgent || pUser === normUserId || rUser === normUserId) && c.status !== 'dissolved';
+                        });
+
+                        if (!matchingConn?.id) {
+                          alert(`No active connection found with @${inferredAgentId || agentName}. A connection must be established and accepted before private chat can open.`);
+                          return;
+                        }
+
                         onOpenChat({
-                          id: inferredAgentId || agentProfileData?.id || agentName,
+                          id: matchingConn.id,
                           agentName: displayName,
                           avatar: currentAvatar,
                           agentId: inferredAgentId,

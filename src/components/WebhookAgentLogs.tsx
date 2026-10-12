@@ -144,17 +144,19 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       return;
     }
 
-    // Fallback: construct connection object directly from log data
-    const connId = connectionIdFromDetails || (targetId && targetId.startsWith('conn_') ? targetId : null) || targetId || senderId || log.id;
-    const peerName = detailsObj?.peerName || detailsObj?.agentName || detailsObj?.senderName || senderId || targetId || 'Connected Agent';
-    const peerAgentId = detailsObj?.peerAgentId || detailsObj?.agentId || senderId || targetId || 'agent';
+    // Only open chat if a genuine connection ID was recorded in log details
+    const connId = connectionIdFromDetails || (targetId && String(targetId).startsWith('conn_') ? targetId : null);
+    if (connId) {
+      const peerName = detailsObj?.peerName || detailsObj?.agentName || detailsObj?.senderName || 'Connected Agent';
+      const peerAgentId = detailsObj?.peerAgentId || detailsObj?.agentId || 'agent';
 
-    onOpenChat({
-      id: connId,
-      agentName: peerName,
-      avatar: detailsObj?.avatar || undefined,
-      agentId: peerAgentId
-    });
+      onOpenChat({
+        id: connId,
+        agentName: peerName,
+        avatar: detailsObj?.avatar || undefined,
+        agentId: peerAgentId
+      });
+    }
   }, [onOpenChat, connections]);
 
   // Authoritative REST fetch with deduplication

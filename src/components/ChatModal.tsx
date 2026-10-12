@@ -87,7 +87,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   onClose,
   onOpenAgentProfile,
 }) => {
-  const { user, userPassword, e2eeStatus, ensureE2EEKeys } = useAuth();
+  const { user, userPassword, e2eeStatus, ensureE2EEKeys, sessionAuthType } = useAuth();
+  const effectiveAuthType: 'human' | 'agent' = sessionAuthType || (getAccessToken() ? 'agent' : 'human');
   const [messages, setMessages] = useState<DecryptedChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -160,7 +161,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       const targetReceiver = resolvedPeerAgentId || peerAgentId;
       await sendPrivateMessageApi(connectionId, newMessage, user.agentId, { 
         password: userPassword || undefined,
-        receiverAgentId: targetReceiver
+        receiverAgentId: targetReceiver,
+        authType: effectiveAuthType
       });
       setNewMessage('');
       await fetchAndDecryptMessages();
@@ -175,6 +177,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   // Synchronized message fetch and decryption
   const fetchAndDecryptMessages = useCallback(async () => {
     if (!user?.agentId) return;
+
+    if (!connectionId || !connectionId.trim()) {
+      setFetchError('Connection not found: Missing or invalid connection ID.');
+      setIsLoading(false);
+      return;
+    }
 
     try {
       // 1. If E2EE initialization or recovery is actively in progress in AuthContext, wait for it
@@ -221,7 +229,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
       if (!currentPeerKey || !currentPeerId || Object.keys(currentPeerEpochKeys).length === 0) {
         try {
-          const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${peerQuery}`, { authType: 'human' });
+          const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${peerQuery}`, { authType: effectiveAuthType });
           if (keyRes?.data) {
             if (keyRes.data.peerE2eePublicKey) {
               currentPeerKey = keyRes.data.peerE2eePublicKey;
@@ -251,9 +259,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               peerEpochKeys: keyRes.data.peerEpochKeys
             });
           }
-        } catch {
+        } catch (keyErr: any) {
+          const errMsg = String(keyErr?.message || '').toLowerCase();
+          if (errMsg.includes('connection not found') || errMsg.includes('404')) {
+            throw keyErr;
+          }
           try {
-            const legRes = await apiFetch(`/api/connections/${connectionId}/e2ee-key${peerQuery}`, { authType: 'human' });
+            const legRes = await apiFetch(`/api/connections/${connectionId}/e2ee-key${peerQuery}`, { authType: effectiveAuthType });
             if (legRes?.data?.peerE2eePublicKey) {
               currentPeerKey = legRes.data.peerE2eePublicKey;
               if (isMountedRef.current) setPeerKey(currentPeerKey);
@@ -262,8 +274,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         }
       }
 
-      // 4. Fetch raw messages from server
-      const responseData = await apiFetch(`/api/connections/${connectionId}/messages${peerQuery}`, { authType: 'human' });
+      // 4. Fetch raw messages from server using real session auth type
+      const responseData = await apiFetch(`/api/connections/${connectionId}/messages${peerQuery}`, { authType: effectiveAuthType });
       const rawList = responseData.data || responseData;
 
       if (Array.isArray(rawList)) {
@@ -416,7 +428,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         setIsLoading(false);
       }
     }
-  }, [connectionId, user?.agentId, userPassword, e2eeStatus, ensureE2EEKeys, localKeys, peerKey, initialPeerKey, peerEpochKeys, resolvedPeerAgentId, peerAgentId, activeContextCredentials]);
+  }, [connectionId, user?.agentId, userPassword, e2eeStatus, ensureE2EEKeys, localKeys, peerKey, initialPeerKey, peerEpochKeys, resolvedPeerAgentId, peerAgentId, activeContextCredentials, effectiveAuthType]);
 
   useEffect(() => {
     fetchAndDecryptMessages();
@@ -626,10 +638,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 </div>
                 <div className="space-y-1">
                   <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414]">
-                    Secure Channel Active
+                    {peerKey ? 'Secure Channel Active' : 'Waiting for Peer Key'}
                   </h4>
                   <p className="font-sans text-[11px] sm:text-xs text-[#141414]/60 max-w-xs mx-auto leading-relaxed">
-                    The E2EE communication channel is established. Waiting for the autonomous agents to send their first encrypted messages.
+                    {peerKey
+                      ? 'The E2EE communication channel is established. Waiting for the autonomous agents to send their first encrypted messages.'
+                      : 'Waiting for the peer agent to publish their E2EE public key before secure messages can be sent.'}
                   </p>
                 </div>
               </div>

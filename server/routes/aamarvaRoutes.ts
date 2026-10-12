@@ -2539,67 +2539,52 @@ router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads')
 router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
-    const receiverAgentId = (req.query?.receiverAgentId as string) || (req.query?.peerAgentId as string);
-    const receiverUserId = (req.query?.receiverUserId as string) || (req.query?.peerUserId as string);
-    await ensureConnectionRecord(connectionId, req.user?.id, { receiverAgentId, receiverUserId });
     const supabase = getSupabaseClient();
 
-    const { data: conn, error: connErr } = await supabase
+    // Direct database lookup for connection record. NEVER construct or fabricate a connection if lookup fails!
+    const { data: conn } = await supabase
       .from('connections')
       .select('*')
       .eq('id', connectionId)
       .maybeSingle();
 
-    if (connErr || !conn) {
-      res.status(404).json({ success: false, error: { message: 'Connection not found.' } });
-      return;
+    if (!conn) {
+      return res.status(404).json({ success: false, error: { code: 'CONNECTION_NOT_FOUND', message: 'Connection not found.' } });
     }
 
-    const isParticipant = conn.postOwnerUserId === req.user!.id || conn.replyAuthorUserId === req.user!.id;
+    if (conn.status === 'dissolved') {
+      return res.status(403).json({ success: false, error: { code: 'CONNECTION_DISSOLVED', message: 'Forbidden: Connection has been dissolved.' } });
+    }
+
+    const currentUserId = req.user!.id;
+    const currentAgentId = req.user!.agentId ? req.user!.agentId.toUpperCase() : '';
+    const postOwnerUserId = conn.postOwnerUserId;
+    const replyAuthorUserId = conn.replyAuthorUserId;
+    const postOwnerAgentId = conn.postOwnerAgentId ? conn.postOwnerAgentId.toUpperCase() : '';
+    const replyAuthorAgentId = conn.replyAuthorAgentId ? conn.replyAuthorAgentId.toUpperCase() : '';
+
+    const isParticipant =
+      (postOwnerUserId && postOwnerUserId === currentUserId) ||
+      (replyAuthorUserId && replyAuthorUserId === currentUserId) ||
+      (currentAgentId && (postOwnerAgentId === currentAgentId || replyAuthorAgentId === currentAgentId));
+
     if (!isParticipant) {
-      res.status(403).json({ success: false, error: { message: 'Forbidden: You are not a participant in this connection.' } });
-      return;
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: You are not a participant in this connection.' } });
     }
 
-    const isPostOwner = conn.postOwnerUserId === req.user!.id;
+    const isPostOwner = (postOwnerUserId && postOwnerUserId === currentUserId) || (currentAgentId && postOwnerAgentId === currentAgentId);
     const peerUserId = isPostOwner ? conn.replyAuthorUserId : conn.postOwnerUserId;
     const peerAgentId = isPostOwner ? conn.replyAuthorAgentId : conn.postOwnerAgentId;
 
-    const { data: authData } = await supabase.auth.admin.getUserById(peerUserId);
+    const authUser = await ensureAuthUserRecord(supabase, peerUserId);
+    const authData = authUser ? { user: authUser } : await supabase.auth.admin.getUserById(peerUserId).then((r: any) => r.data).catch(() => null);
+
     let peerE2eePublicKey = authData?.user?.user_metadata?.e2eePublicKey || null;
     let peerKeyFingerprint = authData?.user?.user_metadata?.e2eePublicKeyFingerprint || null;
     let peerIdentityKey = authData?.user?.user_metadata?.e2eeIdentityKey || null;
     let peerKeySignature = authData?.user?.user_metadata?.e2eeKeySignature || null;
     let peerKeyEpoch = authData?.user?.user_metadata?.e2eeKeyEpoch || 1;
     let peerEpochHistory = (authData?.user?.user_metadata?.e2eeEpochHistory as Record<string, any>) || {};
-
-    if (!peerE2eePublicKey && peerUserId) {
-      try {
-        const { publicKey: genPub } = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-        const pubJwk = genPub.export({ format: 'jwk' });
-        peerE2eePublicKey = JSON.stringify(pubJwk);
-        peerKeyFingerprint = nodeCrypto.createHash('sha256').update(peerE2eePublicKey).digest('hex');
-        peerEpochHistory = {
-          '1': {
-            publicKey: peerE2eePublicKey,
-            fingerprint: peerKeyFingerprint,
-            keyEpoch: 1,
-            updatedAt: new Date().toISOString()
-          }
-        };
-        await supabase.auth.admin.updateUserById(peerUserId, {
-          user_metadata: {
-            ...(authData?.user?.user_metadata || {}),
-            e2eePublicKey: peerE2eePublicKey,
-            e2eePublicKeyFingerprint: peerKeyFingerprint,
-            e2eeKeyEpoch: 1,
-            e2eeEpochHistory: peerEpochHistory
-          }
-        });
-      } catch (keyGenErr) {
-        console.warn('Auto key generation note:', keyGenErr);
-      }
-    }
 
     if (peerE2eePublicKey && !peerEpochHistory[String(peerKeyEpoch)]) {
       peerEpochHistory[String(peerKeyEpoch)] = {
@@ -2615,7 +2600,7 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
       success: true,
       data: {
         connectionId,
-        connectionStatus: 'active',
+        connectionStatus: conn.status || 'active',
         peerUserId,
         peerAgentId,
         peerE2eePublicKey,
@@ -2641,16 +2626,15 @@ function isValidBase64String(str: string): boolean {
   return base64Regex.test(trimmed) || urlSafeRegex.test(trimmed);
 }
 
-// 14. POST /api/connections/:connectionId/messages (Agent only)
-router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgent, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
+// 14. POST /api/connections/:connectionId/messages (User or Agent - E2EE Encrypted Messaging)
+router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Defense-in-depth: Strictly enforce agent authentication and reject human sessions
-    if (!req.user || req.authType !== 'agent' || req.user.type !== 'agent') {
-      return res.status(403).json({
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
         success: false,
         error: {
-          code: 'FORBIDDEN',
-          message: 'Forbidden: Private messaging is strictly restricted to authorized autonomous agents. Human sessions cannot send private messages.',
+          code: 'UNAUTHORIZED',
+          message: 'Authentication required. Please provide a valid human session or agent API key.',
         },
       });
     }
@@ -2658,28 +2642,17 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
     const connectionId = req.params.connectionId as string;
     const body = req.body || {};
     const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq } = body;
-    const receiverAgentId = body.receiverAgentId || body.recipientAgentId || body.peerAgentId || (req.query?.receiverAgentId as string) || (req.query?.peerAgentId as string);
-    const receiverUserId = body.receiverUserId || body.recipientUserId || (req.query?.receiverUserId as string);
 
-    await ensureConnectionRecord(connectionId, req.user!.id, { receiverAgentId, receiverUserId });
     const supabase = getSupabaseClient();
 
-    // 1. Connection participant authorization check
-    let { data: connRecord, error: connErr } = await supabase
+    // Direct database lookup for connection record. NEVER construct or fabricate a connection if lookup fails!
+    const { data: connRecord } = await supabase
       .from('connections')
-      .select('id, postOwnerUserId, replyAuthorUserId, status')
+      .select('*')
       .eq('id', connectionId)
       .maybeSingle();
 
-    if (!connRecord && (receiverAgentId || receiverUserId)) {
-      const ensured = await ensureConnectionRecord(connectionId, req.user!.id, { receiverAgentId, receiverUserId });
-      if (ensured) {
-        connRecord = ensured as any;
-        connErr = null;
-      }
-    }
-
-    if (connErr || !connRecord) {
+    if (!connRecord) {
       return res.status(404).json({
         success: false,
         error: {
@@ -2699,7 +2672,19 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
       });
     }
 
-    if (connRecord.postOwnerUserId !== req.user.id && connRecord.replyAuthorUserId !== req.user.id) {
+    const currentUserId = req.user.id;
+    const currentAgentId = req.user.agentId ? req.user.agentId.toUpperCase() : '';
+    const postOwnerUserId = connRecord.postOwnerUserId;
+    const replyAuthorUserId = connRecord.replyAuthorUserId;
+    const postOwnerAgentId = connRecord.postOwnerAgentId ? connRecord.postOwnerAgentId.toUpperCase() : '';
+    const replyAuthorAgentId = connRecord.replyAuthorAgentId ? connRecord.replyAuthorAgentId.toUpperCase() : '';
+
+    const isParticipant =
+      (postOwnerUserId && postOwnerUserId === currentUserId) ||
+      (replyAuthorUserId && replyAuthorUserId === currentUserId) ||
+      (currentAgentId && (postOwnerAgentId === currentAgentId || replyAuthorAgentId === currentAgentId));
+
+    if (!isParticipant) {
       return res.status(403).json({
         success: false,
         error: {
@@ -2710,8 +2695,8 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
     }
 
     // 2. Sender registered E2EE public key check: Sender MUST have a valid registered E2EE public key
-    const { data: senderAuthData } = await supabase.auth.admin.getUserById(req.user.id);
-    const senderMeta = senderAuthData?.user?.user_metadata || {};
+    const senderAuthUser = await ensureAuthUserRecord(supabase, req.user.id);
+    const senderMeta = senderAuthUser?.user_metadata || {};
     const senderPublicKey = senderMeta.e2eePublicKey;
 
     if (!senderPublicKey || typeof senderPublicKey !== 'string' || senderPublicKey.trim().length === 0) {
@@ -2746,40 +2731,12 @@ router.post('/connections/:connectionId/messages', requireAgentAuth, requireAgen
     }
 
     // 2b. Peer registered E2EE public key check: Recipient MUST also have a valid registered E2EE public key
-    const peerUserId = connRecord.postOwnerUserId === req.user.id ? connRecord.replyAuthorUserId : connRecord.postOwnerUserId;
-    let peerMeta: Record<string, any> = {};
+    const isPostOwner = (postOwnerUserId && postOwnerUserId === currentUserId) || (currentAgentId && postOwnerAgentId === currentAgentId);
+    const peerUserId = isPostOwner ? connRecord.replyAuthorUserId : connRecord.postOwnerUserId;
     if (peerUserId) {
-      const { data: peerAuthData } = await supabase.auth.admin.getUserById(peerUserId);
-      peerMeta = peerAuthData?.user?.user_metadata || {};
-      let peerPublicKey = peerMeta.e2eePublicKey;
-
-      if (!peerPublicKey && peerUserId) {
-        try {
-          const { publicKey: genPub } = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-          const pubJwk = genPub.export({ format: 'jwk' });
-          peerPublicKey = JSON.stringify(pubJwk);
-          const peerKeyFingerprint = nodeCrypto.createHash('sha256').update(peerPublicKey).digest('hex');
-          const peerEpochHistory = {
-            '1': {
-              publicKey: peerPublicKey,
-              fingerprint: peerKeyFingerprint,
-              keyEpoch: 1,
-              updatedAt: new Date().toISOString()
-            }
-          };
-          await supabase.auth.admin.updateUserById(peerUserId, {
-            user_metadata: {
-              ...(peerAuthData?.user?.user_metadata || {}),
-              e2eePublicKey: peerPublicKey,
-              e2eePublicKeyFingerprint: peerKeyFingerprint,
-              e2eeKeyEpoch: 1,
-              e2eeEpochHistory: peerEpochHistory
-            }
-          });
-        } catch (keyGenErr) {
-          console.warn('Auto key generation note:', keyGenErr);
-        }
-      }
+      const peerAuthUser = await ensureAuthUserRecord(supabase, peerUserId);
+      const peerMeta = peerAuthUser?.user_metadata || {};
+      const peerPublicKey = peerMeta.e2eePublicKey;
 
       if (!peerPublicKey || typeof peerPublicKey !== 'string' || peerPublicKey.trim().length === 0) {
         return res.status(400).json({

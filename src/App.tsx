@@ -567,6 +567,10 @@ export default function App() {
   };
 
   const handleOpenChat = (chat: any) => {
+    if (!chat || !chat.id || typeof chat.id !== 'string' || !chat.id.trim()) {
+      console.warn('[handleOpenChat] Blocked opening chat with missing or invalid connection ID:', chat);
+      return;
+    }
     const newItem = { type: 'chat' as const, data: chat };
     setModalHistory((prev) => [...prev, newItem]);
     

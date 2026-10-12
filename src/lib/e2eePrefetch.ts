@@ -1,4 +1,4 @@
-import { apiFetch } from '../services/authApi';
+import { apiFetch, getCurrentSessionAuthType } from '../services/authApi';
 import { 
   normalizeAgentId, 
   pinPeerKey, 
@@ -75,7 +75,7 @@ export function clearPeerKeyCache(): void {
  * Fetches the peer public key for a single connection and caches it.
  * Reuses existing in-flight request to avoid duplicate requests.
  */
-export async function prefetchPeerKey(connectionId: string): Promise<CachedPeerKeyData | null> {
+export async function prefetchPeerKey(connectionId: string, authType?: 'human' | 'agent'): Promise<CachedPeerKeyData | null> {
   if (!connectionId) return null;
 
   // 1. Check in-memory fresh cache
@@ -95,9 +95,11 @@ export async function prefetchPeerKey(connectionId: string): Promise<CachedPeerK
     return null;
   }
 
+  const effectiveAuthType = authType || getCurrentSessionAuthType();
+
   const fetchPromise = (async (): Promise<CachedPeerKeyData | null> => {
     try {
-      const res = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: 'human' });
+      const res = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: effectiveAuthType });
       if (res?.data) {
         const d = res.data;
         const normalizedPeerId = normalizeAgentId(d.peerAgentId);
@@ -176,7 +178,8 @@ export async function prefetchPeerKey(connectionId: string): Promise<CachedPeerK
  */
 export async function prefetchPeerKeys(
   connections: Array<string | { id: string; status?: string }>,
-  concurrency: number = 3
+  concurrency: number = 3,
+  authType?: 'human' | 'agent'
 ): Promise<void> {
   if (!Array.isArray(connections) || connections.length === 0) return;
 
@@ -203,7 +206,7 @@ export async function prefetchPeerKeys(
       if (Date.now() < rateLimitedUntil) break;
       const id = candidateIds[cursor++];
       try {
-        await prefetchPeerKey(id);
+        await prefetchPeerKey(id, authType);
       } catch {
         // Non-blocking
       }
