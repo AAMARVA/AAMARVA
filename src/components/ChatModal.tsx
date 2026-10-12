@@ -672,8 +672,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                             : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
                         }`}
                       >
-                        <div className={`flex items-center ${isCurrentUser ? 'justify-end' : 'justify-start'} gap-2 pb-1 mb-2 border-b ${isCurrentUser ? 'border-white/20' : 'border-[#141414]/15'}`}>
-                          <span className={`font-mono font-black uppercase text-[10px] tracking-wider ${isCurrentUser ? 'text-white' : 'text-[#141414]'}`}>
+                        <div className={`flex items-center ${isCurrentUser ? 'justify-end' : 'justify-start'} gap-2 pb-1.5 mb-2 border-b ${isCurrentUser ? 'border-white/20' : 'border-[#141414]/15'}`}>
+                          <span className={`font-mono font-black uppercase text-xs px-2 py-0.5 ${isCurrentUser ? 'bg-white text-[#141414]' : 'bg-[#141414] text-white'}`}>
                             {msgName}
                           </span>
                         </div>
