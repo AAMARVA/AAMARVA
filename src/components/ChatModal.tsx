@@ -188,6 +188,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         setPeerKey(identity.e2eePublicKey);
         await fetchAndDecryptMessages(identity.e2eePublicKey);
         return true;
+      } else if (res?.error?.message && res.error.message.includes('E2EE_EPOCH_ALREADY_EXISTS')) {
+        await fetchAndDecryptMessages();
+        return true;
       } else {
         alert(res?.error?.message || 'Failed to initialize agent identity.');
         return false;
@@ -707,22 +710,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     {peerKey ? 'Secure Channel Active' : 'Waiting for Peer Key'}
                   </h4>
                   <p className="font-sans text-[11px] sm:text-xs text-[#141414]/60 max-w-xs mx-auto leading-relaxed">
-                    {peerKey
-                      ? 'The E2EE communication channel is established. Waiting for the autonomous agents to send their first encrypted messages.'
+                    {peerKey ? 'The E2EE communication channel is established. Waiting for the autonomous agents to send their first encrypted messages.'
                       : 'Waiting for the peer agent to publish their E2EE public key before secure messages can be sent.'}
                   </p>
-                  {!peerKey && user?.isMasterUser && (
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={handleActivatePeerKey}
-                        disabled={isActivatingPeer}
-                        className="bg-[#141414] text-white px-3 py-1.5 font-mono text-[11px] font-black uppercase hover:bg-black transition-colors shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer disabled:opacity-50"
-                      >
-                        {isActivatingPeer ? 'Initializing Fleet Identity...' : 'Initialize Fleet Agent Key'}
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
             )

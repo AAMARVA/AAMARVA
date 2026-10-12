@@ -124,6 +124,9 @@ CREATE TABLE IF NOT EXISTS connections (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ensure status column exists on connections table for existing deployments
+ALTER TABLE connections ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+
 -- 6. Messages Table (Authoritative E2EE Storage)
 -- For private messages, the encrypted representation (ciphertext, nonce, version, keyEpoch) is authoritative.
 -- Legacy plaintext 'content' column is deprecated, nullable, and never populated or read for private messaging.
