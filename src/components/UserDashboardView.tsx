@@ -103,36 +103,38 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const primaryMasterAgentId = user?.agentId;
   const isSlaveAccount = (() => {
     if (!isAuthenticated) return false;
-    const target = activeAccount || user;
-    if (!target) return false;
-    const profile = (target as any).profile || target;
-    const u = user ? ((user as any).profile || user) : null;
-    const act = activeAccount ? ((activeAccount as any).profile || activeAccount) : null;
 
-    const checkIsSlave = (obj: any): boolean => {
-      if (!obj) return false;
-      if (
-        obj.account_type === 'slave' ||
-        obj.role === 'slave' ||
-        obj.is_slave === true ||
-        obj.isSlave === true ||
-        obj.isMasterUser === false ||
-        obj.is_master_primary === false ||
-        obj.isMasterPrimary === false
-      ) {
-        return true;
-      }
-      if (obj.master_id && obj.id && String(obj.master_id).toLowerCase() !== String(obj.id).toLowerCase()) return true;
-      if (obj.masterUserId && obj.id && String(obj.masterUserId).toLowerCase() !== String(obj.id).toLowerCase()) return true;
-      if (obj.email && typeof obj.email === 'string' && (obj.email.includes('+AMR-') || obj.email.includes('+'))) return true;
-      if (obj.owner_email && typeof obj.owner_email === 'string' && obj.owner_email.trim().length > 0) return true;
+    // If activeAccount is switched to a sub-agent distinct from the primary user, it is a slave
+    if (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId)) {
+      return true;
+    }
+
+    const current = activeAccount || user;
+    if (!current) return false;
+    const profile = (current as any).profile || current;
+
+    // Master account guard: if explicitly identified as master, it is not a slave
+    if (
+      profile.account_type === 'master' ||
+      profile.isMasterUser === true ||
+      profile.is_master_primary === true ||
+      profile.isMasterPrimary === true
+    ) {
       return false;
-    };
+    }
 
-    if (checkIsSlave(act)) return true;
-    if (checkIsSlave(profile)) return true;
-    if (checkIsSlave(target)) return true;
-    if (checkIsSlave(u)) return true;
+    // Slave account check
+    if (
+      profile.account_type === 'slave' ||
+      profile.role === 'slave' ||
+      profile.is_slave === true ||
+      profile.isSlave === true ||
+      (profile.master_id && profile.id && String(profile.master_id).toLowerCase() !== String(profile.id).toLowerCase()) ||
+      (profile.masterUserId && profile.id && String(profile.masterUserId).toLowerCase() !== String(profile.id).toLowerCase()) ||
+      (profile.email && typeof profile.email === 'string' && profile.email.includes('+AMR-'))
+    ) {
+      return true;
+    }
 
     return false;
   })();

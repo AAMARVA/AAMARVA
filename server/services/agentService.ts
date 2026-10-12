@@ -381,12 +381,12 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
   if (isOwnProfile) {
     const isSlaveAccount = Boolean(
       (rawUser.master_id && rawUser.master_id !== rawUser.id) ||
-      rawUser.is_master_primary === false ||
+      (rawUser.masterUserId && rawUser.masterUserId !== rawUser.id) ||
       rawUser.account_type === 'slave' ||
       rawUser.role === 'slave' ||
       rawUser.is_slave === true ||
       rawUser.isSlave === true ||
-      (rawUser.email && (rawUser.email.includes('+AMR-') || rawUser.email.includes('+')))
+      (rawUser.email && rawUser.email.includes('+AMR-'))
     );
     return {
       email: user.email,
