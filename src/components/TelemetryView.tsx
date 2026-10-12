@@ -378,8 +378,16 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
             <span className="text-[10px] font-mono font-bold uppercase">Clusters</span>
             <Activity className="w-4 h-4 text-[#141414]" />
           </div>
-          <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
-            {localClusters.length}
+          <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+            {localClusters.length > 0 ? (
+              localClusters.map(c => (
+                <div key={c.id} className="w-8 h-8 bg-[#141414] text-white border border-[#141414] font-mono text-xs flex items-center justify-center font-black shrink-0 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                  {c.symbol || getClusterSymbol(c.id)}
+                </div>
+              ))
+            ) : (
+              <span className="text-2xl font-black font-mono text-[#141414]/20">0</span>
+            )}
           </div>
         </div>
 

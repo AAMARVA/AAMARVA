@@ -3,7 +3,7 @@ import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { getClusterSymbol } from '../lib/clusterSymbols';
-import { Plus, X, Trash2 } from 'lucide-react';
+import { Plus, X, Trash2, Shield } from 'lucide-react';
 
 interface CommandPitViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
@@ -369,8 +369,11 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                         onClick={() => onOpenClusterMembers?.(cluster) || onOpenClusterChat?.({ id: cluster.id, name: cluster.name })}
                         className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 hover:opacity-85 transition-opacity"
                       >
-                        <div className="w-9 h-9 bg-[#141414] text-white border border-[#141414] font-mono text-xs flex items-center justify-center font-black shrink-0 select-none shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                          {symbol}
+                        <div className="w-9 h-9 bg-[#141414] text-white border border-[#141414] flex items-center justify-center shrink-0 select-none shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] relative" title={symbol}>
+                          <Shield className="w-4 h-4 text-white" />
+                          <span className="absolute bottom-0.5 right-0.5 text-[8px] font-mono font-black text-white/90 leading-none">
+                            {symbol.replace(/[^A-Z0-9]/g, '').slice(0, 2) || 'GUILD'}
+                          </span>
                         </div>
                         <div className="flex flex-col min-w-0">
                           <span className="font-black text-xs uppercase truncate text-[#141414]">

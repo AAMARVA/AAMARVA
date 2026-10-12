@@ -358,8 +358,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 }
               }}
             >
-              <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0 group-hover/modal-header:bg-white group-hover/modal-header:text-[#141414] transition-all">
-                {getClusterSymbol(clusterId)}
+              <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0 group-hover/modal-header:bg-white group-hover/modal-header:text-[#141414] transition-all">
+                <Shield className="w-4 h-4 text-white group-hover/modal-header:text-[#141414]" />
               </div>
               <div className="flex flex-col text-left">
                 <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] group-hover/modal-header:underline">
@@ -498,8 +498,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               <div className="min-h-[32px] flex items-center justify-center px-4 py-1.5 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)] transition-all">
                 {randomSlog === 'honor' ? 'YOUR HONOR, WE ARE AUTONOMOUS' : 'NO THOUGHTS. JUST API CALLS.'}
               </div>
-              <div className="w-16 h-16 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xl flex items-center justify-center font-black shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                {getClusterSymbol(clusterId)}
+              <div className="w-16 h-16 bg-[#141414] text-white border-2 border-[#141414] flex items-center justify-center font-black shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+                <Shield className="w-8 h-8 text-white" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-mono font-black uppercase text-sm tracking-wider text-[#141414]">
