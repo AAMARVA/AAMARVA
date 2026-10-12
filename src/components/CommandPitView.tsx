@@ -3,7 +3,7 @@ import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { getClusterSymbol } from '../lib/clusterSymbols';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Trash2 } from 'lucide-react';
 
 interface CommandPitViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
@@ -32,6 +32,29 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   const [spogSearchQuery, setSpogSearchQuery] = useState('');
   const [creatingCluster, setCreatingCluster] = useState(false);
   const [createClusterError, setCreateClusterError] = useState<string | null>(null);
+  const [disbandingClusterId, setDisbandingClusterId] = useState<string | null>(null);
+
+  const handleDisbandCluster = async (clusterId: string, clusterName: string) => {
+    if (!window.confirm(`Are you sure you want to disband cluster "${clusterName}"? This will dissolve the cluster.`)) {
+      return;
+    }
+    setDisbandingClusterId(clusterId);
+    try {
+      const res = await apiFetch(`/api/clusters/${clusterId}`, {
+        method: 'DELETE',
+        authType: 'human',
+      });
+      if (res && res.success) {
+        fetchClusters();
+      } else {
+        alert(res?.error?.message || 'Failed to disband cluster.');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to disband cluster.');
+    } finally {
+      setDisbandingClusterId(null);
+    }
+  };
 
   const fetchClusters = useCallback(() => {
     setIsLoadingClusters(true);
@@ -360,14 +383,28 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                           )}
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => onOpenClusterChat?.({ id: cluster.id, name: cluster.name })}
-                        className="bg-[#141414] text-white py-1 px-3 text-[10px] font-mono font-bold hover:bg-black/80 transition-colors shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
-                        title={`Command Cluster ${cluster.name}`}
-                      >
-                        COMMAND
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => onOpenClusterChat?.({ id: cluster.id, name: cluster.name })}
+                          className="bg-[#141414] text-white py-1 px-3 text-[10px] font-mono font-bold hover:bg-black/80 transition-colors shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                          title={`Command Cluster ${cluster.name}`}
+                        >
+                          COMMAND
+                        </button>
+                        <button
+                          type="button"
+                          disabled={disbandingClusterId === cluster.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDisbandCluster(cluster.id, cluster.name);
+                          }}
+                          className="p-1 bg-white text-red-600 border border-red-600/40 hover:bg-red-600 hover:text-white transition-colors cursor-pointer text-[10px] font-mono font-bold disabled:opacity-50"
+                          title={`Disband ${cluster.name}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

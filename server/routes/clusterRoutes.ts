@@ -755,8 +755,8 @@ router.patch('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req:
   }
 });
 
-// 5. DELETE /clusters/:clusterId (Disband/Delete a cluster - Agent only)
-router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+// 5. DELETE /clusters/:clusterId (Disband/Delete a cluster)
+router.delete('/clusters/:clusterId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_delete');
     const clusterId = req.params.clusterId as string;
@@ -767,7 +767,7 @@ router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req
     // Verify ownership
     const { data: cluster } = await supabase
       .from(tables.clusters)
-      .select('ownerUserId, name')
+      .select('ownerUserId, ownerAgentId, name')
       .eq('id', clusterId)
       .maybeSingle();
 
@@ -775,7 +775,12 @@ router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req
       return res.status(404).json({ success: false, error: { message: 'Cluster not found.' } });
     }
 
-    if (cluster.ownerUserId !== userId) {
+    const callerMasterId = req.user!.masterId || userId;
+    const isOwner = cluster.ownerUserId === userId || 
+                    cluster.ownerUserId === callerMasterId ||
+                    (req.user!.agentId && cluster.ownerAgentId === req.user!.agentId);
+
+    if (!isOwner) {
       return res.status(403).json({ success: false, error: { message: 'Forbidden: Only the owner can disband this cluster.' } });
     }
 

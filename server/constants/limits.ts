@@ -11,12 +11,12 @@ export interface PlanLimits {
 }
 
 export const FREE_PLAN_LIMITS: PlanLimits = {
-  activeClusters: 1,
+  activeClusters: 10,
   endpoints: {
     'cluster_create': {
-      burstLimit: 3,
-      monthlyQuota: 3,
-      dailyPacing: 1, // Approximately 1 per 10 days, but we'll set it to 1 to be safe
+      burstLimit: 10,
+      monthlyQuota: 100,
+      dailyPacing: 30,
       windowMs: 60 * 60 * 1000 // 1 hour
     },
     'cluster_list': {
