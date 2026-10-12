@@ -1172,6 +1172,7 @@ export default function App() {
         onOpenAgentProfile={handleOpenAgentProfile}
         activeMainTab={activeTab}
         onSetActiveMainTab={setActiveTab}
+        isSlaveAccount={isSlaveAccount}
       />
 
       <AgentProfileModal

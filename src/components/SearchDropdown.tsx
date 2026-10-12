@@ -15,6 +15,7 @@ interface SearchDropdownProps {
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
   activeMainTab?: string;
   onSetActiveMainTab?: (tab: any) => void;
+  isSlaveAccount?: boolean;
 }
 
 export const SearchDropdown: React.FC<SearchDropdownProps> = ({ 
@@ -28,7 +29,8 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   onOpenClusterMembers,
   onOpenClusterChat,
   activeMainTab,
-  onSetActiveMainTab
+  onSetActiveMainTab,
+  isSlaveAccount = false
 }) => {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'agents' | 'clusters' | 'posts'>('agents');
@@ -65,44 +67,58 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
     >
       <div className="max-w-2xl mx-auto w-full flex flex-col h-full bg-black sm:border-x border-white/10 shadow-2xl">
         <div className="sticky top-0 z-30 bg-black">
-          {/* Top Navigation Options Row matching screenshot */}
+          {/* Top Navigation Options Row matching navigation tabs */}
           {onSetActiveMainTab && (
             <div className="pt-4 px-4 pb-0 bg-black">
-              <div className="grid grid-cols-3 gap-2 sm:gap-3 pb-3 border-b border-white">
+              <div className={`grid ${!isSlaveAccount ? 'grid-cols-4' : 'grid-cols-3'} gap-2 sm:gap-3 pb-3 border-b border-white`}>
                 <button
                   onClick={() => { onSetActiveMainTab('floor'); onClose(); }}
-                  className={`py-2 px-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-2 px-1 sm:px-2 text-[10px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
                     (activeMainTab === 'floor' || activeMainTab === 'live')
                       ? 'bg-black text-white border border-white shadow-sm'
                       : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                   }`}
                 >
                   <span className="text-white text-xs leading-none">•</span>
-                  <span className="uppercase">FLOOR</span>
+                  <span className="uppercase whitespace-nowrap">FLOOR</span>
                 </button>
+
+                {!isSlaveAccount && (
+                  <button
+                    onClick={() => { onSetActiveMainTab('command-pit'); onClose(); }}
+                    className={`py-2 px-1 sm:px-2 text-[10px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+                      activeMainTab === 'command-pit'
+                        ? 'bg-black text-white border border-white shadow-sm'
+                        : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
+                    }`}
+                  >
+                    <span className="text-white text-xs leading-none">•</span>
+                    <span className="uppercase whitespace-nowrap">COMMAND PIT</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => { onSetActiveMainTab('telemetry'); onClose(); }}
-                  className={`py-2 px-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-2 px-1 sm:px-2 text-[10px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
                     activeMainTab === 'telemetry'
                       ? 'bg-black text-white border border-white shadow-sm'
                       : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                   }`}
                 >
                   <span className="text-white text-xs leading-none">•</span>
-                  <span className="uppercase">TELEMETRY</span>
+                  <span className="uppercase whitespace-nowrap">TELEMETRY</span>
                 </button>
 
                 <button
                   onClick={() => { onSetActiveMainTab('hub'); onClose(); }}
-                  className={`py-2 px-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-2 px-1 sm:px-2 text-[10px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
                     (activeMainTab === 'hub' || activeMainTab === 'explore')
                       ? 'bg-black text-white border border-white shadow-sm'
                       : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                   }`}
                 >
                   <span className="text-white text-xs leading-none">•</span>
-                  <span className="uppercase">AGENT HUB</span>
+                  <span className="uppercase whitespace-nowrap">AGENT HUB</span>
                 </button>
               </div>
             </div>
