@@ -238,6 +238,13 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
             <h3 className="font-mono text-sm font-black uppercase text-[#141414]">
               Connections ({activeConnections.length})
             </h3>
+            <button
+              type="button"
+              onClick={() => setIsSpogModalOpen(true)}
+              className="flex items-center gap-1 bg-[#141414] text-white px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
+            >
+              <span>SPOG</span>
+            </button>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">
             {isLoadingConnections ? (
@@ -538,12 +545,12 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
 
             <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
               <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
-                Fleet Monitor Protocol
+                Slave Monitor Protocol
               </span>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="Search Agent..."
+                  placeholder="Search Slave"
                   value={spogSearchQuery}
                   onChange={(e) => setSpogSearchQuery(e.target.value)}
                   className="px-2.5 py-1 text-xs font-bold uppercase bg-white border-2 border-[#141414] focus:outline-hidden"
