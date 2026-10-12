@@ -205,35 +205,65 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
+  const [pendingMessages, setPendingMessages] = useState<string[]>([]);
+
+  // Process pending messages when peerKey becomes available
+  useEffect(() => {
+    if (peerKey && pendingMessages.length > 0) {
+      const processPending = async () => {
+        setIsSending(true);
+        for (const msg of pendingMessages) {
+          try {
+            const targetReceiver = resolvedPeerAgentId || peerAgentId;
+            await sendPrivateMessageApi(connectionId, msg, user!.agentId, { 
+              password: userPassword || undefined,
+              receiverAgentId: targetReceiver,
+              authType: effectiveAuthType
+            });
+          } catch (err) {
+            console.error('Failed to send pending message', err);
+          }
+        }
+        setPendingMessages([]);
+        setIsSending(false);
+      };
+      processPending();
+    }
+  }, [peerKey, pendingMessages, connectionId, user, resolvedPeerAgentId, peerAgentId, effectiveAuthType, userPassword]);
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !user?.agentId) return;
 
-    // Automatic Peer Key Initialization for Master-initiated chats
-    let currentPeerKey = peerKey;
-    if (!currentPeerKey && user?.isMasterUser) {
-      const activated = await handleActivatePeerKey();
-      if (!activated) return;
-      currentPeerKey = peerKey; // Updated by setPeerKey inside handleActivatePeerKey
-    }
-
-    if (!currentPeerKey) return; // Still missing, cannot send
-
+    const messageToSend = newMessage;
+    setNewMessage('');
     setIsSending(true);
-    try {
-      const targetReceiver = resolvedPeerAgentId || peerAgentId;
-      await sendPrivateMessageApi(connectionId, newMessage, user.agentId, { 
-        password: userPassword || undefined,
-        receiverAgentId: targetReceiver,
-        authType: effectiveAuthType
-      });
-      setNewMessage('');
-      await fetchAndDecryptMessages();
-    } catch (err: any) {
-      console.error('Failed to send message:', err);
-      alert(`Failed to send message: ${err.message || 'Unknown error'}`);
-    } finally {
-      setIsSending(false);
+
+    // 1. If we have the peer key, encrypt and send immediately
+    if (peerKey) {
+      try {
+        const targetReceiver = resolvedPeerAgentId || peerAgentId;
+        await sendPrivateMessageApi(connectionId, messageToSend, user.agentId, { 
+          password: userPassword || undefined,
+          receiverAgentId: targetReceiver,
+          authType: effectiveAuthType
+        });
+        await fetchAndDecryptMessages();
+      } catch (err: any) {
+        console.error('Failed to send message:', err);
+        alert(`Failed to send message: ${err.message || 'Unknown error'}`);
+      } finally {
+        setIsSending(false);
+      }
+    } else {
+      // 2. If no peer key, queue and trigger background initialization
+      setPendingMessages((prev) => [...prev, messageToSend]);
+      
+      // Trigger background activation if master user
+      if (user?.isMasterUser) {
+        handleActivatePeerKey();
+      }
+      setIsSending(false); // UI isn't technically sending yet
     }
   };
 
@@ -721,13 +751,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder={peerKey ? "Type a secure message..." : "Waiting for peer public key before encryption..."}
+              placeholder={"Type a secure message..."}
               className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
-              disabled={isSending || !peerKey}
+              disabled={isSending}
             />
             <button
               type="submit"
-              disabled={isSending || !newMessage.trim() || !peerKey}
+              disabled={isSending || !newMessage.trim()}
               className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
             >
               {isSending ? '...' : <ChevronUp className="w-4 h-4" />}
