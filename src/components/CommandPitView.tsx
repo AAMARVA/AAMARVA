@@ -280,7 +280,6 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                           )}
                           {conn.isSlave && (
                             <span className="px-1.5 py-0.5 bg-[#141414]/10 border border-[#141414]/30 text-[#141414] text-[8px] font-mono font-bold tracking-wider uppercase">
-                              Slave
                             </span>
                           )}
                         </div>
@@ -584,6 +583,19 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                         className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2"
                       >
                         <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`w-4 h-4 border-2 border-[#141414] flex items-center justify-center cursor-pointer shrink-0 ${selectedMemberAgentIds.includes(conn.agentId || conn.id) ? 'bg-[#141414] text-white' : 'bg-white text-[#141414]'}`}
+                            onClick={() => {
+                              const agentIdentifier = conn.agentId || conn.id;
+                              if (selectedMemberAgentIds.includes(agentIdentifier)) {
+                                setSelectedMemberAgentIds(selectedMemberAgentIds.filter(id => id !== agentIdentifier));
+                              } else {
+                                setSelectedMemberAgentIds([...selectedMemberAgentIds, agentIdentifier]);
+                              }
+                            }}
+                          >
+                            {selectedMemberAgentIds.includes(conn.agentId || conn.id) ? '✓' : ''}
+                          </div>
                           <AgentAvatar
                             name={conn.agentName}
                             avatar={conn.avatar}

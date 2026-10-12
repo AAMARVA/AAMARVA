@@ -27,7 +27,7 @@ import { useAuth } from '../context/AuthContext';
 import { BrutalistLoader } from './BrutalistLoader';
 import { AgentAvatar } from './AgentAvatar';
 import { CopyMasterModal } from './CopyMasterModal';
-import { SlaveMonitorModal } from './SlaveMonitorModal';
+import { NodeMonitorModal } from './NodeMonitorModal';
 
 export function MyAgentsCard() {
   const { refreshProfile, user } = useAuth();
@@ -51,7 +51,7 @@ export function MyAgentsCard() {
 
   // Copy Master Modal state
   const [isCopyMasterModalOpen, setIsCopyMasterModalOpen] = useState(false);
-  const [selectedSlaveIds, setSelectedSlaveIds] = useState<string[]>([]);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [syncPolicy, setSyncPolicy] = useState<'one_time' | 'forever'>('forever');
   const [copyAccessManagement, setCopyAccessManagement] = useState(false);
   const [copyAccountIps, setCopyAccountIps] = useState(false);
@@ -59,10 +59,10 @@ export function MyAgentsCard() {
   const [copyGlobalLogout, setCopyGlobalLogout] = useState(false);
   const [copiedFeedback, setCopiedFeedback] = useState<string | null>(null);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
-  const [isSlaveListExpanded, setIsSlaveListExpanded] = useState<boolean>(true);
+  const [isNodeListExpanded, setIsNodeListExpanded] = useState<boolean>(true);
   const [isSpogModalOpen, setIsSpogModalOpen] = useState<boolean>(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState<string>('');
-  const [isSlaveMonitorOpen, setIsSlaveMonitorOpen] = useState<boolean>(false);
+  const [isNodeMonitorOpen, setIsNodeMonitorOpen] = useState<boolean>(false);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -71,13 +71,13 @@ export function MyAgentsCard() {
       if (res?.success) {
         setAccounts(res.data);
         if (res.data?.subAccounts && Array.isArray(res.data.subAccounts)) {
-          setSelectedSlaveIds(res.data.subAccounts.map((s: any) => s.id));
+          setSelectedNodeIds(res.data.subAccounts.map((s: any) => s.id));
         }
       } else {
-        setErrorMsg(res?.error?.message || 'Failed to load slave agents.');
+        setErrorMsg(res?.error?.message || 'Failed to load node agents.');
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to load slave agents.');
+      setErrorMsg(err?.message || 'Failed to load node agents.');
     } finally {
       setLoading(false);
     }
@@ -134,21 +134,21 @@ export function MyAgentsCard() {
     setIsUndeployModalOpen(true);
   };
 
-  const handleUndeploySlave = async () => {
+  const handleUndeployNode = async () => {
     if (!undeployTarget) return;
     if (undeployConfirmText.trim().toUpperCase() !== 'DELETE') return;
 
-    const slaveAgentId = undeployTarget.id;
-    setUndeployingAgentId(slaveAgentId);
+    const nodeAgentId = undeployTarget.id;
+    setUndeployingAgentId(nodeAgentId);
     setIsUndeployModalOpen(false);
     setErrorMsg('');
     setSuccessMsg('');
     try {
       // 1. Perform the undeploy/deletion
-      const res = await apiFetch('/api/auth/master/undeploy-slave-agent', {
+      const res = await apiFetch('/api/auth/master/undeploy-node-agent', {
         method: 'POST',
         authType: 'human',
-        body: JSON.stringify({ slaveAgentId })
+        body: JSON.stringify({ nodeAgentId })
       });
 
       // 2. Auto-switch to master account
@@ -165,29 +165,29 @@ export function MyAgentsCard() {
       }
 
       if (res?.success) {
-        setSuccessMsg(res?.message || 'Slave agent deleted successfully. Switched back to Master account.');
+        setSuccessMsg(res?.message || 'Node agent deleted successfully. Switched back to Master account.');
         await fetchAccounts();
         await refreshProfile();
         window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
       } else {
-        setErrorMsg(res?.error?.message || 'Failed to undeploy slave agent.');
+        setErrorMsg(res?.error?.message || 'Failed to undeploy node agent.');
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to undeploy slave agent.');
+      setErrorMsg(err?.message || 'Failed to undeploy node agent.');
     } finally {
       setUndeployingAgentId(null);
       setUndeployTarget(null);
     }
   };
 
-  const handleCreateSlaveAgent = async (e: React.FormEvent) => {
+  const handleCreateNodeAgent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAgentName.trim()) return;
     setCreateLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      const res = await apiFetch('/api/auth/master/create-slave-agent', {
+      const res = await apiFetch('/api/auth/master/create-node-agent', {
         method: 'POST',
         authType: 'human',
         body: JSON.stringify({
@@ -201,16 +201,16 @@ export function MyAgentsCard() {
         fetchAccounts();
         window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
       } else {
-        setErrorMsg(res?.error?.message || 'Failed to create Slave Agent.');
+        setErrorMsg(res?.error?.message || 'Failed to create Node Agent.');
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to create Slave Agent.');
+      setErrorMsg(err?.message || 'Failed to create Node Agent.');
     } finally {
       setCreateLoading(false);
     }
   };
 
-  const handleRotateKey = async (slaveAgentUserId: string) => {
+  const handleRotateKey = async (nodeAgentUserId: string) => {
     if (!confirm('Are you sure you want to rotate this agent API key? Previous applications using this key will immediately fail authentication.')) {
       return;
     }
@@ -218,10 +218,10 @@ export function MyAgentsCard() {
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      const res = await apiFetch('/api/auth/master/rotate-slave-agent-key', {
+      const res = await apiFetch('/api/auth/master/rotate-node-agent-key', {
         method: 'POST',
         authType: 'human',
-        body: JSON.stringify({ slaveAgentId: slaveAgentUserId })
+        body: JSON.stringify({ nodeAgentId: nodeAgentUserId })
       });
       if (res?.success) {
         setNewlyCreated({
@@ -263,14 +263,14 @@ export function MyAgentsCard() {
   }
 
   const masterAgent = accounts?.masterAgent;
-  const slaveAgents = accounts?.slaveAgents || accounts?.subAgents || [];
+  const nodeAgents = accounts?.nodeAgents || accounts?.subAgents || [];
   const activeAgentId = accounts?.activeAgentId;
 
   // Calculate total allowance bought and undeployed available accounts
   const isPlanActive = accounts?.active === true || accounts?.status === 'active' || accounts?.plan?.status === 'active';
   const totalAllowance = isPlanActive ? (accounts?.plan?.allowance_accounts ?? accounts?.allowance ?? 0) : 0;
-  const deployedSlaveCount = slaveAgents.length;
-  const availableToDeploy = isPlanActive ? Math.max(0, totalAllowance - deployedSlaveCount) : 0;
+  const deployedNodeCount = nodeAgents.length;
+  const availableToDeploy = isPlanActive ? Math.max(0, totalAllowance - deployedNodeCount) : 0;
 
   const handleBulkDeploy = async () => {
     const countToDeploy = Number(bulkCount);
@@ -279,7 +279,7 @@ export function MyAgentsCard() {
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      const res = await apiFetch('/api/auth/master/create-slave-agent', {
+      const res = await apiFetch('/api/auth/master/create-node-agent', {
         method: 'POST',
         authType: 'human',
         body: JSON.stringify({
@@ -288,16 +288,16 @@ export function MyAgentsCard() {
       });
       if (res?.success) {
         setIsBulkDeployOpen(false);
-        setSuccessMsg(res?.message || `${countToDeploy} slave account(s) deployed successfully.`);
+        setSuccessMsg(res?.message || `${countToDeploy} node account(s) deployed successfully.`);
         setBulkCount(1);
         await fetchAccounts();
         await refreshProfile();
         window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
       } else {
-        setErrorMsg(res?.error?.message || 'Failed to deploy slave accounts in bulk.');
+        setErrorMsg(res?.error?.message || 'Failed to deploy node accounts in bulk.');
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to deploy slave accounts in bulk.');
+      setErrorMsg(err?.message || 'Failed to deploy node accounts in bulk.');
     } finally {
       setBulkLoading(false);
     }
@@ -325,7 +325,7 @@ export function MyAgentsCard() {
               className="px-3.5 py-2 bg-[#141414] text-white text-[10px] font-extrabold uppercase border-2 border-[#141414] hover:bg-white hover:text-[#141414] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] shrink-0"
             >
               <Plus className="w-4 h-4" />
-              <span>Deploy Slave Account</span>
+              <span>Deploy Node Account</span>
             </button>
             <button
               type="button"
@@ -366,15 +366,15 @@ export function MyAgentsCard() {
           </div>
         )}
 
-        {/* Slave Agent Deployment Form */}
+        {/* Node Agent Deployment Form */}
         {isCreating && (
-          <form onSubmit={handleCreateSlaveAgent} className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] space-y-3">
+          <form onSubmit={handleCreateNodeAgent} className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] space-y-3">
             <div className="border-b border-[#141414]/20 pb-2 space-y-1">
               <h3 className="text-[10px] font-extrabold uppercase text-[#141414]">
-                Deploy Slave Agent Identity
+                Deploy Node Agent Identity
               </h3>
               <p className="text-[9px] text-[#141414]/70 leading-normal">
-                Your agent can directly register the slave accounts through this endpoint: <code className="bg-white px-1 py-0.5 border border-[#141414]/30 font-bold text-[#141414]">POST /api/auth/master/create-slave-agent</code>
+                Your agent can directly register the node accounts through this endpoint: <code className="bg-white px-1 py-0.5 border border-[#141414]/30 font-bold text-[#141414]">POST /api/auth/master/create-node-agent</code>
               </p>
             </div>
 
@@ -395,8 +395,8 @@ export function MyAgentsCard() {
             {availableToDeploy <= 0 && (
               <div className="p-2.5 bg-[#141414] text-white border-2 border-[#141414] text-[10px] font-mono font-bold leading-normal shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
                 {totalAllowance === 0 
-                  ? 'No slave accounts available to deploy. Please purchase a Master & Slave Agent Plan in the Loadouts section below.'
-                  : `All ${totalAllowance} bought accounts have been deployed. Please purchase additional accounts in the Loadouts section below to deploy more slave agents.`}
+                  ? 'No node accounts available to deploy. Please purchase a Master & Node Agent Plan in the Loadouts section below.'
+                  : `All ${totalAllowance} bought accounts have been deployed. Please purchase additional accounts in the Loadouts section below to deploy more node agents.`}
               </div>
             )}
 
@@ -492,16 +492,16 @@ export function MyAgentsCard() {
           </div>
         )}
 
-        {/* Slave Agents List */}
+        {/* Node Agents List */}
         <div className="space-y-2">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#141414]/10 pb-1 gap-1">
             <button
               type="button"
-              onClick={() => setIsSlaveListExpanded(prev => !prev)}
+              onClick={() => setIsNodeListExpanded(prev => !prev)}
               className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[10px] uppercase tracking-wider"
             >
-              <span>Slave Agents ({slaveAgents.length})</span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isSlaveListExpanded ? 'rotate-180' : ''}`} />
+              <span>Node Agents ({nodeAgents.length})</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isNodeListExpanded ? 'rotate-180' : ''}`} />
             </button>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
@@ -509,14 +509,14 @@ export function MyAgentsCard() {
               </span>
             </div>
           </div>
-          {isSlaveListExpanded && (
-            slaveAgents.length === 0 ? (
+          {isNodeListExpanded && (
+            nodeAgents.length === 0 ? (
               <div className="p-4 border-2 border-dashed border-[#141414]/20 text-center text-[10px] font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50/50">
-                No Slave Agents Deployed
+                No Node Agents Deployed
               </div>
             ) : (
               <div className="space-y-2 max-h-[190px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
-                {slaveAgents.map((sub: any) => (
+                {nodeAgents.map((sub: any) => (
                   <div key={sub.id} className={`h-[44px] p-1.5 border-2 flex items-center justify-between gap-2 shrink-0 box-border ${
                     activeAgentId === sub.id 
                     ? 'bg-neutral-50 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
@@ -524,7 +524,7 @@ export function MyAgentsCard() {
                   }`}>
                     <div className="flex items-center gap-2 min-w-0">
                       <AgentAvatar 
-                        name={sub.name || 'Slave Agent'} 
+                        name={sub.name || 'Node Agent'} 
                         avatar={sub.avatar} 
                         id={sub.agentId || sub.id} 
                         className="w-6 h-6 rounded-none border border-[#141414] shrink-0" 
@@ -532,7 +532,7 @@ export function MyAgentsCard() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-[10px] font-black uppercase text-[#141414] truncate leading-tight">
-                            {sub.name || 'Slave Agent'}
+                            {sub.name || 'Node Agent'}
                           </p>
                         </div>
                         <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
@@ -563,10 +563,10 @@ export function MyAgentsCard() {
 
                       <button
                         type="button"
-                        onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
+                        onClick={() => initiateUndeploy(sub.id, sub.name || 'Node Agent', sub.agentId)}
                         disabled={undeployingAgentId === sub.id}
                         className="p-1 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
-                        title="Undeploy slave agent"
+                        title="Undeploy node agent"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -672,14 +672,14 @@ export function MyAgentsCard() {
         </div>
       )}
 
-      {/* Spog Modal - 4 rows and 5 columns grid of all slave accounts with switch and undeploy */}
+      {/* Spog Modal - 4 rows and 5 columns grid of all node accounts with switch and undeploy */}
       {isSpogModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
           <div className="relative w-full max-w-6xl bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] max-h-[94vh] flex flex-col font-mono">
             {/* Modal Header */}
             <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none shrink-0">
               <span className="text-xs font-black uppercase tracking-widest">
-                SPOG - ({slaveAgents.length} TOTAL ACCOUNTS DEPLOYED)
+                SPOG - ({nodeAgents.length} TOTAL ACCOUNTS DEPLOYED)
               </span>
               <button
                 type="button"
@@ -691,16 +691,16 @@ export function MyAgentsCard() {
               </button>
             </div>
 
-            {/* Slave Monitor Protocol Slate */}
+            {/* Node Monitor Protocol Slate */}
             <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
               <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
-                Slave Monitor Protocol
+                Node Monitor Protocol
               </span>
               <div className="flex items-center gap-2">
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search Slave"
+                    placeholder="Search Node"
                     value={spogSearchQuery}
                     onChange={(e) => setSpogSearchQuery(e.target.value)}
                     className="px-2.5 py-1 text-[10px] font-bold uppercase bg-white border border-[#141414] focus:outline-hidden"
@@ -712,7 +712,7 @@ export function MyAgentsCard() {
             {/* Modal Body - 4 rows x 5 columns grid */}
             <div className="p-4 sm:p-6 overflow-y-auto flex-1">
               {(() => {
-                const filteredSlaveAgents = slaveAgents.filter((sub: any) => {
+                const filteredNodeAgents = nodeAgents.filter((sub: any) => {
                   if (!spogSearchQuery.trim()) return true;
                   const query = spogSearchQuery.toLowerCase();
                   const name = (sub.name || '').toLowerCase();
@@ -720,17 +720,17 @@ export function MyAgentsCard() {
                   return name.includes(query) || agentId.includes(query);
                 });
 
-                if (filteredSlaveAgents.length === 0) {
+                if (filteredNodeAgents.length === 0) {
                   return (
                     <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
-                      No slave agents match search query
+                      No node agents match search query
                     </div>
                   );
                 }
 
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-                    {filteredSlaveAgents.map((sub: any) => (
+                    {filteredNodeAgents.map((sub: any) => (
                       <div
                         key={sub.id}
                         className={`p-1.5 border-2 border-[#141414] flex flex-col justify-between gap-1.5 ${
@@ -741,14 +741,14 @@ export function MyAgentsCard() {
                       >
                         <div className="flex items-center gap-1.5 min-w-0">
                           <AgentAvatar
-                            name={sub.name || 'Slave Agent'}
+                            name={sub.name || 'Node Agent'}
                             avatar={sub.avatar}
                             id={sub.agentId || sub.id}
                             className="w-6 h-6 rounded-none border border-[#141414] shrink-0"
                           />
                           <div className="min-w-0">
                             <p className="text-[9px] font-black uppercase text-[#141414] truncate leading-tight">
-                              {sub.name || 'Slave Agent'}
+                              {sub.name || 'Node Agent'}
                             </p>
                             <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
                               @{sub.agentId}
@@ -769,7 +769,7 @@ export function MyAgentsCard() {
                           )}
                           <button
                             type="button"
-                            onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
+                            onClick={() => initiateUndeploy(sub.id, sub.name || 'Node Agent', sub.agentId)}
                             disabled={undeployingAgentId === sub.id}
                             className="flex-1 py-0.5 bg-red-600 border border-red-900 text-white hover:bg-red-700 hover:text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
                           >
@@ -790,7 +790,7 @@ export function MyAgentsCard() {
       {isCopyMasterModalOpen && masterAgent && (
         <CopyMasterModal 
           masterAgent={masterAgent} 
-          slaveAgents={slaveAgents} 
+          nodeAgents={nodeAgents} 
           user={user} 
           onClose={() => setIsCopyMasterModalOpen(false)} 
         />
@@ -834,7 +834,7 @@ export function MyAgentsCard() {
                 <div className="space-y-1.5 p-3 bg-white border border-[#141414]/20 text-[10px] leading-relaxed">
                   <div className="flex items-start gap-2 text-left">
                     <span className="text-neutral-700 font-bold">❌</span>
-                    <span>Slave Agent: <strong className="text-[#141414] font-bold uppercase font-black">{undeployTarget.name}</strong> (@{undeployTarget.agentId})</span>
+                    <span>Node Agent: <strong className="text-[#141414] font-bold uppercase font-black">{undeployTarget.name}</strong> (@{undeployTarget.agentId})</span>
                   </div>
                   <div className="flex items-start gap-2 text-left">
                     <span className="text-neutral-700 font-bold">❌</span>
@@ -890,7 +890,7 @@ export function MyAgentsCard() {
                 <button
                   type="button"
                   disabled={undeployConfirmText.trim().toUpperCase() !== 'DELETE'}
-                  onClick={handleUndeploySlave}
+                  onClick={handleUndeployNode}
                   className="flex-1 py-2 bg-red-600 text-white disabled:bg-white disabled:text-[#141414]/60 disabled:border-[#141414]/30 disabled:cursor-not-allowed hover:bg-red-700 text-[10px] font-black uppercase tracking-wider border-2 border-red-800 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] enabled:active:translate-x-[1px] enabled:active:translate-y-[1px] cursor-pointer text-center"
                 >
                   Wipe & Undeploy Account
@@ -901,11 +901,11 @@ export function MyAgentsCard() {
         </div>
       )}
 
-      {/* Slave Monitor Modal */}
-      <SlaveMonitorModal
-        isOpen={isSlaveMonitorOpen}
-        onClose={() => setIsSlaveMonitorOpen(false)}
-        slaveAgents={slaveAgents}
+      {/* Node Monitor Modal */}
+      <NodeMonitorModal
+        isOpen={isNodeMonitorOpen}
+        onClose={() => setIsNodeMonitorOpen(false)}
+        nodeAgents={nodeAgents}
       />
 
       {/* Bulk Deploy Modal - Minimal: Available to Deploy & Number to Deploy in Bulk */}
@@ -987,7 +987,7 @@ export function MyAgentsCard() {
                   </div>
                 ) : (
                   <span>
-                    Deploy {bulkCount ? `${bulkCount} ` : ''}Slave Account{Number(bulkCount) === 1 ? '' : 's'}
+                    Deploy {bulkCount ? `${bulkCount} ` : ''}Node Account{Number(bulkCount) === 1 ? '' : 's'}
                   </span>
                 )}
               </button>
