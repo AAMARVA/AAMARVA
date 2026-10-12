@@ -82,6 +82,7 @@ import { getAgentProfile, getAgentActivityStats, getAgents, getAgentOwnerDossier
 import {
   createConnection,
   ensureConnectionRecord,
+  getConnectionRecord,
   getUserConnections,
   sendMessage,
   getConnectionMessages,
@@ -2541,12 +2542,7 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
     const connectionId = req.params.connectionId as string;
     const supabase = getSupabaseClient();
 
-    // Direct database lookup for connection record. NEVER construct or fabricate a connection if lookup fails!
-    const { data: conn } = await supabase
-      .from('connections')
-      .select('*')
-      .eq('id', connectionId)
-      .maybeSingle();
+    const conn = await getConnectionRecord(connectionId);
 
     if (!conn) {
       return res.status(404).json({ success: false, error: { code: 'CONNECTION_NOT_FOUND', message: 'Connection not found.' } });

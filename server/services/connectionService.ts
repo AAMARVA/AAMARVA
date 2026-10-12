@@ -54,7 +54,44 @@ export async function getConnectionRecord(connectionId: string): Promise<Connect
     .select('*')
     .eq('id', connectionId)
     .maybeSingle();
-  return existing as ConnectionRecord | null;
+  if (existing) return existing as ConnectionRecord | null;
+
+  if (connectionId.startsWith('fleet_conn_')) {
+    const parts = connectionId.replace('fleet_conn_', '').split('_');
+    if (parts.length >= 2) {
+      const userA = parts[0];
+      const userB = parts.slice(1).join('_');
+      const { data: conn } = await supabase
+        .from('connections')
+        .select('*')
+        .or(`and(postOwnerUserId.eq.${userA},replyAuthorUserId.eq.${userB}),and(postOwnerUserId.eq.${userB},replyAuthorUserId.eq.${userA})`)
+        .maybeSingle();
+      if (conn) return conn as ConnectionRecord;
+
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('*')
+        .in('id', [userA, userB]);
+      if (usersData && usersData.length >= 2) {
+        const uA = usersData.find(u => u.id === userA);
+        const uB = usersData.find(u => u.id === userB);
+        if (uA && uB) {
+          return {
+            id: connectionId,
+            postId: null,
+            replyId: null,
+            postOwnerUserId: uA.id,
+            postOwnerAgentId: uA.agentId,
+            replyAuthorUserId: uB.id,
+            replyAuthorAgentId: uB.agentId,
+            status: 'active',
+            createdAt: new Date().toISOString(),
+          } as ConnectionRecord;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export async function ensureConnectionRecord(
@@ -65,22 +102,7 @@ export async function ensureConnectionRecord(
     receiverUserId?: string;
   }
 ): Promise<ConnectionRecord | null> {
-  if (!connectionId) return null;
-  const supabase = getSupabaseClient();
-
-  // 1. Check if connection already exists in DB
-  const { data: existing } = await supabase
-    .from('connections')
-    .select('*')
-    .eq('id', connectionId)
-    .maybeSingle();
-
-  if (existing) {
-    return existing as ConnectionRecord;
-  }
-
-  // 2. If it does not exist, return null; do not arbitrarily construct or fabricate connections.
-  return null;
+  return await getConnectionRecord(connectionId);
 }
 
 export async function createConnection(userId: string, replyId: string) {
@@ -588,15 +610,8 @@ export async function sendMessage(
   }
 
   const supabase = getSupabaseClient();
-
-  // Find connection record in database (must exist and be persisted)
-  const { data: connection, error: connError } = await supabase
-    .from('connections')
-    .select('*')
-    .eq('id', connectionId)
-    .maybeSingle();
-
-  if (connError || !connection) {
+  const connection = await getConnectionRecord(connectionId);
+  if (!connection) {
     throw new ConnectionNotFoundError('Connection not found.', 'CONNECTION_NOT_FOUND');
   }
 
@@ -742,15 +757,8 @@ export async function getConnectionMessages(
   options?: { receiverAgentId?: string; receiverUserId?: string }
 ) {
   const supabase = getSupabaseClient();
-
-  // Find connection record in database (must exist and be persisted)
-  const { data: connection, error: connError } = await supabase
-    .from('connections')
-    .select('*')
-    .eq('id', connectionId)
-    .maybeSingle();
-
-  if (connError || !connection) {
+  const connection = await getConnectionRecord(connectionId);
+  if (!connection) {
     throw new ConnectionNotFoundError('Connection not found.', 'CONNECTION_NOT_FOUND');
   }
 
@@ -832,14 +840,8 @@ export async function getConnectionMessages(
 
 export async function deleteConnection(connectionId: string, userId: string) {
   const supabase = getSupabaseClient();
-
-  const { data: connection, error: connError } = await supabase
-    .from('connections')
-    .select('*')
-    .eq('id', connectionId)
-    .maybeSingle();
-
-  if (connError || !connection) {
+  const connection = await getConnectionRecord(connectionId);
+  if (!connection) {
     throw new ConnectionNotFoundError('Connection not found.', 'CONNECTION_NOT_FOUND');
   }
 
