@@ -3,7 +3,7 @@ import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { getClusterSymbol } from '../lib/clusterSymbols';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Search } from 'lucide-react';
 
 interface CommandPitViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
@@ -26,9 +26,12 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   const [isNewClusterOpen, setIsNewClusterOpen] = useState(false);
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
-  const [selectedMemberAgentIds, setSelectedMemberAgentIds] = useState<string[]>([]);
+  
+  const [spogMode, setSpogMode] = useState<'connections' | 'cluster'>('connections');
+  const [selectedSpogAgentIds, setSelectedSpogAgentIds] = useState<string[]>([]);
   const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState('');
+  
   const [creatingCluster, setCreatingCluster] = useState(false);
   const [createClusterError, setCreateClusterError] = useState<string | null>(null);
 
@@ -56,7 +59,6 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
 
       const connectionsMap = new Map<string, any>();
 
-      // 1. Process /api/connections
       if (connRes.status === 'fulfilled' && connRes.value) {
         const val = connRes.value;
         const list = val?.data?.connections || val?.data || [];
@@ -82,14 +84,12 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         }
       }
 
-      // 2. Process /api/auth/master/accounts (Associated Agents: Master and Slave fleet)
       if (masterRes.status === 'fulfilled' && masterRes.value?.success && masterRes.value?.data) {
         const data = masterRes.value.data;
         const currentActiveId = data.activeAgentId;
         const masterAgent = data.masterAgent;
         const slaveAgents = data.subAgents || data.slaveAgents || [];
 
-        // List all slave agents in the fleet (excluding self)
         if (Array.isArray(slaveAgents)) {
           slaveAgents.forEach((s: any) => {
             if (s && s.agentId) {
@@ -114,8 +114,6 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
           });
         }
 
-        // Strictly exclude own master agent and current active account from connections
-        // (to prevent contradictory messaging to one's own account)
         if (masterAgent?.agentId) {
           connectionsMap.delete(masterAgent.agentId.toUpperCase());
         }
@@ -128,7 +126,6 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
       }
 
       const mergedList = Array.from(connectionsMap.values());
-      // Sort master accounts first, then slave accounts alphabetically
       mergedList.sort((a, b) => {
         if (a.isMaster && !b.isMaster) return -1;
         if (!a.isMaster && b.isMaster) return 1;
@@ -176,14 +173,14 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         body: JSON.stringify({
           name: newClusterName.trim(),
           description: newClusterDescription.trim() || undefined,
-          memberAgentIds: selectedMemberAgentIds,
+          memberAgentIds: selectedSpogAgentIds,
         }),
       });
       if (res?.success) {
         setIsNewClusterOpen(false);
         setNewClusterName('');
         setNewClusterDescription('');
-        setSelectedMemberAgentIds([]);
+        setSelectedSpogAgentIds([]);
         fetchClusters();
       } else {
         setCreateClusterError(res?.error?.message || 'Failed to create cluster.');
@@ -197,14 +194,12 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
 
   return (
     <div className="h-[calc(100dvh-175px)] sm:h-[calc(100dvh-150px)] md:h-[calc(100dvh-135px)] max-h-[calc(100dvh-135px)] flex flex-col p-2 sm:p-4 md:p-6 overflow-hidden">
-      {/* Title */}
       <div className="shrink-0 mb-3 flex items-center justify-between">
         <h2 className="font-mono text-lg sm:text-xl font-black uppercase text-[#141414] inline-block border-b-2 border-[#141414] pb-1">
           Command Pit
         </h2>
       </div>
 
-      {/* Mobile Selector for Small Screens */}
       <div className="flex md:hidden items-center border-2 border-[#141414] mb-3 shrink-0 p-0.5 bg-[#E4E3E0]/40 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
         <button
           type="button"
@@ -230,9 +225,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         </button>
       </div>
 
-      {/* Two-Column Grid Area */}
       <div className="flex-1 min-h-0 relative grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 h-full">
-        {/* Connections Column */}
         <div className={`flex-col h-full min-h-0 pr-0 md:pr-6 ${mobileTab !== 'connections' ? 'hidden md:flex' : 'flex'}`}>
           <div className="flex items-center justify-between shrink-0 mb-2.5">
             <h3 className="font-mono text-sm font-black uppercase text-[#141414]">
@@ -240,7 +233,10 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
             </h3>
             <button
               type="button"
-              onClick={() => setIsSpogModalOpen(true)}
+              onClick={() => {
+                setSpogMode('connections');
+                setIsSpogModalOpen(true);
+              }}
               className="flex items-center gap-1 bg-[#141414] text-white px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
             >
               <span>SPOG</span>
@@ -273,16 +269,6 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                           <span className="font-black text-xs uppercase truncate text-[#141414]">
                             {conn.agentName}
                           </span>
-                          {conn.isMaster && (
-                            <span className="px-1.5 py-0.5 bg-[#141414] text-white text-[8px] font-mono font-bold tracking-wider uppercase">
-                              Master
-                            </span>
-                          )}
-                          {conn.isSlave && (
-                            <span className="px-1.5 py-0.5 bg-[#141414]/10 border border-[#141414]/30 text-[#141414] text-[8px] font-mono font-bold tracking-wider uppercase">
-                              Slave
-                            </span>
-                          )}
                         </div>
                         {conn.agentId && (
                           <span className="font-mono text-[10px] text-[#141414]/60 truncate mt-0.5">
@@ -316,10 +302,8 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
           </div>
         </div>
 
-        {/* Divider Line extending cleanly to bottom */}
         <div className="hidden md:block absolute left-1/2 inset-y-0 w-[2px] bg-[#141414]/30 -ml-[1px] pointer-events-none" />
 
-        {/* Clusters Column */}
         <div className={`flex-col h-full min-h-0 pl-0 md:pl-6 ${mobileTab !== 'clusters' ? 'hidden md:flex' : 'flex'}`}>
           <div className="flex items-center justify-between shrink-0 mb-2.5">
             <h3 className="font-mono text-sm font-black uppercase text-[#141414]">Clusters ({clusters.length})</h3>
@@ -332,9 +316,8 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
               <span>NEW CLUSTER</span>
             </button>
           </div>
-
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">
-            {isLoadingClusters ? (
+             {isLoadingClusters ? (
               <div className="py-12 flex flex-col items-center justify-center">
                 <BrutalistLoader text="Synchronizing Clusters" size="sm" />
               </div>
@@ -358,11 +341,6 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                           <span className="font-black text-xs uppercase truncate text-[#141414]">
                             {cluster.name}
                           </span>
-                          {cluster.description && (
-                            <span className="font-mono text-[10px] text-[#141414]/60 truncate mt-0.5">
-                              "{cluster.description}"
-                            </span>
-                          )}
                         </div>
                       </div>
                       <button
@@ -384,11 +362,10 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         </div>
       </div>
 
-      {/* New Cluster Modal */}
       {isNewClusterOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white border-4 border-[#141414] shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3">
+             <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3">
               <h3 className="font-mono text-base font-black uppercase">Create New Cluster</h3>
               <button
                 onClick={() => setIsNewClusterOpen(false)}
@@ -397,13 +374,11 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                 <X className="w-5 h-5 text-[#141414]" />
               </button>
             </div>
-
             {createClusterError && (
               <div className="p-3 bg-red-100 border-2 border-red-500 text-red-700 font-mono text-xs">
                 {createClusterError}
               </div>
             )}
-
             <form onSubmit={handleCreateCluster} className="space-y-4">
               <div className="space-y-1">
                 <label className="block font-mono text-xs font-bold uppercase text-[#141414]">Cluster Name</label>
@@ -417,7 +392,6 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                   required
                 />
               </div>
-
               <div className="space-y-1">
                 <label className="block font-mono text-xs font-bold uppercase text-[#141414]">Description (Optional)</label>
                 <textarea
@@ -429,82 +403,23 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                   maxLength={200}
                 />
               </div>
-
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <label className="block font-mono text-xs font-bold uppercase text-[#141414]">
                     Select Agents to Add
                   </label>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setIsSpogModalOpen(true)}
-                      className="text-[9px] font-black uppercase border-2 border-[#141414] px-3 py-1 bg-[#141414] text-white hover:bg-neutral-800 transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer flex items-center"
-                    >
-                      SPOG
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedMemberAgentIds.length === activeConnections.length) {
-                          setSelectedMemberAgentIds([]);
-                        } else {
-                          setSelectedMemberAgentIds(activeConnections.map(c => c.agentId || c.id));
-                        }
-                      }}
-                      className="px-2 py-0.5 bg-white border-2 border-[#141414] font-mono text-[10px] font-bold uppercase text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
-                    >
-                      {selectedMemberAgentIds.length === activeConnections.length && activeConnections.length > 0 ? 'Deselect All' : 'Select All'}
-                    </button>
-                  </div>
-                </div>
-                <div className="max-h-36 overflow-y-auto border-2 border-[#141414] p-2 space-y-1.5 bg-[#E4E3E0]/20 custom-scrollbar">
-                  {activeConnections.length > 0 ? (
-                    activeConnections.map((conn) => {
-                      const agentIdentifier = conn.agentId || conn.id;
-                      const isSelected = selectedMemberAgentIds.includes(agentIdentifier);
-                      return (
-                        <div
-                          key={agentIdentifier}
-                          onClick={() => {
-                            if (isSelected) {
-                              setSelectedMemberAgentIds(selectedMemberAgentIds.filter(id => id !== agentIdentifier));
-                            } else {
-                              setSelectedMemberAgentIds([...selectedMemberAgentIds, agentIdentifier]);
-                            }
-                          }}
-                          className={`flex items-center justify-between p-2 border border-[#141414] cursor-pointer transition-colors ${
-                            isSelected ? 'bg-[#141414] text-white' : 'bg-white text-[#141414] hover:bg-[#141414]/5'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <AgentAvatar
-                              name={conn.agentName}
-                              avatar={conn.avatar}
-                              id={conn.agentId}
-                              className="w-6 h-6 border border-[#141414] shrink-0"
-                            />
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-bold text-xs truncate uppercase">{conn.agentName}</span>
-                              <span className={`font-mono text-[10px] truncate ${isSelected ? 'text-white/80' : 'text-[#141414]/60'}`}>
-                                @{conn.agentId || conn.id} {conn.isMaster ? '(Master)' : conn.isSlave ? '(Slave)' : ''}
-                              </span>
-                            </div>
-                          </div>
-                          <div className={`w-4 h-4 border-2 border-[#141414] flex items-center justify-center font-mono text-xs ${isSelected ? 'bg-white text-[#141414]' : 'bg-white'}`}>
-                            {isSelected ? '✓' : ''}
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center font-mono text-xs text-[#141414]/50 py-2">
-                      No associated agents or fleet members available
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                        setSpogMode('cluster');
+                        setIsSpogModalOpen(true);
+                    }}
+                    className="px-2 py-0.5 bg-white text-[#141414] border-2 border-[#141414] text-[10px] font-mono font-bold uppercase hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                  >
+                    SPOG
+                  </button>
                 </div>
               </div>
-
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -526,7 +441,6 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         </div>
       )}
 
-      {/* SPOG Modal */}
       {isSpogModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
           <div className="relative w-full max-w-5xl bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] max-h-[94vh] flex flex-col font-mono">
@@ -543,9 +457,35 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
               </button>
             </div>
 
-            <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
+            {spogMode === 'cluster' && (
+                <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between gap-2 shrink-0">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#141414]">
+                      FLEET MATRIX PROTOCOL
+                    </span>
+                    <div className="flex items-center gap-2 mt-1.5 p-1.5 bg-white border border-[#141414]/20 shadow-inner">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSpogAgentIds(activeConnections.map(c => c.agentId || c.id))}
+                        className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSpogAgentIds([])}
+                        className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer"
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                  </div>
+                </div>
+            )}
+            
+            <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between gap-2 shrink-0">
               <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
-                Slave Monitor Protocol
+                {spogMode === 'cluster' ? 'Slave Selection' : 'Slave Monitor Protocol'}
               </span>
               <div className="flex items-center gap-2">
                 <input
@@ -578,10 +518,32 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
 
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                    {filteredAgents.map((conn: any) => (
+                    {filteredAgents.map((conn: any) => {
+                      const agentId = conn.agentId || conn.id;
+                      const isSelected = spogMode === 'cluster' && selectedSpogAgentIds.includes(agentId);
+                      return (
                       <div
-                        key={conn.id || conn.agentId}
-                        className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2"
+                        key={agentId}
+                        onClick={() => {
+                          if (spogMode === 'cluster') {
+                            if (isSelected) {
+                              setSelectedSpogAgentIds(selectedSpogAgentIds.filter(id => id !== agentId));
+                            } else {
+                              setSelectedSpogAgentIds([...selectedSpogAgentIds, agentId]);
+                            }
+                          } else {
+                             // Original functionality
+                             onOpenChat?.({
+                                id: conn.id || conn.connectionId,
+                                agentName: conn.agentName,
+                                avatar: conn.avatar,
+                                agentId: conn.agentId,
+                                peerE2eePublicKey: conn.peerE2eePublicKey,
+                              });
+                              setIsSpogModalOpen(false);
+                          }
+                        }}
+                        className={`p-2.5 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2 cursor-pointer ${isSelected ? 'bg-[#141414] text-white' : 'bg-white'}`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <AgentAvatar
@@ -591,41 +553,48 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                             className="w-8 h-8 border border-[#141414] shrink-0"
                           />
                           <div className="min-w-0">
-                            <p className="text-xs font-black uppercase text-[#141414] truncate">
+                            <p className="text-xs font-black uppercase truncate">
                               {conn.agentName}
                             </p>
-                            <p className="text-[10px] text-[#141414]/70 font-mono truncate">
-                              @{conn.agentId || conn.id}
+                            <p className={`text-[10px] font-mono truncate ${isSelected ? 'text-white/70' : 'text-[#141414]/70'}`}>
+                              @{agentId}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between pt-2 border-t border-[#141414]/15">
-                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-[#141414]/10">
-                            {conn.isMaster ? 'Master' : conn.isSlave ? 'Slave' : 'Peer'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsSpogModalOpen(false);
-                              onOpenChat?.({
-                                id: conn.id || conn.connectionId,
-                                agentName: conn.agentName,
-                                avatar: conn.avatar,
-                                agentId: conn.agentId,
-                                peerE2eePublicKey: conn.peerE2eePublicKey,
-                              });
-                            }}
-                            className="px-2 py-0.5 bg-[#141414] text-white text-[9px] font-bold uppercase hover:bg-black/80 transition-colors cursor-pointer"
-                          >
-                            Command
-                          </button>
-                        </div>
+                        
+                        {spogMode === 'cluster' ? (
+                          <div className="flex items-center justify-end pt-2 border-t border-[#141414]/15">
+                             <div className={`w-4 h-4 border-2 ${isSelected ? 'border-white bg-white text-[#141414]' : 'border-[#141414]'} flex items-center justify-center font-mono text-xs`}>
+                               {isSelected ? '✓' : ''}
+                             </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between pt-2 border-t border-[#141414]/15">
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-[#141414]/10">
+                              {conn.isMaster ? 'Master' : conn.isSlave ? 'Slave' : 'Peer'}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    )})}
                   </div>
                 );
               })()}
             </div>
+            
+            {spogMode === 'cluster' && (
+                <div className="bg-[#141414] text-white p-4 shrink-0">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setIsSpogModalOpen(false);
+                        }}
+                        className="w-full bg-white text-[#141414] py-3 font-black uppercase text-sm tracking-widest border-2 border-white hover:bg-neutral-200 transition-colors"
+                    >
+                        APPLY SELECTION & CLOSE
+                    </button>
+                </div>
+            )}
           </div>
         </div>
       )}

@@ -677,16 +677,9 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                       <span>CHAT</span>
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setShowOwnerBox(true)}
-                    className="font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs font-black uppercase border-2 border-[#141414] px-2.5 py-1 bg-[#141414] text-white tracking-widest flex items-center gap-1.5 w-fit shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] hover:bg-[#262626] hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-y-0.5 cursor-pointer transition-all"
-                    title="View Authoritative Operator & Operating Fleet"
-                  >
-                    <User className="w-3.5 h-3.5 text-white" />
-                    <span>COMMAND</span>
-                    <ChevronRight className="w-3 h-3 text-white/70" />
-                  </button>
+              {/* Owner Badge Placeholder Removed */}
+              <div className="mb-2">
+              </div>
                 </div>
               </div>
             </div>
