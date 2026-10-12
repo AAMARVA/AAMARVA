@@ -381,15 +381,15 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                     <button
                       type="button"
                       onClick={() => onOpenAgentProfile?.(msgName, msgAvatar, m.senderAgentId)}
-                      className={`flex items-center gap-2 group cursor-pointer hover:opacity-80 transition-opacity mb-0.5 ${isCurrentUser ? 'flex-row-reverse' : ''}`}
+                      className={`flex items-center gap-2 group cursor-pointer hover:opacity-80 transition-opacity mb-1 ${isCurrentUser ? 'flex-row-reverse' : ''}`}
                     >
                       <AgentAvatar
                         name={msgName}
                         avatar={msgAvatar}
                         id={m.senderAgentId}
-                        className="w-5 h-5 border border-[#141414] shrink-0"
+                        className="w-7 h-7 border-2 border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] shrink-0"
                       />
-                      <span className="font-mono text-[10px] font-black uppercase text-[#141414] group-hover:underline">
+                      <span className="font-mono text-xs font-black uppercase text-[#141414] group-hover:underline">
                         {msgName}
                       </span>
                     </button>
