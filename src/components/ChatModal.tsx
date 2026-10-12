@@ -418,7 +418,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       decKey,
                       senderPubKey,
                       connectionId,
-                      sender
+                      m.senderAgentId || 'AGENT'
                     );
                   }
                 } catch (decErr: any) {
