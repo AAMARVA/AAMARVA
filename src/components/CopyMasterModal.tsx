@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Copy, X, Check } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
-import { getStoredSecrets, saveStoredSecrets } from '../lib/secretsPreserver';
 import { apiFetch } from '../services/authApi';
 
 interface CopyMasterModalProps {
@@ -14,18 +13,14 @@ interface CopyMasterModalProps {
 export function CopyMasterModal({ masterAgent, slaveAgents, user, onClose }: CopyMasterModalProps) {
   const [selectedSlaveIds, setSelectedSlaveIds] = useState<string[]>(slaveAgents.map((s: any) => s.id));
   const [syncPolicy, setSyncPolicy] = useState<'one_time' | 'forever'>('forever');
-  const [copySecretsPreserver, setCopySecretsPreserver] = useState(false);
   const [copyAccessManagement, setCopyAccessManagement] = useState(false);
   const [copyAccountIps, setCopyAccountIps] = useState(false);
   const [copyApiKeyRotation, setCopyApiKeyRotation] = useState(false);
   const [copyGlobalLogout, setCopyGlobalLogout] = useState(false);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
 
-  const storedSecrets = getStoredSecrets(masterAgent?.agentId);
-
   const handleApplyToSlave = async () => {
     const selectedModules = [];
-    if (copySecretsPreserver) selectedModules.push('Secrets Preserver');
     if (copyAccessManagement) selectedModules.push('Access Management');
     if (copyAccountIps) selectedModules.push('Network Whitelist IPs');
     if (copyApiKeyRotation) selectedModules.push('API Key Rotation');
@@ -44,14 +39,6 @@ export function CopyMasterModal({ masterAgent, slaveAgents, user, onClose }: Cop
     }
 
     try {
-      if (copySecretsPreserver && storedSecrets) {
-        for (const slaveId of selectedSlaveIds) {
-          const targetSub = slaveAgents.find((s: any) => s.id === slaveId);
-          if (targetSub?.agentId) {
-            saveStoredSecrets(storedSecrets, targetSub.agentId);
-          }
-        }
-      }
 
       if (copyGlobalLogout) {
         for (const slaveId of selectedSlaveIds) {
@@ -190,8 +177,7 @@ export function CopyMasterModal({ masterAgent, slaveAgents, user, onClose }: Cop
               <button
                 type="button"
                 onClick={() => {
-                  const allSelected = copySecretsPreserver && copyAccessManagement && copyAccountIps && copyApiKeyRotation && copyGlobalLogout;
-                  setCopySecretsPreserver(!allSelected);
+                  const allSelected = copyAccessManagement && copyAccountIps && copyApiKeyRotation && copyGlobalLogout;
                   setCopyAccessManagement(!allSelected);
                   setCopyAccountIps(!allSelected);
                   setCopyApiKeyRotation(!allSelected);
@@ -199,30 +185,11 @@ export function CopyMasterModal({ masterAgent, slaveAgents, user, onClose }: Cop
                 }}
                 className="px-2 py-0.5 bg-white text-[#141414] hover:bg-[#141414] hover:text-white text-[8.5px] font-black uppercase border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer transition-all"
               >
-                {(copySecretsPreserver && copyAccessManagement && copyAccountIps && copyApiKeyRotation && copyGlobalLogout) ? 'Deselect All' : 'Select All'}
+                {(copyAccessManagement && copyAccountIps && copyApiKeyRotation && copyGlobalLogout) ? 'Deselect All' : 'Select All'}
               </button>
             </div>
 
             <div className="space-y-2 pt-1">
-              <div
-                onClick={() => setCopySecretsPreserver(!copySecretsPreserver)}
-                className={`p-2.5 border-2 border-[#141414] flex items-start gap-2.5 cursor-pointer transition-all ${
-                  copySecretsPreserver ? 'bg-[#FAFAFA] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' : 'bg-neutral-50 opacity-60'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={copySecretsPreserver}
-                  onChange={(e) => setCopySecretsPreserver(e.target.checked)}
-                  className="w-4 h-4 accent-black cursor-pointer mt-0.5"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-black uppercase text-[#141414]">Secrets Preserver</div>
-                  <p className="text-[9.5px] text-neutral-600 font-sans mt-0.5 leading-tight">
-                    Vault API keys, tool credentials, and encrypted environment variables.
-                  </p>
-                </div>
-              </div>
 
               <div
                 onClick={() => setCopyAccessManagement(!copyAccessManagement)}

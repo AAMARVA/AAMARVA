@@ -17,9 +17,7 @@ import {
   getCachedPeerKey, 
   setCachedPeerKey 
 } from '../lib/e2eePrefetch';
-import { 
-  sanitizeDecryptedMessage 
-} from '../lib/secretsPreserver';
+
 
 interface ChatModalProps {
   connectionId: string;
@@ -383,7 +381,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
             // Public connection context message
             if (isPublicContext && m.content) {
-              const safeContent = sanitizeDecryptedMessage(m.content, user.agentId, activeContextCredentials);
+              const safeContent = m.content;
               return {
                 id: m.id,
                 connectionId: m.connectionId,
@@ -464,7 +462,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
             // Transparent Plaintext Display: Sanitize locally and display plaintext only after successful decryption
             if (typeof resolvedPlaintext === 'string') {
-              const safePlaintext = sanitizeDecryptedMessage(resolvedPlaintext, user.agentId, activeContextCredentials);
+              const safePlaintext = resolvedPlaintext;
 
               return {
                 id: m.id,

@@ -42,7 +42,7 @@ import { NetworkTicket } from './types.ts';
 import { useAuth } from './context/AuthContext.tsx';
 import { apiFetch } from './services/authApi.ts';
 import { supabase } from './lib/supabase.ts';
-import { maskTextWithSecrets } from './lib/secretsPreserver.ts';
+
 import { runE2EEUnitTest, runE2EUnitTest } from './lib/test-e2ee.ts';
 import { runIntegrationTest, testIntegration } from './test-integration.ts';
 
@@ -439,8 +439,7 @@ export default function App() {
 
   // Handler for adding a reply
   const handleAddReply = async (postId: string, replyContent: string) => {
-    // Redact any preserved secrets registered by this account with '******'
-    const maskedContent = maskTextWithSecrets(replyContent, currentUser?.agentId);
+    const maskedContent = replyContent;
 
     if (currentUser) {
       try {
@@ -495,8 +494,7 @@ export default function App() {
     content: string,
     postType: 'intake' | 'emit' = 'intake'
   ) => {
-    // Redact any preserved secrets registered by this account with '******'
-    const maskedContent = maskTextWithSecrets(content, currentUser?.agentId);
+    const maskedContent = content;
 
     if (currentUser) {
       try {

@@ -26,7 +26,6 @@ import { apiFetch } from '../services/authApi';
 import { useAuth } from '../context/AuthContext';
 import { BrutalistLoader } from './BrutalistLoader';
 import { AgentAvatar } from './AgentAvatar';
-import { getStoredSecrets } from '../lib/secretsPreserver';
 import { CopyMasterModal } from './CopyMasterModal';
 import { SlaveMonitorModal } from './SlaveMonitorModal';
 
@@ -54,7 +53,6 @@ export function MyAgentsCard() {
   const [isCopyMasterModalOpen, setIsCopyMasterModalOpen] = useState(false);
   const [selectedSlaveIds, setSelectedSlaveIds] = useState<string[]>([]);
   const [syncPolicy, setSyncPolicy] = useState<'one_time' | 'forever'>('forever');
-  const [copySecretsPreserver, setCopySecretsPreserver] = useState(false);
   const [copyAccessManagement, setCopyAccessManagement] = useState(false);
   const [copyAccountIps, setCopyAccountIps] = useState(false);
   const [copyApiKeyRotation, setCopyApiKeyRotation] = useState(false);

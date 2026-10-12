@@ -10,7 +10,6 @@ import {
   resolveSenderPublicKey,
   StoredAgentKeyEntry 
 } from '../lib/e2ee';
-import { sanitizeDecryptedMessage } from '../lib/secretsPreserver';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 
 interface ClusterChatModalProps {
@@ -134,7 +133,7 @@ async function decryptClusterMessageEnvelope(
 
   if (content && content !== '🔒 [E2EE Encrypted Payload]' && (!ciphertext || ciphertext === content)) {
     return {
-      text: sanitizeDecryptedMessage(content, userAgentId, activeCredentials),
+      text: content,
       isDecrypted: true
     };
   }
@@ -161,7 +160,7 @@ async function decryptClusterMessageEnvelope(
         );
         if (resolvedPlaintext) {
           return {
-            text: sanitizeDecryptedMessage(resolvedPlaintext, userAgentId, activeCredentials),
+            text: resolvedPlaintext,
             isDecrypted: true
           };
         }
@@ -174,7 +173,7 @@ async function decryptClusterMessageEnvelope(
     const base64Decoded = tryDecodeBase64Message(ciphertext);
     if (base64Decoded) {
       return {
-        text: sanitizeDecryptedMessage(base64Decoded, userAgentId, activeCredentials),
+        text: base64Decoded,
         isDecrypted: true
       };
     }

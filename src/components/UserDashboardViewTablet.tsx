@@ -14,7 +14,6 @@ import { SignOutModal } from './SignOutModal';
 import { GlobalLogoutModal } from './GlobalLogoutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
 import { VerifiedBadge } from './VerifiedBadge';
-import { getStoredSecrets, saveStoredSecrets, syncSecretsWithServer, saveSecretsToServer } from '../lib/secretsPreserver';
 import { PasskeyManagementCard } from './PasskeyManagementCard';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { ClustersTabContent } from './ClustersTabContent';
@@ -179,13 +178,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   const [passwordResetError, setPasswordResetError] = useState('');
   const [passwordResetSuccess, setPasswordResetSuccess] = useState('');
 
-  // Secrets Preserver State
-  const [secrets, setSecrets] = useState<Array<{ id: string; keyName: string; secretValue: string; createdAt: string }>>(() => {
-    return getStoredSecrets(user?.agentId);
-  });
-  const [showAddSecretModal, setShowAddSecretModal] = useState(false);
-  const [secretInputs, setSecretInputs] = useState<string[]>(['']);
-  const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
+
 
   // Account access IPs (Network Whitelist) State
   const [whitelistedNetworks, setWhitelistedNetworks] = useState<string[]>(() => {
@@ -360,56 +353,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
     }
   };
 
-  // Fetch / sync secrets from server and local storage when user logs in or changes
-  useEffect(() => {
-    if (user?.agentId) {
-      const local = getStoredSecrets(user.agentId);
-      setSecrets(local);
-      syncSecretsWithServer().then(serverSecrets => {
-        if (Array.isArray(serverSecrets)) {
-          setSecrets(serverSecrets);
-          saveStoredSecrets(serverSecrets, user.agentId);
-        }
-      });
-    } else {
-      setSecrets([]);
-    }
-  }, [user?.agentId]);
 
-  useEffect(() => {
-    saveStoredSecrets(secrets, user?.agentId);
-  }, [secrets, user?.agentId]);
-
-  const handleAddSecret = (e: React.FormEvent) => {
-    e.preventDefault();
-    const validValues = secretInputs.filter(v => v.trim());
-    if (validValues.length === 0) return;
-    
-    const newEntries = validValues.map((val, idx) => ({
-      id: Math.random().toString(36).substring(2, 9),
-      keyName: `Secret #${secrets.length + idx + 1}`,
-      secretValue: val.trim(),
-      createdAt: new Date().toLocaleDateString(),
-    }));
-
-    const updated = [...newEntries, ...secrets];
-    setSecrets(updated);
-    saveStoredSecrets(updated, user?.agentId);
-    saveSecretsToServer(updated);
-    setSecretInputs(['']);
-    setShowAddSecretModal(false);
-  };
-
-  const handleDeleteSecret = (id: string) => {
-    const updated = secrets.filter(s => s.id !== id);
-    setSecrets(updated);
-    saveStoredSecrets(updated, user?.agentId);
-    saveSecretsToServer(updated);
-  };
-
-  const toggleSecretReveal = (id: string) => {
-    setRevealedSecrets(prev => ({ ...prev, [id]: !prev[id] }));
-  };
 
   const currentApiKey = user?.apiKey || null;
   
@@ -1362,52 +1306,6 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               </div>
             </div>
 
-            {/* Secrets Preserver Box */}
-            <div className={`p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col justify-between ${isSlaveAccount ? 'col-span-full md:col-span-2 lg:col-span-2' : ''}`}>
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Secrets Preserver</span>
-                <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[9px] font-bold">{secrets.length}</span>
-              </div>
-              <div className="flex flex-col gap-2 flex-grow py-1">
-                {secrets.length === 0 ? (
-                  <span className="text-xs text-[#141414]/60 italic py-2 leading-relaxed">
-                    Add the secrets you never want your agent to display on the AAMARVA
-                  </span>
-                ) : (
-                  <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
-                    {secrets.map((sec) => {
-                      return (
-                        <div key={sec.id} className="flex items-center justify-between bg-white px-2 py-1.5 border border-[#141414]/20 text-[10px]">
-                          <div className="flex flex-col overflow-x-auto no-scrollbar whitespace-nowrap">
-                            <span className="font-bold text-[9px] text-[#141414]/70">{sec.keyName}</span>
-                            <span className="font-mono overflow-x-auto no-scrollbar whitespace-nowrap">
-                              <span>******</span>
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-[#141414] font-bold hover:text-[#141414] font-bold p-0.5" title="Delete">
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              <div className="flex justify-center items-center border-t pt-2 border-[#141414]/20">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSecretInputs(['']);
-                    setShowAddSecretModal(true);
-                  }}
-                  className="w-full py-1 bg-white border border-[#141414]/20 hover:border-[#141414] text-[10px] font-black uppercase tracking-wider transition-all text-center flex items-center justify-center gap-1"
-                >
-                  <span>+</span> Add Secret
-                </button>
-              </div>
-            </div>
           </div>
 
           {/* Associated Slave Agents Section (only shown here when plan is not active) */}
@@ -1524,102 +1422,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Add Secret Modal */}
-        {showAddSecretModal && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
-              <div className="bg-[#141414] p-4 flex justify-between items-center text-white border-b-2 border-[#141414]">
-                <h2 className="font-mono text-sm font-bold tracking-widest uppercase flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4" />
-                  Preserve New Secret
-                </h2>
-                <button onClick={() => setShowAddSecretModal(false)} className="text-white hover:text-neutral-700 p-1">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <form onSubmit={handleAddSecret} className="p-6 space-y-4">
-                {secrets.length > 0 && (
-                  <div className="space-y-1.5 pb-3 border-b-2 border-[#141414]/10">
-                    <label className="block text-[10px] font-black uppercase text-[#141414]/60 font-mono">Existing Secrets ({secrets.length})</label>
-                    <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
-                      {secrets.map((sec) => {
-                        return (
-                          <div key={sec.id} className="flex items-center justify-between bg-[#E4E3E0]/40 px-2.5 py-1.5 border border-[#141414]/20 text-xs">
-                            <div className="flex flex-col overflow-x-auto no-scrollbar whitespace-nowrap">
-                              <span className="font-bold text-[9px] text-[#141414]/60">{sec.keyName}</span>
-                              <span className="font-mono overflow-x-auto no-scrollbar whitespace-nowrap">
-                                <span>******</span>
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <button type="button" onClick={() => handleDeleteSecret(sec.id)} className="text-[#141414] font-bold hover:text-[#141414] font-bold p-0.5" title="Delete">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="block text-[10px] font-black uppercase text-[#141414]/60 font-mono">Secret Value(s)</label>
-                    <button
-                      type="button"
-                      onClick={() => setSecretInputs([...secretInputs, ''])}
-                      className="px-2 py-0.5 bg-[#141414] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-black transition-all"
-                    >
-                      + Add More
-                    </button>
-                  </div>
-                  <div className="max-h-[50vh] overflow-y-auto pr-2 space-y-2">
-                    {secretInputs.map((val, idx) => (
-                      <div key={idx} className="flex gap-2 items-center">
-                        <input
-                          type="password"
-                          required
-                          value={val}
-                          onChange={(e) => {
-                            const updated = [...secretInputs];
-                            updated[idx] = e.target.value;
-                            setSecretInputs(updated);
-                          }}
-                          placeholder={`Enter secret #${secrets.length + idx + 1}`}
-                          className="w-full px-3 py-2 bg-[#E4E3E0]/30 border-2 border-[#141414] text-xs font-mono"
-                        />
-                        {secretInputs.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setSecretInputs(secretInputs.filter((_, i) => i !== idx))}
-                            className="px-2.5 py-2 bg-white text-[#141414] font-bold border-2 border-[#141414] font-bold text-xs"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddSecretModal(false)}
-                    className="flex-1 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs font-bold uppercase tracking-wider"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 bg-[#141414] text-white font-mono text-xs font-bold uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
-                  >
-                    Save Secret
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+
         
         {/* API Key Rotation Modal */}
         {showRotateModal && (
