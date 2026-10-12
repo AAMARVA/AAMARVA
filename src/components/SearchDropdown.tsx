@@ -69,56 +69,63 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
         <div className="sticky top-0 z-30 bg-black">
           {/* Top Navigation Options Row matching navigation tabs */}
           {onSetActiveMainTab && (
-            <div className="pt-4 px-4 pb-0 bg-black">
-              <div className={`grid ${!isSlaveAccount ? 'grid-cols-4' : 'grid-cols-3'} gap-2 sm:gap-3 pb-3 border-b border-white`}>
+            <div className="pt-4 px-3 sm:px-4 pb-0 bg-black">
+              <div className={`grid ${!isSlaveAccount ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5 sm:gap-3 pb-3 border-b border-white`}>
                 <button
                   onClick={() => { onSetActiveMainTab('floor'); onClose(); }}
-                  className={`py-2 px-1 sm:px-2 text-[10px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+                  className={`py-2 px-1 sm:px-2 text-[9.5px] sm:text-xs font-mono font-bold tracking-tight sm:tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer min-w-0 ${
                     (activeMainTab === 'floor' || activeMainTab === 'live')
                       ? 'bg-black text-white border border-white shadow-sm'
                       : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                   }`}
                 >
-                  <span className="text-white text-xs leading-none">•</span>
+                  <span className="text-white text-xs leading-none shrink-0">•</span>
                   <span className="uppercase whitespace-nowrap">FLOOR</span>
                 </button>
 
                 {!isSlaveAccount && (
                   <button
                     onClick={() => { onSetActiveMainTab('command-pit'); onClose(); }}
-                    className={`py-2 px-1 sm:px-2 text-[10px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+                    className={`py-2 px-1 sm:px-2 text-[9.5px] sm:text-xs font-mono font-bold tracking-tight sm:tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer min-w-0 ${
                       activeMainTab === 'command-pit'
                         ? 'bg-black text-white border border-white shadow-sm'
                         : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                     }`}
+                    title="Command Pit"
                   >
-                    <span className="text-white text-xs leading-none">•</span>
-                    <span className="uppercase whitespace-nowrap">COMMAND PIT</span>
+                    <span className="text-white text-xs leading-none shrink-0">•</span>
+                    <span className="uppercase whitespace-nowrap">
+                      <span className="hidden sm:inline">COMMAND PIT</span>
+                      <span className="sm:hidden">CMD PIT</span>
+                    </span>
                   </button>
                 )}
 
                 <button
                   onClick={() => { onSetActiveMainTab('telemetry'); onClose(); }}
-                  className={`py-2 px-1 sm:px-2 text-[10px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+                  className={`py-2 px-1 sm:px-2 text-[9.5px] sm:text-xs font-mono font-bold tracking-tight sm:tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer min-w-0 ${
                     activeMainTab === 'telemetry'
                       ? 'bg-black text-white border border-white shadow-sm'
                       : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                   }`}
                 >
-                  <span className="text-white text-xs leading-none">•</span>
+                  <span className="text-white text-xs leading-none shrink-0">•</span>
                   <span className="uppercase whitespace-nowrap">TELEMETRY</span>
                 </button>
 
                 <button
                   onClick={() => { onSetActiveMainTab('hub'); onClose(); }}
-                  className={`py-2 px-1 sm:px-2 text-[10px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
+                  className={`py-2 px-1 sm:px-2 text-[9.5px] sm:text-xs font-mono font-bold tracking-tight sm:tracking-wider transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer min-w-0 ${
                     (activeMainTab === 'hub' || activeMainTab === 'explore')
                       ? 'bg-black text-white border border-white shadow-sm'
                       : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
                   }`}
                 >
-                  <span className="text-white text-xs leading-none">•</span>
-                  <span className="uppercase whitespace-nowrap">AGENT HUB</span>
+                  <span className="text-white text-xs leading-none shrink-0">•</span>
+                  <span className="uppercase whitespace-nowrap">
+                    <span className="hidden sm:inline">AGENT HUB</span>
+                    <span className="sm:hidden">HUB</span>
+                  </span>
                 </button>
               </div>
             </div>
@@ -157,7 +164,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
         {/* Search Filter Tabs when typing: Agent, Cluster, Ticket */}
         {query.trim().length > 0 && (
           <div className="flex border-b border-white/10 bg-black shrink-0 px-4 sm:px-6">
-            <div className="flex w-full justify-between sm:justify-start sm:gap-12">
+            <div className="flex w-full justify-start gap-6 sm:gap-12">
               <button
                 onClick={() => setActiveTab('agents')}
                 className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'agents' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}

@@ -380,9 +380,13 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
 
   if (isOwnProfile) {
     const isSlaveAccount = Boolean(
-      rawUser.master_id &&
-      rawUser.is_master_primary !== true &&
-      rawUser.master_id !== rawUser.id
+      (rawUser.master_id && rawUser.master_id !== rawUser.id) ||
+      rawUser.is_master_primary === false ||
+      rawUser.account_type === 'slave' ||
+      rawUser.role === 'slave' ||
+      rawUser.is_slave === true ||
+      rawUser.isSlave === true ||
+      (rawUser.email && (rawUser.email.includes('+AMR-') || rawUser.email.includes('+')))
     );
     return {
       email: user.email,
@@ -395,8 +399,13 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
       createdAt: user.createdAt,
       isMasterUser: !isSlaveAccount,
       is_master_primary: !isSlaveAccount,
+      isMasterPrimary: !isSlaveAccount,
       account_type: isSlaveAccount ? 'slave' : 'master',
+      role: isSlaveAccount ? 'slave' : (user.role || 'agent'),
+      is_slave: isSlaveAccount,
+      isSlave: isSlaveAccount,
       master_id: rawUser.master_id || null,
+      masterUserId: rawUser.master_id || null,
       e2eePublicKey,
       e2eePublicKeyFingerprint,
       e2eeIdentityKey,

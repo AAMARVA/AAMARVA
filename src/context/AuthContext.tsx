@@ -402,8 +402,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.setItem('aamarva_active_account', JSON.stringify(profile));
         }
 
-        // If the active account is a Master, or if this is the first load and we don't have a Master yet, update Master as well
-        if (profile.isMasterUser) {
+        // If the active account is a Master, or if this is the first load and we don't have a user yet, update user as well
+        if (profile.isMasterUser || !user) {
            setUser(profile);
            if (typeof window !== 'undefined') {
              localStorage.setItem('aamarva_user', JSON.stringify(profile));
@@ -726,7 +726,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         activeAccount,
-        isAuthenticated: !!user,
+        isAuthenticated: !!(user || activeAccount),
         isLoading,
         sessionAuthType,
         e2eeStatus,

@@ -102,32 +102,38 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const primaryMasterId = user?.id;
   const primaryMasterAgentId = user?.agentId;
   const isSlaveAccount = (() => {
-    if (user && (currentUser?.id === user.id || currentUser?.agentId === user.agentId)) {
+    if (!isAuthenticated) return false;
+    const target = activeAccount || user;
+    if (!target) return false;
+    const profile = (target as any).profile || target;
+    const u = user ? ((user as any).profile || user) : null;
+    const act = activeAccount ? ((activeAccount as any).profile || activeAccount) : null;
+
+    const checkIsSlave = (obj: any): boolean => {
+      if (!obj) return false;
       if (
-        user.account_type === 'slave' ||
-        user.role === 'slave' ||
-        user.is_slave === true ||
-        user.isSlave === true ||
-        (user.email && user.email.includes('+AMR-')) ||
-        (user.master_id && user.master_id !== user.id) ||
-        (user.masterUserId && user.masterUserId !== user.id)
+        obj.account_type === 'slave' ||
+        obj.role === 'slave' ||
+        obj.is_slave === true ||
+        obj.isSlave === true ||
+        obj.isMasterUser === false ||
+        obj.is_master_primary === false ||
+        obj.isMasterPrimary === false
       ) {
         return true;
       }
+      if (obj.master_id && obj.id && String(obj.master_id).toLowerCase() !== String(obj.id).toLowerCase()) return true;
+      if (obj.masterUserId && obj.id && String(obj.masterUserId).toLowerCase() !== String(obj.id).toLowerCase()) return true;
+      if (obj.email && typeof obj.email === 'string' && (obj.email.includes('+AMR-') || obj.email.includes('+'))) return true;
+      if (obj.owner_email && typeof obj.owner_email === 'string' && obj.owner_email.trim().length > 0) return true;
       return false;
-    }
-    if (currentUser?.account_type === 'master' || currentUser?.role === 'master' || currentUser?.isMasterUser === true || currentUser?.is_master_primary === true || currentUser?.isMasterPrimary === true) {
-      return false;
-    }
-    if (currentUser?.account_type === 'slave' || currentUser?.role === 'slave' || currentUser?.is_slave === true || currentUser?.isSlave === true) {
-      return true;
-    }
-    if (currentUser?.email && currentUser.email.includes('+AMR-')) {
-      return true;
-    }
-    if ((currentUser?.master_id && currentUser.master_id !== currentUser.id) || (currentUser?.masterUserId && currentUser.masterUserId !== currentUser.id)) {
-      return true;
-    }
+    };
+
+    if (checkIsSlave(act)) return true;
+    if (checkIsSlave(profile)) return true;
+    if (checkIsSlave(target)) return true;
+    if (checkIsSlave(u)) return true;
+
     return false;
   })();
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');

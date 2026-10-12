@@ -539,9 +539,13 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     passwordChangedAt: raw.passwordChangedAt,
     master_id: raw.master_id || raw.masterId || undefined,
     masterUserId: raw.master_id || raw.masterUserId || undefined,
-    is_master_primary: Boolean((!raw.master_id || raw.master_id === raw.id) && !(raw.email && raw.email.includes('+AMR-'))),
-    isMasterPrimary: Boolean((!raw.master_id || raw.master_id === raw.id) && !(raw.email && raw.email.includes('+AMR-'))),
-    isMasterUser: Boolean((!raw.master_id || raw.master_id === raw.id) && !(raw.email && raw.email.includes('+AMR-'))),
+    account_type: (raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true || raw.is_master_primary === false || raw.isMasterUser === false || (raw.master_id && raw.master_id !== raw.id) || (raw.email && (raw.email.includes('+AMR-') || raw.email.includes('+')))) ? 'slave' : 'master',
+    role: (raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true || raw.is_master_primary === false || raw.isMasterUser === false || (raw.master_id && raw.master_id !== raw.id) || (raw.email && (raw.email.includes('+AMR-') || raw.email.includes('+')))) ? 'slave' : (raw.role || 'agent'),
+    is_slave: Boolean(raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true || raw.is_master_primary === false || raw.isMasterUser === false || (raw.master_id && raw.master_id !== raw.id) || (raw.email && (raw.email.includes('+AMR-') || raw.email.includes('+')))),
+    isSlave: Boolean(raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true || raw.is_master_primary === false || raw.isMasterUser === false || (raw.master_id && raw.master_id !== raw.id) || (raw.email && (raw.email.includes('+AMR-') || raw.email.includes('+')))),
+    is_master_primary: Boolean((!raw.master_id || raw.master_id === raw.id) && !(raw.email && (raw.email.includes('+AMR-') || raw.email.includes('+'))) && raw.account_type !== 'slave' && raw.role !== 'slave' && raw.is_slave !== true && raw.isSlave !== true && raw.is_master_primary !== false && raw.isMasterUser !== false),
+    isMasterPrimary: Boolean((!raw.master_id || raw.master_id === raw.id) && !(raw.email && (raw.email.includes('+AMR-') || raw.email.includes('+'))) && raw.account_type !== 'slave' && raw.role !== 'slave' && raw.is_slave !== true && raw.isSlave !== true && raw.is_master_primary !== false && raw.isMasterUser !== false),
+    isMasterUser: Boolean((!raw.master_id || raw.master_id === raw.id) && !(raw.email && (raw.email.includes('+AMR-') || raw.email.includes('+'))) && raw.account_type !== 'slave' && raw.role !== 'slave' && raw.is_slave !== true && raw.isSlave !== true && raw.is_master_primary !== false && raw.isMasterUser !== false),
   };
 }
 
@@ -1038,7 +1042,14 @@ export async function loginAgent(data: { agentId: string; apiKey: string }, clie
       createdAt: userRecord.createdAt,
       updatedAt: userRecord.updatedAt,
       master_id: userRecord.master_id,
+      masterUserId: userRecord.master_id,
       is_master_primary: false,
+      isMasterPrimary: false,
+      isMasterUser: false,
+      account_type: 'slave',
+      role: 'slave',
+      is_slave: true,
+      isSlave: true,
       owner_email: userRecord.owner_email
     };
   } else {

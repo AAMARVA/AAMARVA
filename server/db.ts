@@ -28,6 +28,10 @@ export interface UserRecord {
   isMasterUser?: boolean;
   owner_email?: string;
   status_reason?: string | null;
+  account_type?: 'master' | 'slave';
+  role?: string;
+  is_slave?: boolean;
+  isSlave?: boolean;
 }
 
 export interface RefreshTokenRecord {
