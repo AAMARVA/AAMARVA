@@ -849,8 +849,8 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
         </div>
 
-        {/* If Master & Slave Plan is Active, show Associated Slave Agents directly above Loadouts */}
-        {isMasterPlanActive && (
+        {/* Associated Slave Agents Section (only shown here when plan is not active) */}
+        {!isMasterPlanActive && (
           <div className="mb-6">
             <MyAgentsCard />
           </div>
@@ -1093,12 +1093,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
           </div>
 
-          {/* Associated Slave Agents Section (only shown here when plan is not active) */}
-          {!isMasterPlanActive && (
-            <div className="mt-4">
-              <MyAgentsCard />
-            </div>
-          )}
+
 
           {/* Access Management Section */}
           <div className="mt-4">
