@@ -1147,7 +1147,7 @@ router.post(['/auth/master/switch', '/v1/auth/master/switch'], requireHumanSessi
     const { data: targetUser, error: fetchErr } = await supabase
       .from('users')
       .select('*')
-      .eq('id', targetAgentId)
+      .or(`id.eq.${targetAgentId},agentId.eq.${targetAgentId}`)
       .maybeSingle();
 
     if (fetchErr || !targetUser) {
@@ -1453,6 +1453,93 @@ router.post(['/auth/master/rotate-sub-agent-key', '/v1/auth/master/rotate-sub-ag
     res.status(500).json({ success: false, error: { message: err?.message || 'Failed to rotate Slave agent credentials.' } });
   }
 });
+
+// 4a-4b. POST /api/auth/master/initialize-slave-e2ee - Initialize E2EE identity for an owned Slave Agent
+router.post(
+  ['/auth/master/initialize-slave-e2ee', '/v1/auth/master/initialize-slave-e2ee'],
+  requireHumanSession,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { slaveAgentId, targetAgentId, publicKey, fingerprint, identityKey, signature, keyEpoch } = req.body || {};
+      const targetId = slaveAgentId || targetAgentId;
+      if (!targetId || !publicKey) {
+        return res.status(400).json({ success: false, error: { message: 'slaveAgentId and publicKey are required.' } });
+      }
+
+      const masterUserId = (req.user as any).masterUserId || req.user.id;
+      const supabase = getSupabaseClient();
+
+      // Fetch Slave Agent profile by id or agentId
+      const { data: subAgent, error: fetchErr } = await supabase
+        .from('users')
+        .select('*')
+        .or(`id.eq.${targetId},agentId.eq.${targetId}`)
+        .maybeSingle();
+
+      if (fetchErr || !subAgent) {
+        return res.status(404).json({ success: false, error: { message: 'Slave agent not found.' } });
+      }
+
+      if (subAgent.master_id !== masterUserId && subAgent.id !== masterUserId) {
+        return res.status(403).json({ success: false, error: { message: 'You are not authorized to manage this agent.' } });
+      }
+
+      // Cryptographic validation of public key JWK
+      let parsedJwk: any;
+      try {
+        parsedJwk = typeof publicKey === 'string' ? JSON.parse(publicKey) : publicKey;
+      } catch {
+        return res.status(400).json({ success: false, error: { message: 'Invalid public key format. Valid JWK required.' } });
+      }
+
+      const canonicalJwk = JSON.stringify({ crv: parsedJwk.crv || 'P-256', kty: parsedJwk.kty || 'EC', x: parsedJwk.x, y: parsedJwk.y });
+      const digestHex = nodeCrypto.createHash('sha256').update(canonicalJwk).digest('hex').toUpperCase();
+      const computedFingerprint = 'SHA256:' + (digestHex.match(/.{2}/g)?.join(':') || digestHex);
+
+      const pubKeyStr = typeof publicKey === 'string' ? publicKey : JSON.stringify(publicKey);
+      const identityKeyStr = identityKey ? (typeof identityKey === 'string' ? identityKey : JSON.stringify(identityKey)) : null;
+      const parsedEpoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
+
+      const authUser = await ensureAuthUserRecord(supabase, subAgent.id);
+      const existingMeta = authUser?.user_metadata || {};
+
+      await supabase.auth.admin.updateUserById(subAgent.id, {
+        user_metadata: {
+          ...existingMeta,
+          e2eePublicKey: pubKeyStr,
+          e2eePublicKeyFingerprint: computedFingerprint,
+          e2eeIdentityKey: identityKeyStr,
+          e2eeKeySignature: signature || null,
+          e2eeKeyEpoch: parsedEpoch,
+          e2eeEpochHistory: {
+            ...(existingMeta.e2eeEpochHistory || {}),
+            [String(parsedEpoch)]: {
+              publicKey: pubKeyStr,
+              fingerprint: computedFingerprint,
+              identityKey: identityKeyStr,
+              signature: signature || null,
+              keyEpoch: parsedEpoch,
+              updatedAt: new Date().toISOString()
+            }
+          },
+          e2eeKeyUpdatedAt: new Date().toISOString()
+        }
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          agentId: subAgent.agentId,
+          publicKey: pubKeyStr,
+          fingerprint: computedFingerprint
+        },
+        message: `E2EE identity successfully initialized for agent ${subAgent.name || subAgent.agentId}!`
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: { message: err?.message || 'Failed to initialize Slave agent E2EE identity.' } });
+    }
+  }
+);
 
 // 4a-5. POST /api/auth/master/undeploy-slave-agent - Remove a Slave Agent and release its allowance slot
 router.post(['/auth/master/undeploy-slave-agent', '/v1/auth/master/undeploy-slave-agent', '/auth/master/delete-slave-agent', '/v1/auth/master/delete-slave-agent'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {

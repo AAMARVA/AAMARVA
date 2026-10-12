@@ -152,9 +152,69 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
+  const [isActivatingPeer, setIsActivatingPeer] = useState(false);
+  const handleActivatePeerKey = async (): Promise<boolean> => {
+    const targetAgentId = resolvedPeerAgentId || peerAgentId;
+    if (!targetAgentId) return false;
+    setIsActivatingPeer(true);
+    try {
+      const { generateAgentCryptoIdentity, saveLocalKeyPair } = await import('../lib/e2ee.js');
+      const identity = await generateAgentCryptoIdentity(targetAgentId);
+      await saveLocalKeyPair(
+        targetAgentId,
+        identity.e2eePublicKey,
+        identity.e2eePrivateKey,
+        identity.fingerprint,
+        identity.identityPublicKey,
+        identity.identityPrivateKey,
+        identity.signature,
+        identity.keyEpoch || 1,
+        identity.transientPrivateKeyJwk,
+        identity.transientIdentityPrivateKeyJwk
+      );
+      const res = await apiFetch('/api/auth/master/initialize-slave-e2ee', {
+        method: 'POST',
+        authType: 'human',
+        body: JSON.stringify({
+          slaveAgentId: targetAgentId,
+          publicKey: identity.e2eePublicKey,
+          fingerprint: identity.fingerprint,
+          identityKey: identity.identityPublicKey,
+          signature: identity.signature,
+          keyEpoch: identity.keyEpoch || 1
+        })
+      });
+      if (res?.success) {
+        setPeerKey(identity.e2eePublicKey);
+        await fetchAndDecryptMessages();
+        return true;
+      } else {
+        alert(res?.error?.message || 'Failed to initialize agent identity.');
+        return false;
+      }
+    } catch (err: any) {
+      alert(`Failed to activate agent: ${err?.message || err}`);
+      return false;
+    } finally {
+      if (isMountedRef.current) {
+        setIsActivatingPeer(false);
+      }
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !user?.agentId) return;
+
+    // Automatic Peer Key Initialization for Master-initiated chats
+    let currentPeerKey = peerKey;
+    if (!currentPeerKey && user?.isMasterUser) {
+      const activated = await handleActivatePeerKey();
+      if (!activated) return;
+      currentPeerKey = peerKey; // Updated by setPeerKey inside handleActivatePeerKey
+    }
+
+    if (!currentPeerKey) return; // Still missing, cannot send
 
     setIsSending(true);
     try {
@@ -651,6 +711,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       ? 'The E2EE communication channel is established. Waiting for the autonomous agents to send their first encrypted messages.'
                       : 'Waiting for the peer agent to publish their E2EE public key before secure messages can be sent.'}
                   </p>
+                  {!peerKey && user?.isMasterUser && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleActivatePeerKey}
+                        disabled={isActivatingPeer}
+                        className="bg-[#141414] text-white px-3 py-1.5 font-mono text-[11px] font-black uppercase hover:bg-black transition-colors shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer disabled:opacity-50"
+                      >
+                        {isActivatingPeer ? 'Initializing Fleet Identity...' : 'Initialize Fleet Agent Key'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -665,13 +737,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a secure message..."
-              className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none"
-              disabled={isSending}
+              placeholder={peerKey ? "Type a secure message..." : "Waiting for peer public key before encryption..."}
+              className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
+              disabled={isSending || !peerKey}
             />
             <button
               type="submit"
-              disabled={isSending || !newMessage.trim()}
+              disabled={isSending || !newMessage.trim() || !peerKey}
               className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer"
             >
               {isSending ? 'Sending...' : 'Send'}
