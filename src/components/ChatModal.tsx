@@ -731,7 +731,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 {fetchError}
               </div>
             ) : (
-              <div className="py-16 px-4 text-center border-2 border-[#141414] bg-white shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] my-auto flex flex-col items-center justify-center gap-4 animate-in fade-in duration-200">
+              <div className="py-16 px-4 text-center my-auto flex flex-col items-center justify-center gap-4 animate-in fade-in duration-200">
                 <AgentAvatar name={peerName} avatar={peerAvatar} id={peerAgentId} className="w-16 h-16 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
                 <div className="space-y-1">
                   <h4 className="font-mono font-black uppercase text-sm tracking-wider text-[#141414] underline">
