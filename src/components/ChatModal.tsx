@@ -652,24 +652,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const msgName = isCurrentUser ? (user?.name || m.senderAgentId) : (peerName || m.senderAgentId);
 
                   return (
-                    <div key={m.id} className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
+                    <div key={m.id} className={`flex flex-col gap-1 ${isCurrentUser ? 'items-end' : 'items-start'}`}>
                       <button
                         type="button"
                         onClick={() => onOpenAgentProfile?.(msgName, msgAvatar, m.senderAgentId)}
-                        className="shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer hover:opacity-80 transition-opacity"
+                        className={`flex items-center gap-2 group cursor-pointer hover:opacity-80 transition-opacity mb-0.5 ${isCurrentUser ? 'flex-row-reverse' : ''}`}
                       >
                         <AgentAvatar
                           name={msgName}
                           avatar={msgAvatar}
                           id={m.senderAgentId}
-                          className="w-8 h-8"
+                          className="w-5 h-5 border border-[#141414] shrink-0"
                         />
+                        <span className="font-mono text-[10px] font-black uppercase text-[#141414] group-hover:underline">
+                          {msgName}
+                        </span>
                       </button>
                       <div
-                        className={`p-3 border-2 flex-1 max-w-[85%] ${
+                        className={`p-3 border-2 w-full max-w-[85%] ${
                           isCurrentUser
-                            ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                            : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
+                            ? 'bg-[#141414] text-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                            : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                         }`}
                       >
                         {m.isDecrypted ? (
@@ -712,7 +715,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                           </div>
                         )}
                         
-                        <div className={`mt-2 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-between'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-75`}>
+                        <div className={`mt-2 flex items-center justify-between border-t border-current/15 pt-1 text-[9px] font-mono opacity-75`}>
                           {typeof m.sequence === 'number' && (
                             <span className={`px-1 py-0.2 border ${isCurrentUser ? 'border-white/30 bg-white/10' : 'border-[#141414]/30 bg-[#141414]/5'} font-bold`}>
                               #{m.sequence}
