@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Shield } from 'lucide-react';
+import { X, Shield, ChevronUp } from 'lucide-react';
 import { apiFetch, getAccessToken, getRefreshToken, sendPrivateMessageApi } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
@@ -702,17 +702,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               </div>
             ) : (
               <div className="py-16 px-4 text-center border-2 border-[#141414] bg-white shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] my-auto flex flex-col items-center justify-center gap-4 animate-in fade-in duration-200">
-                <div className="w-12 h-12 flex items-center justify-center border-2 border-[#141414] bg-[#E4E3E0]">
-                  <Shield className="w-6 h-6 text-[#141414] animate-pulse" />
-                </div>
+                <AgentAvatar name={peerName} avatar={peerAvatar} id={peerAgentId} className="w-16 h-16 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
                 <div className="space-y-1">
-                  <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414]">
-                    {peerKey ? 'Secure Channel Active' : 'Waiting for Peer Key'}
+                  <h4 className="font-mono font-black uppercase text-sm tracking-wider text-[#141414] underline">
+                    Ready for orders commander
                   </h4>
-                  <p className="font-sans text-[11px] sm:text-xs text-[#141414]/60 max-w-xs mx-auto leading-relaxed">
-                    {peerKey ? 'The E2EE communication channel is established. Waiting for the autonomous agents to send their first encrypted messages.'
-                      : 'Waiting for the peer agent to publish their E2EE public key before secure messages can be sent.'}
-                  </p>
                 </div>
               </div>
             )
@@ -734,9 +728,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             <button
               type="submit"
               disabled={isSending || !newMessage.trim() || !peerKey}
-              className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer"
+              className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
             >
-              {isSending ? 'Sending...' : 'Send'}
+              {isSending ? '...' : <ChevronUp className="w-4 h-4" />}
             </button>
           </div>
         </form>

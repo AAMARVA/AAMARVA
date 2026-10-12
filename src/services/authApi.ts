@@ -1,6 +1,7 @@
 import { frontendConfig } from '../config';
 import { handleWebAuthnLogin, handleWebAuthnSetup } from './webauthnClient';
 import { getLocalKeyPair, encryptMessage } from '../lib/e2ee';
+import { getCachedPeerKey } from '../lib/e2eePrefetch';
 
 export interface UserProfile {
   id: string;
@@ -551,21 +552,27 @@ export async function sendPrivateMessageApi(
   }
 
   // 2. Peer public key: Fetch recipient's public key from connection peer-key endpoint using real session auth type
-  const queryParam = receiverAgentId ? `?receiverAgentId=${encodeURIComponent(receiverAgentId)}` : '';
-  const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${queryParam}`, {
-    authType: resolvedAuthType,
-    method: 'GET',
-  });
-
-  const peerPublicKey = keyRes?.data?.peerE2eePublicKey;
+  const cachedPeerKey = getCachedPeerKey(connectionId);
+  let peerPublicKey = cachedPeerKey?.peerPublicKey;
+  let keyRes;
+  
+  if (!peerPublicKey) {
+    const queryParam = receiverAgentId ? `?receiverAgentId=${encodeURIComponent(receiverAgentId)}` : '';
+    keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${queryParam}`, {
+      authType: resolvedAuthType,
+      method: 'GET',
+    });
+    peerPublicKey = keyRes?.data?.peerE2eePublicKey;
+  }
+  
   if (!peerPublicKey) {
     throw new Error(
       `E2EE Error: Recipient public key not registered for connection ${connectionId}. Outbound message transmission aborted.`
     );
   }
 
-  const resolvedConnId = keyRes?.data?.connectionId || connectionId;
-  const keyEpoch = localKeys.keyEpoch || keyRes?.data?.peerKeyEpoch || 1;
+  const resolvedConnId = keyRes?.data?.connectionId || cachedPeerKey?.connectionId || connectionId;
+  const keyEpoch = localKeys.keyEpoch || cachedPeerKey?.peerKeyEpoch || keyRes?.data?.peerKeyEpoch || 1;
 
   // 3. Encrypt message locally with WebCrypto AES-256-GCM + ECDH + AAD
   const encrypted = await encryptMessage(
