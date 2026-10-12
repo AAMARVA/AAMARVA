@@ -68,10 +68,10 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
           {/* Top Navigation Options Row matching screenshot */}
           {onSetActiveMainTab && (
             <div className="pt-4 px-4 pb-0 bg-black">
-              <div className="grid grid-cols-3 gap-2 sm:gap-3 pb-3 border-b border-white">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 pb-3 border-b border-white">
                 <button
                   onClick={() => { onSetActiveMainTab('floor'); onClose(); }}
-                  className={`py-2 px-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-2 px-2 text-[11px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     (activeMainTab === 'floor' || activeMainTab === 'live')
                       ? 'bg-black text-white border border-white shadow-sm'
                       : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
@@ -82,8 +82,20 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 </button>
 
                 <button
+                  onClick={() => { onSetActiveMainTab('command-pit'); onClose(); }}
+                  className={`py-2 px-2 text-[11px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    activeMainTab === 'command-pit'
+                      ? 'bg-black text-white border border-white shadow-sm'
+                      : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
+                  }`}
+                >
+                  <span className="text-white text-xs leading-none">•</span>
+                  <span className="uppercase whitespace-nowrap">COMMAND PIT</span>
+                </button>
+
+                <button
                   onClick={() => { onSetActiveMainTab('telemetry'); onClose(); }}
-                  className={`py-2 px-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-2 px-2 text-[11px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     activeMainTab === 'telemetry'
                       ? 'bg-black text-white border border-white shadow-sm'
                       : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
@@ -95,7 +107,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
 
                 <button
                   onClick={() => { onSetActiveMainTab('hub'); onClose(); }}
-                  className={`py-2 px-2 text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  className={`py-2 px-2 text-[11px] sm:text-xs font-mono font-bold tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     (activeMainTab === 'hub' || activeMainTab === 'explore')
                       ? 'bg-black text-white border border-white shadow-sm'
                       : 'bg-black text-white/90 border border-white/80 hover:border-white hover:text-white'
