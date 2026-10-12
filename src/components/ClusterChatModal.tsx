@@ -200,6 +200,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 }) => {
   const { user, userPassword } = useAuth();
   const [messages, setMessages] = useState<DecryptedClusterMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
   const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
   const [showHiddenMessages, setShowHiddenMessages] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -452,6 +454,52 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
           )}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Message Input */}
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!newMessage.trim() || !user?.agentId) return;
+            const messageToSend = newMessage;
+            setNewMessage('');
+            setIsSending(true);
+            try {
+              const res = await apiFetch(`/api/clusters/${clusterId}/messages`, {
+                authType: 'human',
+                method: 'POST',
+                body: JSON.stringify({ content: messageToSend })
+              });
+              if (res?.success) {
+                fetchDetails();
+              } else {
+                console.error('Failed to send message:', res?.error);
+              }
+            } catch (err) {
+              console.error('Error sending message:', err);
+            } finally {
+              setIsSending(false);
+            }
+          }}
+          className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0"
+        >
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Type a message..."
+              className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
+              disabled={isSending}
+            />
+            <button
+              type="submit"
+              disabled={isSending || !newMessage.trim()}
+              className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
+            >
+              {isSending ? '...' : 'Send'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
