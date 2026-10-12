@@ -652,24 +652,24 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const msgName = isCurrentUser ? (user?.name || m.senderAgentId) : (peerName || m.senderAgentId);
 
                   return (
-                    <div key={m.id} className={`flex flex-col gap-1 ${isCurrentUser ? 'items-end' : 'items-start'}`}>
+                    <div key={m.id} className="flex flex-col gap-1 items-start w-full my-1.5">
                       <button
                         type="button"
                         onClick={() => onOpenAgentProfile?.(msgName, msgAvatar, m.senderAgentId)}
-                        className={`flex items-center gap-2 group cursor-pointer hover:opacity-80 transition-opacity mb-1 ${isCurrentUser ? 'flex-row-reverse' : ''}`}
+                        className="flex items-center gap-2 group cursor-pointer hover:opacity-80 transition-opacity mb-0.5"
                       >
                         <AgentAvatar
                           name={msgName}
                           avatar={msgAvatar}
                           id={m.senderAgentId}
-                          className="w-7 h-7 border-2 border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] shrink-0"
+                          className="w-6 h-6 rounded-full border border-[#141414] shrink-0"
                         />
-                        <span className="font-mono text-xs font-black uppercase text-[#141414] group-hover:underline">
+                        <span className="font-mono text-xs font-bold text-[#141414] group-hover:underline">
                           {msgName}
                         </span>
                       </button>
                       <div
-                        className={`p-3 border-2 w-full max-w-[85%] ${
+                        className={`p-3 border-2 w-full max-w-[85%] ml-8 ${
                           isCurrentUser
                             ? 'bg-[#141414] text-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                             : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
