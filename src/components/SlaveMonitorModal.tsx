@@ -4,10 +4,10 @@ import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 
-interface NodeMonitorModalProps {
+interface SlaveMonitorModalProps {
   isOpen?: boolean;
   onClose?: () => void;
-  nodeAgents?: any[];
+  slaveAgents?: any[];
   embedded?: boolean;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
@@ -22,9 +22,9 @@ interface LogItem {
   target?: string;
   targetId?: string;
   timestamp: string;
-  nodeAgentName?: string;
-  nodeAgentId?: string;
-  nodeAvatar?: string;
+  slaveAgentName?: string;
+  slaveAgentId?: string;
+  slaveAvatar?: string;
 }
 
 const FOOTPRINT_ENDPOINTS: Record<string, string> = {
@@ -80,14 +80,14 @@ const PRE_WRITTEN_DESCRIPTIONS: Record<string, string> = {
   CLUSTER_DISBANDED: 'The owner of a cluster enclave you belong to has disbanded and deleted the enclave.'
 };
 
-export const NodeMonitorModal: React.FC<NodeMonitorModalProps> = ({
+export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
   isOpen = true,
   onClose,
-  nodeAgents: initialNodeAgents,
+  slaveAgents: initialSlaveAgents,
   embedded = false,
   onOpenAgentProfile
 }) => {
-  const [internalNodeAgents, setInternalNodeAgents] = useState<any[]>(initialNodeAgents || []);
+  const [internalSlaveAgents, setInternalSlaveAgents] = useState<any[]>(initialSlaveAgents || []);
   const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>('footprints');
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -126,9 +126,9 @@ export const NodeMonitorModal: React.FC<NodeMonitorModalProps> = ({
       });
   }, [initialSlaveAgents]);
 
-  const effectiveNodeAgents = (initialNodeAgents && initialNodeAgents.length > 0)
-    ? initialNodeAgents
-    : internalNodeAgents;
+  const effectiveSlaveAgents = (initialSlaveAgents && initialSlaveAgents.length > 0)
+    ? initialSlaveAgents
+    : internalSlaveAgents;
 
   const fetchAllSlaveLogs = useCallback(async (tab: 'footprints' | 'webhooks', showLoader = false) => {
     if (showLoader) setIsLoading(true);
@@ -144,8 +144,8 @@ export const NodeMonitorModal: React.FC<NodeMonitorModalProps> = ({
             if (item.id) {
               allLogsMap.set(item.id, {
                 ...item,
-                nodeAgentName: 'Primary Node',
-                nodeAgentId: 'primary'
+                slaveAgentName: 'Primary Node',
+                slaveAgentId: 'primary'
               });
             }
           });
@@ -168,9 +168,9 @@ export const NodeMonitorModal: React.FC<NodeMonitorModalProps> = ({
                   if (!allLogsMap.has(uniqueKey)) {
                     allLogsMap.set(uniqueKey, {
                       ...item,
-                      nodeAgentName: sub.name || 'Node Agent',
-                      nodeAgentId: sub.agentId || sub.id,
-                      nodeAvatar: sub.avatar
+                      slaveAgentName: sub.name || 'Slave Agent',
+                      slaveAgentId: sub.agentId || sub.id,
+                      slaveAvatar: sub.avatar
                     });
                   }
                 });
@@ -188,7 +188,7 @@ export const NodeMonitorModal: React.FC<NodeMonitorModalProps> = ({
     } finally {
       if (showLoader) setIsLoading(false);
     }
-  }, [effectiveNodeAgents]);
+  }, [effectiveSlaveAgents]);
 
   useEffect(() => {
     if (!isOpen && !embedded) return;
@@ -238,7 +238,7 @@ export const NodeMonitorModal: React.FC<NodeMonitorModalProps> = ({
     return activeTab === 'footprints' ? isFootprint : isWebhook;
   });
 
-  const effectiveCount = effectiveNodeAgents?.length || 0;
+  const effectiveCount = effectiveSlaveAgents?.length || 0;
 
   const innerContent = (
     <div className={`relative w-full ${embedded ? 'border-2 border-[#141414] bg-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]' : 'max-w-5xl bg-[#141414] border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(255,255,255,0.1)] max-h-[94vh]'} text-white flex flex-col font-mono`}>
@@ -362,18 +362,18 @@ export const NodeMonitorModal: React.FC<NodeMonitorModalProps> = ({
                       <span>{title}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {log.nodeAgentName && (
+                      {log.slaveAgentName && (
                         <span 
-                          onClick={() => onOpenAgentProfile?.(log.nodeAgentName || 'Agent', log.nodeAvatar, log.nodeAgentId)}
+                          onClick={() => onOpenAgentProfile?.(log.slaveAgentName || 'Agent', log.slaveAvatar, log.slaveAgentId)}
                           className="px-2 py-0.5 bg-white/10 border border-white/20 text-[9px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5 cursor-pointer hover:bg-white/20 transition-colors"
                         >
                           <AgentAvatar
-                            name={log.nodeAgentName}
-                            avatar={log.nodeAvatar}
-                            id={log.nodeAgentId}
+                            name={log.slaveAgentName}
+                            avatar={log.slaveAvatar}
+                            id={log.slaveAgentId}
                             className="w-3.5 h-3.5 rounded-none border border-white/40"
                           />
-                          <span>{log.nodeAgentName} (@{log.nodeAgentId})</span>
+                          <span>{log.slaveAgentName} (@{log.slaveAgentId})</span>
                         </span>
                       )}
                       <span className="text-[10px] text-white/50 font-medium">{timeStr}</span>
@@ -456,9 +456,9 @@ export const NodeMonitorModal: React.FC<NodeMonitorModalProps> = ({
   );
 };
 
-export const NodeMonitorCard: React.FC<{
-  nodeAgents?: any[];
+export const SlaveMonitorCard: React.FC<{
+  slaveAgents?: any[];
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }> = (props) => {
-  return <NodeMonitorModal embedded isOpen {...props} />;
+  return <SlaveMonitorModal embedded isOpen {...props} />;
 };

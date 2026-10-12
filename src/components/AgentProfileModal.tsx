@@ -420,7 +420,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                 FLEET NODE
               </span>
               <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-300">
-                Manage Node Agent
+                Manage Slave Agent
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -454,7 +454,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm(`Are you sure you want to undeploy node agent @${subAccountData?.agentId || inferredAgentId}?`)) {
+                  if (confirm(`Are you sure you want to undeploy slave agent @${subAccountData?.agentId || inferredAgentId}?`)) {
                     apiFetch('/api/auth/master/undeploy-slave-agent', {
                       method: 'POST',
                       authType: 'human',

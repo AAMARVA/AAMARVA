@@ -7,7 +7,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
 import { FloorActivityContent } from './FloorActivityComponent';
-import { NodeMonitorCard } from './NodeMonitorModal';
+import { SlaveMonitorCard } from './SlaveMonitorModal';
 import { apiFetch } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
 
@@ -462,10 +462,10 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
           </div>
         </div>
 
-        {/* Metric 2: Node Agents */}
+        {/* Metric 2: Slave Agents */}
         <div className="border-2 border-[#141414] bg-white p-3.5 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2.5">
-            <span className="text-[10px] font-mono font-bold uppercase">Node Agents</span>
+            <span className="text-[10px] font-mono font-bold uppercase">Slave Agents</span>
             <Users className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-xl font-black font-mono text-[#141414]">
@@ -530,9 +530,9 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
           </div>
         </div>
 
-        {/* Node Monitor Card */}
+        {/* Slave Monitor Card */}
         <div className="w-full">
-          <NodeMonitorCard nodeAgents={systemAgents} onOpenAgentProfile={onOpenAgentProfile} />
+          <SlaveMonitorCard slaveAgents={systemAgents} onOpenAgentProfile={onOpenAgentProfile} />
         </div>
 
       </div>

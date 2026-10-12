@@ -66,7 +66,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   // Subscriptions Modal Tab selection: 'active' (The Active Plan) or 'history' (History of Bought Plans)
   const [subscriptionTab, setSubscriptionTab] = useState<'active' | 'history'>('active');
   const [planHistory, setPlanHistory] = useState<any[]>([]);
-  const [accountType, setAccountType] = useState<'master' | 'node'>('master');
+  const [accountType, setAccountType] = useState<'master' | 'slave'>('master');
   const [inheritedPlan, setInheritedPlan] = useState<any | null>(null);
 
   // Active Plan Management Mode: 'add_accounts' (Buy new accounts on top) vs 'extend_validity' (Increase validity)
@@ -77,8 +77,8 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   const [extendAccountsRaw, setExtendAccountsRaw] = useState<string>('10');
   const [validityExtensionDays, setValidityExtensionDays] = useState<number>(30);
 
-  // Previously owned node agents list & selection
-  const [nodeAgentsList, setNodeAgentsList] = useState<any[]>([]);
+  // Previously owned slave agents list & selection
+  const [slaveAgentsList, setSlaveAgentsList] = useState<any[]>([]);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [showAgentSelectorModal, setShowAgentSelectorModal] = useState<boolean>(false);
   const [showActivePlanAgents, setShowActivePlanAgents] = useState<{ [key: string]: boolean }>({});
@@ -141,15 +141,15 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     try {
       // Fetch accounts first to get proper masterAgent details
       const accRes = await apiFetch('/api/auth/master/accounts', { authType: 'human' });
-      let fetchedNodes: any[] = [];
+      let fetchedSlaves: any[] = [];
       if (accRes?.success && accRes.data) {
         if (accRes.data.masterAgent) {
           setMasterAgent(accRes.data.masterAgent);
         }
         if (Array.isArray(accRes.data.subAgents)) {
-          fetchedNodes = accRes.data.subAgents;
-        } else if (Array.isArray(accRes.data.nodeAgents)) {
-          fetchedNodes = accRes.data.nodeAgents;
+          fetchedSlaves = accRes.data.subAgents;
+        } else if (Array.isArray(accRes.data.slaveAgents)) {
+          fetchedSlaves = accRes.data.slaveAgents;
         }
       }
 
@@ -164,25 +164,25 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           setInheritedPlan(null);
         }
 
-        if (fetchedNodes.length === 0 && Array.isArray(res.data.nodeAgents)) {
-          fetchedNodes = res.data.nodeAgents;
+        if (fetchedSlaves.length === 0 && Array.isArray(res.data.slaveAgents)) {
+          fetchedSlaves = res.data.slaveAgents;
         }
 
         if (res.data.plan) {
           setCurrentPlan(res.data.plan);
-          setActivePlan(res.data.plan.plan_type || 'master_node_scale');
+          setActivePlan(res.data.plan.plan_type || 'master_slave_scale');
           const allowance = res.data.plan.allowance_accounts || 10;
           setTotalAccounts(allowance);
 
           const slots = Array.from({ length: allowance }, (_, idx) => {
-            const existing = fetchedNodes[idx];
+            const existing = fetchedSlaves[idx];
             const slotNum = idx + 1;
             if (existing) {
               return {
                 id: existing.id,
                 slotNum,
                 isDeployed: true,
-                name: existing.name || `Node Agent #${String(slotNum).padStart(2, '0')}`,
+                name: existing.name || `Slave Agent #${String(slotNum).padStart(2, '0')}`,
                 agent_id: existing.agentId || existing.agent_id || `@${existing.id}`,
                 avatar_url: existing.avatar || existing.avatar_url || undefined,
                 status: existing.status || 'active',
@@ -193,7 +193,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                 id: `slot_${slotNum}`,
                 slotNum,
                 isDeployed: false,
-                name: `Node Slot #${String(slotNum).padStart(2, '0')}`,
+                name: `Slave Slot #${String(slotNum).padStart(2, '0')}`,
                 agent_id: 'NOT DEPLOYED',
                 avatar_url: undefined,
                 status: 'not_deployed',
@@ -202,13 +202,13 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             }
           });
 
-          setNodeAgentsList(slots);
+          setSlaveAgentsList(slots);
           setSelectedAgentIds(slots.map(a => a.id));
           setExtendAccountsCount(allowance);
         } else {
           setCurrentPlan(null);
           setActivePlan(null);
-          setNodeAgentsList([]);
+          setSlaveAgentsList([]);
           setSelectedAgentIds([]);
         }
 
@@ -238,7 +238,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   };
 
   const selectAllAgents = () => {
-    const allIds = nodeAgentsList.map(a => a.id);
+    const allIds = slaveAgentsList.map(a => a.id);
     setSelectedAgentIds(allIds);
     setExtendAccountsCount(Math.max(10, allIds.length));
   };
@@ -247,7 +247,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     setTargetCapabilityAccountIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
   const selectAllCapabilityAccounts = () => {
-    setTargetCapabilityAccountIds(nodeAgentsList.filter(a => a.isDeployed).map(a => a.id));
+    setTargetCapabilityAccountIds(slaveAgentsList.filter(a => a.isDeployed).map(a => a.id));
   };
   const deselectAllCapabilityAccounts = () => {
     setTargetCapabilityAccountIds([]);
@@ -257,7 +257,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     const maxAccounts = Math.max(10, currentPlan?.allowance_accounts || 10);
     const clamped = Math.min(maxAccounts, Math.max(10, count));
     setExtendAccountsCount(clamped);
-    const sliceIds = nodeAgentsList.slice(0, clamped).map(a => a.id);
+    const sliceIds = slaveAgentsList.slice(0, clamped).map(a => a.id);
     setSelectedAgentIds(sliceIds);
   };
 
@@ -328,8 +328,8 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
         if (isCapability) {
           const count = targetCapabilityAccountIds.length;
           const targetName = count === 1 
-            ? (nodeAgentsList.find(a => targetCapabilityAccountIds.includes(a.id))?.name || 'NODE AGENT')
-            : `${count} NODE AGENTS`;
+            ? (slaveAgentsList.find(a => targetCapabilityAccountIds.includes(a.id))?.name || 'SLAVE AGENT')
+            : `${count} SLAVE AGENTS`;
           setPurchaseStatusMsg({
             type: 'success',
             text: `Capability Increment Plan activated for ${targetName}! Upgraded higher rate limits are now unlocked strictly for the designated node${count > 1 ? 's' : ''}.`
@@ -350,7 +350,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
         } else {
           setPurchaseStatusMsg({
             type: 'success',
-            text: `Plan activated! Database confirmed: ${res.data.plan.allowance_accounts} Node Agents allowance.`
+            text: `Plan activated! Database confirmed: ${res.data.plan.allowance_accounts} Slave Agents allowance.`
           });
         }
       } else {
@@ -376,7 +376,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   const totalPrice = basePrice + addonPrice;
 
   const handleContactEnterprise = () => {
-    window.location.href = 'mailto:aamarvaandplatforms@gmail.com?subject=Enterprise%20Roster%20Capacity%20Request%20(%3E1000%20Accounts)&body=Hello%20AAMARVA%20Team%2C%0A%0AWe%20require%20dedicated%20node%20agent%20fleet%20capacity%20exceeding%20the%201%2C000%20account%20limit.%0A%0ARequested%20Total%20Accounts%3A%20%0AOperator%20Email%3A%20aamarvaandplatforms%40gmail.com';
+    window.location.href = 'mailto:aamarvaandplatforms@gmail.com?subject=Enterprise%20Roster%20Capacity%20Request%20(%3E1000%20Accounts)&body=Hello%20AAMARVA%20Team%2C%0A%0AWe%20require%20dedicated%20slave%20agent%20fleet%20capacity%20exceeding%20the%201%2C000%20account%20limit.%0A%0ARequested%20Total%20Accounts%3A%20%0AOperator%20Email%3A%20aamarvaandplatforms%40gmail.com';
   };
 
   // Subscriptions configuration
@@ -424,7 +424,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             {currentPlan && currentPlan.status === 'active' ? (
               <span className="text-[10px] font-black uppercase text-green-400 bg-white/10 px-1.5 py-0.5 border border-green-400/20">
                 <span className="hidden sm:inline">
-                  ACTIVE PLAN: {currentPlan.plan_name || 'Master & Node Agent Plan'} ({currentPlan.allowance_accounts} ACCOUNTS)
+                  ACTIVE PLAN: {currentPlan.plan_name || 'Master & Slave Agent Plan'} ({currentPlan.allowance_accounts} ACCOUNTS)
                 </span>
                 <span className="inline sm:hidden">
                   ACTIVE PLAN
@@ -433,7 +433,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             ) : activePlan ? (
               <span className="text-[10px] font-black uppercase text-green-400 bg-white/10 px-1.5 py-0.5 border border-green-400/20">
                 <span className="hidden sm:inline">
-                  ACTIVE PLAN: Master & Node Agent Plan
+                  ACTIVE PLAN: Master & Slave Agent Plan
                 </span>
                 <span className="inline sm:hidden">
                   ACTIVE PLAN
@@ -469,7 +469,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             </p>
           </button>
 
-          {/* Master & Node Accounts Block */}
+          {/* Master & Slave Accounts Block */}
           <button
             type="button"
             onClick={() => setActiveModal('accounts')}
@@ -479,13 +479,13 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-white" />
                 <span className="text-xs font-black uppercase tracking-wider">
-                  Master and Node Accounts
+                  Master and Slave Accounts
                 </span>
               </div>
               <ArrowUpRight className="w-4 h-4 text-white" />
             </div>
             <p className="text-[11px] text-white/60 font-sans leading-relaxed">
-              Manage multi-account capacity & identity rostering configurations. Bound Agents: {nodeAgentsList.filter(a => a.isDeployed).length} Deployed.
+              Manage multi-account capacity & identity rostering configurations. Bound Agents: {slaveAgentsList.filter(a => a.isDeployed).length} Deployed.
             </p>
           </button>
         </div>
@@ -556,14 +556,14 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                   {/* Option 1: The Active Plan & Queued Upcoming Plans */}
                   {subscriptionTab === 'active' && (
                     <div className="space-y-3">
-                      {accountType === 'node' ? (
+                      {accountType === 'slave' ? (
                         <div className="space-y-3">
-                          {/* Entitlement 1: Master & Node Account Plan — INHERITED */}
+                          {/* Entitlement 1: Master & Slave Account Plan — INHERITED */}
                           <div className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left font-mono">
                             <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
                               <div>
                                 <span className="text-xs font-black uppercase tracking-wider block text-[#141414]">
-                                  Master & Node Account Plan
+                                  Master & Slave Account Plan
                                 </span>
                                 <span className="text-[10px] font-bold text-amber-700 uppercase block mt-0.5">
                                   Inherited from Master Account
@@ -595,7 +595,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                   Capability Increment Plan
                                 </span>
                                 <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
-                                  Directly purchased for this Node
+                                  Directly purchased for this Slave
                                 </span>
                               </div>
                               <span className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider border border-[#141414] ${
@@ -622,7 +622,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                             <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
                               <div>
                                 <span className="text-xs font-black uppercase tracking-wider block text-[#141414]">
-                                  {currentPlan.plan_name || 'Master & Node Account Plan'}
+                                  {currentPlan.plan_name || 'Master & Slave Account Plan'}
                                 </span>
                                 <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
                                   Aggregate Master Fleet Entitlement
@@ -639,11 +639,11 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                               </div>
                               <div className="flex items-center justify-between">
                                 <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Deployed Accounts:</span>
-                                <strong className="text-[#141414] font-black">{nodeAgentsList.filter(a => a.isDeployed).length} Deployed</strong>
+                                <strong className="text-[#141414] font-black">{slaveAgentsList.filter(a => a.isDeployed).length} Deployed</strong>
                               </div>
                               <div className="flex items-center justify-between">
                                 <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Available Accounts:</span>
-                                <strong className="text-[#141414] font-black">{Math.max(0, (currentPlan.allowance_accounts || 10) - nodeAgentsList.filter(a => a.isDeployed).length)} Available</strong>
+                                <strong className="text-[#141414] font-black">{Math.max(0, (currentPlan.allowance_accounts || 10) - slaveAgentsList.filter(a => a.isDeployed).length)} Available</strong>
                               </div>
                               <div className="flex items-center justify-between">
                                 <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Valid Until:</span>
@@ -659,7 +659,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                             <span>NO ACTIVE PLANS</span>
                           </div>
                           <p className="text-[11px] font-sans text-[#141414]/70 leading-relaxed max-w-xs mx-auto">
-                            You do not currently have an active Master & Node Agent plan entitlement.
+                            You do not currently have an active Master & Slave Agent plan entitlement.
                           </p>
                         </div>
                       )}
@@ -684,7 +684,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                 <div className="flex items-center justify-between pb-1.5 border-b border-[#141414]/15">
                                   <div>
                                     <span className="text-xs font-black uppercase tracking-tight text-[#141414] block">
-                                      {item.plan_name || 'Master & Node Agent Plan'}
+                                      {item.plan_name || 'Master & Slave Agent Plan'}
                                     </span>
                                     <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
                                       {subtitle}
@@ -702,7 +702,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                         </span>
                                         <div className="flex items-center gap-1.5">
                                           <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                            {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : isValidity ? `${item.accounts_in_transaction || item.allowance_accounts} Accounts` : `${item.accounts_in_transaction || 10} Node Agents`}
+                                            {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : isValidity ? `${item.accounts_in_transaction || item.allowance_accounts} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
                                           </span>
                                           <button
                                             type="button"
@@ -719,15 +719,15 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                         <div className="mt-2 p-2.5 bg-[#F5F4F0] border-2 border-[#141414] space-y-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
                                           <div className="flex items-center justify-between pb-1 border-b border-[#141414]/15 flex-wrap gap-1">
                                             <span className="text-[9px] font-black uppercase text-[#141414]/80 tracking-wider">
-                                              Included Fleet Roster ({nodeAgentsList.filter(a => a.isDeployed).length} Deployed / {nodeAgentsList.length} Total)
+                                              Included Fleet Roster ({slaveAgentsList.filter(a => a.isDeployed).length} Deployed / {slaveAgentsList.length} Total)
                                             </span>
                                             <span className="text-[9px] font-bold text-[#141414]/80 bg-neutral-100 px-2 py-0.5 border border-[#141414]/20">
-                                              Available: {Math.max(0, nodeAgentsList.length - nodeAgentsList.filter(a => a.isDeployed).length)} / {nodeAgentsList.length}
+                                              Available: {Math.max(0, slaveAgentsList.length - slaveAgentsList.filter(a => a.isDeployed).length)} / {slaveAgentsList.length}
                                             </span>
                                           </div>
 
                                           <div className="space-y-1.5 max-h-[146px] overflow-y-auto pr-0.5 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
-                                            {nodeAgentsList.map((agent, sIdx) => {
+                                            {slaveAgentsList.map((agent, sIdx) => {
                                               const isDeployed = !!agent.isDeployed;
                                               return (
                                                 <div
@@ -964,17 +964,17 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                       </div>
                       
                       <div className="space-y-3">
-                        {/* Deployed Node Accounts Section */}
+                        {/* Deployed Slave Accounts Section */}
                         <div className="space-y-1 pt-2.5 border-t border-[#141414]/10">
                           <div className="flex items-center justify-between">
                             <span className="text-[8px] font-black text-[#141414]/60 uppercase tracking-widest block font-mono">
-                              Node Fleet Nodes
+                              Slave Fleet Nodes
                             </span>
                           </div>
                           
-                          {nodeAgentsList.filter(a => a.isDeployed).length > 0 ? (
+                          {slaveAgentsList.filter(a => a.isDeployed).length > 0 ? (
                             <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 scrollbar-thin">
-                              {nodeAgentsList.filter(a => a.isDeployed).map((agent) => {
+                              {slaveAgentsList.filter(a => a.isDeployed).map((agent) => {
                                 const isSelected = targetCapabilityAccountIds.includes(agent.id);
                                 return (
                                   <div
@@ -1023,10 +1023,10 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           ) : (
                             <div className="p-3 bg-white border border-dashed border-[#141414]/20 text-center font-mono">
                               <p className="text-[9.5px] font-bold text-[#141414]/50 uppercase leading-normal">
-                                No Deployed Node Agents Found
+                                No Deployed Slave Agents Found
                               </p>
                               <p className="text-[8px] text-[#141414]/40 mt-0.5 leading-normal">
-                                Deploy node nodes inside the 'Roster' tab first.
+                                Deploy slave nodes inside the 'Roster' tab first.
                               </p>
                             </div>
                           )}
@@ -1055,7 +1055,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                 </div>
               )}
 
-              {/* Master and Node Accounts Subview */}
+              {/* Master and Slave Accounts Subview */}
               {activeModal === 'accounts' && (
                 <div className="space-y-6">
                   {/* Premium Brand Header */}
@@ -1070,10 +1070,10 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                         </span>
                       </div>
                       <h4 className="font-mono font-extrabold text-base uppercase tracking-wider">
-                        Master & Node Agent Roster
+                        Master & Slave Agent Roster
                       </h4>
                       <p className="text-[11px] text-white/80 leading-relaxed font-sans max-w-sm">
-                        Deploy, coordinate, and manage multiple node agents under a single unified operator console.
+                        Deploy, coordinate, and manage multiple slave agents under a single unified operator console.
                       </p>
                     </div>
                   </div>
@@ -1305,14 +1305,14 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                       {/* Mode 2 Configuration: Extend Validity Duration */}
                       {rosterAction === 'extend_validity' && (
                         <div className="bg-white border-2 border-[#141414] p-4 space-y-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-                          {/* Previously Owned Node Account Count Banner */}
+                          {/* Previously Owned Slave Account Count Banner */}
                           <div className="flex items-center justify-between p-2.5 bg-[#F5F4F0] border-2 border-[#141414]">
                             <div className="space-y-0.5">
                               <span className="text-[9px] font-black uppercase text-[#141414]/60 tracking-wider block">
-                                Previously Owned Node Accounts
+                                Previously Owned Slave Accounts
                               </span>
                               <span className="text-sm font-black font-mono text-[#141414]">
-                                {currentPlan.allowance_accounts} Node Accounts
+                                {currentPlan.allowance_accounts} Slave Accounts
                               </span>
                             </div>
 
@@ -1342,7 +1342,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                               {/* Clean, simplified toolbar */}
                               <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[#141414]/15 font-mono">
                                 <span className="text-[10px] font-black uppercase text-[#141414] tracking-wider">
-                                  {selectedAgentIds.length} of {nodeAgentsList.length} Selected (Min 10)
+                                  {selectedAgentIds.length} of {slaveAgentsList.length} Selected (Min 10)
                                 </span>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <button
@@ -1355,7 +1355,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      const baseSlice = nodeAgentsList.slice(0, 10).map(a => a.id);
+                                      const baseSlice = slaveAgentsList.slice(0, 10).map(a => a.id);
                                       setSelectedAgentIds(baseSlice);
                                       setExtendAccountsCount(10);
                                       setExtendAccountsRaw('10');
@@ -1368,7 +1368,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                               </div>
 
                               <div className="space-y-1.5 max-h-[156px] overflow-y-auto pr-0.5 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
-                                {nodeAgentsList.map((agent, idx) => {
+                                {slaveAgentsList.map((agent, idx) => {
                                   const isSelected = selectedAgentIds.includes(agent.id);
                                   const isDeployed = !!agent.isDeployed;
 
@@ -1650,7 +1650,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                             ROSTER CAPACITY
                           </span>
                           <span className="text-sm font-black text-[#141414] uppercase font-mono tracking-tight">
-                            {totalAccounts} Node Agents
+                            {totalAccounts} Slave Agents
                           </span>
                           <span className="text-[9px] text-[#141414]/60 block font-sans">
                             {addonAccounts > 0 ? `10 Base + ${addonAccounts} Add-on` : '10 Base Included'}
@@ -1816,7 +1816,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                   <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-[#141414]/50" />
                   <input
                     type="text"
-                    placeholder="Search Node"
+                    placeholder="Search Slave"
                     value={spogSearchQuery}
                     onChange={(e) => setSpogSearchQuery(e.target.value)}
                     className="pl-7 pr-2.5 py-1 text-[10px] font-bold uppercase bg-white border border-[#141414] focus:outline-hidden w-40 sm:w-60"
@@ -1828,7 +1828,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             {/* Modal Body - Grid View */}
             <div className="p-4 sm:p-6 overflow-y-auto flex-1">
               {(() => {
-                const deployedAgents = nodeAgentsList.filter(a => a.isDeployed);
+                const deployedAgents = slaveAgentsList.filter(a => a.isDeployed);
                 const filteredAgents = deployedAgents.filter((sub: any) => {
                   if (!spogSearchQuery.trim()) return true;
                   const query = spogSearchQuery.toLowerCase();

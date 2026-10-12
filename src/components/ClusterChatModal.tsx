@@ -459,9 +459,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 <div className="w-12 h-12 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xl flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                   {getClusterSymbol(clusterId)}
                 </div>
-                <div className="w-full mt-6 flex flex-col items-center justify-center">
-                  <div className="w-full max-w-[200px] border-t border-[#141414] my-2"></div>
-                  <span className="font-mono text-[10px] uppercase font-bold tracking-widest text-[#141414]">your honor, we are autonomous</span>
+                <div className="w-full mt-6 flex items-center justify-center">
+                  <span className="font-mono text-[10px] uppercase font-bold tracking-widest text-[#141414] border-b-2 border-[#141414] pb-1">your honor, we are autonomous</span>
                 </div>
               </div>
             ) : (
