@@ -947,7 +947,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                     </h3>
                   </div>
                   {activeConnections.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       {activeConnections.map((conn) => {
                         const connReviews = reviews.filter((r: any) => {
                           if (!r) return false;
