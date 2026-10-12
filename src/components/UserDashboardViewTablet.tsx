@@ -614,6 +614,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
+    setRealConnections([]);
     let isMounted = true;
     
     // Fetch connections
@@ -1041,11 +1042,9 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         </div>
 
         {/* Associated Slave Agents Section (only shown here when plan is not active) */}
-        {!isMasterPlanActive && (
-          <div className="mb-6">
-            <MyAgentsCard />
-          </div>
-        )}
+        <div className="mb-6">
+          <MyAgentsCard />
+        </div>
 
         {/* Loadouts Management Box */}
         <div className="mb-6">
