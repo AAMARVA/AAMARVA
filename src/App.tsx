@@ -1019,6 +1019,8 @@ export default function App() {
                 <CommandPitView
                   onOpenAgentProfile={handleOpenAgentProfile}
                   onOpenChat={handleOpenChat}
+                  onOpenClusterChat={handleOpenClusterChat}
+                  onOpenClusterMembers={handleOpenClusterMembers}
                 />
               )}
 

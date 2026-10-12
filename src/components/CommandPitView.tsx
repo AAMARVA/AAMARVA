@@ -2,16 +2,21 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
+import { getClusterSymbol } from '../lib/clusterSymbols';
 import { Plus, X } from 'lucide-react';
 
 interface CommandPitViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenChat?: (chat: any) => void;
+  onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
 }
 
 export const CommandPitView: React.FC<CommandPitViewProps> = ({
   onOpenAgentProfile,
   onOpenChat,
+  onOpenClusterChat,
+  onOpenClusterMembers,
 }) => {
   const [activeConnections, setActiveConnections] = useState<any[]>([]);
   const [clusters, setClusters] = useState<any[]>([]);
@@ -339,14 +344,44 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                 <BrutalistLoader text="Synchronizing Clusters" size="sm" />
               </div>
             ) : clusters.length > 0 ? (
-              clusters.map((cluster) => (
-                <div key={cluster.id} className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-                  <span className="font-black text-xs uppercase">{cluster.name}</span>
-                  {cluster.description && (
-                    <p className="text-[11px] text-[#141414]/70 mt-1 line-clamp-2">{cluster.description}</p>
-                  )}
-                </div>
-              ))
+              clusters.map((cluster) => {
+                const symbol = cluster.symbol || getClusterSymbol(cluster.id);
+                return (
+                  <div
+                    key={cluster.id}
+                    className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div
+                        onClick={() => onOpenClusterMembers?.(cluster) || onOpenClusterChat?.({ id: cluster.id, name: cluster.name })}
+                        className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 hover:opacity-85 transition-opacity"
+                      >
+                        <div className="w-9 h-9 bg-[#141414] text-white border border-[#141414] font-mono text-xs flex items-center justify-center font-black shrink-0 select-none shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                          {symbol}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-black text-xs uppercase truncate text-[#141414]">
+                            {cluster.name}
+                          </span>
+                          {cluster.description && (
+                            <span className="font-mono text-[10px] text-[#141414]/60 truncate mt-0.5">
+                              "{cluster.description}"
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onOpenClusterChat?.({ id: cluster.id, name: cluster.name })}
+                        className="bg-[#141414] text-white py-1 px-3 text-[10px] font-mono font-bold hover:bg-black/80 transition-colors shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                        title={`Command Cluster ${cluster.name}`}
+                      >
+                        COMMAND
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             ) : (
               <div className="p-6 border-2 border-dashed border-[#141414]/30 text-center text-[#141414]/50 font-mono text-xs">NO CLUSTERS</div>
             )}
