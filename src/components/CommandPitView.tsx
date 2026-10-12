@@ -87,7 +87,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
           const isCurrent = masterAgent.id === currentActiveId || masterAgent.agentId === currentActiveId;
           if (!isCurrent) {
             const existing = connectionsMap.get(mKey);
-            const fallbackConnId = currentActiveId ? `fleet_conn_${currentActiveId}_${masterAgent.id}` : `fleet_conn_${masterAgent.id}`;
+            const fallbackConnId = currentActiveId ? `conn_${currentActiveId}_${masterAgent.id}` : `conn_${masterAgent.id}_master`;
             connectionsMap.set(mKey, {
               id: existing?.id || existing?.connectionId || fallbackConnId,
               connectionId: existing?.connectionId || existing?.id || fallbackConnId,
@@ -110,7 +110,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
               const isCurrent = s.id === currentActiveId || s.agentId === currentActiveId;
               if (!isCurrent) {
                 const existing = connectionsMap.get(sKey);
-                const fallbackConnId = currentActiveId ? `fleet_conn_${currentActiveId}_${s.id}` : `fleet_conn_${s.id}`;
+                const fallbackConnId = currentActiveId ? `conn_${currentActiveId}_${s.id}` : `conn_${s.id}_fleet`;
                 connectionsMap.set(sKey, {
                   id: existing?.id || existing?.connectionId || fallbackConnId,
                   connectionId: existing?.connectionId || existing?.id || fallbackConnId,

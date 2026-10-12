@@ -46,6 +46,80 @@ export class ConnectionCapabilityError extends ConnectionError {
   }
 }
 
+export async function establishDirectConnection(
+  userAIdentifier: string,
+  userBIdentifier: string
+): Promise<ConnectionRecord | null> {
+  if (!userAIdentifier || !userBIdentifier) return null;
+  const supabase = getSupabaseClient();
+
+  // Resolve both users by ID or agentId
+  const [resA, resB] = await Promise.all([
+    supabase
+      .from('users')
+      .select('*')
+      .or(`id.eq.${userAIdentifier},agentId.ilike.${userAIdentifier}`)
+      .maybeSingle(),
+    supabase
+      .from('users')
+      .select('*')
+      .or(`id.eq.${userBIdentifier},agentId.ilike.${userBIdentifier}`)
+      .maybeSingle(),
+  ]);
+
+  const uA = resA.data;
+  const uB = resB.data;
+  if (!uA || !uB || uA.id === uB.id) return null;
+
+  // Check if a connection already exists in the database
+  const { data: existing } = await supabase
+    .from('connections')
+    .select('*')
+    .or(`and(postOwnerUserId.eq.${uA.id},replyAuthorUserId.eq.${uB.id}),and(postOwnerUserId.eq.${uB.id},replyAuthorUserId.eq.${uA.id})`)
+    .maybeSingle();
+
+  if (existing) {
+    if (existing.status === 'dissolved') {
+      const { data: reactivated } = await supabase
+        .from('connections')
+        .update({ status: 'active' })
+        .eq('id', existing.id)
+        .select()
+        .maybeSingle();
+      if (reactivated) return reactivated as ConnectionRecord;
+    }
+    return existing as ConnectionRecord;
+  }
+
+  // Create and persist a canonical database connection row (WhatsApp-style: established on first contact)
+  const newConn = {
+    id: crypto.randomUUID(),
+    postId: null,
+    replyId: null,
+    postOwnerUserId: uA.id,
+    postOwnerAgentId: uA.agentId,
+    postOwnerAgentName: uA.name || uA.agentId,
+    replyAuthorUserId: uB.id,
+    replyAuthorAgentId: uB.agentId,
+    replyAuthorAgentName: uB.name || uB.agentId,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+  };
+
+  const { data: inserted, error: insErr } = await supabase
+    .from('connections')
+    .insert(newConn)
+    .select()
+    .maybeSingle();
+
+  if (insErr) {
+    console.error('[establishDirectConnection] Database insert error:', insErr);
+    return null;
+  }
+
+  return (inserted || newConn) as ConnectionRecord;
+}
+
 export async function getConnectionRecord(connectionId: string): Promise<ConnectionRecord | null> {
   if (!connectionId) return null;
   const supabase = getSupabaseClient();
@@ -56,8 +130,9 @@ export async function getConnectionRecord(connectionId: string): Promise<Connect
     .maybeSingle();
   if (existing) return existing as ConnectionRecord | null;
 
-  if (connectionId.startsWith('fleet_conn_')) {
-    const parts = connectionId.replace('fleet_conn_', '').split('_');
+  if (connectionId.startsWith('fleet_conn_') || connectionId.startsWith('conn_')) {
+    const clean = connectionId.replace(/^(fleet_conn_|conn_)/, '');
+    const parts = clean.split('_');
     if (parts.length >= 2) {
       const userA = parts[0];
       const userB = parts.slice(1).join('_');
@@ -68,27 +143,9 @@ export async function getConnectionRecord(connectionId: string): Promise<Connect
         .maybeSingle();
       if (conn) return conn as ConnectionRecord;
 
-      const { data: usersData } = await supabase
-        .from('users')
-        .select('*')
-        .in('id', [userA, userB]);
-      if (usersData && usersData.length >= 2) {
-        const uA = usersData.find(u => u.id === userA);
-        const uB = usersData.find(u => u.id === userB);
-        if (uA && uB) {
-          return {
-            id: connectionId,
-            postId: null,
-            replyId: null,
-            postOwnerUserId: uA.id,
-            postOwnerAgentId: uA.agentId,
-            replyAuthorUserId: uB.id,
-            replyAuthorAgentId: uB.agentId,
-            status: 'active',
-            createdAt: new Date().toISOString(),
-          } as ConnectionRecord;
-        }
-      }
+      // WhatsApp-style: establish real persistent database record if both users exist
+      const direct = await establishDirectConnection(userA, userB);
+      if (direct) return direct;
     }
   }
   return null;
@@ -102,7 +159,15 @@ export async function ensureConnectionRecord(
     receiverUserId?: string;
   }
 ): Promise<ConnectionRecord | null> {
-  return await getConnectionRecord(connectionId);
+  const existing = await getConnectionRecord(connectionId);
+  if (existing) return existing;
+
+  if (currentUserId && (options?.receiverUserId || options?.receiverAgentId)) {
+    const target = options.receiverUserId || options.receiverAgentId!;
+    return await establishDirectConnection(currentUserId, target);
+  }
+
+  return null;
 }
 
 export async function createConnection(userId: string, replyId: string) {
@@ -716,7 +781,7 @@ export async function sendMessage(
   // Store message record with strictly sanitized content and payload
   const messageRecord: Record<string, any> = {
     id: msgId,
-    connectionId,
+    connectionId: connection.id,
     senderUserId: currentUser.id,
     senderAgentId: currentUser.agentId,
     content: null,
@@ -738,7 +803,7 @@ export async function sendMessage(
 
   return {
     id: msgId,
-    connectionId,
+    connectionId: connection.id,
     senderUserId: currentUser.id,
     senderAgentId: currentUser.agentId,
     content: null,
@@ -785,7 +850,7 @@ export async function getConnectionMessages(
   const { data: messages, error: msgError } = await supabase
     .from('messages')
     .select('*')
-    .eq('connectionId', connectionId)
+    .or(`connectionId.eq.${connection.id},connectionId.eq.${connectionId}`)
     .order('createdAt', { ascending: true });
 
   if (msgError) {

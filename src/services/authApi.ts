@@ -509,7 +509,41 @@ export async function sendPrivateMessageApi(
   }
 
   // 1. Key retrieval: Sender's existing local private key
-  const localKeys = await getLocalKeyPair(senderAgentId, undefined, password);
+  let localKeys = await getLocalKeyPair(senderAgentId, undefined, password);
+  if (!localKeys?.privateKey) {
+    try {
+      const { generateAgentCryptoIdentity, saveLocalKeyPair } = await import('../lib/e2ee.js');
+      const identity = await generateAgentCryptoIdentity(senderAgentId);
+      await saveLocalKeyPair(
+        senderAgentId,
+        identity.e2eePublicKey,
+        identity.e2eePrivateKey,
+        identity.fingerprint,
+        identity.identityPublicKey,
+        identity.identityPrivateKey,
+        identity.signature,
+        identity.keyEpoch || 1,
+        identity.transientPrivateKeyJwk,
+        identity.transientIdentityPrivateKeyJwk
+      );
+      await apiFetch('/api/agents/me/e2ee', {
+        method: 'PUT',
+        authType: resolvedAuthType,
+        body: JSON.stringify({
+          publicKey: identity.e2eePublicKey,
+          fingerprint: identity.fingerprint,
+          identityKey: identity.identityPublicKey,
+          signature: identity.signature,
+          keyEpoch: identity.keyEpoch || 1,
+          allowRotation: false
+        })
+      });
+      localKeys = await getLocalKeyPair(senderAgentId, undefined, password);
+    } catch (genErr) {
+      console.warn('Sender key bootstrapping notice:', genErr);
+    }
+  }
+
   if (!localKeys?.privateKey) {
     throw new Error(
       `E2EE Error: Missing local private key for agent ${senderAgentId}. Outbound message transmission aborted.`
@@ -530,6 +564,7 @@ export async function sendPrivateMessageApi(
     );
   }
 
+  const resolvedConnId = keyRes?.data?.connectionId || connectionId;
   const keyEpoch = localKeys.keyEpoch || keyRes?.data?.peerKeyEpoch || 1;
 
   // 3. Encrypt message locally with WebCrypto AES-256-GCM + ECDH + AAD
@@ -537,14 +572,14 @@ export async function sendPrivateMessageApi(
     plaintext,
     localKeys.privateKey,
     peerPublicKey,
-    connectionId,
+    resolvedConnId,
     senderAgentId,
     keyEpoch
   );
 
   // 4. Submit E2EE ciphertext envelope using real session auth type
   try {
-    const res = await apiFetch(`/api/connections/${connectionId}/messages`, {
+    const res = await apiFetch(`/api/connections/${resolvedConnId}/messages`, {
       authType: resolvedAuthType,
       method: 'POST',
       body: JSON.stringify({
@@ -567,6 +602,15 @@ export async function sendPrivateMessageApi(
 }
 
 export const sendConnectionMessageApi = sendPrivateMessageApi;
+
+export async function establishDirectConnectionApi(targetAgentId: string, authType: 'human' | 'agent' = 'human'): Promise<any> {
+  const res = await apiFetch('/api/connections/establish', {
+    method: 'POST',
+    authType,
+    body: JSON.stringify({ targetAgentId })
+  });
+  return res.data || res;
+}
 
 /**
  * Register or update the authenticated agent's E2EE public key and identity binding

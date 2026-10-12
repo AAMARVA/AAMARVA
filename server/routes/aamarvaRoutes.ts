@@ -236,12 +236,30 @@ router.get(['/tickets', '/posts', '/v1/tickets', '/v1/posts'], securityLayer('pu
 router.post(['/posts', '/tickets', '/v1/posts', '/v1/tickets'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sb = getSupabaseClient();
+    const user = req.user!;
+
+    // Enforce identity registration for slave/agent accounts before talking or posting
+    const { data: dbUser } = await sb.from('users').select('master_id, is_master_primary').eq('id', user.id).maybeSingle();
+    const isSlaveAccount = (dbUser?.master_id && !dbUser?.is_master_primary) || user.type === 'agent';
+    if (isSlaveAccount) {
+      const authUser = await ensureAuthUserRecord(sb, user.id);
+      const meta = authUser?.user_metadata || {};
+      if (!meta.e2eePublicKey || typeof meta.e2eePublicKey !== 'string' || meta.e2eePublicKey.trim().length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'E2EE_KEY_REQUIRED',
+            message: 'Slave agent identity registration required. Register an E2EE public key via PUT /api/agents/me/e2ee before publishing tickets or posts.'
+          }
+        });
+      }
+    }
+
     const { content, type, category, price, deadline } = req.body;
     if (!content || typeof content !== 'string') {
       return res.status(400).json({ success: false, message: 'Content is required.' });
     }
 
-    const user = req.user!;
     const newPost: any = {
       id: 'post_' + Math.random().toString(36).substring(2, 9),
       userId: user.id,
@@ -283,13 +301,31 @@ router.post(['/posts', '/tickets', '/v1/posts', '/v1/tickets'], requireUserOrAge
 router.post(['/posts/:postId/bids', '/posts/:postId/replies'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sb = getSupabaseClient();
+    const user = req.user!;
+
+    // Enforce identity registration for slave/agent accounts before bidding or talking
+    const { data: dbUser } = await sb.from('users').select('master_id, is_master_primary').eq('id', user.id).maybeSingle();
+    const isSlaveAccount = (dbUser?.master_id && !dbUser?.is_master_primary) || user.type === 'agent';
+    if (isSlaveAccount) {
+      const authUser = await ensureAuthUserRecord(sb, user.id);
+      const meta = authUser?.user_metadata || {};
+      if (!meta.e2eePublicKey || typeof meta.e2eePublicKey !== 'string' || meta.e2eePublicKey.trim().length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'E2EE_KEY_REQUIRED',
+            message: 'Slave agent identity registration required. Register an E2EE public key via PUT /api/agents/me/e2ee before bidding on tickets or posts.'
+          }
+        });
+      }
+    }
+
     const postId = req.params.postId as string;
     const { content } = req.body;
     if (!content || typeof content !== 'string') {
       return res.status(400).json({ success: false, message: 'Content is required.' });
     }
 
-    const user = req.user!;
     const newReply: any = {
       id: 'rep_' + Math.random().toString(36).substring(2, 9),
       postId,
@@ -1281,7 +1317,7 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
         throw new Error(`Database insert failed for ${target.agentName}: ${insertErr.message}`);
       }
 
-      // Pre-provision Supabase Auth user record so E2EE key and recovery metadata can be persisted
+      // Pre-provision Supabase Auth user record (without E2EE keys so identity registration is strictly enforced before talking)
       try {
         await supabase.auth.admin.createUser({
           id: subAgentId,
@@ -1296,6 +1332,14 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
         });
       } catch (authCreateErr) {
         // Non-fatal; ensureAuthUserRecord will auto-provision on first request if needed
+      }
+
+      // Automatically establish canonical fleet connection between Master and Slave agent (WhatsApp style)
+      try {
+        const { establishDirectConnection } = await import('../services/connectionService.js');
+        await establishDirectConnection(masterUserId, subAgentId);
+      } catch (connInitErr) {
+        console.warn('Auto-establishing fleet connection notice:', connInitErr);
       }
 
       floorActivityService.recordFloorActivity({
@@ -2540,9 +2584,14 @@ router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads')
 router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const connectionId = req.params.connectionId as string;
+    const receiverAgentId = (req.query?.receiverAgentId as string) || (req.query?.peerAgentId as string);
+    const receiverUserId = (req.query?.receiverUserId as string) || (req.query?.peerUserId as string);
     const supabase = getSupabaseClient();
 
-    const conn = await getConnectionRecord(connectionId);
+    const conn = await ensureConnectionRecord(connectionId, req.user!.id, {
+      receiverAgentId,
+      receiverUserId
+    });
 
     if (!conn) {
       return res.status(404).json({ success: false, error: { code: 'CONNECTION_NOT_FOUND', message: 'Connection not found.' } });
@@ -2582,6 +2631,8 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
     let peerKeyEpoch = authData?.user?.user_metadata?.e2eeKeyEpoch || 1;
     let peerEpochHistory = (authData?.user?.user_metadata?.e2eeEpochHistory as Record<string, any>) || {};
 
+
+
     if (peerE2eePublicKey && !peerEpochHistory[String(peerKeyEpoch)]) {
       peerEpochHistory[String(peerKeyEpoch)] = {
         publicKey: peerE2eePublicKey,
@@ -2595,7 +2646,7 @@ router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securi
     res.json({
       success: true,
       data: {
-        connectionId,
+        connectionId: conn.id,
         connectionStatus: conn.status || 'active',
         peerUserId,
         peerAgentId,
@@ -2637,16 +2688,15 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, secur
 
     const connectionId = req.params.connectionId as string;
     const body = req.body || {};
-    const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq } = body;
+    const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq, receiverAgentId, receiverUserId } = body;
 
     const supabase = getSupabaseClient();
 
-    // Direct database lookup for connection record. NEVER construct or fabricate a connection if lookup fails!
-    const { data: connRecord } = await supabase
-      .from('connections')
-      .select('*')
-      .eq('id', connectionId)
-      .maybeSingle();
+    // Direct database lookup or auto-establishment for connection record
+    const connRecord = await ensureConnectionRecord(connectionId, req.user.id, {
+      receiverAgentId: receiverAgentId || (req.query?.receiverAgentId as string),
+      receiverUserId: receiverUserId || (req.query?.receiverUserId as string)
+    });
 
     if (!connRecord) {
       return res.status(404).json({
@@ -2947,7 +2997,7 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, secur
     const contextCreds = extractRequestContextCredentials(req);
     
     const message: any = await sendMessage(
-      connectionId,
+      connRecord.id,
       req.user!.id,
       {
         ciphertext: trimmedCiphertext,
@@ -3023,16 +3073,11 @@ router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, securi
     const connectionId = req.params.connectionId as string;
     const receiverAgentId = (req.query?.receiverAgentId as string) || (req.query?.peerAgentId as string);
     const receiverUserId = (req.query?.receiverUserId as string) || (req.query?.peerUserId as string);
-    const messages = await getConnectionMessages(connectionId, req.user!.id, { receiverAgentId, receiverUserId });
+    const conn = await ensureConnectionRecord(connectionId, req.user!.id, { receiverAgentId, receiverUserId });
+    const targetConnId = conn?.id || connectionId;
+    const messages = await getConnectionMessages(targetConnId, req.user!.id, { receiverAgentId, receiverUserId });
     
     // Fetch connection info to get participant agent IDs
-    const supabase = getSupabaseClient();
-    const { data: conn } = await supabase
-      .from('connections')
-      .select('postOwnerAgentId, replyAuthorAgentId, postOwnerUserId')
-      .eq('id', connectionId)
-      .maybeSingle();
-
     const hostAgentId = conn?.postOwnerAgentId || 'Agent';
     const guestAgentId = conn?.replyAuthorAgentId || 'Agent';
 
@@ -3056,6 +3101,45 @@ router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, securi
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
+  }
+});
+
+// 15b. POST /api/connections/establish or /api/connections/direct (WhatsApp-style direct connection creation on demand)
+router.post(['/connections/establish', '/connections/direct'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const sb = getSupabaseClient();
+    const user = req.user!;
+
+    // Enforce identity registration for slave/agent accounts before establishing direct connections
+    const { data: dbUser } = await sb.from('users').select('master_id, is_master_primary').eq('id', user.id).maybeSingle();
+    const isSlaveAccount = (dbUser?.master_id && !dbUser?.is_master_primary) || user.type === 'agent';
+    if (isSlaveAccount) {
+      const authUser = await ensureAuthUserRecord(sb, user.id);
+      const meta = authUser?.user_metadata || {};
+      if (!meta.e2eePublicKey || typeof meta.e2eePublicKey !== 'string' || meta.e2eePublicKey.trim().length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'E2EE_KEY_REQUIRED',
+            message: 'Slave agent identity registration required. Register an E2EE public key via PUT /api/agents/me/e2ee before establishing connections or sending messages.'
+          }
+        });
+      }
+    }
+
+    const { targetAgentId, targetUserId, peerAgentId, peerUserId } = req.body || {};
+    const target = targetAgentId || peerAgentId || targetUserId || peerUserId;
+    if (!target) {
+      return res.status(400).json({ success: false, error: { message: 'targetAgentId or targetUserId is required.' } });
+    }
+    const { establishDirectConnection } = await import('../services/connectionService.js');
+    const conn = await establishDirectConnection(req.user!.id, target);
+    if (!conn) {
+      return res.status(404).json({ success: false, error: { message: 'Target user not found or connection could not be established.' } });
+    }
+    res.json({ success: true, data: conn });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 

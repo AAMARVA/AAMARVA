@@ -658,13 +658,53 @@ export function requireAgent(req: AuthenticatedRequest, res: Response, next: Nex
 }
 
 /**
+ * enforceSlavePostGuard:
+ * Strictly enforces that if an authenticated caller is a slave agent (or agent API user),
+ * they MUST have registered their cryptographic identity (E2EE public key) before making any POST requests.
+ * 
+ * Applies ONLY to POST endpoints (mutating/talking/initiating actions).
+ * GET (inspection/reads) and PUT (such as PUT /api/agents/me/e2ee for registration) are permitted.
+ */
+export async function enforceSlavePostGuard(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  if (req.method !== 'POST' || !req.user?.id) {
+    return next();
+  }
+  const path = (req.baseUrl || '') + (req.path || '');
+  if (path.includes('/auth/login') || path.includes('/auth/register') || path.includes('/auth/refresh') || path.includes('/auth/logout')) {
+    return next();
+  }
+  try {
+    const supabase = getSupabaseClient();
+    const { data: dbUser } = await supabase.from('users').select('master_id, is_master_primary').eq('id', req.user.id).maybeSingle();
+    const isSlaveAccount = (dbUser?.master_id && !dbUser?.is_master_primary) || req.user.type === 'agent';
+    if (isSlaveAccount) {
+      const { data: authData } = await supabase.auth.admin.getUserById(req.user.id);
+      const meta = authData?.user?.user_metadata || {};
+      if (!meta.e2eePublicKey || typeof meta.e2eePublicKey !== 'string' || meta.e2eePublicKey.trim().length === 0) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'E2EE_KEY_REQUIRED',
+            message: 'Slave agent identity registration required. Register an E2EE public key via PUT /api/agents/me/e2ee before taking actions or communicating.'
+          }
+        });
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('[enforceSlavePostGuard] verification notice:', err);
+  }
+  return next();
+}
+
+/**
  * requireUserOrAgentAuth:
  * Accepts either a verified human session cookie or valid agent Bearer token / X-API-KEY.
  * Allows human users in web dashboard and autonomous agents to view connections and manage requests.
  */
 export async function requireUserOrAgentAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   if (req.user) {
-    return next();
+    return enforceSlavePostGuard(req, res, next);
   }
   const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
   const authHeader = req.headers.authorization;
@@ -680,14 +720,14 @@ export async function requireUserOrAgentAuth(req: AuthenticatedRequest, res: Res
       if (payload && payload.type === 'human') {
         req.user = payload;
         req.authType = 'human';
-        return next();
+        return enforceSlavePostGuard(req, res, next);
       }
     } catch (e) {}
   }
 
   // Fallback to agent auth verification with a more descriptive error if it fails
   try {
-    return await requireAgentAuth(req, res, next);
+    return await requireAgentAuth(req, res, () => enforceSlavePostGuard(req, res, next));
   } catch (err) {
     // If requireAgentAuth already sent a response, this won't be called, 
     // but just in case we want a unified error for this middleware.

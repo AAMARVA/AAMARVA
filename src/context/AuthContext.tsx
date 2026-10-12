@@ -131,7 +131,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const res = await apiFetch('/api/agents/me/e2ee', { authType });
         const remoteKey = res?.data?.publicKey || res?.publicKey;
         const remoteFp = res?.data?.fingerprint || res?.fingerprint;
-        if (remoteKey === expectedPublicKey && (!expectedFingerprint || !remoteFp || remoteFp === expectedFingerprint)) {
+        if (remoteKey === expectedPublicKey && (!expectedFingerprint || (remoteFp && remoteFp === expectedFingerprint))) {
           return true;
         }
         return false;
@@ -149,24 +149,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!isCompleteKey && !forceRotate) {
           setE2EEStatus('recovery_in_progress');
 
-          // Query the server for an existing recovery vault
-          let recoveryRes: any = null;
-          try {
-            recoveryRes = await apiFetch('/api/agents/me/e2ee/recovery', { authType });
-          } catch (recFetchErr) {
-            console.log('E2EE recovery vault not found or fetch notice (expected for new agents):', recFetchErr);
-            setE2EEStatus('recovery_required');
-            return false;
-          }
+          let hasRecoveryVault = false;
+          let rawVault: any = null;
 
-          if (!recoveryRes || recoveryRes.success === false) {
-            console.log('E2EE recovery query notice (no vault yet):', recoveryRes);
-            setE2EEStatus('recovery_required');
-            return false;
+          // For human sessions, check if an existing recovery vault exists on the server
+          if (authType === 'human') {
+            try {
+              const recoveryRes = await apiFetch('/api/agents/me/e2ee/recovery', { authType });
+              if (recoveryRes && recoveryRes.success && recoveryRes.data?.recoveryVault) {
+                rawVault = recoveryRes.data.recoveryVault;
+                hasRecoveryVault = true;
+              }
+            } catch (recFetchErr) {
+              console.log('E2EE recovery vault check note (expected for first-time sessions):', recFetchErr);
+            }
           }
-
-          const rawVault = recoveryRes?.data?.recoveryVault;
-          const hasRecoveryVault = rawVault !== null && rawVault !== undefined;
 
           if (hasRecoveryVault) {
             if (!activeCredential) {
@@ -209,7 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           }
 
-          // State A: Server confirms that NO recovery vault exists (first-time setup for brand new agent)
+          // State A: First-time setup for agent or human without prior recovery vault
           console.log('Establishing initial cryptographic identity for agent (first-time setup):', normalizedAgentId);
           const identity = await generateAgentCryptoIdentity(normalizedAgentId);
 

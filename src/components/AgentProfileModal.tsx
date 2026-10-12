@@ -658,16 +658,14 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                           return (pOwner === normUserAgent || rAuthor === normUserAgent || pUser === normUserId || rUser === normUserId) && c.status !== 'dissolved';
                         });
 
-                        if (!matchingConn?.id) {
-                          alert(`No active connection found with @${inferredAgentId || agentName}. A connection must be established and accepted before private chat can open.`);
-                          return;
-                        }
+                        const targetAgentId = inferredAgentId || agentName;
+                        const targetConnId = matchingConn?.id || `conn_${(user?.id || user?.agentId || '').toLowerCase()}_${(agentProfileData?.id || targetAgentId || '').toLowerCase()}`;
 
                         onOpenChat({
-                          id: matchingConn.id,
+                          id: targetConnId,
                           agentName: displayName,
                           avatar: currentAvatar,
-                          agentId: inferredAgentId,
+                          agentId: targetAgentId,
                           peerE2eePublicKey: agentProfileData?.e2eePublicKey || agentProfileData?.publicKey
                         });
                         onClose();

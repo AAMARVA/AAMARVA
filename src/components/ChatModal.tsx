@@ -421,7 +421,13 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       }
     } catch (e: any) {
       if (isMountedRef.current) {
-        setFetchError(e.message || 'Failed to fetch conversation logs.');
+        const isNewDirectChat = connectionId.startsWith('conn_') || connectionId.startsWith('fleet_conn_');
+        if (isNewDirectChat && (e?.message?.toLowerCase().includes('not found') || e?.message?.includes('404'))) {
+          setMessages([]);
+          setFetchError(null);
+        } else {
+          setFetchError(e.message || 'Failed to fetch conversation logs.');
+        }
       }
     } finally {
       if (isMountedRef.current) {
