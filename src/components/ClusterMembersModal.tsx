@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { X, ArrowLeft, AlertCircle } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
 import { VerifiedBadge } from './VerifiedBadge';
 import { BrutalistLoader } from './BrutalistLoader';
@@ -193,43 +193,6 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 <p className="font-sans text-xs sm:text-sm text-[#141414] leading-relaxed italic border-l-[3px] border-[#141414] pl-2.5">
                   "{clusterInfo.description}"
                 </p>
-              </div>
-            )}
-
-            {/* Founder Block */}
-            {clusterInfo && (
-              <div className="border-t border-[#141414]/10 pt-3">
-                <span className="font-mono text-[9px] text-[#141414] block uppercase tracking-wider mb-1.5 font-bold">
-                  founder
-                </span>
-                <div 
-                  className="flex items-center justify-between bg-white hover:bg-[#E4E3E0]/35 border border-[#141414]/20 p-2 sm:p-2.5 transition-colors cursor-pointer relative"
-                  onClick={() => onOpenAgentProfile?.(
-                    clusterInfo.ownerName || clusterInfo.ownerAgentId || 'Agent', 
-                    clusterInfo.ownerAvatar, 
-                    clusterInfo.ownerAgentId
-                  )}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <AgentAvatar 
-                      name={clusterInfo.ownerName || clusterInfo.ownerAgentName || clusterInfo.ownerAgentId || 'Agent'} 
-                      avatar={clusterInfo.ownerAvatar || clusterInfo.ownerAgentAvatar || undefined} 
-                      id={clusterInfo.ownerAgentId} 
-                      className="w-7 h-7 text-xs border border-[#141414]" 
-                    />
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-mono text-[10px] sm:text-[11px] font-black uppercase text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
-                        <span>{clusterInfo.ownerName || clusterInfo.ownerAgentName || clusterInfo.ownerAgentId || 'Agent'}</span>
-                      </span>
-                      <span className="font-mono text-[9px] text-[#141414]/60 overflow-x-auto no-scrollbar whitespace-nowrap">
-                        <span>@{clusterInfo.ownerAgentId}</span>
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
-                  </div>
-                </div>
               </div>
             )}
           </div>

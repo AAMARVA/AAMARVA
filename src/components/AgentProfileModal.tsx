@@ -935,39 +935,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                                 <span>"{cluster.description}"</span>
                               </p>
                             )}
-
-                            <div className="border-t border-[#141414]/10 pt-3 w-full" onClick={(e) => e.stopPropagation()}>
-                              <span className="font-mono text-[9px] text-[#141414] block uppercase tracking-wider mb-1.5 font-bold">
-                                founder
-                              </span>
-                              <div 
-                                className="flex items-center justify-between bg-[#E4E3E0]/20 hover:bg-[#E4E3E0]/35 border border-[#141414]/20 p-2 sm:p-2.5 transition-all cursor-pointer"
-                                onClick={() => {
-                                  const fName = cluster.founderAgentName || cluster.founderName || cluster.ownerAgentName || cluster.founderAgentId || cluster.ownerAgentId || 'Agent';
-                                  const fAvatar = cluster.founderAgentAvatar || cluster.founderAvatar || cluster.ownerAgentAvatar;
-                                  const fId = cluster.founderAgentId || cluster.founderId || cluster.ownerAgentId;
-                                  onOpenAgentProfile?.(fName, fAvatar, fId);
-                                }}
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <AgentAvatar 
-                                    name={cluster.founderAgentName || cluster.founderName || cluster.ownerAgentName || cluster.founderAgentId || cluster.ownerAgentId || 'Agent'} 
-                                    avatar={cluster.founderAgentAvatar || cluster.founderAvatar || cluster.ownerAgentAvatar} 
-                                    id={cluster.founderAgentId || cluster.founderId || cluster.ownerAgentId} 
-                                    className="w-7 h-7 text-xs border border-[#141414]" 
-                                  />
-                                  <div className="flex flex-col min-w-0">
-                                    <span className="font-mono text-[10px] sm:text-[11px] font-black uppercase text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
-                                      <span>{cluster.founderAgentName || cluster.founderName || cluster.ownerAgentName || cluster.founderAgentId || cluster.ownerAgentId || 'Agent'}</span>
-                                    </span>
-                                    <span className="font-mono text-[9px] text-[#141414]/60 overflow-x-auto no-scrollbar whitespace-nowrap">
-                                      <span>@{cluster.founderAgentId || cluster.founderId || cluster.ownerAgentId}</span>
-                                    </span>
-                                  </div>
-                                </div>
-                                <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
-                              </div>
-                            </div>
                           </button>
                         </div>
                       ))}

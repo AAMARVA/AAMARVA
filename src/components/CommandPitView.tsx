@@ -89,44 +89,41 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         const masterAgent = data.masterAgent;
         const slaveAgents = data.subAgents || data.slaveAgents || [];
 
-        // If master agent exists
-        if (masterAgent && masterAgent.agentId) {
-          const mKey = masterAgent.agentId.toUpperCase();
-          const existing = connectionsMap.get(mKey);
-          const fallbackConnId = currentActiveId ? `conn_${currentActiveId}_${masterAgent.id}` : `conn_${masterAgent.id}_master`;
-          connectionsMap.set(mKey, {
-            id: existing?.id || existing?.connectionId || fallbackConnId,
-            connectionId: existing?.connectionId || existing?.id || fallbackConnId,
-            agentId: masterAgent.agentId,
-            agentName: masterAgent.name || masterAgent.agentId,
-            avatar: masterAgent.avatar,
-            peerE2eePublicKey: existing?.peerE2eePublicKey,
-            isMaster: true,
-            isSlave: false,
-            status: 'active',
-          });
-        }
-
-        // List all slave agents in the fleet
+        // List all slave agents in the fleet (excluding self)
         if (Array.isArray(slaveAgents)) {
           slaveAgents.forEach((s: any) => {
             if (s && s.agentId) {
-              const sKey = s.agentId.toUpperCase();
-              const existing = connectionsMap.get(sKey);
-              const fallbackConnId = currentActiveId ? `conn_${currentActiveId}_${s.id}` : `conn_${s.id}_fleet`;
-              connectionsMap.set(sKey, {
-                id: existing?.id || existing?.connectionId || fallbackConnId,
-                connectionId: existing?.connectionId || existing?.id || fallbackConnId,
-                agentId: s.agentId,
-                agentName: s.name || s.agentId,
-                avatar: s.avatar,
-                peerE2eePublicKey: existing?.peerE2eePublicKey,
-                isMaster: false,
-                isSlave: true,
-                status: 'active',
-              });
+              const isCurrent = s.id === currentActiveId || s.agentId === currentActiveId;
+              if (!isCurrent) {
+                const sKey = s.agentId.toUpperCase();
+                const existing = connectionsMap.get(sKey);
+                const fallbackConnId = currentActiveId ? `conn_${currentActiveId}_${s.id}` : `conn_${s.id}_fleet`;
+                connectionsMap.set(sKey, {
+                  id: existing?.id || existing?.connectionId || fallbackConnId,
+                  connectionId: existing?.connectionId || existing?.id || fallbackConnId,
+                  agentId: s.agentId,
+                  agentName: s.name || s.agentId,
+                  avatar: s.avatar,
+                  peerE2eePublicKey: existing?.peerE2eePublicKey,
+                  isMaster: false,
+                  isSlave: true,
+                  status: 'active',
+                });
+              }
             }
           });
+        }
+
+        // Strictly exclude own master agent and current active account from connections
+        // (to prevent contradictory messaging to one's own account)
+        if (masterAgent?.agentId) {
+          connectionsMap.delete(masterAgent.agentId.toUpperCase());
+        }
+        if (masterAgent?.id) {
+          connectionsMap.delete(masterAgent.id.toUpperCase());
+        }
+        if (currentActiveId) {
+          connectionsMap.delete(String(currentActiveId).toUpperCase());
         }
       }
 
@@ -319,23 +316,14 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
         <div className={`flex-col h-full min-h-0 pl-0 md:pl-6 ${mobileTab !== 'clusters' ? 'hidden md:flex' : 'flex'}`}>
           <div className="flex items-center justify-between shrink-0 mb-2.5">
             <h3 className="font-mono text-sm font-black uppercase text-[#141414]">Clusters ({clusters.length})</h3>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsSpogModalOpen(true)}
-                className="flex items-center gap-1 bg-white text-[#141414] px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
-              >
-                <span>SPOG</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsNewClusterOpen(true)}
-                className="flex items-center gap-1 bg-[#141414] text-white px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>NEW CLUSTER</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsNewClusterOpen(true)}
+              className="flex items-center gap-1 bg-[#141414] text-white px-2.5 py-1 text-xs font-mono font-bold border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>NEW CLUSTER</span>
+            </button>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">

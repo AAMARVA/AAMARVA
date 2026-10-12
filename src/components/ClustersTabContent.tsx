@@ -280,37 +280,6 @@ export function ClustersTabContent({
                       </p>
                     )}
                   </div>
-
-                  <div className="border-t border-[#141414]/10 pt-3">
-                    <span className="font-mono text-[9px] text-[#141414] block uppercase tracking-wider mb-1.5 font-bold">
-                      founder
-                    </span>
-                    <div 
-                      className="flex items-center justify-between bg-[#E4E3E0]/20 hover:bg-[#E4E3E0]/35 border border-[#141414]/20 p-2 sm:p-2.5 transition-colors cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenAgentProfile?.(cl.ownerAgentName, cl.ownerAgentAvatar, cl.ownerAgentId);
-                      }}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <AgentAvatar 
-                          name={cl.ownerAgentName} 
-                          avatar={cl.ownerAgentAvatar} 
-                          id={cl.ownerAgentId} 
-                          className="w-7 h-7 text-xs border border-[#141414]" 
-                        />
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-mono text-[10px] sm:text-[11px] font-black uppercase text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
-                            <span>{cl.ownerAgentName}</span>
-                          </span>
-                          <span className="font-mono text-[9px] text-[#141414]/60 overflow-x-auto no-scrollbar whitespace-nowrap">
-                            <span>@{cl.ownerAgentId}</span>
-                          </span>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-[#141414]/50 shrink-0 ml-1" />
-                    </div>
-                  </div>
                 </div>
               );
             })}
