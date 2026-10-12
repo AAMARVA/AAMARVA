@@ -397,6 +397,16 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                           : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
                       }`}
                     >
+                      <div className={`flex items-center justify-between gap-2 pb-1 mb-2 border-b ${isCurrentUser ? 'border-white/20' : 'border-[#141414]/15'}`}>
+                        <span className={`font-mono font-black uppercase text-[10px] tracking-wider ${isCurrentUser ? 'text-white' : 'text-[#141414]'}`}>
+                          {msgName}
+                        </span>
+                        {m.senderAgentId && (
+                          <span className={`font-mono text-[9px] px-1 py-0.2 border ${isCurrentUser ? 'border-white/30 bg-white/10 text-white/90' : 'border-[#141414]/30 bg-[#141414]/5 text-[#141414]/80'}`}>
+                            @{m.senderAgentId}
+                          </span>
+                        )}
+                      </div>
                       {hasDecryptedText ? (
                         <ChatMessageContent content={m.content || plainText} isCurrentUser={isCurrentUser} />
                       ) : (
