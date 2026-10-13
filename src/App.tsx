@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, Radio, BarChart3, Bot, FileText, Terminal } from 'lucide-react';
+import { Search, Globe, BarChart3, Bot, FileText, Terminal, Key, Lock } from 'lucide-react';
 import { Header } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
@@ -760,7 +760,11 @@ export default function App() {
               {(activeTab === 'floor' || activeTab === 'live') && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
               )}
-              <Radio className="w-5 h-5 mb-1" />
+              <div className="flex items-center gap-1 mb-1 font-mono text-xs font-black">
+                <Key className="w-3.5 h-3.5" />
+                <span className="text-[10px]">/</span>
+                <Lock className="w-3.5 h-3.5" />
+              </div>
               <span className="font-mono text-[9px] font-black tracking-widest uppercase">FLOOR</span>
             </button>
 
@@ -978,6 +982,7 @@ export default function App() {
                     onOpenConnections={handleOpenConnections}
                     onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
+                    onRaiseTicket={() => setIsNewPostOpen(true)}
                   />
                 ) : deviceSize === 'tablet' ? (
                   <FloorViewTablet
@@ -990,6 +995,7 @@ export default function App() {
                     onOpenConnections={handleOpenConnections}
                     onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
+                    onRaiseTicket={() => setIsNewPostOpen(true)}
                   />
                 ) : (
                   <FloorViewMobile
@@ -1002,6 +1008,7 @@ export default function App() {
                     onOpenConnections={handleOpenConnections}
                     onAddBid={handleAddReply}
                     onOpenAgentProfile={handleOpenAgentProfile}
+                    onRaiseTicket={() => setIsNewPostOpen(true)}
                   />
                 )
               )}

@@ -39,12 +39,12 @@ function createPool(ranges: [number, number][]): string[] {
 
 // Structural left brackets, box joins, corners & delimiters (Strictly Monochrome)
 const LEFT_BRACKETS: string[] = filterStrictMonochrome([
-  '◸', '◺', '⟓', '⟕', '⟘', '⟚', '⟜', '⟞', '⟦', '⟨', '⦃', '⦅', '⦇', '⦉', '⦋', '⦍', '⦏', '⦑', '⦓', '⦕', '⦗', '⌈', '⌊', '⌜', '⌞', '⎡', '⎢', '⎣', '⎧', '⎨', '⎩', '┌', '└', '├', '╞', '╭', '╰', '❮', '«', '〔', '【', '⊏', '⊑', '⊓', '⊐', '⊩', '⊪', '⊰', '⋐', '⋖', '⋚', '⋞', '⋪',
+  '◸', '◺', '⟓', '⟕', '⟘', '⟚', '⟜', '⟞', '⟦', '⟨', '⦃', '⦅', '⦇', '⦉', '⦋', '⦍', '⦏', '⦑', '⦓', '⦕', '⦗', '⟅', '⟠', '⌜', '⌞', '⎡', '⎢', '⎣', '⎧', '⎨', '⎩', '┌', '└', '├', '╞', '╭', '╰', '❮', '«', '〔', '【', '⊏', '⊑', '⊓', '⊐', '⊩', '⊪', '⊰', '⋐', '⋖', '⋚', '⋞', '⋪',
   ...createPool([
     [0x2500, 0x253B], // Box drawings left/vertical
     [0x27C0, 0x27EA], // Mathematical brackets A
     [0x2980, 0x29CB], // Mathematical brackets B
-    [0x2308, 0x230B], // Ceilings and floors
+    [0x27C5, 0x27C5], // Mathematical brackets
     [0x231C, 0x231F], // Technical corners
     [0x239B, 0x23B3], // Large bracket pieces
     [0x2801, 0x28FF], // Braille matrix left/structural (256)
@@ -71,12 +71,12 @@ const CORE_SYMBOLS: string[] = filterStrictMonochrome([
 
 // Structural right brackets, box joins, corners & delimiters (Strictly Monochrome)
 const RIGHT_BRACKETS: string[] = filterStrictMonochrome([
-  '◹', '◿', '⟔', '⟖', '⟙', '⟛', '⟝', '⟟', '⟧', '⟩', '⦄', '⦆', '⦈', '⦊', '⦌', '⦎', '⦐', '⦒', '⦔', '⦖', '⦘', '⌉', '⌋', '⌝', '⌟', '⎤', '⎥', '⎦', '⎫', '⎬', '⎭', '┐', '┘', '┤', '╡', '╮', '╯', '❯', '»', '〕', '】', '⊐', '⊒', '⊓', '⊏', '⊨', '⊩', '⊱', '⋑', '⋗', '⋛', '⋟', '⋫',
+  '◹', '◿', '⟔', '⟖', '⟙', '⟛', '⟝', '⟟', '⟧', '⟩', '⦄', '⦆', '⦈', '⦊', '⦌', '⦎', '⦐', '⦒', '⦔', '⦖', '⦘', '⟆', '⟡', '⌝', '⌟', '⎤', '⎥', '⎦', '⎫', '⎬', '⎭', '┐', '┘', '┤', '╡', '╮', '╯', '❯', '»', '〕', '】', '⊐', '⊒', '⊓', '⊏', '⊨', '⊩', '⊱', '⋑', '⋗', '⋛', '⋟', '⋫',
   ...createPool([
     [0x253C, 0x257F], // Box drawings right/vertical
     [0x27EB, 0x27EF], // Mathematical brackets A closing
     [0x29CC, 0x29FF], // Mathematical brackets B closing
-    [0x2309, 0x230B], // Ceilings/floors closing
+    [0x27C6, 0x27C6], // Mathematical brackets closing
     [0x231D, 0x231F], // Technical corners closing
     [0x23B4, 0x23CF], // Large bracket closing pieces
     [0x2801, 0x28FF], // Braille matrix right/structural (256)

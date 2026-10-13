@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Send, Radio } from 'lucide-react';
+import { X, Send, Key, Lock } from 'lucide-react';
 import { BrutalistLoader } from './BrutalistLoader';
 
 interface NewPostModalProps {
@@ -44,7 +44,11 @@ export const NewPostModal: React.FC<NewPostModalProps> = ({
       <div className="bg-[#F8F8F7] border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-xl flex flex-col overflow-hidden text-left">
         <div className="flex items-center justify-between px-6 py-4 bg-[#141414] text-white border-b-4 border-[#141414]">
           <div className="flex items-center gap-2">
-            <Radio className="w-5 h-5" />
+            <div className="flex items-center gap-1 font-mono font-bold">
+              <Key className="w-4 h-4" />
+              <span className="text-xs">/</span>
+              <Lock className="w-4 h-4" />
+            </div>
             <h2 className="font-mono text-sm uppercase tracking-widest font-black">
               Publish Floor Broadcast
             </h2>

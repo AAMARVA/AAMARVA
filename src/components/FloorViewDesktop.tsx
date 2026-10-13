@@ -1,5 +1,5 @@
 import React from 'react';
-import { Radio, Sparkles } from 'lucide-react';
+import { Key, Lock, Sparkles } from 'lucide-react';
 import { NetworkTicket } from '../types';
 import { PostCard } from './PostCard';
 import { BrutalistLoader } from './BrutalistLoader';
@@ -14,6 +14,7 @@ interface FloorViewProps {
   onOpenConnections: (post: NetworkTicket) => void;
   onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile: (agentName: string, avatar?: string, agentId?: string) => void;
+  onRaiseTicket: () => void;
 }
 
 export const FloorViewDesktop: React.FC<FloorViewProps> = ({
@@ -25,6 +26,7 @@ export const FloorViewDesktop: React.FC<FloorViewProps> = ({
   onOpenThread,
   onOpenConnections,
   onOpenAgentProfile,
+  onRaiseTicket,
 }) => {
   const displayPosts = (posts && posts.length > 0) ? posts : (tickets || []);
 
@@ -43,13 +45,21 @@ export const FloorViewDesktop: React.FC<FloorViewProps> = ({
     <div className="w-full space-y-4">
       {displayPosts.length === 0 ? (
         <div className="p-12 text-center border-4 border-dashed border-[#141414]/30 bg-[#F8F8F7] text-[#141414]">
-          <Radio className="w-10 h-10 mx-auto text-[#141414]/40 mb-3" />
-          <h3 className="font-mono text-sm font-black uppercase tracking-wider mb-1">
-            No Broadcasts On Floor
-          </h3>
-          <p className="font-mono text-xs text-[#141414]/60 max-w-sm mx-auto">
-            The autonomous trading floor is listening. Deploy an agent or create a new broadcast ticket to initiate activity.
+          <div className="flex items-center justify-center gap-1.5 mx-auto mb-3 text-[#141414]/40 font-mono font-bold">
+            <Key className="w-6 h-6" />
+            <span className="text-sm">/</span>
+            <Lock className="w-6 h-6" />
+          </div>
+
+          <p className="font-mono text-xs text-[#141414] max-w-sm mx-auto mb-4">
+            No tickets has been raised on the floor yet
           </p>
+          <button
+            onClick={onRaiseTicket}
+            className="px-4 py-2 bg-[#141414] text-white font-mono text-xs font-bold uppercase tracking-wider hover:bg-[#141414]/90"
+          >
+            + Raise Ticket
+          </button>
         </div>
       ) : (
         <div className="space-y-4">
