@@ -371,23 +371,31 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 gap-4">
         {/* Metric 1: Clusters */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
             <span className="text-[10px] font-mono font-bold uppercase">Clusters</span>
-            <Activity className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
             {localClusters.length}
           </div>
         </div>
 
-        {/* Metric 2: Slave Agents */}
+        {/* Metric 2: Master Agent */}
+        <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+            <span className="text-[10px] font-mono font-bold uppercase">Master Agent</span>
+          </div>
+          <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
+            1
+          </div>
+        </div>
+
+        {/* Metric 3: Slave Agents */}
         <div className="border-2 border-[#141414] bg-white p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
             <span className="text-[10px] font-mono font-bold uppercase">Slave Agents</span>
-            <Users className="w-4 h-4 text-[#141414]" />
           </div>
           <div className="text-2xl sm:text-3xl md:text-3xl lg:text-3xl font-black font-mono text-[#141414]">
             {systemAgents.length}

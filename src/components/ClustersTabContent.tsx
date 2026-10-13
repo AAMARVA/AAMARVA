@@ -199,9 +199,7 @@ export function ClustersTabContent({
               {incomingInvites.map((inv) => (
                 <div key={inv.id} className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black">
-                      {getClusterSymbol(inv.clusterId)}
-                    </div>
+
                     <div className="min-w-0">
                       <p className="font-mono text-[10px] font-black uppercase truncate text-[#141414]">
                         Invite to {inv.clusterName}

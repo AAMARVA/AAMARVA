@@ -763,7 +763,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     </h3>
                   </div>
                   {activeConnections.length > 0 ? (
-                    <div className="max-h-[295px] sm:max-h-[148px] overflow-y-auto pr-1.5 p-0.5 custom-scrollbar">
+                    <div className="max-h-[220px] sm:max-h-[220px] overflow-y-auto pr-1.5 p-0.5 custom-scrollbar">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {activeConnections.map((conn) => {
                           const connReviews = reviews.filter((r: any) => {

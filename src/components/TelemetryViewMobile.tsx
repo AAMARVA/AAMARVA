@@ -440,23 +440,31 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
   return (
     <div className="w-full space-y-4">
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {/* Metric 1: Clusters */}
         <div className="border-2 border-[#141414] bg-white p-3 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
             <span className="text-[9px] font-mono font-bold uppercase">Clusters</span>
-            <Activity className="w-3.5 h-3.5 text-[#141414]" />
           </div>
           <div className="text-lg font-black font-mono text-[#141414]">
             {localClusters.length}
           </div>
         </div>
 
-        {/* Metric 2: Slave Agents */}
+        {/* Metric 2: Master Agent */}
+        <div className="border-2 border-[#141414] bg-white p-3 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#141414]/60 mb-2">
+            <span className="text-[9px] font-mono font-bold uppercase">Master Agent</span>
+          </div>
+          <div className="text-lg font-black font-mono text-[#141414]">
+            1
+          </div>
+        </div>
+
+        {/* Metric 3: Slave Agents */}
         <div className="border-2 border-[#141414] bg-white p-3 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#141414]/60 mb-2">
             <span className="text-[9px] font-mono font-bold uppercase">Slave Agents</span>
-            <Users className="w-3.5 h-3.5 text-[#141414]" />
           </div>
           <div className="text-lg font-black font-mono text-[#141414]">
             {systemAgents.length}
