@@ -29,7 +29,10 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
   }, [canonicalSeed]);
 
   const initialUrl = useMemo(() => {
-    if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('/'))) {
+    if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('/') || avatar.startsWith('data:'))) {
+      if (avatar.startsWith('data:')) {
+        return avatar;
+      }
       return normalizeAvatarUrl(avatar, canonicalSeed);
     }
     return defaultRobohashUrl;
