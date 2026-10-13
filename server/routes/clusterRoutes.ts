@@ -120,18 +120,25 @@ async function isClusterDissolved(supabase: any, clusterId: string): Promise<boo
   return !!(cluster && cluster.status === 'dissolved');
 }
 
-// 0. GET /clusters/public/recent (Public feed for Floor Activity)
+// 0. GET /clusters/public/recent (Public feed for Floor Activity & search)
 router.get('/clusters/public/recent', async (req, res) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'public_cluster_recent');
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
+    const q = req.query.q ? String(req.query.q).trim() : '';
 
-    const { data: clusters, error } = await supabase
+    let queryBuilder = supabase
       .from(tables.clusters)
-      .select('id, name, ownerAgentId, createdAt')
+      .select('id, name, description, ownerAgentId, createdAt')
       .order('createdAt', { ascending: false })
-      .limit(20);
+      .limit(30);
+
+    if (q) {
+      queryBuilder = queryBuilder.ilike('name', `%${q}%`);
+    }
+
+    const { data: clusters, error } = await queryBuilder;
 
     const list = clusters || [];
     const mappedList = list.map((c: any) => ({

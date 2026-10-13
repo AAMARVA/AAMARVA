@@ -1678,11 +1678,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   <span className="text-xs font-black uppercase tracking-wider">
                     Edit Profile
                   </span>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 border ${
-                    isSlaveAccount ? 'bg-amber-100 text-amber-950 border-amber-400' : 'bg-white text-[#141414] border-white'
-                  }`}>
-                    {isSlaveAccount ? 'Slave Account' : 'Master Account'}
-                  </span>
                 </div>
                 <button
                   type="button"
