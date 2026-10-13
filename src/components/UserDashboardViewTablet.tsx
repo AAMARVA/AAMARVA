@@ -1211,7 +1211,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
 
-          <div className={`grid grid-cols-1 md:grid-cols-2 ${isSlaveAccount ? 'lg:grid-cols-2' : 'lg:grid-cols-4'} gap-4`}>
+          <div className={`grid grid-cols-1 md:grid-cols-3 ${isSlaveAccount ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-4`}>
             {/* Email Address */}
             <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
               <div className="flex justify-between items-center">
