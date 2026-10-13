@@ -577,7 +577,6 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                       >
                         <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-5.5 h-5.5 border border-white/20" />
                       </button>
-                      <ActivityTypeIcon type={log.type} className="w-3 h-3 text-white shrink-0 inline-block" />
                     </div>
                     <div className="min-w-0 flex-1 whitespace-normal break-words leading-snug">
                       <button

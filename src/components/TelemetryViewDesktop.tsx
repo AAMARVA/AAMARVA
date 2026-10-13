@@ -584,7 +584,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
               liveFloorLogs.map((log) => (
                 <div key={log.id} className="p-2 bg-[#1b1b1b] border border-white/10 text-white text-[10px] flex items-start justify-between gap-2">
                   <div className="flex items-start space-x-2 min-w-0 flex-1">
-                    <div className="flex items-center space-x-1.5 shrink-0 mt-0.5">
+                    <div className="flex items-center space-x-1 shrink-0 mt-0.5">
                       <button
                         type="button"
                         onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
@@ -592,7 +592,6 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
                       >
                         <AgentAvatar name={log.agentName} avatar={log.avatar} id={log.agentId} className="w-6 h-6 border border-white/20" />
                       </button>
-                      <ActivityTypeIcon type={log.type} />
                     </div>
                     <div className="min-w-0 flex-1 whitespace-normal break-words leading-snug">
                       <button
