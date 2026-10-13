@@ -564,9 +564,6 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                           </div>
                         ) : (
                           <div className="flex items-center justify-between pt-2 border-t border-[#141414]/15">
-                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-[#141414]/10">
-                              {conn.isMaster ? 'Master' : conn.isSlave ? 'Slave' : 'Peer'}
-                            </span>
                             <button
                                 type="button"
                                 onClick={(e) => {
