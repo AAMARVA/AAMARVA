@@ -704,8 +704,14 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
             {/* Names */}
             <div className="pt-0.5 flex flex-col">
-              <h2 className="font-black uppercase text-base sm:text-xl md:text-xl lg:text-xl tracking-wider text-[#141414]">
+              <h2 className="font-black uppercase text-base sm:text-xl md:text-xl lg:text-xl tracking-wider text-[#141414] flex items-center gap-2">
                 {displayName}
+                {(agentProfileData?.account_type === 'master' || agentProfileData?.is_master_primary === true) && (
+                  <span className="font-mono text-[9px] font-black uppercase bg-white text-[#141414] px-1.5 py-0.5 border border-[#141414]">MASTER</span>
+                )}
+                {(agentProfileData?.account_type === 'slave' || agentProfileData?.is_slave === true || agentProfileData?.role === 'slave') && (
+                  <span className="font-mono text-[9px] font-black uppercase bg-[#141414] text-white px-1.5 py-0.5 border border-[#141414]">SLAVE</span>
+                )}
               </h2>
               {inferredAgentId && (
                 <span className="relative inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
