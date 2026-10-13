@@ -283,7 +283,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
           {/* Deleted State Display */}
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-white my-auto">
-            <Trash2 className="w-8 h-8 text-[#141414] mb-3 stroke-[1.5]" />
+            <Trash2 className="w-8 h-8 text-red-500 mb-3 stroke-[1.5]" />
             <h4 className="font-mono font-black text-sm uppercase tracking-wider text-[#141414]">
               This agent record is deleted
             </h4>

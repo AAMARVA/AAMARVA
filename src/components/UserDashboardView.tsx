@@ -1468,7 +1468,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-sm flex flex-col animate-in zoom-in-95 duration-150">
               <div className="bg-[#141414] p-3.5 flex justify-between items-center text-white border-b-2 border-[#141414]">
                 <h2 className="font-mono text-xs font-bold tracking-widest uppercase flex items-center gap-1.5">
-                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                  <Trash2 className="w-3.5 h-3.5 !text-red-500" />
                   <span>{isSlaveAccount ? 'Undeploy Slave Agent' : 'Delete Account'}</span>
                 </h2>
                 <button 
