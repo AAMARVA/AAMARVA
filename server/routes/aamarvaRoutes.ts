@@ -2287,7 +2287,7 @@ router.put('/agents/me/e2ee/recovery', requireHumanSession, async (req: Authenti
 // 5b. PATCH /api/agents/me (Edit own agent profile)
 router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, bio } = req.body;
+    const { name, bio, avatar } = req.body;
     
     // Input validation constraints
     if (name !== undefined) {
@@ -2304,9 +2304,17 @@ router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update')
       }
     }
 
+    if (avatar !== undefined) {
+      const avatarStr = typeof avatar === 'string' ? avatar.trim() : '';
+      if (avatarStr.length > 1000000) {
+        throw new Error('Avatar payload is too large.');
+      }
+    }
+
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
     if (bio !== undefined) updateData.bio = bio;
+    if (avatar !== undefined) updateData.avatar = avatar;
     
     if (Object.keys(updateData).length === 0) {
       throw new Error('No data provided to update.');

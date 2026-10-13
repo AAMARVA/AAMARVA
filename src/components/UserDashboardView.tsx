@@ -74,6 +74,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editBio, setEditBio] = useState('');
+  const [editAvatar, setEditAvatar] = useState('');
+  const [editProfileLoading, setEditProfileLoading] = useState(false);
+  const [editProfileError, setEditProfileError] = useState('');
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [loginAgentId, setLoginAgentId] = useState('');
@@ -399,23 +402,54 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const handleStartEditing = () => {
     setEditName(currentAgentName);
     setEditBio(currentUser?.bio || '');
+    setEditAvatar(currentUser?.avatar || '');
+    setEditProfileError('');
     setIsEditingProfile(true);
   };
 
-  const handleSaveProfile = async () => {
+  const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setEditProfileError('Image file size must be less than 2MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setEditAvatar(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveProfile = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editName.trim()) {
+      setEditProfileError('Profile name cannot be empty.');
+      return;
+    }
     try {
-      setIsSubmitting(true);
-      setError('');
-      await updateProfile({
-        name: editName,
-        bio: editBio,
-      });
+      setEditProfileLoading(true);
+      setEditProfileError('');
+      const updates: any = {
+        name: editName.trim(),
+        bio: editBio.trim(),
+      };
+      if (!isSlaveAccount) {
+        updates.avatar = editAvatar.trim();
+      }
+      await updateProfile(updates);
+      if (refreshProfile) {
+        await refreshProfile();
+      }
       setIsEditingProfile(false);
       setSuccessMsg('Profile updated successfully.');
+      setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
-      setError(err.message || 'Failed to update profile.');
+      setEditProfileError(err.message || 'Failed to update profile.');
     } finally {
-      setIsSubmitting(false);
+      setEditProfileLoading(false);
     }
   };
 
@@ -1617,6 +1651,165 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           onClose={() => setShowSignOutModal(false)}
           onConfirm={logout}
         />
+
+        {/* Edit Profile Modal Popup */}
+        {isEditingProfile && (
+          <div 
+            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !editProfileLoading) {
+                setIsEditingProfile(false);
+              }
+            }}
+          >
+            <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md max-h-[92vh] flex flex-col font-mono text-[#141414] overflow-hidden my-auto animate-in zoom-in-95 duration-150">
+              {/* Modal Header */}
+              <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-2 border-[#141414] select-none shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-wider">
+                    Edit Profile
+                  </span>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 border ${
+                    isSlaveAccount ? 'bg-amber-100 text-amber-950 border-amber-400' : 'bg-white text-[#141414] border-white'
+                  }`}>
+                    {isSlaveAccount ? 'Slave Account' : 'Master Account'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingProfile(false)}
+                  disabled={editProfileLoading}
+                  className="p-1 text-white hover:bg-white hover:text-[#141414] transition-colors cursor-pointer border border-transparent hover:border-white"
+                  title="Close modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Form Body */}
+              <form onSubmit={handleSaveProfile} className="p-4 sm:p-5 overflow-y-auto space-y-4 text-left">
+                {editProfileError && (
+                  <div className="p-2.5 bg-red-50 border-2 border-red-600 text-red-700 text-[10px] font-bold leading-normal">
+                    {editProfileError}
+                  </div>
+                )}
+
+                {/* Profile Picture: ONLY for Master Account */}
+                {!isSlaveAccount && (
+                  <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] space-y-2.5">
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-[#141414]">
+                      Profile Picture
+                    </label>
+
+                    <div className="flex items-center gap-3">
+                      <div className="relative shrink-0">
+                        <AgentAvatar
+                          name={editName || currentAgentName}
+                          avatar={editAvatar}
+                          id={currentAgentId}
+                          className="w-14 h-14 border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] bg-white"
+                        />
+                      </div>
+
+                      <div className="flex-1 space-y-1.5 min-w-0">
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <label className="px-2.5 py-1 bg-[#141414] text-white hover:bg-black text-[9px] font-extrabold uppercase border border-[#141414] cursor-pointer transition-all inline-flex items-center justify-center gap-1 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                            <span>Upload Image</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleAvatarFileUpload}
+                              className="hidden"
+                            />
+                          </label>
+
+                          {editAvatar && (
+                            <button
+                              type="button"
+                              onClick={() => setEditAvatar('')}
+                              className="px-2 py-1 bg-white hover:bg-neutral-100 text-[#141414] text-[9px] font-bold uppercase border border-[#141414] cursor-pointer transition-all"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="space-y-0.5">
+                          <label className="block text-[8px] font-bold uppercase text-[#141414]/60">Or Image URL</label>
+                          <input
+                            type="text"
+                            value={editAvatar}
+                            onChange={(e) => setEditAvatar(e.target.value)}
+                            placeholder="https://... image link"
+                            className="w-full bg-white border border-[#141414] px-2 py-1 text-[10px] font-mono focus:outline-hidden"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Profile Name */}
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-[#141414]">
+                    Profile Name <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={50}
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Enter agent display name"
+                    className="w-full bg-white border-2 border-[#141414] p-2 text-xs font-mono font-bold focus:outline-hidden shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  />
+                  <div className="text-right text-[8px] text-[#141414]/60 font-mono">
+                    {editName.length} / 50
+                  </div>
+                </div>
+
+                {/* Bio */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-[#141414]">
+                      Bio
+                    </label>
+                    <span className="text-[8px] text-[#141414]/60 font-mono">
+                      {editBio.length} / 220
+                    </span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    maxLength={220}
+                    value={editBio}
+                    onChange={(e) => setEditBio(e.target.value)}
+                    placeholder="Enter agent bio description..."
+                    className="w-full bg-white border-2 border-[#141414] p-2 text-xs font-mono leading-relaxed focus:outline-hidden shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] resize-none"
+                  />
+                </div>
+
+                {/* Form Actions */}
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#141414]/20">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingProfile(false)}
+                    disabled={editProfileLoading}
+                    className="px-3.5 py-2 bg-white text-[#141414] hover:bg-neutral-100 text-[10px] font-black uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editProfileLoading || !editName.trim()}
+                    className="px-4 py-2 bg-[#141414] text-white hover:bg-black text-[10px] font-black uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer disabled:opacity-50"
+                  >
+                    {editProfileLoading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
