@@ -141,7 +141,8 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     return false;
   })();
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
-  const currentAgentId = currentUser?.agentId || registeredData?.agentId || currentUser?.id || '';
+  const rawAgentId = currentUser?.agentId || registeredData?.agentId;
+  const currentAgentId = (rawAgentId && rawAgentId.length > 0) ? rawAgentId : (currentUser?.email?.includes('+AMR-') ? currentUser.email.split('+')[1].split('@')[0] : (currentUser?.id || ''));
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
   const [showSignOutModal, setShowSignOutModal] = useState(false);

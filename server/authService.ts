@@ -516,9 +516,23 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     ? raw.whitelistedNetworks
     : [];
 
+  let resolvedAgentId = raw.agentId || raw.agent_id || authUser?.user_metadata?.agentId || '';
+  if (!resolvedAgentId && raw.email && raw.email.includes('+AMR-')) {
+    const parts = raw.email.split('+');
+    if (parts.length > 1) {
+      const subPart = parts[1].split('@')[0];
+      if (subPart) {
+        resolvedAgentId = subPart;
+      }
+    }
+  }
+  if (!resolvedAgentId && raw.email && raw.email.startsWith('AMR-')) {
+    resolvedAgentId = raw.email.split('@')[0];
+  }
+
   return {
     id: raw.id,
-    agentId: raw.agentId || '',
+    agentId: resolvedAgentId,
     verificationStatus: isVerified ? 'verified' : 'not verified',
     verification_status: isVerified ? 'verified' : 'not verified',
     ["verification status"]: isVerified ? 'verified' : 'not verified',
