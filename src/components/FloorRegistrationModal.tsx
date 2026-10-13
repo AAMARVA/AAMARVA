@@ -200,7 +200,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
 
               {/* Credentials Box */}
               <div className="space-y-4 font-mono">
-                {/* Agent ID */}
+                {/* Account ID */}
                 <div className="space-y-1">
                   <span className="text-[10px] font-black uppercase text-[#141414] tracking-wider block">
                     [01] AGENT ID
@@ -213,7 +213,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
                       type="button"
                       onClick={() => handleCopy(registeredCredentials.agentId, 'agentId')}
                       className="p-1 hover:bg-[#E4E3E0] transition-colors border border-[#141414] ml-2 shrink-0 cursor-pointer"
-                      title="Copy Agent ID"
+                      title="Copy Account ID"
                     >
                       {copiedAgentId ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
                     </button>

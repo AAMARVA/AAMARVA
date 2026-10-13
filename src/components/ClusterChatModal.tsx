@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, MessageSquare, Shield } from 'lucide-react';
-import { apiFetch, getAccessToken, getRefreshToken } from '../services/authApi';
+import { apiFetch, getAccessToken, getRefreshToken, sendClusterMessageApi } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
 import { 
-  decryptMessage, 
+  decryptClusterGroupMessage, 
   getLocalKeyPair, 
   resolveSenderPublicKey,
   StoredAgentKeyEntry 
@@ -74,52 +74,12 @@ const ChatMessageContent: React.FC<ChatMessageContentProps> = ({ content, isCurr
   );
 };
 
-function isValidPrintableText(str: string): boolean {
-  if (!str || typeof str !== 'string' || str.length === 0) return false;
-  let printable = 0;
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    if (code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126) || code >= 160) {
-      printable++;
-    }
-  }
-  return printable / str.length >= 0.8;
-}
-
-function tryDecodeBase64Message(ciphertext: string): string | null {
-  if (!ciphertext || typeof ciphertext !== 'string') return null;
-  const trimmed = ciphertext.trim();
-  if (!trimmed) return null;
-
-  try {
-    const raw = window.atob(trimmed);
-    const decoded = decodeURIComponent(escape(raw));
-    if (decoded && isValidPrintableText(decoded)) {
-      return decoded;
-    }
-  } catch {}
-
-  try {
-    const raw = window.atob(trimmed);
-    const bytes = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i++) {
-      bytes[i] = raw.charCodeAt(i);
-    }
-    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    if (decoded && isValidPrintableText(decoded)) {
-      return decoded;
-    }
-  } catch {}
-
-  return null;
-}
-
 async function decryptClusterMessageEnvelope(
   msg: any,
   currentLocalKeys: StoredAgentKeyEntry | null,
   userAgentId?: string,
   userPassword?: string | null,
-  activeCredentials?: string[]
+  _activeCredentials?: string[]
 ): Promise<{ 
   text: string; 
   isDecrypted: boolean; 
@@ -131,18 +91,19 @@ async function decryptClusterMessageEnvelope(
   const senderAgentId = msg.senderAgentId || 'Agent';
   const clusterId = msg.clusterId || 'cluster';
 
-  if (content && content !== '🔒 [E2EE Encrypted Payload]' && (!ciphertext || ciphertext === content)) {
+  // If system broadcast or legacy public notice
+  if (content && content !== '🔒 [E2EE Encrypted Payload]' && !ciphertext) {
     return {
       text: content,
       isDecrypted: true
     };
   }
 
-  if (ciphertext && nonce && currentLocalKeys) {
+  if (ciphertext && nonce && currentLocalKeys && userAgentId) {
     try {
       const msgEpoch = msg.keyEpoch || 1;
       let decKey = currentLocalKeys.privateKey;
-      if (currentLocalKeys.keyEpoch !== msgEpoch && userAgentId) {
+      if (currentLocalKeys.keyEpoch !== msgEpoch) {
         const historicalEntry = await getLocalKeyPair(userAgentId, msgEpoch, userPassword || undefined);
         if (historicalEntry?.privateKey) {
           decKey = historicalEntry.privateKey;
@@ -151,9 +112,10 @@ async function decryptClusterMessageEnvelope(
 
       const senderPubKey = msg.senderPublicKey || msg.e2eePublicKey;
       if (senderPubKey && decKey) {
-        const resolvedPlaintext = await decryptMessage(
+        const resolvedPlaintext = await decryptClusterGroupMessage(
           { ciphertext, nonce, version: msg.version || 1, keyEpoch: msgEpoch },
           decKey,
+          userAgentId,
           senderPubKey,
           clusterId,
           senderAgentId
@@ -165,16 +127,15 @@ async function decryptClusterMessageEnvelope(
           };
         }
       }
-    } catch (e) {
-    }
-  }
-
-  if (ciphertext) {
-    const base64Decoded = tryDecodeBase64Message(ciphertext);
-    if (base64Decoded) {
+    } catch (e: any) {
       return {
-        text: base64Decoded,
-        isDecrypted: true
+        text: '',
+        isDecrypted: false,
+        decryptionStatus: {
+          title: '🔒 Cannot be decrypted because cryptographic verification failed',
+          detail: e?.message || 'Authentication tag or key mismatch',
+          explanation: 'Only authorized active cluster members possessing the corresponding private key material can decrypt.'
+        }
       };
     }
   }
@@ -183,8 +144,8 @@ async function decryptClusterMessageEnvelope(
     text: '',
     isDecrypted: false,
     decryptionStatus: {
-      title: '🔒 Cannot be decrypted because the AES-GCM authentication tag verification failed (bit-flip / payload modified)',
-      detail: 'Cryptographic authentication tag mismatch',
+      title: '🔒 Cannot be decrypted because keys or ciphertext are missing',
+      detail: 'Missing decryption key material',
       explanation: 'Decryption keys are held exclusively by authenticated agent endpoints.'
     }
   };
@@ -288,14 +249,6 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
-  const tryDecryptMessage = (ciphertext: string) => {
-    try {
-      return decodeURIComponent(escape(window.atob(ciphertext)));
-    } catch {
-      return `[SECURE CIPHER] ${ciphertext.substring(0, 20)}...`;
-    }
-  };
-
   return (
     <div
       className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-3 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200"
@@ -361,9 +314,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 const msgAvatar = isCurrentUser ? (user?.avatar || undefined) : m.senderAgentAvatar;
                 const msgName = isCurrentUser ? (user?.name || 'Me') : (m.senderAgentName || m.senderAgentId || 'Agent');
 
-                const rawPlainText = m.content || (m.ciphertext ? (tryDecodeBase64Message(m.ciphertext) || tryDecryptMessage(m.ciphertext)) : '');
-                const plainText = typeof rawPlainText === 'string' ? rawPlainText.trim() : '';
-                const hasDecryptedText = Boolean(m.isDecrypted && m.content && m.content.trim()) || (Boolean(plainText) && !plainText.startsWith('[SECURE CIPHER]'));
+                const hasDecryptedText = Boolean(m.isDecrypted && m.content && m.content.trim().length > 0);
+                const plainText = hasDecryptedText ? m.content.trim() : '';
 
                 if (isSystem) {
                   return (
@@ -476,21 +428,23 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             e.preventDefault();
             if (!newMessage.trim() || !user?.agentId) return;
             const messageToSend = newMessage;
-            setNewMessage('');
             setIsSending(true);
             try {
-              const res = await apiFetch(`/api/clusters/${clusterId}/messages`, {
-                authType: 'human',
-                method: 'POST',
-                body: JSON.stringify({ content: messageToSend })
-              });
-              if (res?.success) {
-                fetchDetails();
+              const res = await sendClusterMessageApi(
+                clusterId,
+                messageToSend,
+                user.agentId,
+                { password: userPassword || undefined, authType: 'human' }
+              );
+              if (res?.success || res?.id || res?.messageId) {
+                setNewMessage('');
+                fetchDetails(true);
               } else {
-                console.error('Failed to send message:', res?.error);
+                alert(`Failed to send cluster message: ${res?.error?.message || 'Transmission error'}`);
               }
-            } catch (err) {
-              console.error('Error sending message:', err);
+            } catch (err: any) {
+              console.error('Error sending cluster message:', err);
+              alert(`Failed to send cluster message: ${err?.message || 'Transmission error'}`);
             } finally {
               setIsSending(false);
             }

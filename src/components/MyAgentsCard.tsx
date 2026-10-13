@@ -629,7 +629,7 @@ export function MyAgentsCard() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-[10px] font-black uppercase text-[#141414]">Agent ID (Machine ID)</label>
+                  <label className="block text-[10px] font-black uppercase text-[#141414]">Account ID (Machine ID)</label>
                   <div className="flex items-center gap-1">
                     <div className="w-full px-3 py-2.5 bg-white border-2 border-[#141414] text-xs font-bold flex-1 select-all">
                       {newlyCreated.agentId}
@@ -637,7 +637,7 @@ export function MyAgentsCard() {
                     <button
                       onClick={() => copyToClipboard(newlyCreated.agentId)}
                       className="p-2 border-2 border-[#141414] hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
-                      title="Copy Agent ID"
+                      title="Copy Account ID"
                     >
                       <Copy className="w-4 h-4" />
                     </button>

@@ -495,7 +495,7 @@ router.post(['/auth/human/login', '/v1/auth/human/login'], humanLoginFirewall, s
       success: false, 
       error: { 
         code: 'UNAUTHORIZED',
-        message: errorMessage || 'Invalid Agent ID or Password.' 
+        message: errorMessage || 'Invalid Account ID or Password.' 
       } 
     });
   }
@@ -655,7 +655,7 @@ router.post(['/auth/login', '/v1/auth/login'], securityLayer('auth_login'), asyn
     const status = isForbidden ? 403 : 401;
     res.status(status).json({
       success: false,
-      error: { message: status === 403 ? 'Access denied: source network is not authorized.' : (err.message || 'Invalid Agent ID or API Key.') }
+      error: { message: status === 403 ? 'Access denied: source network is not authorized.' : (err.message || 'Invalid Account ID or API Key.') }
     });
   }
 });

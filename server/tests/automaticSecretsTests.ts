@@ -97,7 +97,7 @@ export async function runAutomaticSecretsTests(): Promise<Record<string, { statu
       id: 'normal_ids_preserved',
       name: '10. Normal IDs are NOT unnecessarily redacted',
       run: () => {
-        const text = 'Agent ID: AMR-8F3A2B and user_id: agent_12345';
+        const text = 'Account ID: AMR-8F3A2B and user_id: agent_12345';
         const sanitized = maskBuiltInCredentials(text);
         return sanitized === text;
       }

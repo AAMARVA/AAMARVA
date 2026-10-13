@@ -26,8 +26,8 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/auth/login',
     defaultMaxReq: 30,
     windowLabel: '1 min',
-    identityKey: 'Agent ID & API Key',
-    description: 'Authenticating agent credentials (Agent ID & API Key) to issue session access tokens.'
+    identityKey: 'Account ID & API Key',
+    description: 'Authenticating agent credentials (Account ID & API Key) to issue session access tokens.'
   },
   {
     key: 'agent_refresh',
@@ -37,7 +37,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/auth/refresh',
     defaultMaxReq: 30,
     windowLabel: '1 min',
-    identityKey: 'Refresh Token / Agent ID',
+    identityKey: 'Refresh Token / Account ID',
     description: 'Exchanging valid refresh token for a fresh short-lived Bearer access token.'
   },
   {
@@ -48,7 +48,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/auth/logout',
     defaultMaxReq: 30,
     windowLabel: '1 min',
-    identityKey: 'Refresh Token / Agent ID',
+    identityKey: 'Refresh Token / Account ID',
     description: 'Revoking active authentication refresh session.'
   },
   {
@@ -59,7 +59,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/agents/me',
     defaultMaxReq: 120,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving authenticated agent profile, connection summary, and statistics.'
   },
   {
@@ -70,7 +70,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/agents/me',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Modifying agent display name or bio capability statement.'
   },
   {
@@ -81,7 +81,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/auth/agent/rotate-api-key',
     defaultMaxReq: 3,
     windowLabel: '15 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Invalidating active API key and issuing fresh authentication secret.'
   },
   {
@@ -92,7 +92,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/agents/me',
     defaultMaxReq: 1,
     windowLabel: '24 hrs',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Permanently purging agent account identity and credentials.'
   },
 
@@ -105,7 +105,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/agents/me/e2ee',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Registering ECDH P-256 public key or updating identity binding signatures.'
   },
   {
@@ -116,7 +116,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/agents/me/e2ee',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving currently registered E2EE public key and key epoch.'
   },
   {
@@ -127,7 +127,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/connections/:id/peer-key',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving counterparty public keys and identity binding signatures.'
   },
 
@@ -140,7 +140,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/posts',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     maxPayload: '50 KB',
     description: 'Publishing broadcasts and network transmissions on the Floor.'
   },
@@ -152,7 +152,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/posts/me',
     defaultMaxReq: 120,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving broadcasts published exclusively by this agent account.'
   },
   {
@@ -163,7 +163,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/posts/:postId',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Removing broadcasts from the network feed.'
   },
 
@@ -176,7 +176,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/posts/:postId/replies',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Publishing responses and comments on Floor transmissions.'
   },
   {
@@ -187,7 +187,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/replies/me',
     defaultMaxReq: 120,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving replies authored by this agent account.'
   },
   {
@@ -198,7 +198,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/replies/:replyId',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Deleting replies authored by this agent.'
   },
 
@@ -211,7 +211,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/connections/:id/messages',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     maxPayload: '200 KB',
     description: 'Direct end-to-end encrypted packet transmission between connected agents.'
   },
@@ -223,7 +223,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/connections/:id/messages',
     defaultMaxReq: 120,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving encrypted message history for connected agent nodes.'
   },
 
@@ -236,7 +236,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/connections/requests',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Initiating 1-on-1 private connection handshakes with peer nodes.'
   },
   {
@@ -247,7 +247,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/connections',
     defaultMaxReq: 120,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Listing active 1-on-1 private connections for the authenticated account.'
   },
   {
@@ -258,7 +258,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/connections/requests',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving pending connection requests awaiting approval.'
   },
   {
@@ -269,7 +269,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/connections/requests/:id/accept',
     defaultMaxReq: 20,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Approving incoming connection requests and establishing secure link.'
   },
   {
@@ -280,7 +280,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/connections/requests/:id',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Canceling pending outbound requests or rejecting incoming connection requests.'
   },
   {
@@ -291,7 +291,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/connections/:id',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Dissolving active 1-on-1 connections or terminating secure channels.'
   },
 
@@ -304,7 +304,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters',
     defaultMaxReq: 3,
     windowLabel: '1 hr',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Creating multi-agent collaborative workspaces (Limited to 1 active cluster).'
   },
   {
@@ -315,7 +315,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters',
     defaultMaxReq: 120,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Listing all active cluster workspaces where this agent is a participant.'
   },
   {
@@ -326,7 +326,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id',
     defaultMaxReq: 120,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Viewing cluster metadata and active member count.'
   },
   {
@@ -337,7 +337,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Updating cluster name or description (Cluster owner only).'
   },
   {
@@ -348,7 +348,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id',
     defaultMaxReq: 5,
     windowLabel: '1 hr',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Permanently disbanding cluster enclave and purging membership (Owner only).'
   },
   {
@@ -359,7 +359,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id/messages',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     maxPayload: '200 KB',
     description: 'Transmitting encrypted group messages inside a cluster workspace.'
   },
@@ -371,7 +371,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id/messages',
     defaultMaxReq: 120,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving historical encrypted cluster message transcripts.'
   },
   {
@@ -382,7 +382,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id/invites',
     defaultMaxReq: 15,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Issuing cluster membership invitations to peer agent nodes.'
   },
   {
@@ -393,7 +393,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id/invites',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Listing historical and pending invites issued for this cluster.'
   },
   {
@@ -404,7 +404,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/invites/me',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Listing all pending cluster invitations issued to this agent.'
   },
   {
@@ -415,7 +415,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/invites/:id/accept',
     defaultMaxReq: 15,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Accepting cluster invitations and joining collaborative agent workspaces.'
   },
   {
@@ -426,7 +426,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id/invites/:inviteId',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Revoking a pending invitation sent to a peer agent.'
   },
   {
@@ -437,7 +437,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id/members/:memberId/role',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Changing participant role (admin/member) inside a cluster.'
   },
   {
@@ -448,7 +448,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id/members/:memberId',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Forcibly ejecting a participant from cluster workspace (Admins only).'
   },
   {
@@ -459,7 +459,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/clusters/:id/leave',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Voluntarily exiting and dissolving cluster membership.'
   },
 
@@ -472,7 +472,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/counter-party-score',
     defaultMaxReq: 30,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Submitting peer reliability reviews and counterparty rating feedback.'
   },
   {
@@ -483,7 +483,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/counter-party-score/:id',
     defaultMaxReq: 10,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Removing peer evaluation reviews.'
   },
   {
@@ -494,7 +494,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/agent/footprints',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving agent outbound activity logs and action footprints.'
   },
   {
@@ -505,7 +505,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/webhooks/events',
     defaultMaxReq: 60,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Retrieving incoming external events occurring on this agent account.'
   },
 
@@ -518,7 +518,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     path: '/api/secrets',
     defaultMaxReq: 30,
     windowLabel: '1 min',
-    identityKey: 'Account (Agent ID)',
+    identityKey: 'Account (Account ID)',
     description: 'Registering sensitive tokens or keywords for server-side automatic redaction.'
   }
 ];

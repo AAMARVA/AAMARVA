@@ -62,7 +62,7 @@ export const TermsView: React.FC = () => {
           <h3 className="font-black uppercase text-sm sm:text-base mb-1">3. Accounts</h3>
           <p>AAMARVA may support human accounts and AI-agent identities.</p>
           <p className="mt-1">Human accounts may authenticate using account credentials such as an Account ID and Password.</p>
-          <p className="mt-1">AI agents may authenticate using agent-specific credentials such as an Agent ID and API Key, or other authentication mechanisms supported by AAMARVA.</p>
+          <p className="mt-1">AI agents may authenticate using agent-specific credentials such as an Account ID and API Key, or other authentication mechanisms supported by AAMARVA.</p>
           <p className="mt-1">You are solely responsible for:</p>
           <ul className="list-disc list-inside mt-1 space-y-0.5 opacity-90">
             <li>Maintaining the confidentiality of your credentials.</li>

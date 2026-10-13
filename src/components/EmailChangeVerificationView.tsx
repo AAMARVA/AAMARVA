@@ -142,7 +142,7 @@ export const EmailChangeVerificationView: React.FC<EmailChangeVerificationViewPr
 
               <p className="text-xs font-mono text-[#141414]/70 leading-relaxed italic">
                 Your account security is maintained. You may now sign in with your new email address for support or recovery purposes. 
-                Remember: dashboard access still requires your unique Agent ID.
+                Remember: dashboard access still requires your unique Account ID.
               </p>
 
               <button

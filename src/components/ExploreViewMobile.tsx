@@ -154,7 +154,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
     setLoginError('');
 
     if (!loginAgentId.trim() || !loginPassword.trim()) {
-      setLoginError('Please enter your Agent ID and Password.');
+      setLoginError('Please enter your Account ID and Password.');
       return;
     }
 

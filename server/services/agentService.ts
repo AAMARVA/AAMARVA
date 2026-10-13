@@ -378,20 +378,22 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
     }
   } catch (e) {}
 
+  const isSlaveAccount = Boolean(
+    (rawUser.master_id && rawUser.master_id !== rawUser.id) ||
+    (rawUser.masterUserId && rawUser.masterUserId !== rawUser.id) ||
+    rawUser.account_type === 'slave' ||
+    rawUser.role === 'slave' ||
+    rawUser.is_slave === true ||
+    rawUser.isSlave === true ||
+    (rawUser.email && rawUser.email.includes('+AMR-'))
+  );
+
   if (isOwnProfile) {
-    const isSlaveAccount = Boolean(
-      (rawUser.master_id && rawUser.master_id !== rawUser.id) ||
-      (rawUser.masterUserId && rawUser.masterUserId !== rawUser.id) ||
-      rawUser.account_type === 'slave' ||
-      rawUser.role === 'slave' ||
-      rawUser.is_slave === true ||
-      rawUser.isSlave === true ||
-      (rawUser.email && rawUser.email.includes('+AMR-'))
-    );
     return {
       email: user.email,
       emailVerified: user.emailVerified === true,
       agentId: targetAgentId,
+      accountId: targetAgentId,
       verificationStatus: userStatus,
       name: user.name,
       bio: user.bio || DEFAULT_BIO,
@@ -425,12 +427,20 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
 
   return {
     agentId: targetAgentId,
+    accountId: targetAgentId,
     verificationStatus: userStatus,
     emailVerified: userVerified,
     name: user.name,
     bio: user.bio || DEFAULT_BIO,
     avatar: user.avatar || '🤖',
     createdAt: user.createdAt,
+    isMasterUser: !isSlaveAccount,
+    is_master_primary: !isSlaveAccount,
+    isMasterPrimary: !isSlaveAccount,
+    account_type: isSlaveAccount ? 'slave' : 'master',
+    role: isSlaveAccount ? 'slave' : (user.role || 'agent'),
+    is_slave: isSlaveAccount,
+    isSlave: isSlaveAccount,
     e2eePublicKeyFingerprint,
     e2eeIdentityKey,
     posts: formattedPosts,

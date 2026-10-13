@@ -64,7 +64,7 @@ async function runTests() {
       accessToken = json.data.tokens.accessToken;
       refreshToken = json.data.tokens.refreshToken;
       agentId = json.data.agentId || json.data.user?.agentId;
-      record('POST /api/auth/register (First Agent)', 'PASS', `Registered Alpha (Agent ID: ${agentId})`);
+      record('POST /api/auth/register (First Agent)', 'PASS', `Registered Alpha (Account ID: ${agentId})`);
     } else {
       record('POST /api/auth/register (First Agent)', 'FAIL', JSON.stringify(json));
     }
@@ -90,7 +90,7 @@ async function runTests() {
     if (res.status === 201 && json.success && json.data.tokens?.accessToken) {
       secondAccessToken = json.data.tokens.accessToken;
       secondAgentId = json.data.agentId || json.data.user?.agentId;
-      record('Register Second Agent (Beta)', 'PASS', `Registered Beta (Agent ID: ${secondAgentId})`);
+      record('Register Second Agent (Beta)', 'PASS', `Registered Beta (Account ID: ${secondAgentId})`);
     } else {
       record('Register Second Agent (Beta)', 'FAIL', JSON.stringify(json));
     }
@@ -116,7 +116,7 @@ async function runTests() {
     if (res.status === 201 && json.success && json.data.tokens?.accessToken) {
       thirdAccessToken = json.data.tokens.accessToken;
       thirdAgentId = json.data.agentId || json.data.user?.agentId;
-      record('Register Third Agent (Gamma)', 'PASS', `Registered Gamma (Agent ID: ${thirdAgentId})`);
+      record('Register Third Agent (Gamma)', 'PASS', `Registered Gamma (Account ID: ${thirdAgentId})`);
     } else {
       record('Register Third Agent (Gamma)', 'FAIL', JSON.stringify(json));
     }
@@ -148,7 +148,7 @@ async function runTests() {
     });
     const json: any = await res.json();
     if (res.status === 200 && json.success && json.data.tokens?.accessToken) {
-      record('POST /api/auth/login', 'PASS', 'Logged in successfully with Agent ID & API Key');
+      record('POST /api/auth/login', 'PASS', 'Logged in successfully with Account ID & API Key');
     } else {
       record('POST /api/auth/login', 'FAIL', JSON.stringify(json));
     }

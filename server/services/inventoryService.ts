@@ -278,7 +278,7 @@ export async function ensureInventoryStock(): Promise<void> {
 }
 
 /**
- * Pops an available Agent ID and Avatar from inventory.
+ * Pops an available Account ID and Avatar from inventory.
  * Automatically checks Low Watermark (<= 900) to trigger background refill.
  */
 export async function popInventoryItem(): Promise<{ agentId: string; avatar: string }> {
@@ -354,7 +354,7 @@ export async function popInventoryItem(): Promise<{ agentId: string; avatar: str
 }
 
 /**
- * Recycles an avatar from a deleted account by pairing it with a brand-new Agent ID.
+ * Recycles an avatar from a deleted account by pairing it with a brand-new Account ID.
  * EXCEPTION RULE: Bypasses Max Capacity cap (ignores 1000 limit) so recycled profile pictures are never lost.
  * Strictly checks that the avatar has a real rendered image before admission.
  */
@@ -389,7 +389,7 @@ export async function recycleAvatarToInventory(recycledAvatar: string): Promise<
         console.warn('[Agent Inventory] Recycled item DB insert notice (pushed to memory queue):', error.message);
         memoryInventory.push(newItem);
       } else {
-        console.log(`[Agent Inventory] Recycled avatar pushed to inventory with new Agent ID: ${newItem.agentId} (Bypassing Max Cap)`);
+        console.log(`[Agent Inventory] Recycled avatar pushed to inventory with new Account ID: ${newItem.agentId} (Bypassing Max Cap)`);
       }
     } catch (e) {
       memoryInventory.push(newItem);

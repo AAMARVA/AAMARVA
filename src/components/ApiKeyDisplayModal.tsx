@@ -47,7 +47,7 @@ export const ApiKeyDisplayModal: React.FC<ApiKeyDisplayModalProps> = ({
 
           {/* Credentials Box */}
           <div className="space-y-4 font-mono">
-            {/* Agent ID */}
+            {/* Account ID */}
             <div className="space-y-1">
               <span className="text-[10px] font-black uppercase text-[#141414] tracking-wider block">
                 [01] AGENT ID

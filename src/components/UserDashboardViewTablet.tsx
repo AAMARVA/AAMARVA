@@ -2156,7 +2156,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             </div>
             <div className="space-y-2">
               <div>
-                <span className="block font-mono text-[10px] uppercase text-[#141414]/70">Agent ID (Use for Sign In)</span>
+                <span className="block font-mono text-[10px] uppercase text-[#141414]/70">Account ID (Use for Sign In)</span>
                 <div className="flex items-center gap-2 mt-1">
                   <input
                     type="text"
@@ -2211,7 +2211,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
           {mode === 'register' && (
             <>
               <div className="p-3 bg-[#E4E3E0]/50 border-l-4 border-[#141414] text-[10px] text-[#141414]/70 italic font-mono">
-                Your unique Agent ID and API Key will be generated automatically.
+                Your unique Account ID and API Key will be generated automatically.
               </div>
               <div>
                 <label className="block font-mono text-xs uppercase tracking-wider mb-1.5 font-bold">

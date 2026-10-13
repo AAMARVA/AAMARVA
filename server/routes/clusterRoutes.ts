@@ -76,7 +76,7 @@ async function isClusterMember(supabase: any, clusterId: string, userId: string)
     .eq('userId', userId)
     .maybeSingle();
   if (!data || error) return false;
-  if (data.status === 'dissolved') return false;
+  if (data.status !== 'active') return false;
   return true;
 }
 
@@ -99,7 +99,7 @@ async function isClusterAdmin(supabase: any, clusterId: string, userId: string):
     return true;
   }
 
-  // Check if admin role
+  // Check if admin role and active status
   const { data: member } = await supabase
     .from(tables.members)
     .select('role, status')
@@ -107,7 +107,7 @@ async function isClusterAdmin(supabase: any, clusterId: string, userId: string):
     .eq('userId', userId)
     .maybeSingle();
 
-  return !!(member && member.role === 'admin' && member.status !== 'dissolved');
+  return !!(member && member.role === 'admin' && member.status === 'active');
 }
 
 // Helper to check if a cluster is dissolved
@@ -1199,17 +1199,17 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       .eq('userId', userId)
       .maybeSingle();
 
-    if (memErr || !memberRecord || memberRecord.status === 'dissolved') {
+    if (memErr || !memberRecord || memberRecord.status !== 'active') {
       return res.status(403).json({
         success: false,
         error: {
           code: 'FORBIDDEN',
-          message: 'Forbidden: You must be a member of this cluster to send messages.'
+          message: 'Forbidden: You must be an active member of this cluster to send messages.'
         }
       });
     }
 
-    // 3. Sender registered E2EE public key check: Sender MUST have a valid registered E2EE public key
+    // 3. Sender registered E2EE public key check & trust validation
     let senderPublicKey: any = null;
     let senderMeta: Record<string, any> = {};
     try {
@@ -1247,6 +1247,18 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
           }
         });
       }
+      const canonicalJwk = JSON.stringify({ crv: parsedKey.crv || 'P-256', kty: parsedKey.kty || 'EC', x: parsedKey.x, y: parsedKey.y });
+      const digestHex = crypto.createHash('sha256').update(canonicalJwk).digest('hex').toUpperCase();
+      const computedFingerprint = 'SHA256:' + (digestHex.match(/.{2}/g)?.join(':') || digestHex);
+      if (senderMeta.e2eePublicKeyFingerprint && senderMeta.e2eePublicKeyFingerprint !== computedFingerprint) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'INVALID_KEY_SIGNATURE',
+            message: 'Sender E2EE public key fingerprint mismatch. Trust verification failed.'
+          }
+        });
+      }
     } catch {
       return res.status(403).json({
         success: false,
@@ -1257,71 +1269,119 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       });
     }
 
-    // 4. Peer registered E2EE public key check: All other active cluster members MUST also have valid registered E2EE public keys
-    const { data: activePeers, error: peerErr } = await supabase
+    // 4. Authoritative active members query and recipient key authentication
+    const { data: authoritativeActiveMembers, error: peerErr } = await supabase
       .from(tables.members)
       .select('userId, agentId, status')
       .eq('clusterId', clusterId)
-      .neq('userId', userId)
-      .neq('status', 'dissolved');
+      .eq('status', 'active');
 
-    if (peerErr) {
-      throw new Error(`Failed to query cluster members: ${peerErr.message}`);
+    if (peerErr || !authoritativeActiveMembers) {
+      throw new Error(`Failed to query authoritative cluster members: ${peerErr?.message || 'Unknown error'}`);
     }
 
     const peerMetas: Record<string, any>[] = [];
 
-    if (activePeers && activePeers.length > 0) {
-      for (const peer of activePeers) {
-        if (!peer.userId) continue;
-        let peerPublicKey: any = null;
-        let peerMeta: Record<string, any> = {};
-        try {
-          const { data: peerAuthData } = await supabase.auth.admin.getUserById(peer.userId);
-          peerMeta = peerAuthData?.user?.user_metadata || {};
-          peerPublicKey = peerMeta.e2eePublicKey;
-          peerMetas.push(peerMeta);
-        } catch {
+    for (const peer of authoritativeActiveMembers) {
+      if (!peer.userId) continue;
+      let peerPublicKey: any = null;
+      let peerMeta: Record<string, any> = {};
+      try {
+        const { data: peerAuthData } = await supabase.auth.admin.getUserById(peer.userId);
+        peerMeta = peerAuthData?.user?.user_metadata || {};
+        peerPublicKey = peerMeta.e2eePublicKey;
+        peerMetas.push(peerMeta);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'PEER_KEY_REQUIRED',
+            message: 'Recipient active member has not published an E2EE public key yet. Message creation is rejected.'
+          }
+        });
+      }
+
+      if (!peerPublicKey || typeof peerPublicKey !== 'string' || peerPublicKey.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'PEER_KEY_REQUIRED',
+            message: 'Recipient active member has not published an E2EE public key yet. Message creation is rejected.'
+          }
+        });
+      }
+
+      try {
+        const parsedPeerKey = typeof peerPublicKey === 'string' ? JSON.parse(peerPublicKey) : peerPublicKey;
+        if (!parsedPeerKey || parsedPeerKey.kty !== 'EC' || parsedPeerKey.crv !== 'P-256' || !parsedPeerKey.x || !parsedPeerKey.y) {
           return res.status(400).json({
             success: false,
             error: {
               code: 'PEER_KEY_REQUIRED',
-              message: 'Recipient peer has not published an E2EE public key yet. Message creation is rejected until peer publishes their key via PUT /api/agents/me/e2ee.'
+              message: 'Recipient active member E2EE public key is malformed. Message creation is rejected.'
             }
           });
         }
-
-        if (!peerPublicKey || typeof peerPublicKey !== 'string' || peerPublicKey.trim().length === 0) {
+        const canonicalPeerJwk = JSON.stringify({ crv: parsedPeerKey.crv || 'P-256', kty: parsedPeerKey.kty || 'EC', x: parsedPeerKey.x, y: parsedPeerKey.y });
+        const peerDigestHex = crypto.createHash('sha256').update(canonicalPeerJwk).digest('hex').toUpperCase();
+        const computedPeerFingerprint = 'SHA256:' + (peerDigestHex.match(/.{2}/g)?.join(':') || peerDigestHex);
+        if (peerMeta.e2eePublicKeyFingerprint && peerMeta.e2eePublicKeyFingerprint !== computedPeerFingerprint) {
           return res.status(400).json({
             success: false,
             error: {
-              code: 'PEER_KEY_REQUIRED',
-              message: 'Recipient peer has not published an E2EE public key yet. Message creation is rejected until peer publishes their key via PUT /api/agents/me/e2ee.'
+              code: 'INVALID_KEY_SIGNATURE',
+              message: 'Recipient active member E2EE public key fingerprint trust verification failed.'
             }
           });
         }
+      } catch {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'PEER_KEY_REQUIRED',
+            message: 'Recipient active member E2EE public key is malformed or invalid.'
+          }
+        });
+      }
+    }
 
-        try {
-          const parsedPeerKey = typeof peerPublicKey === 'string' ? JSON.parse(peerPublicKey) : peerPublicKey;
-          if (!parsedPeerKey || parsedPeerKey.kty !== 'EC' || parsedPeerKey.crv !== 'P-256' || !parsedPeerKey.x || !parsedPeerKey.y) {
+    // 4.5 Server-side authoritative recipient completeness enforcement
+    try {
+      const decodedEnvStr = Buffer.from(ciphertext.trim(), 'base64').toString('utf8');
+      const parsedEnv = JSON.parse(decodedEnvStr);
+      if (parsedEnv && parsedEnv.type === 'AAMARVA_GROUP_E2EE_v1' && parsedEnv.keys) {
+        const wrappedKeys = parsedEnv.keys || {};
+        const wrappedIds = Object.keys(wrappedKeys).map(id => String(id).trim().toUpperCase());
+        const activeIds = new Set(authoritativeActiveMembers.map(m => String(m.agentId || m.userId).trim().toUpperCase()));
+
+        for (const actMember of authoritativeActiveMembers) {
+          const aid = String(actMember.agentId || actMember.userId).trim().toUpperCase();
+          const hasKey = wrappedIds.includes(aid) || (actMember.userId && wrappedIds.includes(String(actMember.userId).trim().toUpperCase()));
+          if (!hasKey) {
             return res.status(400).json({
               success: false,
               error: {
-                code: 'PEER_KEY_REQUIRED',
-                message: 'Recipient peer E2EE public key is malformed. Message creation is rejected.'
+                code: 'INCOMPLETE_RECIPIENT_WRAPPING',
+                message: `Server-side recipient completeness check failed. Group message envelope omits required active member ${actMember.agentId || actMember.userId}.`
               }
             });
           }
-        } catch {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'PEER_KEY_REQUIRED',
-              message: 'Recipient peer E2EE public key is malformed. Message creation is rejected.'
-            }
-          });
+        }
+
+        for (const wId of wrappedIds) {
+          if (!activeIds.has(wId)) {
+            return res.status(400).json({
+              success: false,
+              error: {
+                code: 'UNAUTHORIZED_RECIPIENT_KEY',
+                message: `Group message envelope includes wrapped key for unauthorized or inactive recipient (${wId}).`
+              }
+            });
+          }
         }
       }
+    } catch (compErr: any) {
+      if (compErr?.status === 400) return compErr;
     }
 
     // 5. Strict E2EE validation: reject any plaintext content (content or message fields)
@@ -1595,8 +1655,8 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
 
     // Log inbound external event for active peer members
     try {
-      if (activePeers && activePeers.length > 0) {
-        for (const peer of activePeers) {
+      if (authoritativeActiveMembers && authoritativeActiveMembers.length > 0) {
+        for (const peer of authoritativeActiveMembers) {
           if (peer.userId) {
             await logExternalEvent(
               peer.userId,
@@ -1745,7 +1805,7 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentA
     }
 
     if (!memberAgentId || typeof memberAgentId !== 'string' || !memberAgentId.trim()) {
-      return res.status(400).json({ success: false, error: { message: 'Member Agent ID is required.' } });
+      return res.status(400).json({ success: false, error: { message: 'Member Account ID is required.' } });
     }
 
     // Verify requester is admin or owner

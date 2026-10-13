@@ -1,13 +1,15 @@
 import { frontendConfig } from '../config';
 import { handleWebAuthnLogin, handleWebAuthnSetup } from './webauthnClient';
-import { getLocalKeyPair, encryptMessage } from '../lib/e2ee';
+import { getLocalKeyPair, encryptMessage, encryptClusterGroupMessage } from '../lib/e2ee';
 import { getCachedPeerKey } from '../lib/e2eePrefetch';
 
 export interface UserProfile {
   id: string;
   agentId: string;
+  accountId?: string;
   email: string;
   name: string;
+  account_type?: 'master' | 'slave';
   status: 'active' | 'suspended' | 'frozen' | 'deleted';
   status_reason?: string | null;
   bio?: string;
@@ -612,6 +614,80 @@ export async function sendPrivateMessageApi(
 }
 
 export const sendConnectionMessageApi = sendPrivateMessageApi;
+
+export async function sendClusterMessageApi(
+  clusterId: string,
+  plaintext: string,
+  senderAgentId: string,
+  options?: {
+    password?: string;
+    authType?: 'human' | 'agent';
+  }
+): Promise<any> {
+  const password = options?.password;
+  const resolvedAuthType: 'human' | 'agent' = options?.authType || getCurrentSessionAuthType();
+
+  if (!plaintext || typeof plaintext !== 'string' || plaintext.trim().length === 0) {
+    throw new Error('E2EE Error: Message content cannot be empty.');
+  }
+
+  // 1. Resolve local keys for sender
+  let localKeys = await getLocalKeyPair(senderAgentId, undefined, password);
+  if (!localKeys?.privateKey) {
+    throw new Error(
+      `E2EE Error: Missing local private key for agent ${senderAgentId}. Cluster message aborted.`
+    );
+  }
+
+  // 2. Fetch active members for the cluster to retrieve public keys
+  const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, {
+    authType: resolvedAuthType,
+    method: 'GET'
+  });
+  const membersList = (membersRes?.success && Array.isArray(membersRes.data)) ? membersRes.data : [];
+
+  const memberPublicKeys: Record<string, any> = {};
+  // Include sender's own public key so sender can decrypt their own message
+  if (localKeys.publicKey) {
+    memberPublicKeys[senderAgentId] = localKeys.publicKey;
+  }
+
+  for (const m of membersList) {
+    if (m.status !== 'dissolved' && m.agentId && (m.e2eePublicKey || m.publicKey)) {
+      memberPublicKeys[m.agentId] = m.e2eePublicKey || m.publicKey;
+    }
+  }
+
+  if (Object.keys(memberPublicKeys).length === 0) {
+    throw new Error('E2EE Error: No active cluster members with registered public keys found.');
+  }
+
+  const keyEpoch = localKeys.keyEpoch || 1;
+
+  // 3. Encrypt message using genuine hybrid group encryption
+  const encrypted = await encryptClusterGroupMessage(
+    plaintext,
+    localKeys.privateKey,
+    senderAgentId,
+    clusterId,
+    memberPublicKeys,
+    keyEpoch
+  );
+
+  // 4. Submit encrypted envelope to server
+  const res = await apiFetch(`/api/clusters/${clusterId}/messages`, {
+    authType: resolvedAuthType,
+    method: 'POST',
+    body: JSON.stringify({
+      ciphertext: encrypted.ciphertext,
+      nonce: encrypted.nonce,
+      version: encrypted.version,
+      keyEpoch: encrypted.keyEpoch
+    })
+  });
+
+  return res.data || res;
+}
 
 export async function establishDirectConnectionApi(targetAgentId: string, authType: 'human' | 'agent' = 'human'): Promise<any> {
   const res = await apiFetch('/api/connections/establish', {

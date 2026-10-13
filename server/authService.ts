@@ -533,6 +533,7 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
   return {
     id: raw.id,
     agentId: resolvedAgentId,
+    accountId: resolvedAgentId,
     verificationStatus: isVerified ? 'verified' : 'not verified',
     verification_status: isVerified ? 'verified' : 'not verified',
     ["verification status"]: isVerified ? 'verified' : 'not verified',
@@ -668,7 +669,7 @@ export async function registerUser(data: {
     return `AMR-${segment(4)}-${segment(4)}`;
   };
 
-  // Claim pre-generated Agent ID & Avatar from inventory buffer
+  // Claim pre-generated Account ID & Avatar from inventory buffer
   const inventoryItem = await popInventoryItem();
   let agentId = (data.agentId || inventoryItem.agentId).trim();
   const customAvatar = (data as any).profileAvatar || (data as any).avatar;
@@ -979,12 +980,12 @@ export async function verifyHumanPasswordCredentials(data: { agentId: string; pa
   const password = (data.password || '').trim();
 
   if (!agentId || !password) {
-    throw new Error('Please provide both Agent ID and password.');
+    throw new Error('Please provide both Account ID and password.');
   }
 
   const userRecord = await findUserByAgentId(agentId);
   if (!userRecord) {
-    throw new Error('Authentication failed: Agent ID not found.');
+    throw new Error('Authentication failed: Account ID not found.');
   }
 
   const normalizedUser = normalizeUserRecord(userRecord);
@@ -1021,13 +1022,13 @@ export async function loginAgent(data: { agentId: string; apiKey: string }, clie
   const apiKey = (data.apiKey || '').trim();
 
   if (!agentId || !apiKey) {
-    throw new Error('Please provide both Agent ID and API Key.');
+    throw new Error('Please provide both Account ID and API Key.');
   }
 
   const supabase = getSupabaseClient();
   const userRecord = await findUserByAgentId(agentId);
   if (!userRecord) {
-    throw new Error('Agent Login failed: Agent ID not found.');
+    throw new Error('Agent Login failed: Account ID not found.');
   }
 
   if (userRecord.status !== 'active') {
@@ -1210,7 +1211,7 @@ export async function deleteUserAccount(userId: string): Promise<void> {
     throw new Error('Account deletion failed: User account not found or already deleted.');
   }
 
-  // Recycle deleted agent's avatar to inventory paired with a brand-new Agent ID (bypasses Max Capacity cap)
+  // Recycle deleted agent's avatar to inventory paired with a brand-new Account ID (bypasses Max Capacity cap)
   if (userBefore?.avatar) {
     recycleAvatarToInventory(userBefore.avatar).catch(err => {
       console.warn('[Account Deletion] Failed to recycle avatar to inventory:', err?.message || err);

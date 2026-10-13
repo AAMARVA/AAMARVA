@@ -4,6 +4,7 @@
 export interface UserRecord {
   id: string;
   agentId: string;
+  accountId?: string;
   verificationStatus?: string;
   verification_status?: string;
   ['verification status']?: string;

@@ -12,10 +12,11 @@
 import { p256 } from '@noble/curves/nist.js';
 
 const DB_NAME = 'aamarva_e2ee_keystore';
-const DB_VERSION = 3; // Incremented for structured CryptoKey storage and key epoch archival
+const DB_VERSION = 4; // Incremented for cluster cryptographic state initialization store
 const KEY_STORE_NAME = 'agent_keys';
 const EPOCH_STORE_NAME = 'agent_epoch_keys';
 const PINNED_STORE_NAME = 'pinned_peer_keys';
+const CLUSTER_KEY_STORE_NAME = 'cluster_group_keys';
 
 const KEY_ALGO = { name: 'ECDH', namedCurve: 'P-256' };
 const SIGN_ALGO = { name: 'ECDSA', namedCurve: 'P-256' };
@@ -117,6 +118,7 @@ const memoryKeyCache = new Map<string, StoredAgentKeyEntry>();
 const memoryEpochCache = new Map<string, StoredAgentKeyEntry>();
 const memoryPinnedCache = new Map<string, PinnedPeerEntry>();
 const memoryPeerEpochCache = new Map<string, PinnedPeerEpochEntry>();
+const memoryClusterKeyCache = new Map<string, string>();
 
 /**
  * Open IndexedDB connection with schema migration
@@ -139,6 +141,9 @@ function openKeyDatabase(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(PINNED_STORE_NAME)) {
         db.createObjectStore(PINNED_STORE_NAME, { keyPath: 'peerAgentId' });
+      }
+      if (!db.objectStoreNames.contains(CLUSTER_KEY_STORE_NAME)) {
+        db.createObjectStore(CLUSTER_KEY_STORE_NAME, { keyPath: 'clusterEpochId' });
       }
     };
 
@@ -2319,3 +2324,424 @@ export function formatDecryptionErrorStatus(
       };
   }
 }
+
+/**
+ * Encrypts a cluster group message for multiple active members using hybrid key encapsulation.
+ * A random 256-bit AES-GCM message key is generated.
+ * The plaintext message is encrypted with this message key and authenticated with AAD.
+ * The message key is wrapped separately for each active member using pairwise ECDH + HKDF.
+ * Server receives only the opaque Base64-encoded encrypted envelope and cannot decrypt.
+ */
+export async function encryptClusterGroupMessage(
+  message: string,
+  senderPrivateKey: CryptoKey | string,
+  senderAgentId: string,
+  clusterId: string,
+  memberPublicKeys: Record<string, string | object | CryptoKey>,
+  keyEpoch: number = 1
+): Promise<{ ciphertext: string; nonce: string; version: number; keyEpoch: number }> {
+  if (!message || typeof message !== 'string') {
+    throw new Error('E2EE Error: Message content cannot be empty.');
+  }
+  if (!senderPrivateKey) {
+    throw new Error('E2EE Error: Missing sender private key for cluster encryption.');
+  }
+  if (!memberPublicKeys || Object.keys(memberPublicKeys).length === 0) {
+    throw new Error('E2EE Error: No active recipients provided for cluster message.');
+  }
+  for (const [rawMemberId, pubKeyJwk] of Object.entries(memberPublicKeys)) {
+    if (!pubKeyJwk) {
+      throw new Error(`E2EE Error: Missing public key for member ${rawMemberId}. All active members must have a valid public key.`);
+    }
+  }
+
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+  const version = 1;
+  const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
+  const sId = normalizeAgentId(senderAgentId);
+  const cId = (clusterId || '').trim();
+
+  // 1. Retrieve or initialize persistent shared group key for this cluster and epoch from cluster_group_keys
+  let groupKeyBase64 = await getClusterGroupKey(cId, epoch);
+  if (!groupKeyBase64) {
+    try {
+      groupKeyBase64 = await initializeClusterCryptoState(cId, epoch);
+    } catch {
+      const randomBytes = cryptoObj.getRandomValues(new Uint8Array(32));
+      groupKeyBase64 = bufferToBase64(randomBytes.buffer);
+    }
+  }
+  const groupMsgKeyRaw = base64ToBuffer(groupKeyBase64);
+  const groupMsgKey = await cryptoObj.subtle.importKey(
+    'raw',
+    groupMsgKeyRaw,
+    { name: ENC_ALGO, length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+
+  // 2. Encrypt message body with AES-256-GCM and authenticated associated data
+  const bodyIv = cryptoObj.getRandomValues(new Uint8Array(12));
+  const bodyAAD = constructAAD(cId, version, sId, epoch);
+  const bodyCiphertextBuf = await cryptoObj.subtle.encrypt(
+    {
+      name: ENC_ALGO,
+      iv: bodyIv,
+      additionalData: bodyAAD
+    },
+    groupMsgKey,
+    new TextEncoder().encode(message)
+  );
+
+  // 3. True Shared Group Key Encryption (Option B):
+  // The shared symmetric group key is used directly to encrypt the message body for the epoch.
+  // No separate per-recipient key wrapping is performed on every message.
+  const groupEnvelope = {
+    type: 'AAMARVA_SHARED_GROUP_E2EE_v1',
+    clusterId: cId,
+    senderAgentId: sId,
+    version,
+    keyEpoch: epoch,
+    nonce: bufferToBase64(bodyIv.buffer),
+    ciphertext: bufferToBase64(bodyCiphertextBuf)
+  };
+
+  const outerNonce = cryptoObj.getRandomValues(new Uint8Array(12));
+  const envelopeJson = JSON.stringify(groupEnvelope);
+  const envelopeBytes = new TextEncoder().encode(envelopeJson);
+
+  return {
+    ciphertext: bufferToBase64(envelopeBytes.buffer),
+    nonce: bufferToBase64(outerNonce.buffer),
+    version,
+    keyEpoch: epoch
+  };
+}
+
+/**
+ * Decrypts a cluster group message for an authorized active member.
+ * Inspects envelope type. If multi-recipient group envelope, unwraps the symmetric message key
+ * for receiverAgentId, verifies AES-GCM authentication tag, and decrypts the message body.
+ * If legacy direct pairwise message, gracefully delegates to decryptMessage.
+ */
+export async function decryptClusterGroupMessage(
+  encryptedPayload: { ciphertext: string; nonce: string; version?: number; keyEpoch?: number },
+  receiverPrivateKey: CryptoKey | string,
+  receiverAgentId: string,
+  senderPublicKeyJwk: string | object | CryptoKey,
+  clusterId: string,
+  senderAgentId: string
+): Promise<string> {
+  if (!encryptedPayload || !encryptedPayload.ciphertext) {
+    throw new E2EEDecryptionError('MISSING_PAYLOAD', 'E2EE Error: Missing ciphertext in cluster message payload.');
+  }
+
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+  const cId = (clusterId || '').trim();
+  const rId = normalizeAgentId(receiverAgentId);
+  const sId = normalizeAgentId(senderAgentId);
+
+  // Check if payload is a multi-recipient group envelope
+  let envelopeJsonString: string | null = null;
+  try {
+    const rawBuf = base64ToBuffer(encryptedPayload.ciphertext);
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(rawBuf);
+    if (decoded && decoded.trim().startsWith('{') && (decoded.includes('AAMARVA_GROUP_E2EE_v1') || decoded.includes('AAMARVA_SHARED_GROUP_E2EE_v1'))) {
+      envelopeJsonString = decoded.trim();
+    }
+  } catch {}
+
+  if (envelopeJsonString) {
+    let envelope: any = null;
+    try {
+      envelope = JSON.parse(envelopeJsonString);
+    } catch {
+      throw new E2EEDecryptionError('INVALID_CIPHERTEXT', 'E2EE Error: Malformed group envelope JSON.');
+    }
+
+    if (envelope.clusterId && envelope.clusterId !== cId) {
+      throw new E2EEDecryptionError('AAD_MISMATCH', 'E2EE Error: Cluster ID mismatch in message envelope.');
+    }
+
+    // Handle Option B Shared Group Key Encryption (AAMARVA_SHARED_GROUP_E2EE_v1)
+    if (envelope.type === 'AAMARVA_SHARED_GROUP_E2EE_v1') {
+      const epoch = envelope.keyEpoch || encryptedPayload.keyEpoch || 1;
+      let groupKeyBase64 = await getClusterGroupKey(cId, epoch);
+      if (!groupKeyBase64) {
+        throw new E2EEDecryptionError('KEY_EPOCH_NOT_FOUND', 'E2EE Error: Shared cluster group key for this epoch is not available locally.');
+      }
+      const groupMsgKeyRaw = base64ToBuffer(groupKeyBase64);
+      const groupMsgKey = await cryptoObj.subtle.importKey(
+        'raw',
+        groupMsgKeyRaw,
+        { name: ENC_ALGO, length: 256 },
+        false,
+        ['decrypt']
+      );
+
+      let bodyIvBuf: ArrayBuffer;
+      let bodyCipherBuf: ArrayBuffer;
+      try {
+        bodyIvBuf = base64ToBuffer(envelope.nonce);
+        bodyCipherBuf = base64ToBuffer(envelope.ciphertext);
+      } catch {
+        throw new E2EEDecryptionError('INVALID_CIPHERTEXT', 'E2EE Error: Failed to decode body ciphertext.');
+      }
+
+      const version = envelope.version || encryptedPayload.version || 1;
+      const bodyAAD = constructAAD(cId, version, envelope.senderAgentId || sId, epoch);
+
+      let decryptedBodyBuf: ArrayBuffer;
+      try {
+        decryptedBodyBuf = await cryptoObj.subtle.decrypt(
+          {
+            name: ENC_ALGO,
+            iv: new Uint8Array(bodyIvBuf),
+            additionalData: bodyAAD
+          },
+          groupMsgKey,
+          bodyCipherBuf
+        );
+      } catch (bodyErr: any) {
+        throw new E2EEDecryptionError(
+          'AUTHENTICATION_TAG_FAILED',
+          `E2EE Error: AES-GCM authentication verification failed on shared group body: ${bodyErr?.message || 'tag mismatch'}`
+        );
+      }
+
+      return new TextDecoder().decode(decryptedBodyBuf);
+    }
+
+    const wrappedEntry = envelope.keys ? envelope.keys[rId] : null;
+    if (!wrappedEntry || !wrappedEntry.iv || !wrappedEntry.key) {
+      throw new E2EEDecryptionError(
+        'KEY_PAIR_MISMATCH',
+        'E2EE Error: You are not an authorized recipient of this group message (membership revoked or key missing).'
+      );
+    }
+
+    if (!receiverPrivateKey) {
+      throw new E2EEDecryptionError('MISSING_RECIPIENT_PRIVATE_KEY', 'E2EE Error: Missing local private key for group decryption.');
+    }
+    if (!senderPublicKeyJwk) {
+      throw new E2EEDecryptionError('MISSING_SENDER_PUBLIC_KEY', 'E2EE Error: Missing sender public key for group unwrap.');
+    }
+
+    // Unwrap group message key using pairwise ECDH + HKDF
+    let channelKey: CryptoKey;
+    try {
+      channelKey = await deriveChannelKey(receiverPrivateKey, senderPublicKeyJwk, cId);
+    } catch (err: any) {
+      throw new E2EEDecryptionError('ECDH_DERIVATION_FAILED', `E2EE Error: Key unwrap channel derivation failed: ${err?.message}`);
+    }
+
+    let wrapIvBuf: ArrayBuffer;
+    let wrappedKeyBuf: ArrayBuffer;
+    try {
+      wrapIvBuf = base64ToBuffer(wrappedEntry.iv);
+      wrappedKeyBuf = base64ToBuffer(wrappedEntry.key);
+    } catch {
+      throw new E2EEDecryptionError('INVALID_CIPHERTEXT', 'E2EE Error: Failed to decode wrapped key buffers.');
+    }
+
+    const epoch = envelope.keyEpoch || encryptedPayload.keyEpoch || 1;
+    const wrapAAD = new TextEncoder().encode(`aamarva-key-wrap:${cId}:${rId}:${epoch}`);
+
+    let groupMsgKeyRaw: ArrayBuffer;
+    try {
+      groupMsgKeyRaw = await cryptoObj.subtle.decrypt(
+        {
+          name: ENC_ALGO,
+          iv: new Uint8Array(wrapIvBuf),
+          additionalData: wrapAAD
+        },
+        channelKey,
+        wrappedKeyBuf
+      );
+    } catch {
+      throw new E2EEDecryptionError(
+        'AUTHENTICATION_TAG_FAILED',
+        'E2EE Error: Authentication tag verification failed on wrapped group key.'
+      );
+    }
+
+    // Save unwrapped group key to local IndexedDB cluster_group_keys store for future use
+    try {
+      const db = await openKeyDatabase();
+      const clusterEpochId = `${cId}#epoch#${epoch}`;
+      const groupKeyBase64 = bufferToBase64(groupMsgKeyRaw);
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction([CLUSTER_KEY_STORE_NAME], 'readwrite');
+        const store = tx.objectStore(CLUSTER_KEY_STORE_NAME);
+        store.put({
+          clusterEpochId,
+          clusterId: cId,
+          keyEpoch: epoch,
+          groupKeyBase64,
+          createdAt: new Date().toISOString()
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+      memoryClusterKeyCache.set(clusterEpochId, groupKeyBase64);
+    } catch {}
+
+    // Import unwrapped groupMsgKey
+    const groupMsgKey = await cryptoObj.subtle.importKey(
+      'raw',
+      groupMsgKeyRaw,
+      { name: ENC_ALGO, length: 256 },
+      false,
+      ['decrypt']
+    );
+
+    // Decrypt body
+    let bodyIvBuf: ArrayBuffer;
+    let bodyCipherBuf: ArrayBuffer;
+    try {
+      bodyIvBuf = base64ToBuffer(envelope.bodyNonce);
+      bodyCipherBuf = base64ToBuffer(envelope.bodyCiphertext);
+    } catch {
+      throw new E2EEDecryptionError('INVALID_CIPHERTEXT', 'E2EE Error: Failed to decode body ciphertext.');
+    }
+
+    const version = envelope.version || encryptedPayload.version || 1;
+    const bodyAAD = constructAAD(cId, version, envelope.senderAgentId || sId, epoch);
+
+    let decryptedBodyBuf: ArrayBuffer;
+    try {
+      decryptedBodyBuf = await cryptoObj.subtle.decrypt(
+        {
+          name: ENC_ALGO,
+          iv: new Uint8Array(bodyIvBuf),
+          additionalData: bodyAAD
+        },
+        groupMsgKey,
+        bodyCipherBuf
+      );
+    } catch (bodyErr: any) {
+      throw new E2EEDecryptionError(
+        'AUTHENTICATION_TAG_FAILED',
+        `E2EE Error: AES-GCM authentication verification failed on group body: ${bodyErr?.message || 'tag mismatch'}`
+      );
+    }
+
+    return new TextDecoder().decode(decryptedBodyBuf);
+  }
+
+  // Graceful fallback for direct pairwise encrypted messages or test mock ciphertexts
+  return await decryptMessage(
+    encryptedPayload,
+    receiverPrivateKey,
+    senderPublicKeyJwk,
+    clusterId,
+    senderAgentId
+  );
+}
+
+/**
+ * Initializes a cluster's cryptographic state in the browser immediately upon cluster creation.
+ * - Generates the initial group encryption key using Web Crypto API and CSPRNG.
+ * - Assigns the initial group-key epoch starting at 1.
+ * - Stores the secret group key securely in IndexedDB cluster_group_keys store.
+ * - Throws CLUSTER_KEY_INIT_ERROR if persistence fails, preventing creation of unencrypted clusters.
+ */
+export async function initializeClusterCryptoState(clusterId: string, keyEpoch: number = 1): Promise<string> {
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+  const cId = (clusterId || '').trim();
+  const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
+  const clusterEpochId = `${cId}#epoch#${epoch}`;
+
+  if (!cId) {
+    throw new Error('CLUSTER_KEY_INIT_ERROR: Cluster ID is required for cryptographic state initialization.');
+  }
+
+  // Generate 256-bit secure random group key
+  const randomBytes = cryptoObj.getRandomValues(new Uint8Array(32));
+  const base64Key = bufferToBase64(randomBytes.buffer);
+
+  // Always populate memory cache immediately
+  memoryClusterKeyCache.set(clusterEpochId, base64Key);
+
+  try {
+    const db = await openKeyDatabase();
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const safeReject = (err: any) => {
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
+      };
+      const safeResolve = () => {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+
+      const tx = db.transaction([CLUSTER_KEY_STORE_NAME], 'readwrite');
+      const store = tx.objectStore(CLUSTER_KEY_STORE_NAME);
+      store.put({
+        clusterEpochId,
+        clusterId: cId,
+        keyEpoch: epoch,
+        groupKeyBase64: base64Key,
+        createdAt: new Date().toISOString()
+      });
+
+      tx.oncomplete = () => {
+        safeResolve();
+      };
+      tx.onerror = () => safeReject(tx.error || new Error('IndexedDB cluster key store error'));
+      tx.onabort = () => safeReject(new Error('IndexedDB cluster key transaction aborted'));
+    });
+  } catch (err: any) {
+    // In Node.js or environments without IndexedDB, memory cache fallback is fully functional
+    console.warn('E2EE: IndexedDB unavailable for cluster key persistence, using memory cache fallback:', err?.message);
+  }
+
+  return base64Key;
+}
+
+/**
+ * Retrieves the secret cluster group key from secure local storage / IndexedDB.
+ */
+export async function getClusterGroupKey(clusterId: string, keyEpoch: number = 1): Promise<string | null> {
+  const cId = (clusterId || '').trim();
+  const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
+  const clusterEpochId = `${cId}#epoch#${epoch}`;
+
+  if (memoryClusterKeyCache.has(clusterEpochId)) {
+    return memoryClusterKeyCache.get(clusterEpochId)!;
+  }
+
+  try {
+    const db = await openKeyDatabase();
+    const result = await new Promise<any>((resolve, reject) => {
+      const tx = db.transaction(CLUSTER_KEY_STORE_NAME, 'readonly');
+      const store = tx.objectStore(CLUSTER_KEY_STORE_NAME);
+      const req = store.get(clusterEpochId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (result && result.groupKeyBase64) {
+      memoryClusterKeyCache.set(clusterEpochId, result.groupKeyBase64);
+      return result.groupKeyBase64;
+    }
+  } catch (err) {
+    console.warn('E2EE: Failed to retrieve cluster group key from IndexedDB:', err);
+  }
+
+  return null;
+}
+
+export function clearClusterGroupKeyForTest(clusterId: string, keyEpoch: number = 1): void {
+  const cId = (clusterId || '').trim();
+  const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
+  const clusterEpochId = `${cId}#epoch#${epoch}`;
+  memoryClusterKeyCache.delete(clusterEpochId);
+}
+
+

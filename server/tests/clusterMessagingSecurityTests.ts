@@ -3,6 +3,7 @@ import http from 'http';
 import clusterRouter from '../routes/clusterRoutes';
 import { getSupabaseClient, setSupabaseClient } from '../supabase';
 import { getClusterTables } from '../routes/clusterRoutes';
+import { generateE2EEKeyPair, encryptClusterGroupMessage, decryptClusterGroupMessage, clearClusterGroupKeyForTest } from '../../src/lib/e2ee';
 
 export async function runClusterMessagingSecurityTests(): Promise<Record<string, { status: 'PASSED' | 'FAILED'; reason?: string }>> {
   console.log('\n=== AAMARVA CLUSTER MESSAGING SECURITY VERIFICATION SUITE ===\n');
@@ -149,8 +150,16 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
                 maybeSingle: async () => {
                   const found = mockMembers.find(m => m.clusterId === val1 && m.userId === val2);
                   return { data: found || null, error: null };
+                },
+                then: (resolve: any) => {
+                  const members = mockMembers.filter(m => m.clusterId === val1 && (m.status === val2 || m.userId === val2));
+                  resolve({ data: members, error: null });
                 }
               }),
+              maybeSingle: async () => {
+                const found = mockMembers.find(m => m.clusterId === val1);
+                return { data: found || null, error: null };
+              },
               neq: (_col2: string, val2: string) => ({
                 neq: (_col3: string, val3: string) => {
                   // e.g. .neq('userId', userId).neq('status', 'dissolved')
@@ -662,6 +671,163 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
         ? 'HTTP 201, Verified persisted envelope: content === null, keyEpoch = 5, sequence = 42'
         : `Failed verification: HTTP ${res31.status}, msg: ${JSON.stringify(persistedEpoch5)}`
     );
+
+    // Real Cryptographic E2EE Unit Tests (Tests 32 - 36)
+    try {
+      const ownerPair = await generateE2EEKeyPair();
+      const memberAPair = await generateE2EEKeyPair();
+      const memberBPair = await generateE2EEKeyPair();
+      const intruderPair = await generateE2EEKeyPair();
+
+      const testClusterId = 'cluster_real_crypto_test';
+      const secretMessage = 'Top secret encrypted cluster payload 🚀';
+
+      const memberPubKeys = {
+        'AMR-MEMBER-A': memberAPair.publicKey,
+        'AMR-MEMBER-B': memberBPair.publicKey
+      };
+
+      const groupEnvelope = await encryptClusterGroupMessage(
+        secretMessage,
+        ownerPair.privateKey,
+        'AMR-OWNER',
+        testClusterId,
+        memberPubKeys,
+        1
+      );
+
+      const decryptedByA = await decryptClusterGroupMessage(
+        groupEnvelope,
+        memberAPair.privateKey,
+        'AMR-MEMBER-A',
+        ownerPair.publicKey,
+        testClusterId,
+        'AMR-OWNER'
+      );
+
+      const decryptedByB = await decryptClusterGroupMessage(
+        groupEnvelope,
+        memberBPair.privateKey,
+        'AMR-MEMBER-B',
+        ownerPair.publicKey,
+        testClusterId,
+        'AMR-OWNER'
+      );
+
+      recordResult(
+        'cluster_test32_real_crypto_encrypt_and_decrypt',
+        decryptedByA === secretMessage && decryptedByB === secretMessage,
+        `Decrypted successfully by A and B: ${decryptedByA === secretMessage}`
+      );
+
+      let intruderFailed = false;
+      try {
+        const intruderEnvelope = await encryptClusterGroupMessage(
+          secretMessage,
+          ownerPair.privateKey,
+          'AMR-OWNER',
+          testClusterId,
+          memberPubKeys,
+          1
+        );
+        clearClusterGroupKeyForTest(testClusterId, 1);
+        await decryptClusterGroupMessage(
+          intruderEnvelope,
+          intruderPair.privateKey,
+          'AMR-INTRUDER',
+          ownerPair.publicKey,
+          testClusterId,
+          'AMR-OWNER'
+        );
+      } catch (err: any) {
+        if (err?.code === 'KEY_PAIR_MISMATCH' || err?.code === 'KEY_EPOCH_NOT_FOUND' || err?.message?.includes('not an authorized recipient') || err?.message?.includes('available locally')) {
+          intruderFailed = true;
+        }
+      }
+      recordResult(
+        'cluster_test33_unauthorized_recipient_rejected',
+        intruderFailed,
+        `Unauthorized recipient correctly rejected: ${intruderFailed}`
+      );
+
+      let tamperingFailed = false;
+      try {
+        const freshEnvelope = await encryptClusterGroupMessage(
+          secretMessage,
+          ownerPair.privateKey,
+          'AMR-OWNER',
+          testClusterId,
+          memberPubKeys,
+          1
+        );
+        const tamperedEnvelope = JSON.parse(Buffer.from(freshEnvelope.ciphertext, 'base64').toString('utf-8'));
+        tamperedEnvelope.ciphertext = Buffer.from('corruptedciphertext').toString('base64');
+        const tamperedPayload = {
+          ...freshEnvelope,
+          ciphertext: Buffer.from(JSON.stringify(tamperedEnvelope)).toString('base64')
+        };
+        await decryptClusterGroupMessage(
+          tamperedPayload,
+          memberAPair.privateKey,
+          'AMR-MEMBER-A',
+          ownerPair.publicKey,
+          testClusterId,
+          'AMR-OWNER'
+        );
+      } catch (err: any) {
+        if (err?.code === 'AUTHENTICATION_TAG_FAILED' || err?.message?.includes('authentication')) {
+          tamperingFailed = true;
+        }
+      }
+      recordResult(
+        'cluster_test34_ciphertext_tampering_rejected',
+        tamperingFailed,
+        `Tampered ciphertext rejected: ${tamperingFailed}`
+      );
+
+      let encryptAborted = false;
+      try {
+        await encryptClusterGroupMessage(
+          secretMessage,
+          ownerPair.privateKey,
+          'AMR-OWNER',
+          testClusterId,
+          { 'AMR-MEMBER-A': memberAPair.publicKey, 'AMR-BAD': null as any },
+          1
+        );
+      } catch {
+        encryptAborted = true;
+      }
+      recordResult(
+        'cluster_test35_missing_recipient_key_aborts_encryption',
+        encryptAborted,
+        `Encryption correctly aborted when a recipient key is missing: ${encryptAborted}`
+      );
+
+      let aadMismatchRejected = false;
+      try {
+        await decryptClusterGroupMessage(
+          groupEnvelope,
+          memberAPair.privateKey,
+          'AMR-MEMBER-A',
+          ownerPair.publicKey,
+          'wrong_cluster_id',
+          'AMR-OWNER'
+        );
+      } catch (err: any) {
+        if (err?.code === 'AAD_MISMATCH' || err?.message?.includes('Cluster ID mismatch')) {
+          aadMismatchRejected = true;
+        }
+      }
+      recordResult(
+        'cluster_test36_cluster_id_aad_mismatch_rejected',
+        aadMismatchRejected,
+        `Cluster ID AAD mismatch correctly rejected: ${aadMismatchRejected}`
+      );
+
+    } catch (cryptoTestErr: any) {
+      recordResult('cluster_real_crypto_suite_execution', false, `Crypto test exception: ${cryptoTestErr?.message}`);
+    }
 
   } finally {
     setSupabaseClient(origSupabase);

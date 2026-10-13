@@ -210,6 +210,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     if (peerKey && pendingMessages.length > 0) {
       const processPending = async () => {
         setIsSending(true);
+        const remaining: string[] = [];
+        let anyFailed = false;
+        let lastErrorMsg = '';
+
         for (const msg of pendingMessages) {
           try {
             const targetReceiver = resolvedPeerAgentId || peerAgentId;
@@ -218,12 +222,20 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               receiverAgentId: targetReceiver,
               authType: effectiveAuthType
             });
-          } catch (err) {
+          } catch (err: any) {
             console.error('Failed to send pending message', err);
+            remaining.push(msg);
+            anyFailed = true;
+            lastErrorMsg = err?.message || 'Transmission failed';
           }
         }
-        setPendingMessages([]);
+        setPendingMessages(remaining);
         setIsSending(false);
+        if (anyFailed) {
+          alert(`Failed to send queued message: ${lastErrorMsg}. Message preserved in queue.`);
+        } else {
+          await fetchAndDecryptMessages();
+        }
       };
       processPending();
     }
@@ -234,7 +246,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     if (!newMessage.trim() || !user?.agentId) return;
 
     const messageToSend = newMessage;
-    setNewMessage('');
     setIsSending(true);
 
     // 1. If we have the peer key, encrypt and send immediately
@@ -246,6 +257,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           receiverAgentId: targetReceiver,
           authType: effectiveAuthType
         });
+        setNewMessage('');
         await fetchAndDecryptMessages();
       } catch (err: any) {
         console.error('Failed to send message:', err);
@@ -256,6 +268,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     } else {
       // 2. If no peer key, queue and trigger background initialization
       setPendingMessages((prev) => [...prev, messageToSend]);
+      setNewMessage('');
       
       // Trigger background activation if master user
       if (user?.isMasterUser) {
