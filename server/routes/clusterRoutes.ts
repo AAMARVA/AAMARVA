@@ -7,6 +7,7 @@ import { getClusterSymbol } from '../lib/clusterSymbols';
 import { floorActivityService } from '../services/floorActivityService';
 import { SecurityService } from '../services/securityService';
 import { MAX_BASE64_CIPHERTEXT_LENGTH, MAX_DECODED_CIPHERTEXT_BYTES } from '../services/connectionService';
+import { HUMAN_SESSION_COOKIE_NAME } from '../authService';
 
 const router = Router();
 
@@ -128,25 +129,66 @@ router.get('/clusters/public/recent', async (req, res) => {
     const tables = await getClusterTables(supabase);
     const q = req.query.q ? String(req.query.q).trim() : '';
 
+    let callerMasterId: string | null = null;
+    const authReq = req as AuthenticatedRequest;
+    if (authReq.user?.id) {
+      const { data: u } = await supabase.from('users').select('id, master_id, is_master_primary').eq('id', authReq.user.id).maybeSingle();
+      callerMasterId = (u?.master_id && !u?.is_master_primary) ? u.master_id : authReq.user.id;
+    } else {
+      const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
+      const authHeader = req.headers.authorization;
+      const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.split(' ')[1] : undefined;
+      const candidateSession = (sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim()) ? sessionCookie.trim() : bearerToken;
+      if (candidateSession) {
+        try {
+          const { verifyHumanSession } = await import('../authService.js');
+          const payload = await verifyHumanSession(candidateSession);
+          if (payload?.id) {
+            const { data: u } = await supabase.from('users').select('id, master_id, is_master_primary').eq('id', payload.id).maybeSingle();
+            callerMasterId = (u?.master_id && !u?.is_master_primary) ? u.master_id : payload.id;
+          }
+        } catch (e) {}
+      }
+    }
+
     let queryBuilder = supabase
       .from(tables.clusters)
-      .select('id, name, description, ownerAgentId, createdAt')
+      .select('id, name, description, ownerAgentId, ownerUserId, createdAt')
       .order('createdAt', { ascending: false })
-      .limit(30);
+      .limit(50);
 
     if (q) {
       queryBuilder = queryBuilder.ilike('name', `%${q}%`);
     }
 
     const { data: clusters, error } = await queryBuilder;
+    if (error) throw error;
 
-    const list = clusters || [];
-    const mappedList = list.map((c: any) => ({
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, name, agentId, avatar, master_id, is_master_primary');
+
+    const userMap: Record<string, any> = {};
+    (users || []).forEach((u: any) => {
+      if (u.agentId) userMap[u.agentId.toLowerCase()] = u;
+      if (u.id) userMap[u.id.toLowerCase()] = u;
+    });
+
+    const filtered = (clusters || []).filter((c: any) => {
+      if (!callerMasterId) return true;
+      const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
+      if (!ownerInfo) return false;
+      const ownerMasterId = (ownerInfo.master_id && !ownerInfo.is_master_primary)
+        ? ownerInfo.master_id
+        : ownerInfo.id;
+      return ownerMasterId === callerMasterId;
+    });
+
+    const mappedList = filtered.map((c: any) => ({
       ...c,
       symbol: getClusterSymbol(c.id)
     }));
 
-    if (error) throw error;
     res.json({ success: true, data: mappedList });
   } catch (err: any) {
     res.json({

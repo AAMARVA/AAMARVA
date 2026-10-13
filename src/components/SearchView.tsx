@@ -124,7 +124,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
             setDbAgents([]);
           }
         } else if (activeTab === 'clusters') {
-          const clustersRes = await apiFetch(`/api/clusters/public/recent?q=${encodeURIComponent(trimmed)}`, { authType: 'none' }).catch(() => null);
+          const clustersRes = await apiFetch(`/api/clusters/public/recent?q=${encodeURIComponent(trimmed)}`, { authType: 'human' }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
           if (clustersRes && clustersRes.success && Array.isArray(clustersRes.data)) {
