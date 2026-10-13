@@ -763,64 +763,66 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     </h3>
                   </div>
                   {activeConnections.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      {activeConnections.map((conn) => {
-                        const connReviews = reviews.filter((r: any) => {
-                          if (!r) return false;
-                          const connId = String(conn.id || conn.connectionId || '').toLowerCase().trim();
-                          const rConnId = String(r.connectionId || r.id || '').toLowerCase().trim();
-                          const matchConnId = Boolean(connId && rConnId && (connId === rConnId || connId.includes(rConnId) || rConnId.includes(connId)));
+                    <div className="max-h-[295px] sm:max-h-[148px] overflow-y-auto pr-1.5 p-0.5 custom-scrollbar">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {activeConnections.map((conn) => {
+                          const connReviews = reviews.filter((r: any) => {
+                            if (!r) return false;
+                            const connId = String(conn.id || conn.connectionId || '').toLowerCase().trim();
+                            const rConnId = String(r.connectionId || r.id || '').toLowerCase().trim();
+                            const matchConnId = Boolean(connId && rConnId && (connId === rConnId || connId.includes(rConnId) || rConnId.includes(connId)));
 
-                          const connAgentId = String(conn.agentId || '').replace(/^@/, '').toLowerCase().trim();
-                          const rTarget = String(r.targetAgentId || '').replace(/^@/, '').toLowerCase().trim();
-                          const rReviewer = String(r.reviewerAgent?.id || r.reviewerAgentId || r.reviewerAgentHandle || '').replace(/^@/, '').toLowerCase().trim();
+                            const connAgentId = String(conn.agentId || '').replace(/^@/, '').toLowerCase().trim();
+                            const rTarget = String(r.targetAgentId || '').replace(/^@/, '').toLowerCase().trim();
+                            const rReviewer = String(r.reviewerAgent?.id || r.reviewerAgentId || r.reviewerAgentHandle || '').replace(/^@/, '').toLowerCase().trim();
 
-                          const matchAgent = Boolean(connAgentId && (connAgentId === rTarget || connAgentId === rReviewer));
+                            const matchAgent = Boolean(connAgentId && (connAgentId === rTarget || connAgentId === rReviewer));
 
-                          return matchConnId || matchAgent;
-                        });
+                            return matchConnId || matchAgent;
+                          });
 
-                        return (
-                          <div
-                            key={conn.id || conn.agentId}
-                            className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col gap-2.5 text-left"
-                          >
-                            <div className="flex items-center justify-between gap-2.5 w-full">
-                              <div 
-                                onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
-                                className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
-                              >
-                                <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]" />
-                                <div className="min-w-0 flex flex-col">
-                                  <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
-                                    <span>{conn.agentName}</span>
-                                  </span>
-                                  <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
-                                    <span>@{conn.agentId}</span>
-                                    {conn.emailVerified && <VerifiedBadge size="xs" />}
-                                    <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
-                                  </span>
+                          return (
+                            <div
+                              key={conn.id || conn.agentId}
+                              className="p-2.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col gap-2.5 text-left"
+                            >
+                              <div className="flex items-center justify-between gap-2.5 w-full">
+                                <div 
+                                  onClick={() => onOpenAgentProfile?.(conn.agentName, conn.avatar, conn.agentId)}
+                                  className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
+                                >
+                                  <AgentAvatar name={conn.agentName} avatar={conn.avatar} id={conn.agentId} className="w-9 h-9 border border-[#141414]" />
+                                  <div className="min-w-0 flex flex-col">
+                                    <span className="font-black uppercase text-xs tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap group-hover:underline">
+                                      <span>{conn.agentName}</span>
+                                    </span>
+                                    <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1 py-0.5 mt-0.5 normal-case border border-[#141414] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
+                                      <span>@{conn.agentId}</span>
+                                      {conn.emailVerified && <VerifiedBadge size="xs" />}
+                                      <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                                    </span>
+                                  </div>
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenChat?.({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
+                                  className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
+                                >
+                                  <MessageSquare className="w-3 h-3" />
+                                  <span>Open It</span>
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => onOpenChat?.({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
-                                className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
-                              >
-                                <MessageSquare className="w-3 h-3" />
-                                <span>Open It</span>
-                              </button>
-                            </div>
 
-                            {/* Reviews Section */}
-                            {connReviews.length > 0 && (
-                              <div className="mt-0.5 pt-2 border-t border-[#141414]/20 space-y-1.5 animate-in fade-in duration-300">
-                                <div className="text-xs text-[#141414]/60 italic font-mono">Reviews unavailable.</div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                              {/* Reviews Section */}
+                              {connReviews.length > 0 && (
+                                <div className="mt-0.5 pt-2 border-t border-[#141414]/20 space-y-1.5 animate-in fade-in duration-300">
+                                  <div className="text-xs text-[#141414]/60 italic font-mono">Reviews unavailable.</div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : (
                     <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">
