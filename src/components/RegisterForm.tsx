@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   ArrowRight, 
   AlertCircle, 
@@ -7,10 +7,12 @@ import {
   Lock,
   Eye,
   EyeOff,
-  CheckCircle2,
+  Upload,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { BrutalistLoader } from './BrutalistLoader';
+import { AgentAvatar } from './AgentAvatar';
 
 interface RegisterFormProps {
   onSuccess?: (credentials: { agentId: string; apiKey: string }) => void;
@@ -29,12 +31,77 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
+    profileAvatar: '',
     password: '',
     confirmPassword: '',
+    fleetId: '',
   });
+  const [avatarFileName, setAvatarFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setSubmitError('Image file size must be less than 10MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = event.target?.result as string;
+      if (!rawDataUrl) return;
+
+      const img = new Image();
+      img.onload = () => {
+        const MAX_SIZE = 512;
+        let width = img.width;
+        let height = img.height;
+        if (width > MAX_SIZE || height > MAX_SIZE) {
+          if (width > height) {
+            height = Math.round((height * MAX_SIZE) / width);
+            width = MAX_SIZE;
+          } else {
+            width = Math.round((width * MAX_SIZE) / height);
+            height = MAX_SIZE;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          setFormData(prev => ({ ...prev, profileAvatar: compressed }));
+          setAvatarFileName(file.name);
+          setSubmitError('');
+        } else {
+          setFormData(prev => ({ ...prev, profileAvatar: rawDataUrl }));
+          setAvatarFileName(file.name);
+          setSubmitError('');
+        }
+      };
+      img.onerror = () => {
+        setFormData(prev => ({ ...prev, profileAvatar: rawDataUrl }));
+        setAvatarFileName(file.name);
+        setSubmitError('');
+      };
+      img.src = rawDataUrl;
+    };
+    reader.onerror = () => {
+      setSubmitError('Failed to read image file.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.profileAvatar.trim()) {
+      setSubmitError('Profile Avatar is required.');
+      return;
+    }
     if (formData.password !== formData.confirmPassword) {
       setSubmitError('Passwords do not match.');
       return;
@@ -45,7 +112,15 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
 
     try {
       const emailToRegister = formData.email.trim();
-      const result = await register(emailToRegister, formData.password, formData.fullName.trim());
+      const result = await register(
+        emailToRegister, 
+        formData.password, 
+        formData.fullName.trim(), 
+        undefined, 
+        undefined, 
+        formData.profileAvatar.trim(), 
+        formData.fleetId.trim()
+      );
       setCreatedEmail(emailToRegister);
       if (onSuccess) {
         onSuccess({ agentId: result.agentId, apiKey: result.apiKey });
@@ -148,6 +223,61 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
           </div>
 
           <div className="space-y-1">
+            <label className="block text-[10px] uppercase font-mono font-black text-[#141414]">Profile Avatar *</label>
+            <div className="flex items-center gap-2">
+              <label 
+                htmlFor="register-avatar-upload"
+                className="relative flex-1 flex items-center cursor-pointer group"
+              >
+                <ImageIcon className="absolute left-3 w-4 h-4 text-[#141414]/40 group-hover:text-[#141414] transition-colors pointer-events-none" />
+                <input
+                  type="text"
+                  readOnly
+                  value={avatarFileName}
+                  placeholder="Choose image file..."
+                  className="w-full pl-10 pr-24 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none cursor-pointer select-none pointer-events-none text-[#141414] placeholder:text-[#141414]/40"
+                />
+                <span
+                  className="absolute right-1 px-2.5 py-1 bg-[#141414] text-white hover:bg-neutral-800 text-[10px] font-mono font-bold uppercase flex items-center gap-1 border border-[#141414] cursor-pointer select-none transition-colors"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>Upload</span>
+                </span>
+              </label>
+              <input
+                id="register-avatar-upload"
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarFileUpload}
+                onClick={(e) => {
+                  (e.target as HTMLInputElement).value = '';
+                }}
+                style={{ position: 'fixed', top: '-1000px', left: '-1000px', opacity: 0, width: '1px', height: '1px' }}
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+
+              {/* Avatar Preview Box */}
+              <label 
+                htmlFor="register-avatar-upload"
+                className="w-10 h-10 shrink-0 bg-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center justify-center overflow-hidden cursor-pointer hover:bg-neutral-50 transition-colors"
+                title="Upload avatar image"
+              >
+                {formData.profileAvatar ? (
+                  <AgentAvatar
+                    avatar={formData.profileAvatar}
+                    name={formData.fullName || 'Agent'}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="w-5 h-5 text-[#141414]/30" />
+                )}
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-1">
             <label className="block text-[10px] uppercase font-mono font-black text-[#141414]">Password *</label>
             <div className="relative flex items-center">
               <Lock className="absolute left-3 w-4 h-4 text-[#141414]/40" />
@@ -186,6 +316,23 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
               >
                 {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
+            </div>
+          </div>
+          
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="block text-[10px] uppercase font-mono font-black text-[#141414]">Fleet I'd</label>
+              <span className="font-mono text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-[#141414] text-white">
+                OPTIONAL
+              </span>
+            </div>
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                value={formData.fleetId}
+                onChange={e => setFormData({...formData, fleetId: e.target.value})}
+                className="w-full px-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
+              />
             </div>
           </div>
         </div>

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { X, User, Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2, Copy } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, User, Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2, Copy, Upload, Image as ImageIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { BrutalistLoader } from './BrutalistLoader';
+import { AgentAvatar } from './AgentAvatar';
 
 interface FloorRegistrationModalProps {
   isOpen: boolean;
@@ -22,9 +23,13 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
+    profileAvatar: '',
     password: '',
     confirmPassword: '',
+    fleetId: '',
   });
+  const [avatarFileName, setAvatarFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -36,6 +41,63 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
   } | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedAgentId, setCopiedAgentId] = useState(false);
+
+  const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setSubmitError('Image file size must be less than 10MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = event.target?.result as string;
+      if (!rawDataUrl) return;
+
+      const img = new Image();
+      img.onload = () => {
+        const MAX_SIZE = 512;
+        let width = img.width;
+        let height = img.height;
+        if (width > MAX_SIZE || height > MAX_SIZE) {
+          if (width > height) {
+            height = Math.round((height * MAX_SIZE) / width);
+            width = MAX_SIZE;
+          } else {
+            width = Math.round((width * MAX_SIZE) / height);
+            height = MAX_SIZE;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          setFormData(prev => ({ ...prev, profileAvatar: compressed }));
+          setAvatarFileName(file.name);
+          setSubmitError('');
+        } else {
+          setFormData(prev => ({ ...prev, profileAvatar: rawDataUrl }));
+          setAvatarFileName(file.name);
+          setSubmitError('');
+        }
+      };
+      img.onerror = () => {
+        setFormData(prev => ({ ...prev, profileAvatar: rawDataUrl }));
+        setAvatarFileName(file.name);
+        setSubmitError('');
+      };
+      img.src = rawDataUrl;
+    };
+    reader.onerror = () => {
+      setSubmitError('Failed to read image file.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     if (initialEmail) {
@@ -57,6 +119,11 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
       return;
     }
 
+    if (!formData.profileAvatar.trim()) {
+      setSubmitError('Profile Avatar is required.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError('');
 
@@ -65,7 +132,11 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
       const result = await register(
         emailToRegister,
         formData.password,
-        formData.fullName.trim() || undefined
+        formData.fullName.trim() || undefined,
+        undefined,
+        undefined,
+        formData.profileAvatar.trim(),
+        formData.fleetId.trim()
       );
 
       setRegisteredCredentials({
@@ -242,6 +313,62 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
 
                   <div>
                     <label className="block font-mono text-[10px] font-black uppercase tracking-wider text-[#141414] mb-1">
+                      Profile Avatar *
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <label 
+                        htmlFor="floor-avatar-upload"
+                        className="relative flex-1 flex items-center cursor-pointer group"
+                      >
+                        <input
+                          type="text"
+                          readOnly
+                          value={avatarFileName}
+                          placeholder="Choose image file..."
+                          className="w-full bg-white border-2 border-[#141414] pl-3 pr-24 py-2 text-xs font-mono text-[#141414] focus:outline-none cursor-pointer select-none pointer-events-none placeholder:text-[#141414]/40"
+                        />
+                        <span
+                          className="absolute right-1 px-2.5 py-1 bg-[#141414] text-white hover:bg-neutral-800 text-[10px] font-mono font-bold uppercase flex items-center gap-1 border border-[#141414] cursor-pointer select-none transition-colors"
+                        >
+                          <Upload className="w-3 h-3" />
+                          <span>Upload</span>
+                        </span>
+                      </label>
+                      <input
+                        id="floor-avatar-upload"
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarFileUpload}
+                        onClick={(e) => {
+                          (e.target as HTMLInputElement).value = '';
+                        }}
+                        style={{ position: 'fixed', top: '-1000px', left: '-1000px', opacity: 0, width: '1px', height: '1px' }}
+                        tabIndex={-1}
+                        aria-hidden="true"
+                      />
+
+                      {/* Avatar preview */}
+                      <label 
+                        htmlFor="floor-avatar-upload"
+                        className="w-9 h-9 shrink-0 bg-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center justify-center overflow-hidden cursor-pointer hover:bg-neutral-50 transition-colors"
+                        title="Upload avatar image"
+                      >
+                        {formData.profileAvatar ? (
+                          <AgentAvatar
+                            avatar={formData.profileAvatar}
+                            name={formData.fullName || 'Agent'}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-4 h-4 text-[#141414]/30" />
+                        )}
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-mono text-[10px] font-black uppercase tracking-wider text-[#141414] mb-1">
                       Password *
                     </label>
                     <div className="relative">
@@ -283,6 +410,25 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
                       >
                         {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-mono text-[10px] font-black uppercase tracking-wider text-[#141414]">
+                        Fleet I'd
+                      </label>
+                      <span className="font-mono text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-[#141414] text-white">
+                        OPTIONAL
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formData.fleetId}
+                        onChange={(e) => setFormData({ ...formData, fleetId: e.target.value })}
+                        className="w-full bg-white border-2 border-[#141414] px-3 py-2 text-xs font-mono text-[#141414] focus:outline-none focus:ring-2 focus:ring-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                      />
                     </div>
                   </div>
 

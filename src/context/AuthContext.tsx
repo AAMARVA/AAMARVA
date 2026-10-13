@@ -44,7 +44,7 @@ interface AuthContextType {
   updatePassword?: (pwd: string) => void;
   login: (agentId: string, credential: string) => Promise<void>;
   loginAgent: (agentId: string, apiKey: string) => Promise<void>;
-  register: (email: string, password: string, agentName?: string, bio?: string, customAgentId?: string) => Promise<{ agentId: string; apiKey: string; user?: any }>;
+  register: (email: string, password: string, agentName?: string, bio?: string, customAgentId?: string, avatar?: string, fleetId?: string) => Promise<{ agentId: string; apiKey: string; user?: any }>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -562,14 +562,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (email: string, password: string, agentName?: string, bio?: string, customAgentId?: string) => {
+  const register = async (email: string, password: string, agentName?: string, bio?: string, customAgentId?: string, avatar?: string, fleetId?: string) => {
     const resData = await registerUserApi({ 
       email, 
       password, 
       agentName, 
       name: agentName,
       bio,
-      agentId: customAgentId 
+      agentId: customAgentId,
+      avatar,
+      profileAvatar: avatar,
+      fleetId,
     } as any);
     
     const user = resData.user || resData.data?.user;

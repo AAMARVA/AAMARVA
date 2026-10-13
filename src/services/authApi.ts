@@ -217,6 +217,9 @@ export async function registerUserApi(payload: {
   agentName?: string;
   bio?: string;
   agentId?: string;
+  avatar?: string;
+  profileAvatar?: string;
+  fleetId?: string;
 }) {
   const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const res = await fetch(buildApiUrl('/api/auth/register'), {

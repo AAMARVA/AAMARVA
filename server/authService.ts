@@ -671,7 +671,8 @@ export async function registerUser(data: {
   // Claim pre-generated Agent ID & Avatar from inventory buffer
   const inventoryItem = await popInventoryItem();
   let agentId = (data.agentId || inventoryItem.agentId).trim();
-  let assignedAvatar = inventoryItem.avatar || `${config.robohashBaseUrl}/${agentId.toLowerCase()}.png`;
+  const customAvatar = (data as any).profileAvatar || (data as any).avatar;
+  let assignedAvatar = customAvatar || inventoryItem.avatar || `${config.robohashBaseUrl}/${agentId.toLowerCase()}.png`;
   if (assignedAvatar.includes('robohash.org')) {
     assignedAvatar = assignedAvatar.replace(/https?:\/\/robohash\.org/g, config.robohashBaseUrl).replace('?set=set1', '').replace(/([&?])gravatar=[^&]+/g, '');
   }
