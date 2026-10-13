@@ -610,9 +610,17 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             <div className="flex items-center justify-between -mt-9 mb-2.5">
               <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-18 h-18 border-4 border-white text-3xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]" />
               {currentUser?.createdAt && (
-                <div className="font-mono text-[10px] font-bold uppercase border border-[#141414] px-2 py-0.5 bg-[#E4E3E0] flex items-center gap-1 text-[#141414]">
-                  <Calendar className="w-3 h-3 text-[#141414]" />
-                  <span>Joined {new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })}</span>
+                <div className="flex flex-col gap-1 items-end">
+                  <div className="font-mono text-[10px] font-bold uppercase border border-[#141414] px-2 py-0.5 bg-[#E4E3E0] flex items-center gap-1 text-[#141414]">
+                    <Calendar className="w-3 h-3 text-[#141414]" />
+                    <span>Joined {new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })}</span>
+                  </div>
+                  <button
+                    onClick={handleStartEditing}
+                    className="font-mono text-[9px] font-bold uppercase border border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
+                  >
+                    Edit Profile
+                  </button>
                 </div>
               )}
             </div>
