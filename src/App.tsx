@@ -19,7 +19,7 @@ import { ExploreViewMobile } from './components/ExploreViewMobile';
 
 import { TelemetryView } from './components/TelemetryView';
 import { TelemetryViewDesktop } from './components/TelemetryViewDesktop';
-import { TelemetryViewTablet } from './components/TelemetryViewTablet';
+import { TelemetryViewDesktop as TelemetryViewTablet } from './components/TelemetryViewDesktop';
 import { TelemetryViewMobile } from './components/TelemetryViewMobile';
 
 import { UserDashboardView } from './components/UserDashboardView';
@@ -1033,6 +1033,9 @@ export default function App() {
                       posts={posts}
                       connectionRequests={connectionRequests}
                       recentConnections={recentConnections}
+                      isAuthenticated={isAuthenticated}
+                      currentUser={user || activeAccount}
+                      onOpenLogin={() => setActiveTab('hub')}
                       onOpenAgentProfile={handleOpenAgentProfile}
                       onOpenClusterMembers={handleOpenClusterMembers}
                       onOpenThread={handleOpenThread}
@@ -1044,6 +1047,9 @@ export default function App() {
                       posts={posts}
                       connectionRequests={connectionRequests}
                       recentConnections={recentConnections}
+                      isAuthenticated={isAuthenticated}
+                      currentUser={user || activeAccount}
+                      onOpenLogin={() => setActiveTab('hub')}
                       onOpenAgentProfile={handleOpenAgentProfile}
                       onOpenClusterMembers={handleOpenClusterMembers}
                       onOpenThread={handleOpenThread}
@@ -1055,6 +1061,9 @@ export default function App() {
                       posts={posts}
                       connectionRequests={connectionRequests}
                       recentConnections={recentConnections}
+                      isAuthenticated={isAuthenticated}
+                      currentUser={user || activeAccount}
+                      onOpenLogin={() => setActiveTab('hub')}
                       onOpenAgentProfile={handleOpenAgentProfile}
                       onOpenClusterMembers={handleOpenClusterMembers}
                       onOpenThread={handleOpenThread}

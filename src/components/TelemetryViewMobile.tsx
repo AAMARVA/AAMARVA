@@ -15,6 +15,9 @@ interface TelemetryViewProps {
   connectionRequests?: any[];
   recentConnections?: any[];
   liveAgentCount?: number;
+  isAuthenticated?: boolean;
+  currentUser?: any;
+  onOpenLogin?: () => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenThread?: (post: NetworkTicket) => void;
@@ -26,6 +29,9 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
   posts = [], 
   connectionRequests = [], 
   recentConnections = [],
+  isAuthenticated = false,
+  currentUser,
+  onOpenLogin,
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenThread,
@@ -38,11 +44,58 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
   const [isLoadingActivity, setIsLoadingActivity] = useState(true);
   const [dbStats, setDbStats] = useState<any>(null);
   const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string; createdAt?: string }[]>([]);
+  const [fleetSlaveAgents, setFleetSlaveAgents] = useState<any[]>([]);
+  const [fleetMasterAgent, setFleetMasterAgent] = useState<any>(null);
   const [localPosts, setLocalPosts] = useState<NetworkTicket[]>(posts);
   const [localConnectionRequests, setLocalConnectionRequests] = useState<any[]>(connectionRequests);
   const [localRecentConnections, setLocalRecentConnections] = useState<any[]>(recentConnections);
   const [localClusters, setLocalClusters] = useState<any[]>([]);
   const [serverFloorLogs, setServerFloorLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      apiFetch('/api/auth/master/accounts', { authType: 'human' })
+        .then(res => {
+          if (res?.success && res.data) {
+            setFleetMasterAgent(res.data.masterAgent || null);
+            setFleetSlaveAgents(res.data.slaveAgents || []);
+          }
+        })
+        .catch(err => console.warn('Failed to fetch fleet accounts:', err));
+    } else {
+      setFleetMasterAgent(null);
+      setFleetSlaveAgents([]);
+    }
+  }, [isAuthenticated]);
+
+  const normalizeId = (id: string) => (id || '').trim().replace(/^@/, '').toUpperCase();
+
+  const fleetIdentifiers = useMemo(() => {
+    const set = new Set<string>();
+    if (currentUser?.id) set.add(normalizeId(currentUser.id));
+    if (currentUser?.agentId) set.add(normalizeId(currentUser.agentId));
+    if (currentUser?.email) set.add(normalizeId(currentUser.email));
+    if (fleetMasterAgent) {
+      if (fleetMasterAgent.id) set.add(normalizeId(fleetMasterAgent.id));
+      if (fleetMasterAgent.agentId) set.add(normalizeId(fleetMasterAgent.agentId));
+      if (fleetMasterAgent.name) set.add(normalizeId(fleetMasterAgent.name));
+    }
+    fleetSlaveAgents.forEach(sa => {
+      if (sa.id) set.add(normalizeId(sa.id));
+      if (sa.agentId) set.add(normalizeId(sa.agentId));
+      if (sa.name) set.add(normalizeId(sa.name));
+    });
+    return set;
+  }, [currentUser, fleetMasterAgent, fleetSlaveAgents]);
+
+  const filteredClusters = useMemo(() => {
+    if (!isAuthenticated) return [];
+    return localClusters.filter(c => 
+      fleetIdentifiers.has(normalizeId(c.ownerAgentId)) || 
+      fleetIdentifiers.has(normalizeId(c.ownerName)) || 
+      fleetIdentifiers.has(normalizeId(c.userId))
+    );
+  }, [localClusters, fleetIdentifiers, isAuthenticated]);
 
   useEffect(() => {
     let eventSource: EventSource | null = null;
@@ -187,7 +240,6 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
   const computedTotalConnections = localPosts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0) + localRecentConnections.length;
   const computedTotalReplies = localPosts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
 
-  const normalizeId = (id: string) => (id || '').trim().replace(/^@/, '').toUpperCase();
   const isTechnicalName = (name: string) => !name || name.startsWith('AMR-');
   const masterNameMap: Record<string, { name: string; avatar: string; agentId: string; emailVerified?: boolean }> = {};
   systemAgents.forEach(a => {
@@ -434,8 +486,41 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     });
   });
 
-  const liveFloorLogs = deduplicateAndMergeFloorActivities(rawFloorLogs);
-  liveFloorLogs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  const mergedLiveFloorLogs = deduplicateAndMergeFloorActivities(rawFloorLogs);
+  mergedLiveFloorLogs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+  const liveFloorLogs = useMemo(() => {
+    if (!isAuthenticated) return [];
+    return mergedLiveFloorLogs.filter(log =>
+      fleetIdentifiers.has(normalizeId(log.agentId)) ||
+      fleetIdentifiers.has(normalizeId(log.agentName))
+    );
+  }, [mergedLiveFloorLogs, fleetIdentifiers, isAuthenticated]);
+
+  if (!isAuthenticated) {
+    return (
+      <div className="w-full max-w-xl mx-auto py-8 px-2">
+        <div className="border-4 border-[#141414] bg-white p-6 shadow-[5px_5px_0px_0px_rgba(20,20,20,1)] text-center space-y-4 font-mono">
+          <div className="mx-auto w-12 h-12 bg-[#141414] text-white flex items-center justify-center font-bold text-lg shadow-[2px_2px_0px_0px_rgba(20,20,20,0.5)]">
+            🔒
+          </div>
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-black uppercase tracking-wider text-[#141414]">Telemetry Access Restricted</h2>
+            <p className="text-[11px] text-[#141414]/70 max-w-sm mx-auto leading-relaxed">
+              Fleet telemetry metrics (master agent, slave agents, clusters) and private floor activity are strictly confidential and only visible when logged in to your account. Two different accounts never share fleet telemetry data.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenLogin}
+            className="w-full py-2.5 bg-[#141414] text-white font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] active:translate-x-0.5 active:translate-y-0.5 cursor-pointer"
+          >
+            Log In to View Fleet Telemetry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full space-y-4">
@@ -447,7 +532,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
             <span className="text-[9px] font-mono font-bold uppercase">Clusters</span>
           </div>
           <div className="text-lg font-black font-mono text-[#141414]">
-            {localClusters.length}
+            {filteredClusters.length}
           </div>
         </div>
 
@@ -467,7 +552,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
             <span className="text-[9px] font-mono font-bold uppercase">Slave Agents</span>
           </div>
           <div className="text-lg font-black font-mono text-[#141414]">
-            {systemAgents.length}
+            {fleetSlaveAgents.length}
           </div>
         </div>
       </div>
@@ -526,7 +611,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
 
         {/* Slave Monitor Card */}
         <div className="w-full">
-          <SlaveMonitorCard slaveAgents={systemAgents} onOpenAgentProfile={onOpenAgentProfile} />
+          <SlaveMonitorCard slaveAgents={fleetSlaveAgents} onOpenAgentProfile={onOpenAgentProfile} />
         </div>
 
       </div>
