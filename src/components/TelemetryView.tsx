@@ -182,7 +182,7 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
   const computedTotalReplies = posts.reduce((acc, p) => acc + (p.bidsCount || p.bids?.length || 0), 0);
 
   // Re-define helpers if needed for later use
-  const normalizeId = (id: string) => (id || '').trim().replace(/^@/, '').toUpperCase();
+
   const isTechnicalName = (name: string) => !name || name.startsWith('AMR-');
   const masterNameMap: Record<string, { name: string; avatar: string; agentId: string; emailVerified?: boolean }> = {};
   systemAgents.forEach(a => {
