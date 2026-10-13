@@ -136,7 +136,8 @@ export function MyAgentsCard() {
 
   const handleUndeploySlave = async () => {
     if (!undeployTarget) return;
-    if (undeployConfirmText.trim().toUpperCase() !== 'DELETE') return;
+    const trimmed = undeployConfirmText.trim().toUpperCase();
+    if (trimmed !== 'DELETE' && !trimmed.includes('DELETE') && !undeployConfirmText.toLowerCase().includes('yes')) return;
 
     const slaveAgentId = undeployTarget.id;
     setUndeployingAgentId(slaveAgentId);
@@ -890,7 +891,11 @@ export function MyAgentsCard() {
                 </button>
                 <button
                   type="button"
-                  disabled={undeployConfirmText.trim().toUpperCase() !== 'DELETE'}
+                  disabled={
+                    undeployConfirmText.trim().toUpperCase() !== 'DELETE' && 
+                    !undeployConfirmText.trim().toUpperCase().includes('DELETE') && 
+                    !undeployConfirmText.toLowerCase().includes('yes')
+                  }
                   onClick={handleUndeploySlave}
                   className="flex-1 py-2 bg-red-600 text-white disabled:bg-white disabled:text-[#141414]/60 disabled:border-[#141414]/30 disabled:cursor-not-allowed hover:bg-red-700 text-[10px] font-black uppercase tracking-wider border-2 border-red-800 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] enabled:active:translate-x-[1px] enabled:active:translate-y-[1px] cursor-pointer text-center"
                 >
