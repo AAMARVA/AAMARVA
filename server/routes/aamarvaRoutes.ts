@@ -1095,8 +1095,6 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
 
     const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | undefined);
     const addOnAccounts = req.body?.addOnAccounts ? Math.max(10, parseInt(req.body.addOnAccounts, 10)) : undefined;
-    const extendAccountsCount = req.body?.extendAccountsCount ? Math.max(10, parseInt(req.body.extendAccountsCount, 10)) : undefined;
-    const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : undefined;
     const targetBlockId = req.body?.targetBlockId;
     const planName = req.body?.planName;
 
@@ -1105,8 +1103,6 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     const entitlement = await masterService.activateMasterPlan(masterUserId, targetAccounts, {
       actionType,
       addOnAccounts,
-      extendAccountsCount,
-      validityDays,
       targetBlockId,
       planName
     } as any);

@@ -520,7 +520,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
             <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-3">
                 <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
-                  {spogMode === 'cluster' ? 'Slave Selection' : 'Slave Monitor Protocol'}
+                  {spogMode === 'cluster' ? 'Slave Selection Protocol' : 'Slave Monitor Protocol'}
                 </span>
                 {spogMode === 'cluster' && (
                   <div className="flex items-center gap-1.5 p-1 bg-white border border-[#141414]/20 shadow-inner">

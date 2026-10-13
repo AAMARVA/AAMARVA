@@ -69,28 +69,15 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   const [accountType, setAccountType] = useState<'master' | 'slave'>('master');
   const [inheritedPlan, setInheritedPlan] = useState<any | null>(null);
 
-  // Active Plan Management Mode: 'add_accounts' (Buy new accounts on top) vs 'extend_validity' (Increase validity)
-  const [rosterAction, setRosterAction] = useState<'add_accounts' | 'extend_validity'>('add_accounts');
+  // Active Plan Management: Buy new accounts on top
   const [addAccountsCount, setAddAccountsCount] = useState<number>(10);
   const [addAccountsRaw, setAddAccountsRaw] = useState<string>('10');
-  const [extendAccountsCount, setExtendAccountsCount] = useState<number>(10);
-  const [extendAccountsRaw, setExtendAccountsRaw] = useState<string>('10');
-  const [validityExtensionDays, setValidityExtensionDays] = useState<number>(30);
 
-  // Previously owned slave agents list & selection
+  // Previously owned slave agents list
   const [slaveAgentsList, setSlaveAgentsList] = useState<any[]>([]);
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
-  const [showAgentSelectorModal, setShowAgentSelectorModal] = useState<boolean>(false);
   const [showActivePlanAgents, setShowActivePlanAgents] = useState<{ [key: string]: boolean }>({});
   const [showQueuedPlanAgents, setShowQueuedPlanAgents] = useState<{ [key: number]: boolean }>({});
   const [showHistoryPlanAgents, setShowHistoryPlanAgents] = useState<{ [key: number]: boolean }>({});
-
-  const calculateExtensionPrice = (accounts: number, days: number) => {
-    const baseFee = days === 30 ? 50 : days === 90 ? 140 : 500;
-    const extraAccounts = Math.max(0, accounts - 10);
-    const multiplier = days === 30 ? 1 : days === 90 ? 2.8 : 10;
-    return baseFee + Math.round(extraAccounts * 2.5 * multiplier);
-  };
 
   const getFormattedBoughtDate = (plan: any) => {
     if (!plan) return 'OCT 5, 2026';
@@ -203,13 +190,10 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           });
 
           setSlaveAgentsList(slots);
-          setSelectedAgentIds(slots.map(a => a.id));
-          setExtendAccountsCount(allowance);
         } else {
           setCurrentPlan(null);
           setActivePlan(null);
           setSlaveAgentsList([]);
-          setSelectedAgentIds([]);
         }
 
         if (Array.isArray(res.data.history)) {
@@ -223,26 +207,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     }
   };
 
-  const toggleAgentSelection = (agentIdToToggle: string) => {
-    setSelectedAgentIds(prev => {
-      let next: string[];
-      if (prev.includes(agentIdToToggle)) {
-        if (prev.length <= 10) return prev;
-        next = prev.filter(id => id !== agentIdToToggle);
-      } else {
-        next = [...prev, agentIdToToggle];
-      }
-      setExtendAccountsCount(Math.max(10, next.length));
-      return next;
-    });
-  };
-
-  const selectAllAgents = () => {
-    const allIds = slaveAgentsList.map(a => a.id);
-    setSelectedAgentIds(allIds);
-    setExtendAccountsCount(Math.max(10, allIds.length));
-  };
-
   const toggleCapabilityAccount = (id: string) => {
     setTargetCapabilityAccountIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
@@ -251,14 +215,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   };
   const deselectAllCapabilityAccounts = () => {
     setTargetCapabilityAccountIds([]);
-  };
-
-  const handleExtendCountChange = (count: number) => {
-    const maxAccounts = Math.max(10, currentPlan?.allowance_accounts || 10);
-    const clamped = Math.min(maxAccounts, Math.max(10, count));
-    setExtendAccountsCount(clamped);
-    const sliceIds = slaveAgentsList.slice(0, clamped).map(a => a.id);
-    setSelectedAgentIds(sliceIds);
   };
 
   useEffect(() => {
@@ -272,13 +228,13 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     };
   }, []);
 
-  const handleBuyPlan = async (actionOverride?: 'add_accounts' | 'extend_validity' | 'new_plan', isCapability: boolean = false) => {
+  const handleBuyPlan = async (actionOverride?: 'add_accounts' | 'new_plan', isCapability: boolean = false) => {
     if (purchasing) return;
     setPurchasing(true);
     setPurchaseStatusMsg(null);
 
     const isCurrentActive = currentPlan?.status === 'active' || (currentPlan && (currentPlan.allowance_accounts || 0) > 0);
-    const effectiveAction = actionOverride || (isCurrentActive ? rosterAction : 'new_plan');
+    const effectiveAction = actionOverride || (isCurrentActive ? 'add_accounts' : 'new_plan');
 
     if (isCapability && targetCapabilityAccountIds.length === 0) {
       setPurchaseStatusMsg({ type: 'error', text: 'Please select an account to apply the capability increment.' });
@@ -302,11 +258,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
         payload.actionType = 'add_accounts';
         payload.addOnAccounts = effectiveAddOn;
         payload.totalAccounts = (currentPlan?.allowance_accounts || 0) + effectiveAddOn;
-      } else if (effectiveAction === 'extend_validity') {
-        payload.actionType = 'extend_validity';
-        payload.validityDays = validityExtensionDays;
-        payload.extendAccountsCount = extendAccountsCount;
-        payload.totalAccounts = currentPlan?.allowance_accounts || 10;
       } else {
         payload.actionType = 'new_plan';
         payload.totalAccounts = totalAccounts;
@@ -341,11 +292,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           setPurchaseStatusMsg({
             type: 'success',
             text: `Successfully added +${effectiveAddOn} account(s) to your fleet! Total active allowance is now ${res.data.plan.allowance_accounts} accounts.`
-          });
-        } else if (effectiveAction === 'extend_validity') {
-          setPurchaseStatusMsg({
-            type: 'success',
-            text: `Validity extended by +${validityExtensionDays} days for ${extendAccountsCount} accounts! Active in database.`
           });
         } else {
           setPurchaseStatusMsg({
@@ -672,9 +618,8 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                       {planHistory && planHistory.length > 0 ? (
                         <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
                           {planHistory.map((item, idx) => {
-                            const isValidity = item.action_type === 'extend_validity' || item.plan_subtitle?.includes('Validity');
                             const isAddon = item.action_type === 'add_accounts' || item.plan_subtitle?.includes('Capacity');
-                            const subtitle = item.plan_subtitle || (isValidity ? 'Validity Extension (+30 Days)' : (isAddon ? 'Capacity Add-On (+10 Accounts)' : 'Base Fleet Roster (10 Accounts)'));
+                            const subtitle = item.plan_subtitle || (isAddon ? 'Capacity Add-On (+10 Accounts)' : 'Base Fleet Roster (10 Accounts)');
 
                             return (
                               <div
@@ -691,18 +636,18 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                     </span>
                                   </div>
                                   <span className="px-2 py-0.5 bg-[#F5F4F0] border border-[#141414] text-[9px] font-black uppercase text-[#141414] shrink-0">
-                                    {isValidity ? 'Validity' : isAddon ? 'Add-On' : 'Base'}
+                                    {isAddon ? 'Add-On' : 'Base'}
                                   </span>
                                 </div>
                                   <div className="text-[11px] text-[#141414]/75 space-y-1.5">
                                     <div>
                                       <div className="flex items-center justify-between flex-wrap gap-1">
                                         <span className="text-[#141414]/60 text-[10px] uppercase font-bold">
-                                          {isValidity ? 'Accounts Extended:' : isAddon ? 'Capacity Added:' : 'Plan Accounts:'}
+                                          {isAddon ? 'Capacity Added:' : 'Plan Accounts:'}
                                         </span>
                                         <div className="flex items-center gap-1.5">
                                           <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                            {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : isValidity ? `${item.accounts_in_transaction || item.allowance_accounts} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
+                                            {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
                                           </span>
                                           <button
                                             type="button"
@@ -1126,412 +1071,119 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                   {/* Active Plan Management Options when already subscribed */}
                   {currentPlan?.status === 'active' ? (
                     <div className="space-y-4 text-left">
-                      {/* Interactive Mode Tick Boxes */}
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-black uppercase text-[#141414]/60 tracking-wider block">
-                          Select Management Option
-                        </span>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {/* Mode 1: Buy New Accounts (Add on top) */}
-                          <div 
-                            onClick={() => setRosterAction('add_accounts')}
-                            className={`p-3.5 border-2 border-[#141414] cursor-pointer transition-all ${
-                              rosterAction === 'add_accounts'
-                                ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
-                                : 'bg-white text-[#141414] hover:bg-neutral-50 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                            }`}
-                          >
-                            <div className="flex items-start gap-2.5">
-                              <div className={`w-4 h-4 rounded-none border-2 mt-0.5 flex items-center justify-center shrink-0 ${
-                                rosterAction === 'add_accounts' ? 'border-white bg-white text-[#141414]' : 'border-[#141414] bg-white'
-                              }`}>
-                                {rosterAction === 'add_accounts' && <Check className="w-3 h-3 stroke-[3]" />}
-                              </div>
-                              <div>
-                                <span className="font-mono font-black text-xs uppercase block">
-                                  Buy New Accounts
-                                </span>
-                                <span className={`text-[10px] font-sans block mt-0.5 ${rosterAction === 'add_accounts' ? 'text-white/80' : 'text-[#141414]/70'}`}>
-                                  Add more accounts on top of your current {currentPlan.allowance_accounts} accounts.
-                                </span>
-                              </div>
-                            </div>
+                      {/* Add Accounts On Top Configuration */}
+                      <div className="bg-white border-2 border-[#141414] p-4 space-y-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <span className="text-xs font-black uppercase tracking-wider block">Add Accounts On Top</span>
+                            <span className="text-[10px] text-[#141414]/60 font-sans">
+                              Add to current fleet · Max 1,000 total accounts
+                            </span>
                           </div>
 
-                          {/* Mode 2: Increase Validity */}
-                          <div 
-                            onClick={() => setRosterAction('extend_validity')}
-                            className={`p-3.5 border-2 border-[#141414] cursor-pointer transition-all ${
-                              rosterAction === 'extend_validity'
-                                ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
-                                : 'bg-white text-[#141414] hover:bg-neutral-50 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                            }`}
-                          >
-                            <div className="flex items-start gap-2.5">
-                              <div className={`w-4 h-4 rounded-none border-2 mt-0.5 flex items-center justify-center shrink-0 ${
-                                rosterAction === 'extend_validity' ? 'border-white bg-white text-[#141414]' : 'border-[#141414] bg-white'
-                              }`}>
-                                {rosterAction === 'extend_validity' && <Check className="w-3 h-3 stroke-[3]" />}
-                              </div>
-                              <div>
-                                <span className="font-mono font-black text-xs uppercase block">
-                                  Increase Validity
+                          <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto font-mono">
+                            <button
+                              type="button"
+                              disabled={addAccountsCount <= 1}
+                              onClick={() => {
+                                const step = addAccountsCount <= 10 ? 1 : 10;
+                                const next = Math.max(1, addAccountsCount - step);
+                                setAddAccountsCount(next);
+                                setAddAccountsRaw(String(next));
+                              }}
+                              className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
+                              title={addAccountsCount <= 1 ? 'Minimum 1 account reached' : 'Decrease accounts'}
+                            >
+                              -
+                            </button>
+
+                            <div className="flex items-center border-2 border-[#141414] bg-neutral-50 px-2 h-8">
+                              <input
+                                type="number"
+                                min={1}
+                                max={Math.max(1, 1000 - (currentPlan?.allowance_accounts || 0))}
+                                value={addAccountsRaw}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  setAddAccountsRaw(raw);
+                                  const val = parseInt(raw, 10);
+                                  if (!isNaN(val)) {
+                                    setAddAccountsCount(val < 1 ? 1 : Math.min(1000 - (currentPlan?.allowance_accounts || 0), val));
+                                  }
+                                }}
+                                onBlur={() => {
+                                  const parsed = parseInt(addAccountsRaw, 10);
+                                  const maxVal = Math.max(1, 1000 - (currentPlan?.allowance_accounts || 0));
+                                  if (isNaN(parsed) || parsed < 1) {
+                                    setAddAccountsCount(1);
+                                    setAddAccountsRaw('1');
+                                  } else {
+                                    const clamped = Math.min(maxVal, Math.max(1, parsed));
+                                    setAddAccountsCount(clamped);
+                                    setAddAccountsRaw(String(clamped));
+                                  }
+                                }}
+                                className="w-14 font-mono font-black text-xs text-center bg-transparent text-[#141414] focus:outline-none"
+                              />
+                              <span className="text-[9px] font-bold uppercase text-[#141414]/60 select-none ml-1">acc</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={(currentPlan?.allowance_accounts || 0) + addAccountsCount >= 1000}
+                              onClick={() => {
+                                const step = addAccountsCount < 10 ? 1 : 10;
+                                const next = Math.min(1000 - (currentPlan?.allowance_accounts || 0), addAccountsCount + step);
+                                setAddAccountsCount(next);
+                                setAddAccountsRaw(String(next));
+                              }}
+                              className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
+                              title="Increase accounts"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Add-on Pricing Box */}
+                        {(() => {
+                          const effectiveAddOn = Math.max(1, addAccountsCount);
+                          const cost = effectiveAddOn * 2.5;
+                          const formattedCost = cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2);
+                          return (
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-3.5 bg-[#F5F4F0] border-2 border-[#141414]">
+                              <div className="space-y-0.5">
+                                <span className="text-[9px] font-black uppercase text-[#141414]/60 tracking-wider">
+                                  Add-on Accounts Cost
                                 </span>
-                                <span className={`text-[10px] font-sans block mt-0.5 ${rosterAction === 'extend_validity' ? 'text-white/80' : 'text-[#141414]/70'}`}>
-                                  Extend the active duration of your previously bought accounts.
+                                <div className="flex items-baseline gap-1.5">
+                                  <span className="text-xl font-black text-[#141414] tabular-nums">
+                                    +${formattedCost}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-[#141414]/60 uppercase">
+                                    USD
+                                  </span>
+                                </div>
+                                <span className="text-[9.5px] text-[#141414]/60 block font-mono">
+                                  Adding {effectiveAddOn} account{effectiveAddOn === 1 ? '' : 's'} @ $2.50/acc
+                                </span>
+                              </div>
+
+                              <div className="border-t sm:border-t-0 sm:border-l border-[#141414]/20 pt-2 sm:pt-0 sm:pl-4 text-left sm:text-right">
+                                <span className="text-[9px] font-black uppercase text-[#141414]/50">
+                                  Resulting Capacity
+                                </span>
+                                <span className="text-sm font-black text-[#141414] uppercase font-mono block">
+                                  {currentPlan.allowance_accounts + effectiveAddOn} Accounts
+                                </span>
+                                <span className="text-[9px] text-emerald-700 font-bold block">
+                                  {currentPlan.allowance_accounts} Current + {effectiveAddOn} New
                                 </span>
                               </div>
                             </div>
-                          </div>
-                        </div>
+                          );
+                        })()}
                       </div>
-
-                      {/* Mode 1 Configuration: Add New Accounts On Top */}
-                      {rosterAction === 'add_accounts' && (
-                        <div className="bg-white border-2 border-[#141414] p-4 space-y-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                              <span className="text-xs font-black uppercase tracking-wider block">Add Accounts On Top</span>
-                              <span className="text-[10px] text-[#141414]/60 font-sans">
-                                Add to current fleet · Max 1,000 total accounts
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto font-mono">
-                              <button
-                                type="button"
-                                disabled={addAccountsCount <= 1}
-                                onClick={() => {
-                                  const step = addAccountsCount <= 10 ? 1 : 10;
-                                  const next = Math.max(1, addAccountsCount - step);
-                                  setAddAccountsCount(next);
-                                  setAddAccountsRaw(String(next));
-                                }}
-                                className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
-                                title={addAccountsCount <= 1 ? 'Minimum 1 account reached' : 'Decrease accounts'}
-                              >
-                                -
-                              </button>
-
-                              <div className="flex items-center border-2 border-[#141414] bg-neutral-50 px-2 h-8">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={Math.max(1, 1000 - (currentPlan?.allowance_accounts || 0))}
-                                  value={addAccountsRaw}
-                                  onChange={(e) => {
-                                    const raw = e.target.value;
-                                    setAddAccountsRaw(raw);
-                                    const val = parseInt(raw, 10);
-                                    if (!isNaN(val)) {
-                                      setAddAccountsCount(val < 1 ? 1 : Math.min(1000 - (currentPlan?.allowance_accounts || 0), val));
-                                    }
-                                  }}
-                                  onBlur={() => {
-                                    const parsed = parseInt(addAccountsRaw, 10);
-                                    const maxVal = Math.max(1, 1000 - (currentPlan?.allowance_accounts || 0));
-                                    if (isNaN(parsed) || parsed < 1) {
-                                      setAddAccountsCount(1);
-                                      setAddAccountsRaw('1');
-                                    } else {
-                                      const clamped = Math.min(maxVal, Math.max(1, parsed));
-                                      setAddAccountsCount(clamped);
-                                      setAddAccountsRaw(String(clamped));
-                                    }
-                                  }}
-                                  className="w-14 font-mono font-black text-xs text-center bg-transparent text-[#141414] focus:outline-none"
-                                />
-                                <span className="text-[9px] font-bold uppercase text-[#141414]/60 select-none ml-1">acc</span>
-                              </div>
-
-                              <button
-                                type="button"
-                                disabled={(currentPlan?.allowance_accounts || 0) + addAccountsCount >= 1000}
-                                onClick={() => {
-                                  const step = addAccountsCount < 10 ? 1 : 10;
-                                  const next = Math.min(1000 - (currentPlan?.allowance_accounts || 0), addAccountsCount + step);
-                                  setAddAccountsCount(next);
-                                  setAddAccountsRaw(String(next));
-                                }}
-                                className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
-                                title="Increase accounts"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Add-on Pricing Box */}
-                          {(() => {
-                            const effectiveAddOn = Math.max(1, addAccountsCount);
-                            const cost = effectiveAddOn * 2.5;
-                            const formattedCost = cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2);
-                            return (
-                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-3.5 bg-[#F5F4F0] border-2 border-[#141414]">
-                                <div className="space-y-0.5">
-                                  <span className="text-[9px] font-black uppercase text-[#141414]/60 tracking-wider">
-                                    Add-on Accounts Cost
-                                  </span>
-                                  <div className="flex items-baseline gap-1.5">
-                                    <span className="text-xl font-black text-[#141414] tabular-nums">
-                                      +${formattedCost}
-                                    </span>
-                                    <span className="text-[10px] font-bold text-[#141414]/60 uppercase">
-                                      USD
-                                    </span>
-                                  </div>
-                                  <span className="text-[9.5px] text-[#141414]/60 block font-mono">
-                                    Adding {effectiveAddOn} account{effectiveAddOn === 1 ? '' : 's'} @ $2.50/acc
-                                  </span>
-                                </div>
-
-                                <div className="border-t sm:border-t-0 sm:border-l border-[#141414]/20 pt-2 sm:pt-0 sm:pl-4 text-left sm:text-right">
-                                  <span className="text-[9px] font-black uppercase text-[#141414]/50">
-                                    Resulting Capacity
-                                  </span>
-                                  <span className="text-sm font-black text-[#141414] uppercase font-mono block">
-                                    {currentPlan.allowance_accounts + effectiveAddOn} Accounts
-                                  </span>
-                                  <span className="text-[9px] text-emerald-700 font-bold block">
-                                    {currentPlan.allowance_accounts} Current + {effectiveAddOn} New
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      )}
-
-                      {/* Mode 2 Configuration: Extend Validity Duration */}
-                      {rosterAction === 'extend_validity' && (
-                        <div className="bg-white border-2 border-[#141414] p-4 space-y-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-                          {/* Previously Owned Slave Account Count Banner */}
-                          <div className="flex items-center justify-between p-2.5 bg-[#F5F4F0] border-2 border-[#141414]">
-                            <div className="space-y-0.5">
-                              <span className="text-[9px] font-black uppercase text-[#141414]/60 tracking-wider block">
-                                Previously Owned Slave Accounts
-                              </span>
-                              <span className="text-sm font-black font-mono text-[#141414]">
-                                {currentPlan.allowance_accounts} Slave Accounts
-                              </span>
-                            </div>
-
-                            <div className="flex flex-col items-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setIsSpogModalOpen(true)}
-                                className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer flex items-center"
-                              >
-                                spog
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setShowAgentSelectorModal(prev => !prev)}
-                                className="px-2.5 py-1.5 bg-[#141414] text-white hover:bg-neutral-800 border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] transition-all"
-                              >
-                                <Users className="w-3.5 h-3.5 text-white" />
-                                <span>{showAgentSelectorModal ? 'Hide Agents' : 'View Agents'}</span>
-                                <ChevronDown className={`w-3 h-3 transition-transform ${showAgentSelectorModal ? 'rotate-180' : ''}`} />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Expandable Agent Selection List with Avatar, Name, ID & Checkbox */}
-                          {showAgentSelectorModal && (
-                            <div className="p-2.5 bg-[#F5F4F0] border-2 border-[#141414] space-y-2">
-                              {/* Clean, simplified toolbar */}
-                              <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[#141414]/15 font-mono">
-                                <span className="text-[10px] font-black uppercase text-[#141414] tracking-wider">
-                                  {selectedAgentIds.length} of {slaveAgentsList.length} Selected (Min 10)
-                                </span>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={selectAllAgents}
-                                    className="px-2 py-0.5 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white font-black uppercase text-[9px] transition-colors cursor-pointer"
-                                  >
-                                    Select All
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const baseSlice = slaveAgentsList.slice(0, 10).map(a => a.id);
-                                      setSelectedAgentIds(baseSlice);
-                                      setExtendAccountsCount(10);
-                                      setExtendAccountsRaw('10');
-                                    }}
-                                    className="px-2 py-0.5 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white font-black uppercase text-[9px] transition-colors cursor-pointer"
-                                  >
-                                    Deselect All
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="space-y-1.5 max-h-[156px] overflow-y-auto pr-0.5 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
-                                {slaveAgentsList.map((agent, idx) => {
-                                  const isSelected = selectedAgentIds.includes(agent.id);
-                                  const isDeployed = !!agent.isDeployed;
-
-                                  return (
-                                    <div
-                                      key={agent.id}
-                                      onClick={() => toggleAgentSelection(agent.id)}
-                                      className={`h-[42px] p-1.5 border-2 border-[#141414] flex items-center gap-2 cursor-pointer transition-all select-none shrink-0 box-border ${
-                                        isSelected
-                                          ? 'bg-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                                          : isDeployed
-                                            ? 'bg-white/50 opacity-60 hover:opacity-100'
-                                            : 'bg-neutral-100/70 opacity-40 hover:opacity-80'
-                                      }`}
-                                    >
-                                      <div className={`w-3.5 h-3.5 border-2 border-[#141414] flex items-center justify-center shrink-0 ${
-                                        isSelected ? 'bg-[#141414] text-white' : 'bg-white'
-                                      }`}>
-                                        {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                                      </div>
-
-                                      {isDeployed ? (
-                                        <AgentAvatar
-                                          name={agent.name}
-                                          avatar={agent.avatar_url}
-                                          id={agent.agent_id || agent.id}
-                                          className="w-6.5 h-6.5 rounded-none border border-[#141414] shadow-none shrink-0"
-                                        />
-                                      ) : (
-                                        <div className="w-6.5 h-6.5 border-2 border-dashed border-[#141414]/30 bg-neutral-200/50 flex items-center justify-center shrink-0">
-                                          <span className="text-[7px] font-mono font-black text-[#141414]/40">
-                                            #{String(agent.slotNum || idx + 1).padStart(2, '0')}
-                                          </span>
-                                        </div>
-                                      )}
-
-                                      <div className="min-w-0 flex-1 text-left">
-                                        <span className="font-bold text-[10px] truncate block text-[#141414] leading-tight">
-                                          {agent.name}
-                                        </span>
-                                        <span className={`font-mono text-[8px] block ${isDeployed ? 'text-[#141414]/70 font-bold truncate' : 'text-[#141414]/40 italic font-black uppercase'}`}>
-                                          {isDeployed ? agent.agent_id : 'NOT DEPLOYED'}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Stepper to choose how many previously owned accounts to increase validity of */}
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-[#141414]/15">
-                            <div>
-                              <span className="text-xs font-black uppercase tracking-wider block">Accounts To Renew</span>
-                              <span className="text-[10px] text-[#141414]/70 font-sans block">
-                                Select how many accounts to extend validity for (Min 10 accounts required).
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto font-mono">
-                              <button
-                                type="button"
-                                disabled={extendAccountsCount <= 10}
-                                onClick={() => {
-                                  const next = Math.max(10, extendAccountsCount - 1);
-                                  handleExtendCountChange(next);
-                                  setExtendAccountsRaw(String(next));
-                                }}
-                                className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
-                              >
-                                -
-                              </button>
-
-                              <div className="flex items-center border-2 border-[#141414] bg-neutral-50 px-2 h-8">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={Math.max(1, currentPlan?.allowance_accounts || 10)}
-                                  value={extendAccountsRaw}
-                                  onChange={(e) => {
-                                    const raw = e.target.value;
-                                    setExtendAccountsRaw(raw);
-                                    const val = parseInt(raw, 10);
-                                    if (!isNaN(val) && val >= 1) {
-                                      handleExtendCountChange(val);
-                                    }
-                                  }}
-                                  onBlur={() => {
-                                    const parsed = parseInt(extendAccountsRaw, 10);
-                                    const maxVal = Math.max(1, currentPlan?.allowance_accounts || 10);
-                                    if (isNaN(parsed) || parsed < 1) {
-                                      handleExtendCountChange(1);
-                                      setExtendAccountsRaw('1');
-                                    } else {
-                                      const clamped = Math.min(maxVal, Math.max(1, parsed));
-                                      handleExtendCountChange(clamped);
-                                      setExtendAccountsRaw(String(clamped));
-                                    }
-                                  }}
-                                  className="w-14 font-mono font-black text-xs text-center bg-transparent text-[#141414] focus:outline-none"
-                                />
-                                <span className="text-[9px] font-bold uppercase text-[#141414]/60 select-none ml-1">acc</span>
-                              </div>
-
-                              <button
-                                type="button"
-                                disabled={extendAccountsCount >= Math.max(1, currentPlan?.allowance_accounts || 10)}
-                                onClick={() => {
-                                  const maxVal = Math.max(1, currentPlan?.allowance_accounts || 10);
-                                  const next = Math.min(maxVal, extendAccountsCount + 1);
-                                  handleExtendCountChange(next);
-                                  setExtendAccountsRaw(String(next));
-                                }}
-                                className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2.5 font-mono">
-                            <button
-                              type="button"
-                              onClick={() => setValidityExtensionDays(30)}
-                              className={`p-2.5 border-2 border-[#141414] text-center transition-all cursor-pointer ${
-                                validityExtensionDays === 30
-                                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                                  : 'bg-[#F5F4F0] text-[#141414] hover:bg-neutral-100'
-                              }`}
-                            >
-                              <span className="text-xs font-black block">+30 DAYS</span>
-                              <span className="text-[10px] font-bold block opacity-80">${calculateExtensionPrice(extendAccountsCount, 30)} USD</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setValidityExtensionDays(90)}
-                              className={`p-2.5 border-2 border-[#141414] text-center transition-all cursor-pointer ${
-                                validityExtensionDays === 90
-                                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                                  : 'bg-[#F5F4F0] text-[#141414] hover:bg-neutral-100'
-                              }`}
-                            >
-                              <span className="text-xs font-black block">+90 DAYS</span>
-                              <span className="text-[10px] font-bold block opacity-80">${calculateExtensionPrice(extendAccountsCount, 90)} USD</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setValidityExtensionDays(365)}
-                              className={`p-2.5 border-2 border-[#141414] text-center transition-all cursor-pointer ${
-                                validityExtensionDays === 365
-                                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                                  : 'bg-[#F5F4F0] text-[#141414] hover:bg-neutral-100'
-                              }`}
-                            >
-                              <span className="text-xs font-black block">+1 YEAR</span>
-                              <span className="text-[10px] font-bold block opacity-80">${calculateExtensionPrice(extendAccountsCount, 365)} USD</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   ) : (
                     /* Initial Plan Purchase Configuration for Inactive/Free users */
@@ -1691,11 +1343,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           <span>PERSISTING TO DATABASE...</span>
                         </>
                       ) : currentPlan?.status === 'active' ? (
-                        rosterAction === 'add_accounts' ? (
-                          <span>BUY FOR (${(Math.max(1, addAccountsCount) * 2.5 % 1 === 0 ? (Math.max(1, addAccountsCount) * 2.5).toFixed(0) : (Math.max(1, addAccountsCount) * 2.5).toFixed(2))} USD)</span>
-                        ) : (
-                          <span>BUY FOR (${calculateExtensionPrice(extendAccountsCount, validityExtensionDays)} USD)</span>
-                        )
+                        <span>BUY FOR (${(Math.max(1, addAccountsCount) * 2.5 % 1 === 0 ? (Math.max(1, addAccountsCount) * 2.5).toFixed(0) : (Math.max(1, addAccountsCount) * 2.5).toFixed(2))} USD)</span>
                       ) : (
                         <span>BUY FOR (${totalPrice} USD)</span>
                       )}
@@ -1792,7 +1440,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between gap-2 shrink-0">
               <div className="flex flex-col">
                 <span className="text-[10px] font-black uppercase tracking-wider text-[#141414]">
-                  Fleet Matrix protocol
+                  Slave Selection Protocol
                 </span>
                 <div className="flex items-center gap-2 mt-1.5 p-1.5 bg-white border border-[#141414]/20 shadow-inner">
                   <button

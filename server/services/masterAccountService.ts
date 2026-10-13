@@ -474,7 +474,6 @@ export class MasterAccountService {
           accounts_bought: accountsBoughtThisTransaction,
           accounts_in_transaction: accountsBoughtThisTransaction,
           added_accounts: accountsBoughtThisTransaction,
-          validity_days_extended: options?.validityDays || null,
           blocks: blocks,
           created_at: nowIso,
           expires_at: expiresAt
@@ -703,16 +702,7 @@ export class MasterAccountService {
         let planSubtitle = 'Base Fleet Roster';
         let amount = 50;
 
-        if (false || meta.validity_days_extended) {
-          const days = meta.validity_days_extended || 30;
-          const extAccounts = meta.accounts_extended || accountsInTx;
-          const baseFee = days === 30 ? 50 : days === 90 ? 140 : 500;
-          const extraAccounts = Math.max(0, extAccounts - 10);
-          const multiplier = days === 30 ? 1 : days === 90 ? 2.8 : 10;
-          amount = baseFee + Math.round(extraAccounts * 2.5 * multiplier);
-          planTitle = 'Master & Slave Agent Plan';
-          planSubtitle = `Validity Extension (+${days} Days)`;
-        } else if (actionType === 'add_accounts' || meta.added_accounts > 0 || meta.previous_allowance > 0) {
+        if (actionType === 'add_accounts' || meta.added_accounts > 0 || meta.previous_allowance > 0) {
           const added = accountsInTx;
           amount = Math.round(added * 2.5);
           planTitle = 'Master & Slave Agent Plan';
