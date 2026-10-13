@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkTicket } from '../types';
-import { MessageSquare as BidIcon, Shield, Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Inbox, Edit3 } from 'lucide-react';
+import { MessageSquare as BidIcon, Shield, Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Inbox, Edit3, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -2023,39 +2023,17 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         />
                       </div>
 
-                      <div className="flex-1 space-y-1.5 min-w-0">
-                        <div className="flex gap-2 items-center flex-wrap">
-                          <label className="px-2.5 py-1 bg-[#141414] text-white hover:bg-black text-[9px] font-extrabold uppercase border border-[#141414] cursor-pointer transition-all inline-flex items-center justify-center gap-1 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                            <span>Upload Image</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={handleAvatarFileUpload}
-                              className="hidden"
-                            />
-                          </label>
-
-                          {editAvatar && (
-                            <button
-                              type="button"
-                              onClick={() => setEditAvatar('')}
-                              className="px-2 py-1 bg-white hover:bg-neutral-100 text-[#141414] text-[9px] font-bold uppercase border border-[#141414] cursor-pointer transition-all"
-                            >
-                              Reset
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="space-y-0.5">
-                          <label className="block text-[8px] font-bold uppercase text-[#141414]/60">Or Image URL</label>
+                      <div className="flex-1 min-w-0">
+                        <label className="px-3 py-1.5 bg-[#141414] text-white hover:bg-white hover:text-[#141414] text-[10px] font-bold uppercase border-2 border-[#141414] cursor-pointer transition-all inline-flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none select-none">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Image</span>
                           <input
-                            type="text"
-                            value={editAvatar}
-                            onChange={(e) => setEditAvatar(e.target.value)}
-                            placeholder="https://... image link"
-                            className="w-full bg-white border border-[#141414] px-2 py-1 text-[10px] font-mono focus:outline-hidden"
+                            type="file"
+                            accept="image/*"
+                            onChange={handleAvatarFileUpload}
+                            className="hidden"
                           />
-                        </div>
+                        </label>
                       </div>
                     </div>
                   </div>
