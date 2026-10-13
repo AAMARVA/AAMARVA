@@ -412,6 +412,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     if (!file) return;
     if (file.size > 2 * 1024 * 1024) {
       setEditProfileError('Image file size must be less than 2MB.');
+      e.target.value = '';
       return;
     }
     const reader = new FileReader();
@@ -421,6 +422,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       }
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleSaveProfile = async (e?: React.FormEvent) => {
