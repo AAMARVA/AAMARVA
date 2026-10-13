@@ -457,36 +457,30 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
               </button>
             </div>
 
-            {spogMode === 'cluster' && (
-                <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between gap-2 shrink-0">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-[#141414]">
-                      FLEET MATRIX PROTOCOL
-                    </span>
-                    <div className="flex items-center gap-2 mt-1.5 p-1.5 bg-white border border-[#141414]/20 shadow-inner">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSpogAgentIds(activeConnections.map(c => c.agentId || c.id))}
-                        className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer"
-                      >
-                        Select All
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSpogAgentIds([])}
-                        className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer"
-                      >
-                        Deselect All
-                      </button>
-                    </div>
-                  </div>
-                </div>
-            )}
-            
             <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between gap-2 shrink-0">
-              <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
-                {spogMode === 'cluster' ? 'Slave Selection' : 'Slave Monitor Protocol'}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
+                  {spogMode === 'cluster' ? 'Slave Selection' : 'Slave Monitor Protocol'}
+                </span>
+                {spogMode === 'cluster' && (
+                  <div className="flex items-center gap-1.5 p-1 bg-white border border-[#141414]/20 shadow-inner">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSpogAgentIds(activeConnections.map(c => c.agentId || c.id))}
+                      className="text-[9px] font-black uppercase border-2 border-[#141414] px-1.5 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSpogAgentIds([])}
+                      className="text-[9px] font-black uppercase border-2 border-[#141414] px-1.5 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
