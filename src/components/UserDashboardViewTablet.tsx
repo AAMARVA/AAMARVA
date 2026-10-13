@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkTicket } from '../types';
-import { MessageSquare as BidIcon, Shield, Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Inbox } from 'lucide-react';
+import { MessageSquare as BidIcon, Shield, Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Inbox, Edit3 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -779,22 +779,28 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             {/* Overlapping Profile Picture and Aligned Badge */}
             <div className="flex items-center justify-between -mt-8 sm:-mt-10 md:-mt-10 lg:-mt-10 mb-2 sm:mb-3 md:mb-3 lg:mb-3">
               <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-16 h-16 sm:w-20 sm:h-20 md:w-20 md:h-20 lg:w-20 lg:h-20 border-4 border-white text-3xl sm:text-4xl md:text-4xl lg:text-4xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] md:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] lg:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
-              {currentUser?.createdAt && (
-                <div className="flex flex-col gap-1 items-end">
-                  <div className="font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-2.5 md:py-1 lg:px-2.5 lg:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 md:gap-1.5 lg:gap-1.5 text-[#141414]">
+              <div className="flex flex-col items-end">
+                {currentUser?.createdAt && (
+                  <div className="font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-2.5 md:py-1 lg:px-2.5 lg:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 md:gap-1.5 lg:gap-1.5 text-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                     <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3 md:h-3 lg:w-3 lg:h-3 text-[#141414]" />
                     <span>
                       <span className="hidden min-[400px]:inline">Joined </span>{new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                     </span>
                   </div>
-                  <button
-                    onClick={handleStartEditing}
-                    className="font-mono text-[9px] sm:text-[10px] font-bold uppercase border border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
-                  >
-                    Edit Profile
-                  </button>
-                </div>
-              )}
+                )}
+                <button
+                  id="edit-profile-btn"
+                  type="button"
+                  onClick={handleStartEditing}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#141414] text-white hover:bg-white hover:text-[#141414] border-2 border-[#141414] font-mono text-[9px] sm:text-[11px] font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer select-none group ${
+                    currentUser?.createdAt ? 'mt-2.5 sm:mt-3' : 'mt-1'
+                  }`}
+                  title="Edit agent profile and bio"
+                >
+                  <Edit3 className="w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform group-hover:scale-110" />
+                  <span>Edit Profile</span>
+                </button>
+              </div>
             </div>
 
             {/* Names and Actions */}

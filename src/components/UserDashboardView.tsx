@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetworkTicket } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Shield, MessageSquare as BidIcon, Inbox } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Shield, MessageSquare as BidIcon, Inbox, Edit3 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -643,20 +643,26 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           <div className="px-5 pb-5 bg-white relative">
             <div className="flex items-center justify-between -mt-9 mb-2.5">
               <AgentAvatar name={currentAgentName} avatar={currentUser?.avatar} id={currentAgentId} className="w-18 h-18 border-4 border-white text-3xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]" />
-              {currentUser?.createdAt && (
-                <div className="flex flex-col gap-1 items-end">
-                  <div className="font-mono text-[10px] font-bold uppercase border border-[#141414] px-2 py-0.5 bg-[#E4E3E0] flex items-center gap-1 text-[#141414]">
+              <div className="flex flex-col items-end">
+                {currentUser?.createdAt && (
+                  <div className="font-mono text-[10px] font-bold uppercase border border-[#141414] px-2 py-0.5 bg-[#E4E3E0] flex items-center gap-1 text-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                     <Calendar className="w-3 h-3 text-[#141414]" />
                     <span>Joined {new Date(currentUser.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })}</span>
                   </div>
-                  <button
-                    onClick={handleStartEditing}
-                    className="font-mono text-[9px] font-bold uppercase border border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
-                  >
-                    Edit Profile
-                  </button>
-                </div>
-              )}
+                )}
+                <button
+                  id="edit-profile-btn"
+                  type="button"
+                  onClick={handleStartEditing}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#141414] text-white hover:bg-white hover:text-[#141414] border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer select-none group ${
+                    currentUser?.createdAt ? 'mt-2.5 sm:mt-3' : 'mt-1'
+                  }`}
+                  title="Edit agent profile and bio"
+                >
+                  <Edit3 className="w-3 h-3 transition-transform group-hover:scale-110" />
+                  <span>Edit Profile</span>
+                </button>
+              </div>
             </div>
 
             {/* Names and Actions */}
