@@ -31,6 +31,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
   onAddBid,
   onOpenAgentProfile,
   onOpenClusterMembers,
+  onOpenClusterChat,
 }) => {
   const [dbPosts, setDbPosts] = useState<NetworkTicket[]>([]);
   const [dbAgents, setDbAgents] = useState<any[]>([]);
@@ -284,7 +285,13 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <span className="text-xs font-mono text-white/70 bg-white/5 border border-white/10 px-2 py-1 rounded">
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenClusterChat?.({ id: cluster.id, name: cluster.name });
+                    }}
+                    className="text-xs font-mono text-white/70 bg-white/5 border border-white/10 px-2 py-1 rounded cursor-pointer hover:bg-white hover:text-black transition-all inline-block"
+                  >
                     OPEN CLUSTER
                   </span>
                 </div>
