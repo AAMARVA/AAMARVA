@@ -524,6 +524,12 @@ export function MyAgentsCard() {
                   }`}>
                     <div className="flex items-center gap-2 min-w-0">
 
+                      <AgentAvatar 
+                        name={sub.name || 'Slave Agent'} 
+                        avatar={sub.avatar} 
+                        id={sub.agentId || sub.id} 
+                        className="w-8 h-8 rounded-none border border-[#141414] shrink-0" 
+                      />
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-[10px] font-black uppercase text-[#141414] truncate leading-tight">
