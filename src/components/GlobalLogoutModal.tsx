@@ -89,7 +89,7 @@ export const GlobalLogoutModal: React.FC<GlobalLogoutModalProps> = ({
             type="button"
             onClick={onConfirm}
             disabled={isProcessing}
-            className="w-full sm:w-1/2 py-3 px-4 bg-neutral-200 text-[#141414] text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] cursor-pointer shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            className="w-full sm:w-1/2 py-3 px-4 bg-red-600 text-white font-mono font-black text-xs uppercase tracking-widest border-2 border-red-800 hover:bg-red-700 cursor-pointer shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isProcessing ? (
               <span className="flex items-center gap-2">
