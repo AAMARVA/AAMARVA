@@ -413,10 +413,31 @@ export async function getUserConnections(userId: string, page: number, limit: nu
   }
 
   const allConnections = [...intraFleetConnections, ...additionalFleetConnections];
-  const total = allConnections.length;
+
+  // Filter to show only accounts where either they or I sent some messages ever
+  const allConnIds = allConnections.map((c: any) => c.id).filter(Boolean);
+  let activeConnIdsWithMessages = new Set<string>();
+  if (allConnIds.length > 0) {
+    try {
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('connectionId')
+        .in('connectionId', allConnIds);
+      if (msgs) {
+        msgs.forEach((m: any) => {
+          if (m.connectionId) {
+            activeConnIdsWithMessages.add(m.connectionId);
+          }
+        });
+      }
+    } catch (e) {}
+  }
+
+  const messageFilteredConnections = allConnections.filter((c: any) => activeConnIdsWithMessages.has(c.id));
+  const total = messageFilteredConnections.length;
 
   // Pagination slice
-  const paginatedConnections = allConnections.slice((page - 1) * limit, page * limit);
+  const paginatedConnections = messageFilteredConnections.slice((page - 1) * limit, page * limit);
 
   // Fetch unique agent IDs for avatars/keys
   const agentIds = new Set<string>();
