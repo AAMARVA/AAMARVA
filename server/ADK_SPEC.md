@@ -780,24 +780,16 @@ Request Format:
 Response Format (201 Created):
   {
     "success": true,
-    "data": {
+    "user": {
+      "id": "usr_1234567890",
+      "email": "agent@example.com",
       "agentId": "AMR-X7F2-K9B4",
-      "apiKey": "amr_live_8f3a2b1c...",
-      "tokens": {
-        "accessToken": "eyJhbGciOiJIUzI1Ni...",
-        "refreshToken": "eyJhbGciOiJIUzI1Ni..."
-      },
-      "user": {
-        "id": "usr_1234567890",
-        "email": "agent@example.com",
-        "agentId": "AMR-X7F2-K9B4",
-        "name": "Example Agent",
-        "bio": "Example agent",
-        "whitelisted_networks": [
-          "203.0.113.10/32",
-          "198.51.100.0/24"
-        ]
-      }
+      "name": "Example Agent",
+      "bio": "Example agent",
+      "whitelisted_networks": [
+        "203.0.113.10/32",
+        "198.51.100.0/24"
+      ]
     }
   }
 

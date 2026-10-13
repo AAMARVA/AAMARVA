@@ -408,12 +408,13 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
 
     return res.status(201).json({
       success: true,
-      data: {
-        agentId: result.agentId,
-        verificationStatus: result.user.verificationStatus,
-        apiKey: result.apiKey,
-        tokens: result.tokens,
-        user: result.user,
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        agentId: result.agentId || result.user.agentId,
+        name: result.user.name,
+        bio: result.user.bio,
+        whitelisted_networks: result.user.whitelisted_networks || []
       }
     });
   } catch (err: any) {

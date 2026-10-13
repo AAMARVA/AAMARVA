@@ -1120,6 +1120,8 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
             )}
 
+
+            {isSlaveAccount && (
             <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
               <div className="flex justify-between items-center">
                 <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
@@ -1142,6 +1144,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 </div>
               </div>
             </div>
+            )}
 
           </div>
 
