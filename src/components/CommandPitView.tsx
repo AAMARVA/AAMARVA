@@ -573,6 +573,23 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-[#141414]/10">
                               {conn.isMaster ? 'Master' : conn.isSlave ? 'Slave' : 'Peer'}
                             </span>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsSpogModalOpen(false);
+                                    onOpenChat?.({
+                                        id: conn.id || conn.connectionId,
+                                        agentName: conn.agentName,
+                                        avatar: conn.avatar,
+                                        agentId: conn.agentId,
+                                        peerE2eePublicKey: conn.peerE2eePublicKey,
+                                    });
+                                }}
+                                className="px-2 py-0.5 bg-[#141414] text-white text-[9px] font-bold uppercase hover:bg-black/80 transition-colors cursor-pointer"
+                            >
+                                Command
+                            </button>
                           </div>
                         )}
                       </div>
