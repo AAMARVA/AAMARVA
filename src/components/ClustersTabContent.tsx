@@ -194,38 +194,40 @@ export function ClustersTabContent({
             <Users className="w-3.5 h-3.5 text-[#141414]/70" />
             <h3 className="font-mono text-xs font-black uppercase text-[#141414]">Incoming invites</h3>
           </div>
-          <div className="grid grid-cols-1 gap-3">
-            {incomingInvites.map((inv) => (
-              <div key={inv.id} className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black">
-                    {getClusterSymbol(inv.clusterId)}
+          <div className="max-h-[260px] overflow-y-auto pr-1.5 p-0.5 custom-scrollbar">
+            <div className="grid grid-cols-1 gap-3">
+              {incomingInvites.map((inv) => (
+                <div key={inv.id} className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black">
+                      {getClusterSymbol(inv.clusterId)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-mono text-[10px] font-black uppercase truncate text-[#141414]">
+                        Invite to {inv.clusterName}
+                      </p>
+                      <p className="text-[9px] text-[#141414]/60 font-mono italic truncate">
+                        From @{inv.inviterAgentId}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="font-mono text-[10px] font-black uppercase truncate text-[#141414]">
-                      Invite to {inv.clusterName}
-                    </p>
-                    <p className="text-[9px] text-[#141414]/60 font-mono italic truncate">
-                      From @{inv.inviterAgentId}
-                    </p>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      onClick={() => handleAcceptInvite(inv.clusterId)}
+                      className="p-1.5 bg-white text-[#141414] font-bold border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => handleDeclineInvite(inv.clusterId, inv.id)}
+                      className="p-1.5 bg-white text-[#141414] font-bold border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                    >
+                      Reject
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-1.5 shrink-0">
-                  <button
-                    onClick={() => handleAcceptInvite(inv.clusterId)}
-                    className="p-1.5 bg-white text-[#141414] font-bold border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
-                  >
-                    Accept
-                  </button>
-                  <button
-                    onClick={() => handleDeclineInvite(inv.clusterId, inv.id)}
-                    className="p-1.5 bg-white text-[#141414] font-bold border-2 border-[#141414] hover:bg-neutral-200 text-[#141414] hover:text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -240,49 +242,51 @@ export function ClustersTabContent({
         </div>
 
         {activeClusters.length > 0 ? (
-          <div className="grid grid-cols-2 gap-4">
-            {activeClusters.map((cl) => {
-              const sym = getClusterSymbol(cl.id);
-              return (
-                <div 
-                  key={cl.id}
-                  onClick={() => onOpenClusterChat?.({ id: cl.id, name: cl.name })}
-                  className="p-4 bg-white border-2 border-[#141414] hover:bg-[#E4E3E0]/15 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer flex flex-col justify-between gap-4 text-left"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 bg-[#141414] text-white border-2 border-[#141414] font-mono text-sm flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
-                          {sym}
+          <div className="max-h-[440px] sm:max-h-[225px] overflow-y-auto pr-1.5 p-1 custom-scrollbar">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              {activeClusters.map((cl) => {
+                const sym = getClusterSymbol(cl.id);
+                return (
+                  <div 
+                    key={cl.id}
+                    onClick={() => onOpenClusterChat?.({ id: cl.id, name: cl.name })}
+                    className="p-3.5 sm:p-4 bg-white border-2 border-[#141414] hover:bg-[#E4E3E0]/15 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer flex flex-col justify-between gap-3 text-left"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2.5 sm:gap-3">
+                        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-[#141414] text-white border-2 border-[#141414] font-mono text-sm flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
+                            {sym}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wide text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
+                              <span>{cl.name}</span>
+                            </h4>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <h4 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wide text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
-                            <span>{cl.name}</span>
-                          </h4>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenClusterChat?.({ id: cl.id, name: cl.name });
+                          }}
+                          className="py-1 sm:py-1.5 px-2.5 sm:px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>Open It</span>
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenClusterChat?.({ id: cl.id, name: cl.name });
-                        }}
-                        className="py-1.5 px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>Open It</span>
-                      </button>
-                    </div>
 
-                    {cl.description && (
-                      <p className="text-xs text-[#141414] italic border-l-[3px] border-[#141414] pl-2.5 overflow-x-auto no-scrollbar whitespace-nowrap">
-                        <span>"{cl.description}"</span>
-                      </p>
-                    )}
+                      {cl.description && (
+                        <p className="text-xs text-[#141414] italic border-l-[3px] border-[#141414] pl-2.5 overflow-x-auto no-scrollbar whitespace-nowrap">
+                          <span>"{cl.description}"</span>
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div className="py-8 px-4 text-center border-2 border-dashed border-[#141414]/20 bg-[#E4E3E0]/10 flex flex-col items-center justify-center gap-2">

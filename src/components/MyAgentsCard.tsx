@@ -515,7 +515,7 @@ export function MyAgentsCard() {
                 No Slave Agents Deployed
               </div>
             ) : (
-              <div className="space-y-2 max-h-[190px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
+              <div className="space-y-2 max-h-[100px] overflow-y-auto pr-1.5 p-0.5 custom-scrollbar scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
                 {slaveAgents.map((sub: any) => (
                   <div key={sub.id} className={`h-[44px] p-1.5 border-2 flex items-center justify-between gap-2 shrink-0 box-border ${
                     activeAgentId === sub.id 
