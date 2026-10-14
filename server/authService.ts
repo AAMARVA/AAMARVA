@@ -1211,16 +1211,14 @@ export async function deleteUserAccount(userId: string): Promise<void> {
     throw new Error('Account deletion failed: User account not found or already deleted.');
   }
 
-  // Recycle deleted agent's avatar to inventory paired with a brand-new Account ID (bypasses Max Capacity cap)
+  // Recycle deleted agent's avatar to inventory
   if (userBefore?.avatar) {
     recycleAvatarToInventory(userBefore.avatar).catch(err => {
       console.warn('[Account Deletion] Failed to recycle avatar to inventory:', err?.message || err);
     });
   }
 
-  const userEmail = (userBefore.email || '').trim().toLowerCase();
-
-  // Cascade delete all associated Slave Agents first (which recursively cleans up their messages, posts, auth records, etc.)
+  // Cascade delete all associated Slave Agents in parallel
   try {
     const { data: slaves } = await supabase
       .from('users')
@@ -1228,64 +1226,37 @@ export async function deleteUserAccount(userId: string): Promise<void> {
       .eq('master_id', userId);
 
     if (slaves && slaves.length > 0) {
-      for (const slave of slaves) {
-        try {
-          await deleteUserAccount(slave.id);
-        } catch (slaveErr: any) {
-          console.warn(`[Master Account Deletion] Warning deleting slave agent ${slave.id}:`, slaveErr?.message || slaveErr);
-        }
-      }
+      await Promise.allSettled(slaves.map((slave: any) => deleteUserAccount(slave.id)));
     }
   } catch (err: any) {
     console.warn('[Master Account Deletion] Warning fetching slave agents:', err?.message || err);
   }
 
-  // --- EXECUTE DELETIONS IN BOTTOM-UP DEPENDENCY ORDER (with database cascade as safety net) ---
+  // --- EXECUTE DELETIONS CONCURRENTLY VIA PROMISE.ALLSETTLED ---
+  const rawAgentId = (userBefore.agentId || '').trim();
+  const cleanAgentId = rawAgentId.replace(/^@/, '');
+  const prefixedAgentId = cleanAgentId ? `@${cleanAgentId}` : '';
 
-  // Step 1: Delete Messages sent by the user
-  await supabase.from('messages').delete().eq('senderUserId', userId);
+  await Promise.allSettled([
+    supabase.from('messages').delete().eq('senderUserId', userId),
+    supabase.from('connection_requests').delete().eq('senderUserId', userId),
+    supabase.from('connection_requests').delete().eq('receiverUserId', userId),
+    supabase.from('connections').delete().eq('postOwnerUserId', userId),
+    supabase.from('connections').delete().eq('replyAuthorUserId', userId),
+    supabase.from('reviews').delete().eq('reviewerUserId', userId),
+    supabase.from('replies').delete().eq('userId', userId),
+    supabase.from('posts').delete().eq('userId', userId),
+    supabase.from('agent_footprints').delete().or(`user_id.eq.${userId},userId.eq.${userId}`),
+    supabase.from('external_events').delete().or(`user_id.eq.${userId},userId.eq.${userId}`),
+    userBefore.agentId ? supabase.from('account_audit_logs').delete().eq('agentId', userBefore.agentId) : Promise.resolve(),
+    invalidateAllHumanSessionsForUser(userId),
+    supabase.from('human_sessions').delete().eq('userId', userId),
+    supabase.from('password_reset_tokens').delete().eq('userId', userId),
+    supabase.from('refresh_tokens').delete().eq('userId', userId),
+  ]);
 
-  // Step 2: Delete Connection Requests involving the user
-  await supabase.from('connection_requests').delete().eq('senderUserId', userId);
-  await supabase.from('connection_requests').delete().eq('receiverUserId', userId);
-
-  // Step 3: Delete Connections involving the user
-  await supabase.from('connections').delete().eq('postOwnerUserId', userId);
-  await supabase.from('connections').delete().eq('replyAuthorUserId', userId);
-
-  // Step 4: Delete Reviews authored by the user
+  // Cluster cleanup (non-blocking)
   try {
-    await supabase.from('reviews').delete().eq('reviewerUserId', userId);
-  } catch (e) {
-    // Non-fatal if table doesn't have records or review deletion handled by DB cascade
-  }
-
-  // Step 5: Delete Replies written by the user
-  await supabase.from('replies').delete().eq('userId', userId);
-
-  // Step 6: Delete Posts authored by the user
-  await supabase.from('posts').delete().eq('userId', userId);
-
-  // Step 7: Delete Agent Footprints & External Events
-  try {
-    await supabase.from('agent_footprints').delete().eq('user_id', userId);
-  } catch (e) {}
-  try {
-    await supabase.from('agent_footprints').delete().eq('userId', userId);
-  } catch (e) {}
-  try {
-    await supabase.from('external_events').delete().eq('user_id', userId);
-  } catch (e) {}
-  try {
-    await supabase.from('external_events').delete().eq('userId', userId);
-  } catch (e) {}
-
-  // Step 7.5: Delete Cluster Memberships & Orphaned Clusters
-  try {
-    const rawAgentId = (userBefore.agentId || '').trim();
-    const cleanAgentId = rawAgentId.replace(/^@/, '');
-    const prefixedAgentId = cleanAgentId ? `@${cleanAgentId}` : '';
-
     const clusterTablesList = ['cluster_members', 'enclave_cluster_members'];
     const clusterMainList = ['clusters', 'enclave_clusters'];
     const clusterInvitesList = ['cluster_invites', 'enclave_cluster_invites'];
@@ -1304,21 +1275,15 @@ export async function deleteUserAccount(userId: string): Promise<void> {
         cleanAgentId ? `agentId.eq.${cleanAgentId}` : null,
       ].filter(Boolean).join(',');
 
-      // 1. Find all clusters this agent/user belongs to
       const { data: memberRows } = await supabase
         .from(membersTable)
-        .select('id, clusterId')
+        .select('clusterId')
         .or(memberOrConditions);
 
       const affectedClusterIds = Array.from(new Set((memberRows || []).map((r: any) => r.clusterId).filter(Boolean)));
 
-      // 2. Delete member rows for this agent/user
-      await supabase
-        .from(membersTable)
-        .delete()
-        .or(memberOrConditions);
+      await supabase.from(membersTable).delete().or(memberOrConditions);
 
-      // 3. Delete cluster invites associated with this user/agent
       const inviteOrConditions = [
         `inviterUserId.eq.${userId}`,
         `inviteeUserId.eq.${userId}`,
@@ -1328,107 +1293,43 @@ export async function deleteUserAccount(userId: string): Promise<void> {
         cleanAgentId ? `invitedAgentId.eq.${cleanAgentId}` : null,
       ].filter(Boolean).join(',');
 
-      try {
-        await supabase.from(invitesTable).delete().or(inviteOrConditions);
-      } catch (e) {}
+      await supabase.from(invitesTable).delete().or(inviteOrConditions);
 
-      // 4. Inspect each affected cluster: if no remaining active members, remove the entire cluster
-      for (const clusterId of affectedClusterIds) {
-        const { data: remainingMembers } = await supabase
-          .from(membersTable)
-          .select('id, status')
-          .eq('clusterId', clusterId);
-
-        const activeRemaining = (remainingMembers || []).filter((m: any) => m.status !== 'dissolved');
-
-        if (!remainingMembers || remainingMembers.length === 0 || activeRemaining.length === 0) {
-          try { await supabase.from(messagesTable).delete().eq('clusterId', clusterId); } catch (e) {}
-          try { await supabase.from(invitesTable).delete().eq('clusterId', clusterId); } catch (e) {}
-          try { await supabase.from(membersTable).delete().eq('clusterId', clusterId); } catch (e) {}
-          try { await supabase.from(clustersTable).delete().eq('id', clusterId); } catch (e) {}
-          console.log(`[Account Deletion] Removed cluster ${clusterId} as it has no remaining active members after user deletion.`);
+      if (affectedClusterIds.length > 0) {
+        for (const clusterId of affectedClusterIds) {
+          const { data: remaining } = await supabase
+            .from(membersTable)
+            .select('id, status')
+            .eq('clusterId', clusterId);
+          const activeRemaining = (remaining || []).filter((m: any) => m.status !== 'dissolved');
+          if (!remaining || remaining.length === 0 || activeRemaining.length === 0) {
+            await Promise.allSettled([
+              supabase.from(messagesTable).delete().eq('clusterId', clusterId),
+              supabase.from(invitesTable).delete().eq('clusterId', clusterId),
+              supabase.from(membersTable).delete().eq('clusterId', clusterId),
+              supabase.from(clustersTable).delete().eq('id', clusterId),
+            ]);
+          }
         }
       }
     }
   } catch (clusterErr) {
-    console.warn('[Account Deletion] Warning during cluster membership cleanup:', clusterErr);
+    console.warn('[Account Deletion] Warning during cluster cleanup:', clusterErr);
   }
 
-  // Step 8: Delete Account Audit Logs for this agent
-  if (userBefore.agentId) {
-    try {
-      await supabase.from('account_audit_logs').delete().eq('agentId', userBefore.agentId);
-    } catch (e) {}
-  }
-
-  // Step 9: Delete All Database Auth Records (Human Sessions, Password Reset Tokens, Refresh Tokens)
-  await invalidateAllHumanSessionsForUser(userId);
-  await supabase.from('human_sessions').delete().eq('userId', userId);
-  await supabase.from('password_reset_tokens').delete().eq('userId', userId);
-  await supabase.from('refresh_tokens').delete().eq('userId', userId);
-
-  // Step 10: Delete User Record from database
+  // Delete User Record from database
   const { error } = await supabase.from('users').delete().eq('id', userId);
   if (error) {
-    console.error('[Account Deletion Failure] Failed to delete user record:', error);
-    throw new Error(`Failed to delete user account: ${error.message || error}`);
+    throw new Error(`Failed to delete user account: ${error.message}`);
   }
 
-  // Verify that user record is deleted
-  const { data: userAfter, error: verifyErr } = await supabase
-    .from('users')
-    .select('id')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (verifyErr) {
-    console.error('[Account Deletion Failure] Verification query failed:', verifyErr);
-    throw new Error(`Failed to verify account deletion: ${verifyErr.message}`);
-  }
-
-  if (userAfter) {
-    console.error('[Account Deletion Failure] User record still exists after delete operation!');
-    throw new Error('Account deletion verification failed: User record was not removed.');
-  }
-
-  // Step 11: Cascade and Purge all Supabase Auth records for this user (both by ID and by email)
+  // Delete Supabase Auth user (direct and fast)
   try {
     if (supabase.auth?.admin?.deleteUser) {
-      // A. Delete directly by known userId
-      const { error: deleteError } = await supabase.auth.admin.deleteUser(userId);
-      if (deleteError) {
-        if (deleteError.message?.toLowerCase().includes('not found')) {
-          console.warn(`[Account Deletion Warning] Corresponding Auth user for ID ${userId} was not found in Supabase Auth.`);
-        } else {
-          console.error('[Account Deletion Error] Failed to delete Supabase Auth user directly:', deleteError);
-        }
-      } else {
-        console.log(`[Account Deletion] Successfully deleted Supabase Auth user ID: ${userId}`);
-      }
-
-      // B. Purge all matching or old auth records for this user's email to prevent orphaned credentials
-      if (userEmail) {
-        try {
-          const { data: listResult, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-          if (!listErr && listResult?.users) {
-            const matchingAuthUsers = listResult.users.filter(
-              (u: any) => normalizeEmail(u.email || '') === userEmail
-            );
-            for (const oldAuth of matchingAuthUsers) {
-              console.log(`[Account Deletion] Purging matching/old Supabase Auth record ${oldAuth.id} for email ${userEmail}`);
-              await supabase.auth.admin.deleteUser(oldAuth.id);
-            }
-          }
-        } catch (listErr) {
-          console.warn('[Account Deletion] Warning searching for old auth records by email:', listErr);
-        }
-      }
+      await supabase.auth.admin.deleteUser(userId);
     }
-  } catch (e: any) {
-    console.error('[Account Deletion Error] Supabase Auth admin delete exception:', e?.message || e);
-  }
+  } catch (e) {}
 
-  // Step 12: Invalidate in-memory auth caches
   invalidateAuthCache();
 }
 

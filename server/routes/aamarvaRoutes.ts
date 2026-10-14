@@ -2040,6 +2040,29 @@ router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update')
   try {
     const { name, bio, avatar } = req.body;
     
+    const supabase = getSupabaseClient();
+    const { data: dbUser } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', req.user!.id)
+      .maybeSingle();
+
+    const isSlave = !!(
+      (dbUser && (
+        dbUser.account_type === 'slave' ||
+        dbUser.role === 'slave' ||
+        dbUser.is_slave === true ||
+        (dbUser.email && typeof dbUser.email === 'string' && dbUser.email.includes('+AMR-')) ||
+        (dbUser.master_id && dbUser.master_id !== dbUser.id)
+      )) ||
+      (req.user && (
+        (req.user as any).account_type === 'slave' ||
+        (req.user as any).role === 'slave' ||
+        (req.user as any).is_slave === true ||
+        ((req.user as any).masterId && (req.user as any).masterId !== req.user.id)
+      ))
+    );
+
     // Input validation constraints
     if (name !== undefined) {
       const trimmedName = name.toString().trim();
@@ -2055,7 +2078,7 @@ router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update')
       }
     }
 
-    if (avatar !== undefined) {
+    if (avatar !== undefined && !isSlave) {
       const avatarStr = typeof avatar === 'string' ? avatar.trim() : '';
       if (avatarStr.length > 1000000) {
         throw new Error('Avatar payload is too large.');
@@ -2065,7 +2088,9 @@ router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update')
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
     if (bio !== undefined) updateData.bio = bio;
-    if (avatar !== undefined) updateData.avatar = avatar;
+    if (avatar !== undefined && !isSlave) {
+      updateData.avatar = avatar;
+    }
     
     if (Object.keys(updateData).length === 0) {
       throw new Error('No data provided to update.');
