@@ -73,19 +73,32 @@ export function clearPeerKeyCache(): void {
 
 /**
  * Fetches the peer public key for a single connection and caches it.
- * Reuses existing in-flight request to avoid duplicate requests.
+ * Reuses existing in-flight request to avoid duplicate concurrent requests for the same connection key.
  */
-export async function prefetchPeerKey(connectionId: string, authType?: 'human' | 'agent'): Promise<CachedPeerKeyData | null> {
+export async function fetchConnectionPeerKey(
+  connectionId: string,
+  options?: {
+    receiverAgentId?: string;
+    authType?: 'human' | 'agent';
+    forceRefresh?: boolean;
+  }
+): Promise<CachedPeerKeyData | null> {
   if (!connectionId) return null;
 
+  const inFlightKey = options?.receiverAgentId 
+    ? `${connectionId}#${normalizeAgentId(options.receiverAgentId)}` 
+    : connectionId;
+
   // 1. Check in-memory fresh cache
-  const cached = getCachedPeerKey(connectionId);
-  if (cached) {
-    return cached;
+  if (!options?.forceRefresh) {
+    const cached = getCachedPeerKey(connectionId);
+    if (cached) {
+      return cached;
+    }
   }
 
-  // 2. Check if already fetching
-  const inFlight = inFlightPrefetches.get(connectionId);
+  // 2. Reuse in-flight request if already fetching for this connection key
+  const inFlight = inFlightPrefetches.get(inFlightKey);
   if (inFlight) {
     return inFlight;
   }
@@ -95,11 +108,12 @@ export async function prefetchPeerKey(connectionId: string, authType?: 'human' |
     return null;
   }
 
-  const effectiveAuthType = authType || getCurrentSessionAuthType();
+  const effectiveAuthType = options?.authType || getCurrentSessionAuthType();
+  const peerQuery = options?.receiverAgentId ? `?receiverAgentId=${encodeURIComponent(options.receiverAgentId)}` : '';
 
   const fetchPromise = (async (): Promise<CachedPeerKeyData | null> => {
     try {
-      const res = await apiFetch(`/api/connections/${connectionId}/peer-key`, { authType: effectiveAuthType });
+      const res = await apiFetch(`/api/connections/${connectionId}/peer-key${peerQuery}`, { authType: effectiveAuthType });
       if (res?.data) {
         const d = res.data;
         const normalizedPeerId = normalizeAgentId(d.peerAgentId);
@@ -160,16 +174,24 @@ export async function prefetchPeerKey(connectionId: string, authType?: 'human' |
       if (err?.status === 429) {
         // Rate limit encountered: back off for 15 seconds
         rateLimitedUntil = Date.now() + 15000;
-        console.warn('Peer-key prefetch paused due to rate limiting (429).');
+        console.warn('Peer-key fetch paused due to rate limiting (429).');
       }
       return null;
     } finally {
-      inFlightPrefetches.delete(connectionId);
+      inFlightPrefetches.delete(inFlightKey);
     }
   })();
 
-  inFlightPrefetches.set(connectionId, fetchPromise);
+  inFlightPrefetches.set(inFlightKey, fetchPromise);
   return fetchPromise;
+}
+
+/**
+ * Fetches the peer public key for a single connection and caches it.
+ * Reuses existing in-flight request to avoid duplicate requests.
+ */
+export async function prefetchPeerKey(connectionId: string, authType?: 'human' | 'agent'): Promise<CachedPeerKeyData | null> {
+  return fetchConnectionPeerKey(connectionId, { authType });
 }
 
 /**

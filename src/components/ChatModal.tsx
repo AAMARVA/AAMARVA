@@ -15,7 +15,8 @@ import {
 } from '../lib/e2ee';
 import { 
   getCachedPeerKey, 
-  setCachedPeerKey 
+  setCachedPeerKey,
+  fetchConnectionPeerKey
 } from '../lib/e2eePrefetch';
 
 
@@ -333,35 +334,26 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
       if (!currentPeerKey || !currentPeerId || Object.keys(currentPeerEpochKeys).length === 0) {
         try {
-          const keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${peerQuery}`, { authType: effectiveAuthType });
-          if (keyRes?.data) {
-            if (keyRes.data.peerE2eePublicKey) {
-              currentPeerKey = keyRes.data.peerE2eePublicKey;
+          const cachedData = await fetchConnectionPeerKey(connectionId, {
+            receiverAgentId: targetPeerId,
+            authType: effectiveAuthType
+          });
+          if (cachedData) {
+            if (cachedData.peerPublicKey) {
+              currentPeerKey = cachedData.peerPublicKey;
               if (isMountedRef.current) setPeerKey(currentPeerKey);
             }
-            if (keyRes.data.peerKeyEpoch && isMountedRef.current) {
-              setPeerKeyEpoch(keyRes.data.peerKeyEpoch);
+            if (cachedData.peerKeyEpoch && isMountedRef.current) {
+              setPeerKeyEpoch(cachedData.peerKeyEpoch);
             }
-            if (keyRes.data.peerEpochKeys) {
-              currentPeerEpochKeys = keyRes.data.peerEpochKeys;
+            if (cachedData.peerEpochKeys) {
+              currentPeerEpochKeys = cachedData.peerEpochKeys;
               if (isMountedRef.current) setPeerEpochKeys(currentPeerEpochKeys);
             }
-            if (keyRes.data.peerAgentId) {
-              currentPeerId = keyRes.data.peerAgentId;
+            if (cachedData.peerAgentId) {
+              currentPeerId = cachedData.peerAgentId;
               if (isMountedRef.current) setResolvedPeerAgentId(currentPeerId);
             }
-            // Update cache
-            setCachedPeerKey(connectionId, {
-              connectionId,
-              peerUserId: keyRes.data.peerUserId,
-              peerAgentId: keyRes.data.peerAgentId,
-              peerPublicKey: keyRes.data.peerE2eePublicKey || null,
-              peerKeyFingerprint: keyRes.data.peerKeyFingerprint,
-              peerIdentityKey: keyRes.data.peerIdentityKey,
-              peerKeySignature: keyRes.data.peerKeySignature,
-              peerKeyEpoch: keyRes.data.peerKeyEpoch,
-              peerEpochKeys: keyRes.data.peerEpochKeys
-            });
           }
         } catch (keyErr: any) {
           const errMsg = String(keyErr?.message || '').toLowerCase();

@@ -8,6 +8,7 @@ import { floorActivityService } from '../services/floorActivityService';
 import { SecurityService } from '../services/securityService';
 import { MAX_BASE64_CIPHERTEXT_LENGTH, MAX_DECODED_CIPHERTEXT_BYTES } from '../services/connectionService';
 import { HUMAN_SESSION_COOKIE_NAME } from '../authService';
+import { clusterService } from '../services/clusterService';
 
 const router = Router();
 
@@ -349,11 +350,25 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
     const oUid = cluster.ownerUserId;
     const ownerInfo = (oAid ? userMap.get(String(oAid).toLowerCase()) : null) || 
                       (oUid ? userMap.get(String(oUid).toLowerCase()) : null);
+    const { data: publicLatestEpoch } = await supabase
+      .from('cluster_epochs')
+      .select('epoch, keyFingerprint')
+      .eq('clusterId', cluster.id)
+      .order('epoch', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const publicCurrentEpoch = (publicLatestEpoch && publicLatestEpoch.keyFingerprint && publicLatestEpoch.keyFingerprint !== 'PENDING_INIT')
+      ? publicLatestEpoch.epoch
+      : 1;
+
     const enrichedCluster = {
       ...cluster,
       symbol: getClusterSymbol(cluster.id),
       ownerName: (ownerInfo?.name && String(ownerInfo.name).trim()) || cluster.ownerAgentId || 'Agent',
-      ownerAvatar: ownerInfo?.avatar || '🤖'
+      ownerAvatar: ownerInfo?.avatar || '🤖',
+      epoch: publicCurrentEpoch,
+      currentEpoch: publicCurrentEpoch
     };
 
     res.json({
@@ -680,6 +695,19 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
       .eq('clusterId', clusterId)
       .neq('status', 'dissolved');
 
+    // Query latest authoritative epoch from cluster_epochs
+    const { data: latestEpochRecord } = await supabase
+      .from('cluster_epochs')
+      .select('epoch, keyFingerprint')
+      .eq('clusterId', clusterId)
+      .order('epoch', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const currentEpoch = (latestEpochRecord && latestEpochRecord.keyFingerprint && latestEpochRecord.keyFingerprint !== 'PENDING_INIT')
+      ? latestEpochRecord.epoch
+      : 1;
+
     res.json({
       success: true,
       data: {
@@ -689,7 +717,49 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
         description: cluster.description,
         ownerAgentId: cluster.ownerAgentId,
         membersCount: count || 0,
+        epoch: currentEpoch,
+        currentEpoch,
         createdAt: cluster.createdAt
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+  }
+});
+
+// 3.1 GET /clusters/:clusterId/epoch (Get authoritative cluster epoch)
+router.get('/clusters/:clusterId/epoch', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_get_epoch');
+    const clusterId = req.params.clusterId as string;
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+
+    const isMember = await isClusterMember(supabase, clusterId, userId);
+    if (!isMember) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Not a member of this cluster.' } });
+    }
+
+    const { data: latestEpochRecord } = await supabase
+      .from('cluster_epochs')
+      .select('epoch, keyFingerprint, createdAt')
+      .eq('clusterId', clusterId)
+      .order('epoch', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const currentEpoch = (latestEpochRecord && latestEpochRecord.keyFingerprint && latestEpochRecord.keyFingerprint !== 'PENDING_INIT')
+      ? latestEpochRecord.epoch
+      : 1;
+
+    res.json({
+      success: true,
+      data: {
+        clusterId,
+        epoch: currentEpoch,
+        currentEpoch,
+        keyFingerprint: latestEpochRecord?.keyFingerprint || null
       }
     });
   } catch (err: any) {
@@ -858,10 +928,221 @@ router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req
   }
 });
 
-// // 6. POST /clusters/:clusterId/invites (Invite another agent)
-// router.post('/clusters/:clusterId/invites', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-//   ...
-// });
+// 12. POST /clusters/:clusterId/keys (Distribute key package)
+router.post('/clusters/:clusterId/keys', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_key_distribute');
+    const clusterId = req.params.clusterId as string;
+    const { epoch, keyFingerprint, distributionMap, senderPublicKey } = req.body;
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+
+    // Verify requester is admin or owner (same as advance-epoch)
+    const isAdmin = await isClusterAdmin(supabase, clusterId, userId);
+    if (!isAdmin) {
+       return res.status(403).json({ 
+         success: false, 
+         error: { code: 'FORBIDDEN', message: 'Forbidden: Only cluster admins or owners can distribute keys and establish cluster epochs.' } 
+       });
+    }
+
+    if (!keyFingerprint || typeof keyFingerprint !== 'string' || keyFingerprint.trim().length === 0 || keyFingerprint === 'PENDING_INIT') {
+      return res.status(400).json({ 
+        success: false, 
+        error: { code: 'INVALID_KEY_FINGERPRINT', message: 'A valid authoritative keyFingerprint is required.' } 
+      });
+    }
+
+    if (!distributionMap || typeof distributionMap !== 'object' || Object.keys(distributionMap).length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { code: 'EMPTY_DISTRIBUTION_MAP', message: 'Distribution map cannot be empty.' } 
+      });
+    }
+
+    // Query active members to strictly validate all recipients and ensure completeness
+    const { data: activeMembers } = await supabase
+      .from(tables.members)
+      .select('agentId, userId, status')
+      .eq('clusterId', clusterId)
+      .eq('status', 'active');
+
+    const activeIdentifiers = new Set<string>();
+    for (const m of (activeMembers || [])) {
+      if (m.agentId) activeIdentifiers.add(String(m.agentId).trim().replace(/^@/, '').toUpperCase());
+      if (m.userId) activeIdentifiers.add(String(m.userId).trim().toUpperCase());
+    }
+
+    const distKeys = Object.keys(distributionMap || {}).map(k => String(k).trim().replace(/^@/, '').toUpperCase());
+
+    // Reject unauthorized or inactive recipients - do NOT silently skip!
+    for (const recipientAgentId of Object.keys(distributionMap as any)) {
+      const cleanRId = String(recipientAgentId).trim().replace(/^@/, '').toUpperCase();
+      if (!activeIdentifiers.has(cleanRId)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED_RECIPIENT',
+            message: `Recipient ${recipientAgentId} is not an active member of this cluster.`
+          }
+        });
+      }
+      const pkg = (distributionMap as any)[recipientAgentId];
+      if (!pkg || !pkg.iv || !pkg.key || !isValidBase64String(pkg.iv) || !isValidBase64String(pkg.key)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_KEY_PACKAGE',
+            message: `Key package for recipient ${recipientAgentId} must contain valid Base64 iv and key.`
+          }
+        });
+      }
+    }
+
+    // Verify that every active member has a key package
+    for (const actMember of (activeMembers || [])) {
+      const aid = actMember.agentId ? String(actMember.agentId).trim().replace(/^@/, '').toUpperCase() : '';
+      const uid = actMember.userId ? String(actMember.userId).trim().toUpperCase() : '';
+      const hasPkg = distKeys.includes(aid) || (uid && distKeys.includes(uid));
+      if (!hasPkg) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INCOMPLETE_DISTRIBUTION_MAP',
+            message: `Key distribution map omits required active member ${actMember.agentId || actMember.userId}.`
+          }
+        });
+      }
+    }
+
+    let effectiveSenderPublicKey = senderPublicKey;
+    if (!effectiveSenderPublicKey) {
+      try {
+        const { data: senderAuthData } = await supabase.auth.admin.getUserById(userId);
+        effectiveSenderPublicKey = senderAuthData?.user?.user_metadata?.e2eePublicKey;
+      } catch {}
+    }
+
+    const result = await clusterService.establishClusterEpoch(clusterId, {
+      epoch: typeof epoch === 'number' && epoch > 0 ? epoch : undefined,
+      keyFingerprint: keyFingerprint.trim(),
+      distributionMap,
+      senderPublicKey: effectiveSenderPublicKey
+    });
+
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message, code: err.code || 'KEY_DISTRIBUTION_FAILED' } });
+  }
+});
+
+// 13. POST /clusters/:clusterId/advance-epoch (Trigger rotation with key distribution)
+router.post('/clusters/:clusterId/advance-epoch', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_advance_epoch');
+    const clusterId = req.params.clusterId as string;
+    const { reason, keyFingerprint, distributionMap, senderPublicKey } = req.body;
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+
+    // Verify requester is admin or owner
+    const isAdmin = await isClusterAdmin(supabase, clusterId, userId);
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Forbidden: Only cluster admins or owners can advance epoch.' }
+      });
+    }
+
+    if (!keyFingerprint || typeof keyFingerprint !== 'string' || keyFingerprint === 'PENDING_INIT') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'KEY_MATERIAL_REQUIRED', message: 'A valid keyFingerprint is required to advance epoch.' }
+      });
+    }
+
+    if (!distributionMap || typeof distributionMap !== 'object' || Object.keys(distributionMap).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'EMPTY_DISTRIBUTION_MAP', message: 'A non-empty distributionMap for active members is required.' }
+      });
+    }
+
+    // Validate all recipients are active members and check completeness
+    const { data: activeMembers } = await supabase
+      .from(tables.members)
+      .select('agentId, userId, status')
+      .eq('clusterId', clusterId)
+      .eq('status', 'active');
+
+    const activeIdentifiers = new Set<string>();
+    for (const m of (activeMembers || [])) {
+      if (m.agentId) activeIdentifiers.add(String(m.agentId).trim().replace(/^@/, '').toUpperCase());
+      if (m.userId) activeIdentifiers.add(String(m.userId).trim().toUpperCase());
+    }
+
+    const distKeys = Object.keys(distributionMap || {}).map(k => String(k).trim().replace(/^@/, '').toUpperCase());
+
+    for (const recipientAgentId of Object.keys(distributionMap as any)) {
+      const cleanRId = String(recipientAgentId).trim().replace(/^@/, '').toUpperCase();
+      if (!activeIdentifiers.has(cleanRId)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED_RECIPIENT',
+            message: `Recipient ${recipientAgentId} is not an active member of this cluster.`
+          }
+        });
+      }
+      const pkg = (distributionMap as any)[recipientAgentId];
+      if (!pkg || !pkg.iv || !pkg.key || !isValidBase64String(pkg.iv) || !isValidBase64String(pkg.key)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_KEY_PACKAGE',
+            message: `Key package for recipient ${recipientAgentId} must contain valid Base64 iv and key.`
+          }
+        });
+      }
+    }
+
+    for (const actMember of (activeMembers || [])) {
+      const aid = actMember.agentId ? String(actMember.agentId).trim().replace(/^@/, '').toUpperCase() : '';
+      const uid = actMember.userId ? String(actMember.userId).trim().toUpperCase() : '';
+      const hasPkg = distKeys.includes(aid) || (uid && distKeys.includes(uid));
+      if (!hasPkg) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INCOMPLETE_DISTRIBUTION_MAP',
+            message: `Key distribution map omits required active member ${actMember.agentId || actMember.userId}.`
+          }
+        });
+      }
+    }
+
+    let effectiveSenderPublicKey = senderPublicKey;
+    if (!effectiveSenderPublicKey) {
+      try {
+        const { data: senderAuthData } = await supabase.auth.admin.getUserById(userId);
+        effectiveSenderPublicKey = senderAuthData?.user?.user_metadata?.e2eePublicKey;
+      } catch {}
+    }
+
+    const result = await clusterService.advanceEpoch(clusterId, {
+      keyFingerprint: keyFingerprint.trim(),
+      distributionMap,
+      senderPublicKey: effectiveSenderPublicKey,
+      reason
+    });
+
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  }
+});
 
 
 // // 8. GET /clusters/:clusterId/invites (List invites for a specific cluster)
@@ -1551,37 +1832,69 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       parsedKeyEpoch = keyEpoch;
     }
 
-    // Verify keyEpoch against registered active key epochs for ALL required cluster participants
-    const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
-    const senderEpochHistory = (senderMeta.e2eeEpochHistory as Record<string, any>) || {};
-    const senderHasEpoch = parsedKeyEpoch === senderActiveEpoch ||
-      Boolean(senderEpochHistory[String(parsedKeyEpoch)] && senderEpochHistory[String(parsedKeyEpoch)].publicKey);
+    // Verify keyEpoch against authoritative cluster_epochs if established
+    const { data: latestClusterEpoch } = await supabase
+      .from('cluster_epochs')
+      .select('epoch, keyFingerprint')
+      .eq('clusterId', clusterId)
+      .order('epoch', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (!senderHasEpoch) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'KEY_EPOCH_NOT_FOUND',
-          message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
-        }
-      });
+    if (latestClusterEpoch && latestClusterEpoch.keyFingerprint && latestClusterEpoch.keyFingerprint !== 'PENDING_INIT') {
+      if (parsedKeyEpoch !== latestClusterEpoch.epoch) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_KEY_EPOCH',
+            message: `Invalid keyEpoch ${parsedKeyEpoch}. Must match authoritative cluster epoch ${latestClusterEpoch.epoch}.`
+          }
+        });
+      }
     }
 
-    if (peerMetas.length > 0) {
-      for (const peerMeta of peerMetas) {
-        const peerActiveEpoch = typeof peerMeta.e2eeKeyEpoch === 'number' ? peerMeta.e2eeKeyEpoch : 1;
-        const peerEpochHistory = (peerMeta.e2eeEpochHistory as Record<string, any>) || {};
-        const peerHasEpoch = parsedKeyEpoch === peerActiveEpoch ||
-          Boolean(peerEpochHistory[String(parsedKeyEpoch)] && peerEpochHistory[String(parsedKeyEpoch)].publicKey);
+    // Check if cluster uses key distribution packages for this epoch
+    const { data: keyDistRecords } = await supabase
+      .from('cluster_key_distributions')
+      .select('recipientAgentId')
+      .eq('clusterId', clusterId)
+      .eq('epoch', parsedKeyEpoch);
 
-        if (!peerHasEpoch) {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'KEY_EPOCH_NOT_FOUND',
-              message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
-            }
-          });
+    const hasDistributions = Boolean(keyDistRecords && keyDistRecords.length > 0);
+
+    if (!hasDistributions) {
+      // Fallback: Verify keyEpoch against registered active key epochs for ALL required cluster participants only when cluster key distribution packages are not used
+      const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
+      const senderEpochHistory = (senderMeta.e2eeEpochHistory as Record<string, any>) || {};
+      const senderHasEpoch = parsedKeyEpoch === senderActiveEpoch ||
+        Boolean(senderEpochHistory[String(parsedKeyEpoch)] && senderEpochHistory[String(parsedKeyEpoch)].publicKey);
+
+      if (!senderHasEpoch) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'KEY_EPOCH_NOT_FOUND',
+            message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
+          }
+        });
+      }
+
+      if (peerMetas.length > 0) {
+        for (const peerMeta of peerMetas) {
+          const peerActiveEpoch = typeof peerMeta.e2eeKeyEpoch === 'number' ? peerMeta.e2eeKeyEpoch : 1;
+          const peerEpochHistory = (peerMeta.e2eeEpochHistory as Record<string, any>) || {};
+          const peerHasEpoch = parsedKeyEpoch === peerActiveEpoch ||
+            Boolean(peerEpochHistory[String(parsedKeyEpoch)] && peerEpochHistory[String(parsedKeyEpoch)].publicKey);
+
+          if (!peerHasEpoch) {
+            return res.status(400).json({
+              success: false,
+              error: {
+                code: 'KEY_EPOCH_NOT_FOUND',
+                message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
+              }
+            });
+          }
         }
       }
     }
@@ -1996,6 +2309,109 @@ router.delete('/clusters/:clusterId/leave', requireUserOrAgentAuth, async (req: 
     res.json({ success: true, message: 'Successfully left the cluster.' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+  }
+});
+
+// 14. GET /clusters/:clusterId/keys/:epoch (Fetch assigned key package)
+router.get('/clusters/:clusterId/keys/:epoch', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_key_get');
+    const { clusterId, epoch } = req.params;
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+    const agentId = req.user!.agentId;
+
+    // Verify requester active membership status (reject non-members and dissolved members)
+    const { data: member } = await supabase
+      .from(tables.members)
+      .select('id, status, agentId, userId')
+      .eq('clusterId', clusterId)
+      .eq('userId', userId)
+      .maybeSingle();
+
+    if (!member || member.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Forbidden: You must be an active member of this cluster to access cluster keys.' }
+      });
+    }
+
+    // Verify epoch exists in cluster_epochs and is authoritative
+    const targetEpoch = Number(epoch);
+    const { data: epochRecord } = await supabase
+      .from('cluster_epochs')
+      .select('epoch, keyFingerprint')
+      .eq('clusterId', clusterId)
+      .eq('epoch', targetEpoch)
+      .maybeSingle();
+
+    if (!epochRecord || epochRecord.keyFingerprint === 'PENDING_INIT') {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'EPOCH_NOT_FOUND', message: `Epoch ${targetEpoch} is not established for this cluster.` }
+      });
+    }
+
+    const targetAgentId = member.agentId || agentId;
+    const { data: packageData } = await supabase
+      .from('cluster_key_distributions')
+      .select('encryptedKeyPackage, senderPublicKey')
+      .eq('clusterId', clusterId)
+      .eq('epoch', targetEpoch)
+      .eq('recipientAgentId', targetAgentId)
+      .maybeSingle();
+
+    if (!packageData) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'KEY_PACKAGE_NOT_FOUND', message: `Key package not found for agent ${targetAgentId} at epoch ${targetEpoch}.` }
+      });
+    }
+
+    const parsedPackage = typeof packageData.encryptedKeyPackage === 'string'
+      ? JSON.parse(packageData.encryptedKeyPackage)
+      : packageData.encryptedKeyPackage;
+    let parsedSenderKey = null;
+    if (packageData.senderPublicKey) {
+      try {
+        parsedSenderKey = typeof packageData.senderPublicKey === 'string'
+          ? JSON.parse(packageData.senderPublicKey)
+          : packageData.senderPublicKey;
+      } catch {}
+    }
+
+    if (!parsedSenderKey) {
+      try {
+        const { data: clRecord } = await supabase
+          .from(tables.clusters)
+          .select('ownerUserId')
+          .eq('id', clusterId)
+          .maybeSingle();
+        if (clRecord?.ownerUserId) {
+          const { data: ownerAuth } = await supabase.auth.admin.getUserById(clRecord.ownerUserId);
+          const meta = ownerAuth?.user?.user_metadata;
+          if (meta?.e2eePublicKey) {
+            parsedSenderKey = typeof meta.e2eePublicKey === 'string' ? JSON.parse(meta.e2eePublicKey) : meta.e2eePublicKey;
+          }
+        }
+      } catch {}
+    }
+
+    const distributorKey = parsedSenderKey || parsedPackage.distributorPublicKey || parsedPackage.senderPublicKey;
+
+    res.json({
+      success: true,
+      data: {
+        ...parsedPackage,
+        epoch: targetEpoch,
+        keyFingerprint: epochRecord.keyFingerprint,
+        senderPublicKey: distributorKey,
+        distributorPublicKey: distributorKey
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message } });
   }
 });
 

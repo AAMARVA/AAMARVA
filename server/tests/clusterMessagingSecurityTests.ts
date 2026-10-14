@@ -3,7 +3,22 @@ import http from 'http';
 import clusterRouter from '../routes/clusterRoutes';
 import { getSupabaseClient, setSupabaseClient } from '../supabase';
 import { getClusterTables } from '../routes/clusterRoutes';
-import { generateE2EEKeyPair, encryptClusterGroupMessage, decryptClusterGroupMessage, clearClusterGroupKeyForTest } from '../../src/lib/e2ee';
+import { 
+  generateE2EEKeyPair, 
+  encryptClusterGroupMessage, 
+  decryptClusterGroupMessage, 
+  clearClusterGroupKeyForTest,
+  persistClusterGroupKey,
+  getClusterGroupKey
+} from '../../src/lib/e2ee';
+import {
+  generateGroupKey,
+  computeGroupKeyFingerprint,
+  wrapGroupKeyForMember,
+  unwrapGroupKeyForMember,
+  distributeClusterGroupKeyFlow,
+  retrieveAndUnwrapClusterGroupKey
+} from '../../src/lib/clusterCrypto';
 
 export async function runClusterMessagingSecurityTests(): Promise<Record<string, { status: 'PASSED' | 'FAILED'; reason?: string }>> {
   console.log('\n=== AAMARVA CLUSTER MESSAGING SECURITY VERIFICATION SUITE ===\n');
@@ -93,7 +108,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
   };
 
   // Mock DB state
-  const mockMembers = [
+  const mockMembers: any[] = [
     { id: 'm1', clusterId, userId: ownerUserId, agentId: 'AMR-OWNER', role: 'admin', status: 'active' },
     { id: 'm2', clusterId, userId: peerUserId, agentId: 'AMR-PEER', role: 'member', status: 'active' },
     // Multi-member cluster members (Owner + Members A, B, C)
@@ -103,13 +118,20 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     { id: 'mm_c', clusterId: multiClusterId, userId: memberCUserId, agentId: 'AMR-M-C', role: 'member', status: 'active' }
   ];
 
-  const mockClusters = [
+  const mockClusters: any[] = [
     { id: clusterId, name: 'Security Cluster', status: 'active', ownerUserId },
     { id: dissolvedClusterId, name: 'Dissolved Cluster', status: 'dissolved', ownerUserId },
     { id: multiClusterId, name: 'Multi-Member E2EE Cluster', status: 'active', ownerUserId: multiOwnerUserId }
   ];
 
   const mockMessages: any[] = [];
+
+  const mockClusterEpochs: any[] = [
+    { id: 'ep_sec_1', clusterId, epoch: 1, keyFingerprint: 'SHA256:11:22:33:44:55:66', createdAt: new Date().toISOString() },
+    { id: 'ep_multi_3', clusterId: multiClusterId, epoch: 3, keyFingerprint: 'SHA256:AA:BB:CC:DD:EE:FF', createdAt: new Date().toISOString() }
+  ];
+
+  const mockKeyDistributions: any[] = [];
 
   const mockClient = {
     rpc: (...args: any[]) => (origSupabase as any).rpc(...args),
@@ -144,31 +166,134 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       }
       if (tableName === tables.members || tableName === 'cluster_members') {
         return {
-          select: (cols?: string) => ({
-            eq: (_col1: string, val1: string) => ({
-              eq: (_col2: string, val2: string) => ({
-                maybeSingle: async () => {
-                  const found = mockMembers.find(m => m.clusterId === val1 && m.userId === val2);
-                  return { data: found || null, error: null };
-                },
-                then: (resolve: any) => {
-                  const members = mockMembers.filter(m => m.clusterId === val1 && (m.status === val2 || m.userId === val2));
-                  resolve({ data: members, error: null });
+          insert: async (recOrArr: any) => {
+            const arr = Array.isArray(recOrArr) ? recOrArr : [recOrArr];
+            mockMembers.push(...arr);
+            return { error: null };
+          },
+          update: (updates: any) => ({
+            eq: (_col: string, val: string) => {
+              for (const m of mockMembers) {
+                if (m[_col] === val) {
+                  Object.assign(m, updates);
                 }
-              }),
-              maybeSingle: async () => {
-                const found = mockMembers.find(m => m.clusterId === val1);
-                return { data: found || null, error: null };
+              }
+              return { error: null };
+            }
+          }),
+          select: (cols?: string) => {
+            const queryState: any = {
+              filters: [] as Array<(m: any) => boolean>,
+              eq(col: string, val: any) {
+                this.filters.push((m: any) => {
+                  if (col === 'userId') return m.userId === val || m.agentId === val;
+                  if (col === 'agentId') return m.agentId === val || String(m.agentId || '').replace(/^@/, '').toUpperCase() === String(val || '').replace(/^@/, '').toUpperCase();
+                  return m[col] === val;
+                });
+                return this;
               },
-              neq: (_col2: string, val2: string) => ({
-                neq: (_col3: string, val3: string) => {
-                  // e.g. .neq('userId', userId).neq('status', 'dissolved')
-                  const peers = mockMembers.filter(m => m.clusterId === val1 && m.userId !== val2 && m.status !== val3);
-                  return { data: peers, error: null };
-                }
-              })
-            })
-          })
+              neq(col: string, val: any) {
+                this.filters.push((m: any) => m[col] !== val);
+                return this;
+              },
+              in(col: string, arr: any[]) {
+                this.filters.push((m: any) => arr.includes(m[col]));
+                return this;
+              },
+              or(_expr: string) {
+                return this;
+              },
+              order: () => queryState,
+              limit: () => queryState,
+              async maybeSingle() {
+                const filtered = mockMembers.filter(m => queryState.filters.every(f => f(m)));
+                return { data: filtered[0] || null, error: null };
+              },
+              async single() {
+                const filtered = mockMembers.filter(m => queryState.filters.every(f => f(m)));
+                return { data: filtered[0] || null, error: null };
+              },
+              then(resolve: any) {
+                const filtered = mockMembers.filter(m => queryState.filters.every(f => f(m)));
+                resolve({ data: filtered, error: null });
+              }
+            };
+            return queryState;
+          }
+        };
+      }
+      if (tableName === 'cluster_epochs') {
+        return {
+          insert: async (recOrArr: any) => {
+            const arr = Array.isArray(recOrArr) ? recOrArr : [recOrArr];
+            mockClusterEpochs.push(...arr);
+            return { error: null };
+          },
+          select: (_cols?: string) => {
+            const queryState: any = {
+              filters: [] as Array<(e: any) => boolean>,
+              eq(col: string, val: any) {
+                this.filters.push((e: any) => col === 'epoch' ? e.epoch === Number(val) : e[col] === val);
+                return this;
+              },
+              order(_col: string, _opts?: any) {
+                return this;
+              },
+              limit(_n: number) {
+                return this;
+              },
+              async maybeSingle() {
+                const matches = mockClusterEpochs.filter(e => queryState.filters.every(f => f(e))).sort((a, b) => b.epoch - a.epoch);
+                return { data: matches[0] || null, error: null };
+              },
+              async single() {
+                const matches = mockClusterEpochs.filter(e => queryState.filters.every(f => f(e))).sort((a, b) => b.epoch - a.epoch);
+                return { data: matches[0] || null, error: null };
+              },
+              then(resolve: any) {
+                const matches = mockClusterEpochs.filter(e => queryState.filters.every(f => f(e))).sort((a, b) => b.epoch - a.epoch);
+                resolve({ data: matches, error: null });
+              }
+            };
+            return queryState;
+          }
+        };
+      }
+      if (tableName === 'cluster_key_distributions') {
+        return {
+          insert: async (recOrArr: any) => {
+            const arr = Array.isArray(recOrArr) ? recOrArr : [recOrArr];
+            mockKeyDistributions.push(...arr);
+            return { error: null };
+          },
+          select: (_cols?: string) => {
+            const queryState: any = {
+              filters: [] as Array<(d: any) => boolean>,
+              eq(col: string, val: any) {
+                this.filters.push((d: any) => {
+                  if (col === 'epoch') return d.epoch === Number(val);
+                  if (col === 'recipientAgentId') {
+                    return String(d.recipientAgentId || '').trim().replace(/^@/, '').toUpperCase() === String(val || '').trim().replace(/^@/, '').toUpperCase();
+                  }
+                  return d[col] === val;
+                });
+                return this;
+              },
+              async maybeSingle() {
+                const matches = mockKeyDistributions.filter(d => queryState.filters.every(f => f(d)));
+                return { data: matches[0] || null, error: null };
+              },
+              async single() {
+                const matches = mockKeyDistributions.filter(d => queryState.filters.every(f => f(d)));
+                return { data: matches[0] || null, error: null };
+              },
+              then(resolve: any) {
+                const matches = mockKeyDistributions.filter(d => queryState.filters.every(f => f(d)));
+                resolve({ data: matches, error: null });
+              }
+            };
+            return queryState;
+          }
         };
       }
       if (tableName === tables.messages || tableName === 'cluster_messages') {
@@ -639,6 +764,15 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     userMetadataStore[memberBUserId].e2eeKeyEpoch = 5;
     userMetadataStore[memberCUserId].e2eeKeyEpoch = 5;
 
+    // Register epoch 5 in authoritative cluster_epochs
+    mockClusterEpochs.push({
+      id: 'ep_multi_5',
+      clusterId: multiClusterId,
+      epoch: 5,
+      keyFingerprint: 'SHA256:55:55:55:55:55:55',
+      createdAt: new Date().toISOString()
+    });
+
     const res31 = await helperFetch(`/api/clusters/${multiClusterId}/messages`, {
       method: 'POST',
       headers: multiOwnerHeaders,
@@ -673,6 +807,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     );
 
     // Real Cryptographic E2EE Unit Tests (Tests 32 - 36)
+    let testGroupKey = '';
     try {
       const ownerPair = await generateE2EEKeyPair();
       const memberAPair = await generateE2EEKeyPair();
@@ -686,6 +821,20 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
         'AMR-MEMBER-A': memberAPair.publicKey,
         'AMR-MEMBER-B': memberBPair.publicKey
       };
+
+      // Establish authoritative group key for testClusterId and distribute to A and B
+      testGroupKey = await generateGroupKey();
+      await persistClusterGroupKey(testClusterId, testGroupKey, 1);
+
+      // Wrap for member A using wrapGroupKeyForMember, unwrap and persist for A
+      const wrappedForA = await wrapGroupKeyForMember(testGroupKey, ownerPair.privateKey, memberAPair.publicKey, testClusterId, 'AMR-MEMBER-A', 1);
+      const unwrappedByA = await unwrapGroupKeyForMember(wrappedForA, memberAPair.privateKey, ownerPair.publicKey, testClusterId, 'AMR-MEMBER-A', 1);
+      await persistClusterGroupKey(testClusterId, unwrappedByA, 1);
+
+      // Wrap for member B using wrapGroupKeyForMember, unwrap and persist for B
+      const wrappedForB = await wrapGroupKeyForMember(testGroupKey, ownerPair.privateKey, memberBPair.publicKey, testClusterId, 'AMR-MEMBER-B', 1);
+      const unwrappedByB = await unwrapGroupKeyForMember(wrappedForB, memberBPair.privateKey, ownerPair.publicKey, testClusterId, 'AMR-MEMBER-B', 1);
+      await persistClusterGroupKey(testClusterId, unwrappedByB, 1);
 
       const groupEnvelope = await encryptClusterGroupMessage(
         secretMessage,
@@ -749,6 +898,9 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
         intruderFailed,
         `Unauthorized recipient correctly rejected: ${intruderFailed}`
       );
+
+      // Restore key for tests 34-36
+      await persistClusterGroupKey(testClusterId, testGroupKey, 1);
 
       let tamperingFailed = false;
       try {
@@ -827,6 +979,463 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
 
     } catch (cryptoTestErr: any) {
       recordResult('cluster_real_crypto_suite_execution', false, `Crypto test exception: ${cryptoTestErr?.message}`);
+    }
+
+    // =========================================================================
+    // TEST 37: End-to-End Key Distribution, Isolated Keystores, & Rotation Across Independent Agents
+    // Two independent agent identities (Alice & Bob) with isolated key stores.
+    // Verifies:
+    // 1. Authoritative group key distribution via wrapGroupKeyForMember and POST /keys
+    // 2. Unauthorized recipient rejection on distribution
+    // 3. Independent key retrieval & unwrapping via unwrapGroupKeyForMember and GET /keys/:epoch
+    // 4. Successful cross-agent decryption using isolated stores
+    // 5. Unauthorized non-member (Eve) rejected from retrieving key or decrypting
+    // 6. Member removal, epoch advancement, and key rotation preventing removed member from obtaining epoch 2 key
+    // =========================================================================
+    try {
+      const alicePair = await generateE2EEKeyPair();
+      const bobPair = await generateE2EEKeyPair();
+      const charliePair = await generateE2EEKeyPair();
+      const evePair = await generateE2EEKeyPair();
+
+      const aliceAgentId = 'AMR-INDEP-ALICE';
+      const bobAgentId = 'AMR-INDEP-BOB';
+      const charlieAgentId = 'AMR-INDEP-CHARLIE';
+      const eveAgentId = 'AMR-INDEP-EVE';
+
+      const aliceUserId = 'user_indep_alice_' + Date.now();
+      const bobUserId = 'user_indep_bob_' + Date.now();
+      const charlieUserId = 'user_indep_charlie_' + Date.now();
+      const eveUserId = 'user_indep_eve_' + Date.now();
+
+      // Isolated keystores for independent agents
+      const aliceStore = new Map<string, string>();
+      const bobStore = new Map<string, string>();
+      const charlieStore = new Map<string, string>();
+      const eveStore = new Map<string, string>();
+
+      const indepClusterId = 'cluster_indep_' + Date.now();
+
+      // Register users and memberships in mock state
+      userMetadataStore[aliceUserId] = { e2eePublicKey: alicePair.publicKey, e2eeKeyEpoch: 1 };
+      userMetadataStore[bobUserId] = { e2eePublicKey: bobPair.publicKey, e2eeKeyEpoch: 1 };
+      userMetadataStore[charlieUserId] = { e2eePublicKey: charliePair.publicKey, e2eeKeyEpoch: 1 };
+      userMetadataStore[eveUserId] = { e2eePublicKey: evePair.publicKey, e2eeKeyEpoch: 1 };
+
+      mockClusters.push({
+        id: indepClusterId,
+        name: 'Independent Test Cluster',
+        status: 'active',
+        ownerUserId: aliceUserId
+      });
+
+      const aliceMemberRecord = {
+        id: 'm_indep_alice',
+        clusterId: indepClusterId,
+        userId: aliceUserId,
+        agentId: aliceAgentId,
+        role: 'admin',
+        status: 'active'
+      };
+
+      const bobMemberRecord = {
+        id: 'm_indep_bob',
+        clusterId: indepClusterId,
+        userId: bobUserId,
+        agentId: bobAgentId,
+        role: 'member',
+        status: 'active'
+      };
+
+      const charlieMemberRecord = {
+        id: 'm_indep_charlie',
+        clusterId: indepClusterId,
+        userId: charlieUserId,
+        agentId: charlieAgentId,
+        role: 'member',
+        status: 'active'
+      };
+
+      mockMembers.push(aliceMemberRecord, bobMemberRecord, charlieMemberRecord);
+
+      const aliceHeaders = { 'x-test-user-id': aliceUserId, 'x-test-agent-id': aliceAgentId };
+      const bobHeaders = { 'x-test-user-id': bobUserId, 'x-test-agent-id': bobAgentId };
+      const charlieHeaders = { 'x-test-user-id': charlieUserId, 'x-test-agent-id': charlieAgentId };
+      const eveHeaders = { 'x-test-user-id': eveUserId, 'x-test-agent-id': eveAgentId };
+
+      // Step 1: Alice generates group key for epoch 1 and wraps for Alice, Bob, and Charlie
+      const indepGroupKeyEpoch1 = await generateGroupKey();
+      const indepFingerprint1 = await computeGroupKeyFingerprint(indepGroupKeyEpoch1);
+
+      const wrappedForBob1 = await wrapGroupKeyForMember(
+        indepGroupKeyEpoch1,
+        alicePair.privateKey,
+        bobPair.publicKey,
+        indepClusterId,
+        bobAgentId,
+        1
+      );
+      const wrappedForCharlie1 = await wrapGroupKeyForMember(
+        indepGroupKeyEpoch1,
+        alicePair.privateKey,
+        charliePair.publicKey,
+        indepClusterId,
+        charlieAgentId,
+        1
+      );
+      const wrappedForAlice1 = await wrapGroupKeyForMember(
+        indepGroupKeyEpoch1,
+        alicePair.privateKey,
+        alicePair.publicKey,
+        indepClusterId,
+        aliceAgentId,
+        1
+      );
+
+      // Step 2: Test unauthorized recipient rejection on key distribution endpoint
+      const resDistUnauthorized = await helperFetch(`/api/clusters/${indepClusterId}/keys`, {
+        method: 'POST',
+        headers: aliceHeaders,
+        body: JSON.stringify({
+          epoch: 1,
+          keyFingerprint: indepFingerprint1,
+          distributionMap: {
+            [bobAgentId]: wrappedForBob1,
+            [eveAgentId]: wrappedForBob1 // Eve is not a member!
+          }
+        })
+      });
+
+      const unauthorizedDistributionRejected = resDistUnauthorized.status === 400 &&
+        resDistUnauthorized.json?.error?.code === 'UNAUTHORIZED_RECIPIENT';
+
+      // Step 2b: Test non-admin member (Bob) trying to distribute keys (should be forbidden)
+      const resNonAdminDist = await helperFetch(`/api/clusters/${indepClusterId}/keys`, {
+        method: 'POST',
+        headers: bobHeaders,
+        body: JSON.stringify({
+          epoch: 1,
+          keyFingerprint: indepFingerprint1,
+          distributionMap: {
+            [bobAgentId]: wrappedForBob1,
+            [charlieAgentId]: wrappedForCharlie1,
+            [aliceAgentId]: wrappedForAlice1
+          }
+        })
+      });
+      const nonAdminDistRejected = resNonAdminDist.status === 403 &&
+        resNonAdminDist.json?.error?.code === 'FORBIDDEN';
+
+      // Step 2c: Test incomplete distribution map (omitting active member Charlie)
+      const resIncompleteDist = await helperFetch(`/api/clusters/${indepClusterId}/keys`, {
+        method: 'POST',
+        headers: aliceHeaders,
+        body: JSON.stringify({
+          epoch: 1,
+          keyFingerprint: indepFingerprint1,
+          distributionMap: {
+            [bobAgentId]: wrappedForBob1,
+            [aliceAgentId]: wrappedForAlice1
+            // Charlie omitted!
+          }
+        })
+      });
+      const incompleteDistRejected = resIncompleteDist.status === 400 &&
+        resIncompleteDist.json?.error?.code === 'INCOMPLETE_DISTRIBUTION_MAP';
+
+      // Step 3: Alice submits valid epoch 1 key distribution package with distributor public key
+      const resDistValid = await helperFetch(`/api/clusters/${indepClusterId}/keys`, {
+        method: 'POST',
+        headers: aliceHeaders,
+        body: JSON.stringify({
+          epoch: 1,
+          keyFingerprint: indepFingerprint1,
+          distributionMap: {
+            [bobAgentId]: wrappedForBob1,
+            [charlieAgentId]: wrappedForCharlie1,
+            [aliceAgentId]: wrappedForAlice1
+          },
+          senderPublicKey: alicePair.publicKey
+        })
+      });
+
+      const distributionAccepted = resDistValid.status === 200 && resDistValid.json?.success === true;
+      await persistClusterGroupKey(indepClusterId, indepGroupKeyEpoch1, 1, aliceStore);
+
+      // Step 4: Bob and Charlie retrieve and unwrap epoch 1 key packages using retrieveAndUnwrapClusterGroupKey
+      // Validating distributor public key and authoritative epoch fingerprint
+      const unwrappedByBobEpoch1 = await retrieveAndUnwrapClusterGroupKey({
+        clusterId: indepClusterId,
+        epoch: 1,
+        receiverPrivateKey: bobPair.privateKey,
+        receiverAgentId: bobAgentId,
+        distributorPublicKeyJwk: alicePair.publicKey,
+        expectedFingerprint: indepFingerprint1,
+        apiFetchFn: async (url, opts) => helperFetch(url, { ...opts, headers: bobHeaders }),
+        isolatedStore: bobStore
+      });
+
+      const unwrappedByCharlieEpoch1 = await retrieveAndUnwrapClusterGroupKey({
+        clusterId: indepClusterId,
+        epoch: 1,
+        receiverPrivateKey: charliePair.privateKey,
+        receiverAgentId: charlieAgentId,
+        distributorPublicKeyJwk: alicePair.publicKey,
+        expectedFingerprint: indepFingerprint1,
+        apiFetchFn: async (url, opts) => helperFetch(url, { ...opts, headers: charlieHeaders }),
+        isolatedStore: charlieStore
+      });
+
+      const epoch1KeysMatch = unwrappedByBobEpoch1 === indepGroupKeyEpoch1 &&
+        unwrappedByCharlieEpoch1 === indepGroupKeyEpoch1;
+
+      // Step 5: Send and decrypt message at epoch 1
+      const secretEpoch1Text = 'Confidential cluster message at epoch 1 verified 🛡️';
+      const envelopeEpoch1 = await encryptClusterGroupMessage(
+        secretEpoch1Text,
+        alicePair.privateKey,
+        aliceAgentId,
+        indepClusterId,
+        { [bobAgentId]: bobPair.publicKey, [charlieAgentId]: charliePair.publicKey },
+        1,
+        aliceStore
+      );
+
+      const decryptedBobEpoch1 = await decryptClusterGroupMessage(
+        envelopeEpoch1,
+        bobPair.privateKey,
+        bobAgentId,
+        alicePair.publicKey,
+        indepClusterId,
+        aliceAgentId,
+        bobStore
+      );
+
+      const decryptedCharlieEpoch1 = await decryptClusterGroupMessage(
+        envelopeEpoch1,
+        charliePair.privateKey,
+        charlieAgentId,
+        alicePair.publicKey,
+        indepClusterId,
+        aliceAgentId,
+        charlieStore
+      );
+
+      const epoch1CommunicationSuccess = decryptedBobEpoch1 === secretEpoch1Text &&
+        decryptedCharlieEpoch1 === secretEpoch1Text;
+
+      // Step 6: Unauthorized outsider (Eve) access rejection at epoch 1
+      const resEveKey = await helperFetch(`/api/clusters/${indepClusterId}/keys/1`, {
+        method: 'GET',
+        headers: eveHeaders
+      });
+      const eveRetrievalRejected = resEveKey.status === 403 && resEveKey.json?.error?.code === 'FORBIDDEN';
+
+      // Step 7: Member removal & Cluster Rotation to Epoch 2
+      // Bob is removed (status -> dissolved)
+      bobMemberRecord.status = 'dissolved';
+
+      // Alice advances epoch to 2 with new rotated group key distributed ONLY to active members (Alice & Charlie)
+      const indepGroupKeyEpoch2 = await generateGroupKey();
+      const indepFingerprint2 = await computeGroupKeyFingerprint(indepGroupKeyEpoch2);
+
+      const wrappedForAlice2 = await wrapGroupKeyForMember(
+        indepGroupKeyEpoch2,
+        alicePair.privateKey,
+        alicePair.publicKey,
+        indepClusterId,
+        aliceAgentId,
+        2
+      );
+      const wrappedForCharlie2 = await wrapGroupKeyForMember(
+        indepGroupKeyEpoch2,
+        alicePair.privateKey,
+        charliePair.publicKey,
+        indepClusterId,
+        charlieAgentId,
+        2
+      );
+
+      const resAdvance = await helperFetch(`/api/clusters/${indepClusterId}/advance-epoch`, {
+        method: 'POST',
+        headers: aliceHeaders,
+        body: JSON.stringify({
+          keyFingerprint: indepFingerprint2,
+          distributionMap: {
+            [aliceAgentId]: wrappedForAlice2,
+            [charlieAgentId]: wrappedForCharlie2
+          },
+          senderPublicKey: alicePair.publicKey,
+          reason: 'Bob dissolved, rotating to epoch 2'
+        })
+      });
+
+      const epoch2Established = resAdvance.status === 200 && resAdvance.json?.data?.epoch === 2;
+      await persistClusterGroupKey(indepClusterId, indepGroupKeyEpoch2, 2, aliceStore);
+
+      // Step 8: Active member (Charlie) retrieves & unwraps epoch 2 group key, verifying distributor public key & fingerprint
+      const unwrappedByCharlieEpoch2 = await retrieveAndUnwrapClusterGroupKey({
+        clusterId: indepClusterId,
+        epoch: 2,
+        receiverPrivateKey: charliePair.privateKey,
+        receiverAgentId: charlieAgentId,
+        distributorPublicKeyJwk: alicePair.publicKey,
+        expectedFingerprint: indepFingerprint2,
+        apiFetchFn: async (url, opts) => helperFetch(url, { ...opts, headers: charlieHeaders }),
+        isolatedStore: charlieStore
+      });
+
+      const charlieEpoch2KeyValid = unwrappedByCharlieEpoch2 === indepGroupKeyEpoch2;
+
+      // Step 9: Active members communicate using Epoch 2
+      const secretEpoch2Text = 'Active members communicating securely using authoritative epoch 2 🔐';
+      const envelopeEpoch2 = await encryptClusterGroupMessage(
+        secretEpoch2Text,
+        charliePair.privateKey,
+        charlieAgentId,
+        indepClusterId,
+        { [aliceAgentId]: alicePair.publicKey },
+        2,
+        charlieStore
+      );
+
+      const decryptedAliceEpoch2 = await decryptClusterGroupMessage(
+        envelopeEpoch2,
+        alicePair.privateKey,
+        aliceAgentId,
+        charliePair.publicKey,
+        indepClusterId,
+        charlieAgentId,
+        aliceStore
+      );
+
+      const epoch2CommunicationSuccess = decryptedAliceEpoch2 === secretEpoch2Text;
+
+      // Step 10: Removed member (Bob) attempts to retrieve epoch 2 key package -> Rejected with 403 FORBIDDEN
+      const resBobEpoch2 = await helperFetch(`/api/clusters/${indepClusterId}/keys/2`, {
+        method: 'GET',
+        headers: bobHeaders
+      });
+
+      const removedMemberRejectedFromNewEpoch = resBobEpoch2.status === 403 &&
+        resBobEpoch2.json?.error?.code === 'FORBIDDEN';
+
+      // Bob attempts to decrypt epoch 2 communication -> Fails because Bob has no epoch 2 key
+      let bobDecryptionEpoch2Failed = false;
+      try {
+        await decryptClusterGroupMessage(
+          envelopeEpoch2,
+          bobPair.privateKey,
+          bobAgentId,
+          charliePair.publicKey,
+          indepClusterId,
+          charlieAgentId,
+          bobStore
+        );
+      } catch {
+        bobDecryptionEpoch2Failed = true;
+      }
+
+      // Step 11: Security Verification: Mismatched distributor identity is rejected
+      let mismatchedDistributorRejected = false;
+      try {
+        await retrieveAndUnwrapClusterGroupKey({
+          clusterId: indepClusterId,
+          epoch: 2,
+          receiverPrivateKey: charliePair.privateKey,
+          receiverAgentId: charlieAgentId,
+          distributorPublicKeyJwk: evePair.publicKey, // Mismatched distributor!
+          expectedFingerprint: indepFingerprint2,
+          apiFetchFn: async (url, opts) => helperFetch(url, { ...opts, headers: charlieHeaders }),
+          isolatedStore: new Map()
+        });
+      } catch {
+        mismatchedDistributorRejected = true;
+      }
+
+      // Step 12: Security Verification: Mismatched fingerprint is rejected and key NOT persisted
+      let mismatchedFingerprintRejected = false;
+      const scratchStore = new Map<string, string>();
+      try {
+        await retrieveAndUnwrapClusterGroupKey({
+          clusterId: indepClusterId,
+          epoch: 2,
+          receiverPrivateKey: charliePair.privateKey,
+          receiverAgentId: charlieAgentId,
+          distributorPublicKeyJwk: alicePair.publicKey,
+          expectedFingerprint: 'SHA256:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF', // Wrong fingerprint
+          apiFetchFn: async (url, opts) => helperFetch(url, { ...opts, headers: charlieHeaders }),
+          isolatedStore: scratchStore
+        });
+      } catch {
+        mismatchedFingerprintRejected = true;
+      }
+      const unverifiedKeyNotPersisted = scratchStore.size === 0;
+
+      // Step 13: Alice distributes cluster key, Bob sends a message, and Charlie retrieves the key using Alice's distributor key and decrypts Bob's message
+      const aliceDistrustedKeyEpoch1Text = 'Alice distributes, Bob sends message, Charlie retrieves and decrypts 🌟';
+      const bobEpoch1Envelope = await encryptClusterGroupMessage(
+        aliceDistrustedKeyEpoch1Text,
+        bobPair.privateKey,
+        bobAgentId,
+        indepClusterId,
+        { [aliceAgentId]: alicePair.publicKey, [charlieAgentId]: charliePair.publicKey },
+        1,
+        bobStore
+      );
+
+      const charlieFreshStore = new Map<string, string>();
+      const retrievedByCharlieUsingAliceDistKey = await retrieveAndUnwrapClusterGroupKey({
+        clusterId: indepClusterId,
+        epoch: 1,
+        receiverPrivateKey: charliePair.privateKey,
+        receiverAgentId: charlieAgentId,
+        distributorPublicKeyJwk: alicePair.publicKey, // Alice is distributor, NOT Bob!
+        expectedFingerprint: indepFingerprint1,
+        apiFetchFn: async (url, opts) => helperFetch(url, { ...opts, headers: charlieHeaders }),
+        isolatedStore: charlieFreshStore
+      });
+
+      const decryptedBobMessageByCharlie = await decryptClusterGroupMessage(
+        bobEpoch1Envelope,
+        charliePair.privateKey,
+        charlieAgentId,
+        bobPair.publicKey,
+        indepClusterId,
+        bobAgentId,
+        charlieFreshStore
+      );
+
+      const aliceDistributesBobSendsCharlieDecryptsSuccess = decryptedBobMessageByCharlie === aliceDistrustedKeyEpoch1Text &&
+        retrievedByCharlieUsingAliceDistKey === indepGroupKeyEpoch1;
+
+      const fullIntegrationSuccess = Boolean(
+        unauthorizedDistributionRejected &&
+        nonAdminDistRejected &&
+        incompleteDistRejected &&
+        distributionAccepted &&
+        epoch1KeysMatch &&
+        epoch1CommunicationSuccess &&
+        eveRetrievalRejected &&
+        epoch2Established &&
+        charlieEpoch2KeyValid &&
+        epoch2CommunicationSuccess &&
+        removedMemberRejectedFromNewEpoch &&
+        bobDecryptionEpoch2Failed &&
+        mismatchedDistributorRejected &&
+        mismatchedFingerprintRejected &&
+        unverifiedKeyNotPersisted &&
+        aliceDistributesBobSendsCharlieDecryptsSuccess
+      );
+
+      recordResult(
+        'cluster_test37_independent_agents_key_distribution_and_rotation',
+        fullIntegrationSuccess,
+        `Epoch 1 comm (${epoch1CommunicationSuccess}), rotated to epoch 2 (${epoch2Established}), active members communicate at epoch 2 (${epoch2CommunicationSuccess}), removed member rejected (${removedMemberRejectedFromNewEpoch}), distributor verified (${mismatchedDistributorRejected}), fingerprint verified & not persisted (${unverifiedKeyNotPersisted}), alice distributor / bob sender / charlie decrypts (${aliceDistributesBobSendsCharlieDecryptsSuccess}), non-admin dist rejected (${nonAdminDistRejected}), incomplete dist rejected (${incompleteDistRejected})`
+      );
+
+    } catch (test37Err: any) {
+      recordResult('cluster_test37_independent_agents_key_distribution_and_rotation', false, `Test 37 exception: ${test37Err?.message}`);
     }
 
   } finally {

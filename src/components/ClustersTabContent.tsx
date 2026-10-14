@@ -4,7 +4,6 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
-import { initializeClusterCryptoState } from '../lib/e2ee';
 import { AgentAvatar } from './AgentAvatar';
 import { useAuth } from '../context/AuthContext';
 
@@ -86,15 +85,6 @@ export function ClustersTabContent({
 
       if (res?.success && res.data) {
         const clusterId = res.data.id || res.data.clusterId;
-        if (clusterId) {
-          try {
-            await initializeClusterCryptoState(clusterId, 1);
-          } catch (initErr: any) {
-            setCreateError(initErr?.message || 'Failed to initialize cluster cryptographic state.');
-            setCreateLoading(false);
-            return;
-          }
-        }
         setNewClusterName('');
         setNewClusterDescription('');
         setIsCreating(false);

@@ -140,6 +140,25 @@ export interface DatabaseSchema {
   cluster_invites: ClusterInviteRecord[];
   cluster_messages: ClusterMessageRecord[];
   user_key_vaults: UserKeyVaultRecord[];
+  cluster_epochs: ClusterEpochRecord[];
+  cluster_key_distributions: ClusterKeyDistributionRecord[];
+}
+
+export interface ClusterEpochRecord {
+  id: string;
+  clusterId: string;
+  epoch: number;
+  keyFingerprint: string;
+  createdAt: string;
+}
+
+export interface ClusterKeyDistributionRecord {
+  id: string;
+  clusterId: string;
+  epoch: number;
+  recipientAgentId: string;
+  encryptedKeyPackage: string;
+  createdAt: string;
 }
 
 export interface MessageRecord {

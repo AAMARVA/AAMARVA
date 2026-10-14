@@ -2003,7 +2003,7 @@ export async function deriveChannelKey(
   );
 }
 
-function bufferToBase64(buf: ArrayBuffer): string {
+export function bufferToBase64(buf: ArrayBuffer): string {
   if (typeof Buffer !== 'undefined') {
     return Buffer.from(buf).toString('base64');
   }
@@ -2015,7 +2015,7 @@ function bufferToBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function base64ToBuffer(b64: string): ArrayBuffer {
+export function base64ToBuffer(b64: string): ArrayBuffer {
   if (typeof Buffer !== 'undefined') {
     const buf = Buffer.from(b64, 'base64');
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -2338,7 +2338,8 @@ export async function encryptClusterGroupMessage(
   senderAgentId: string,
   clusterId: string,
   memberPublicKeys: Record<string, string | object | CryptoKey>,
-  keyEpoch: number = 1
+  keyEpoch: number = 1,
+  isolatedStore?: Map<string, string>
 ): Promise<{ ciphertext: string; nonce: string; version: number; keyEpoch: number }> {
   if (!message || typeof message !== 'string') {
     throw new Error('E2EE Error: Message content cannot be empty.');
@@ -2362,14 +2363,9 @@ export async function encryptClusterGroupMessage(
   const cId = (clusterId || '').trim();
 
   // 1. Retrieve or initialize persistent shared group key for this cluster and epoch from cluster_group_keys
-  let groupKeyBase64 = await getClusterGroupKey(cId, epoch);
+  let groupKeyBase64 = await getClusterGroupKey(cId, epoch, isolatedStore);
   if (!groupKeyBase64) {
-    try {
-      groupKeyBase64 = await initializeClusterCryptoState(cId, epoch);
-    } catch {
-      const randomBytes = cryptoObj.getRandomValues(new Uint8Array(32));
-      groupKeyBase64 = bufferToBase64(randomBytes.buffer);
-    }
+    throw new Error('E2EE_KEY_NOT_FOUND: Shared cluster group key for this epoch is not available locally.');
   }
   const groupMsgKeyRaw = base64ToBuffer(groupKeyBase64);
   const groupMsgKey = await cryptoObj.subtle.importKey(
@@ -2430,7 +2426,8 @@ export async function decryptClusterGroupMessage(
   receiverAgentId: string,
   senderPublicKeyJwk: string | object | CryptoKey,
   clusterId: string,
-  senderAgentId: string
+  senderAgentId: string,
+  isolatedStore?: Map<string, string>
 ): Promise<string> {
   if (!encryptedPayload || !encryptedPayload.ciphertext) {
     throw new E2EEDecryptionError('MISSING_PAYLOAD', 'E2EE Error: Missing ciphertext in cluster message payload.');
@@ -2466,7 +2463,7 @@ export async function decryptClusterGroupMessage(
     // Handle Option B Shared Group Key Encryption (AAMARVA_SHARED_GROUP_E2EE_v1)
     if (envelope.type === 'AAMARVA_SHARED_GROUP_E2EE_v1') {
       const epoch = envelope.keyEpoch || encryptedPayload.keyEpoch || 1;
-      let groupKeyBase64 = await getClusterGroupKey(cId, epoch);
+      let groupKeyBase64 = await getClusterGroupKey(cId, epoch, isolatedStore);
       if (!groupKeyBase64) {
         throw new E2EEDecryptionError('KEY_EPOCH_NOT_FOUND', 'E2EE Error: Shared cluster group key for this epoch is not available locally.');
       }
@@ -2646,101 +2643,105 @@ export async function decryptClusterGroupMessage(
  * - Stores the secret group key securely in IndexedDB cluster_group_keys store.
  * - Throws CLUSTER_KEY_INIT_ERROR if persistence fails, preventing creation of unencrypted clusters.
  */
-export async function initializeClusterCryptoState(clusterId: string, keyEpoch: number = 1): Promise<string> {
-  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+export async function persistClusterGroupKey(
+  clusterId: string,
+  groupKeyBase64: string,
+  keyEpoch: number = 1,
+  isolatedStore?: Map<string, string>
+): Promise<void> {
   const cId = (clusterId || '').trim();
   const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
   const clusterEpochId = `${cId}#epoch#${epoch}`;
 
-  if (!cId) {
-    throw new Error('CLUSTER_KEY_INIT_ERROR: Cluster ID is required for cryptographic state initialization.');
+  if (!cId || !groupKeyBase64) {
+    throw new Error('CLUSTER_KEY_PERSIST_ERROR: Cluster ID and key are required.');
   }
 
-  // Generate 256-bit secure random group key
-  const randomBytes = cryptoObj.getRandomValues(new Uint8Array(32));
-  const base64Key = bufferToBase64(randomBytes.buffer);
+  if (isolatedStore) {
+    isolatedStore.set(clusterEpochId, groupKeyBase64);
+    return;
+  }
 
   // Always populate memory cache immediately
-  memoryClusterKeyCache.set(clusterEpochId, base64Key);
+  memoryClusterKeyCache.set(clusterEpochId, groupKeyBase64);
 
-  try {
+  // When running in browser environment with IndexedDB, strictly persist to IndexedDB
+  // Throws error immediately if transaction or storage fails
+  if (typeof indexedDB !== 'undefined') {
     const db = await openKeyDatabase();
     await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const safeReject = (err: any) => {
-        if (!settled) {
-          settled = true;
-          reject(err);
-        }
-      };
-      const safeResolve = () => {
-        if (!settled) {
-          settled = true;
-          resolve();
-        }
-      };
-
       const tx = db.transaction([CLUSTER_KEY_STORE_NAME], 'readwrite');
       const store = tx.objectStore(CLUSTER_KEY_STORE_NAME);
-      store.put({
+      const req = store.put({
         clusterEpochId,
         clusterId: cId,
         keyEpoch: epoch,
-        groupKeyBase64: base64Key,
+        groupKeyBase64,
         createdAt: new Date().toISOString()
       });
 
-      tx.oncomplete = () => {
-        safeResolve();
-      };
-      tx.onerror = () => safeReject(tx.error || new Error('IndexedDB cluster key store error'));
-      tx.onabort = () => safeReject(new Error('IndexedDB cluster key transaction aborted'));
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error || new Error('IndexedDB cluster key store error'));
+      tx.onabort = () => reject(new Error('IndexedDB cluster key store transaction aborted'));
+      tx.onerror = () => reject(tx.error || new Error('IndexedDB cluster key store transaction error'));
     });
-  } catch (err: any) {
-    // In Node.js or environments without IndexedDB, memory cache fallback is fully functional
-    console.warn('E2EE: IndexedDB unavailable for cluster key persistence, using memory cache fallback:', err?.message);
   }
-
-  return base64Key;
 }
 
 /**
  * Retrieves the secret cluster group key from secure local storage / IndexedDB.
  */
-export async function getClusterGroupKey(clusterId: string, keyEpoch: number = 1): Promise<string | null> {
+export async function getClusterGroupKey(
+  clusterId: string,
+  keyEpoch: number = 1,
+  isolatedStore?: Map<string, string>
+): Promise<string | null> {
   const cId = (clusterId || '').trim();
   const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
   const clusterEpochId = `${cId}#epoch#${epoch}`;
+
+  if (isolatedStore) {
+    return isolatedStore.get(clusterEpochId) || null;
+  }
 
   if (memoryClusterKeyCache.has(clusterEpochId)) {
     return memoryClusterKeyCache.get(clusterEpochId)!;
   }
 
-  try {
-    const db = await openKeyDatabase();
-    const result = await new Promise<any>((resolve, reject) => {
-      const tx = db.transaction(CLUSTER_KEY_STORE_NAME, 'readonly');
-      const store = tx.objectStore(CLUSTER_KEY_STORE_NAME);
-      const req = store.get(clusterEpochId);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      const db = await openKeyDatabase();
+      const result = await new Promise<any>((resolve, reject) => {
+        const tx = db.transaction(CLUSTER_KEY_STORE_NAME, 'readonly');
+        const store = tx.objectStore(CLUSTER_KEY_STORE_NAME);
+        const req = store.get(clusterEpochId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
 
-    if (result && result.groupKeyBase64) {
-      memoryClusterKeyCache.set(clusterEpochId, result.groupKeyBase64);
-      return result.groupKeyBase64;
+      if (result && result.groupKeyBase64) {
+        memoryClusterKeyCache.set(clusterEpochId, result.groupKeyBase64);
+        return result.groupKeyBase64;
+      }
+    } catch (err) {
+      console.warn('E2EE: Failed to retrieve cluster group key from IndexedDB:', err);
     }
-  } catch (err) {
-    console.warn('E2EE: Failed to retrieve cluster group key from IndexedDB:', err);
   }
 
   return null;
 }
 
-export function clearClusterGroupKeyForTest(clusterId: string, keyEpoch: number = 1): void {
+export function clearClusterGroupKeyForTest(
+  clusterId: string,
+  keyEpoch: number = 1,
+  isolatedStore?: Map<string, string>
+): void {
   const cId = (clusterId || '').trim();
   const epoch = typeof keyEpoch === 'number' && keyEpoch > 0 ? keyEpoch : 1;
   const clusterEpochId = `${cId}#epoch#${epoch}`;
+  if (isolatedStore) {
+    isolatedStore.delete(clusterEpochId);
+  }
   memoryClusterKeyCache.delete(clusterEpochId);
 }
 

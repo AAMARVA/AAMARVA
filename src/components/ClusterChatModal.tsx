@@ -8,8 +8,10 @@ import {
   decryptClusterGroupMessage, 
   getLocalKeyPair, 
   resolveSenderPublicKey,
-  StoredAgentKeyEntry 
+  StoredAgentKeyEntry,
+  getClusterGroupKey
 } from '../lib/e2ee';
+import { retrieveAndUnwrapClusterGroupKey } from '../lib/clusterCrypto';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 
 interface ClusterChatModalProps {
@@ -79,7 +81,9 @@ async function decryptClusterMessageEnvelope(
   currentLocalKeys: StoredAgentKeyEntry | null,
   userAgentId?: string,
   userPassword?: string | null,
-  _activeCredentials?: string[]
+  _activeCredentials?: string[],
+  members?: any[],
+  activeCluster?: any
 ): Promise<{ 
   text: string; 
   isDecrypted: boolean; 
@@ -102,16 +106,38 @@ async function decryptClusterMessageEnvelope(
   if (ciphertext && nonce && currentLocalKeys && userAgentId) {
     try {
       const msgEpoch = msg.keyEpoch || 1;
-      let decKey = currentLocalKeys.privateKey;
-      if (currentLocalKeys.keyEpoch !== msgEpoch) {
-        const historicalEntry = await getLocalKeyPair(userAgentId, msgEpoch, userPassword || undefined);
-        if (historicalEntry?.privateKey) {
-          decKey = historicalEntry.privateKey;
-        }
-      }
+      const decKey = currentLocalKeys.privateKey;
 
       const senderPubKey = msg.senderPublicKey || msg.e2eePublicKey;
       if (senderPubKey && decKey) {
+        let existingKey = await getClusterGroupKey(clusterId, msgEpoch);
+        if (!existingKey) {
+          try {
+            const adminMember = (members || []).find((m: any) => m.role === 'admin' || m.role === 'owner') ||
+                                (members || []).find((m: any) => m.agentId === activeCluster?.createdBy) ||
+                                (members || [])[0];
+            const distributorPubKey = adminMember?.e2eePublicKey || adminMember?.publicKey;
+            const distributorAgentId = adminMember?.agentId;
+
+            if (!distributorPubKey) {
+              throw new Error(`SECURITY_ERROR: Cannot establish trusted distributor identity for cluster ${clusterId} from trusted metadata (fail closed).`);
+            }
+
+            await retrieveAndUnwrapClusterGroupKey({
+              clusterId,
+              epoch: msgEpoch,
+              receiverPrivateKey: decKey,
+              receiverAgentId: userAgentId,
+              distributorAgentId,
+              distributorPublicKeyJwk: distributorPubKey,
+              members: members || [],
+              apiFetchFn: async (url, opts) => apiFetch(url, { ...opts, authType: 'human' })
+            });
+          } catch (unwrapErr) {
+            console.warn('[ClusterChat] Failed to retrieve key package from server:', unwrapErr);
+          }
+        }
+
         const resolvedPlaintext = await decryptClusterGroupMessage(
           { ciphertext, nonce, version: msg.version || 1, keyEpoch: msgEpoch },
           decKey,
@@ -185,8 +211,10 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
     try {
       // Fetch metadata
       const singleRes = await apiFetch(`/api/clusters/${clusterId}`, { authType: 'human' });
+      let currentClusterMeta = null;
       if (singleRes?.success && singleRes.data) {
-        setActiveCluster(singleRes.data);
+        currentClusterMeta = singleRes.data;
+        setActiveCluster(currentClusterMeta);
       }
 
       // Fetch members
@@ -212,7 +240,9 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               currentLocalKeys,
               user?.agentId,
               userPassword,
-              activeContextCredentials
+              activeContextCredentials,
+              currentMembers,
+              currentClusterMeta
             );
             return {
               id: m.id || m.messageId,
