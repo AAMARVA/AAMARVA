@@ -102,7 +102,7 @@ export async function createApp() {
   } else if (!process.env.VERCEL) {
     // Serve static frontend assets and SPA fallback in standalone production server
     app.use(express.static(path.join(process.cwd(), 'dist')));
-    app.get('*', (req, res) => {
+    app.get('/{*splat}', (req, res) => {
         res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
     });
   }
