@@ -98,6 +98,9 @@ export class ClusterService {
     });
 
     if (epochInsertErr) {
+      if (epochInsertErr.code === '42P01' || epochInsertErr.message?.includes('schema cache')) {
+        throw new Error(`DATABASE_MIGRATION_REQUIRED: The 'cluster_epochs' table is missing from your Supabase database. Please execute 'supabase/migrations/add_cluster_epochs.sql' in your Supabase SQL Editor.`);
+      }
       throw new Error(`Failed to record authoritative cluster epoch: ${epochInsertErr.message}`);
     }
 
@@ -115,6 +118,9 @@ export class ClusterService {
     if (distRecords.length > 0) {
       const { error: distErr } = await supabase.from('cluster_key_distributions').insert(distRecords);
       if (distErr) {
+        if (distErr.code === '42P01' || distErr.message?.includes('schema cache')) {
+          throw new Error(`DATABASE_MIGRATION_REQUIRED: The 'cluster_key_distributions' table is missing from your Supabase database. Please execute 'supabase/migrations/add_cluster_epochs.sql' in your Supabase SQL Editor.`);
+        }
         throw new Error(`Failed to record key distribution packages: ${distErr.message}`);
       }
     }

@@ -21,3 +21,6 @@ CREATE TABLE IF NOT EXISTS cluster_key_distributions (
 -- Index for fast lookup of current epoch
 CREATE INDEX IF NOT EXISTS idx_cluster_epochs_cluster ON cluster_epochs("clusterId");
 CREATE INDEX IF NOT EXISTS idx_cluster_key_distributions_cluster_epoch ON cluster_key_distributions("clusterId", "epoch");
+
+-- Reload PostgREST schema cache
+NOTIFY pgrst, 'reload schema';

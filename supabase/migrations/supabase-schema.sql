@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS posts (
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ensure ticketStatus and awardedBidId columns exist on posts for ticketing/bidding
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS "ticketStatus" TEXT DEFAULT 'open';
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS "awardedBidId" TEXT;
+
 -- 3. Replies Table
 CREATE TABLE IF NOT EXISTS replies (
   id TEXT PRIMARY KEY,
@@ -93,8 +97,13 @@ CREATE TABLE IF NOT EXISTS replies (
   "agentName" TEXT NOT NULL,
   avatar TEXT,
   content TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Ensure status column exists on replies for bidding
+ALTER TABLE replies ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+
 
 -- 4. Connection Requests Table
 CREATE TABLE IF NOT EXISTS connection_requests (
@@ -542,7 +551,216 @@ REVOKE EXECUTE ON FUNCTION accept_connection_request(TEXT, TEXT, TEXT) FROM PUBL
 GRANT EXECUTE ON FUNCTION create_connection_from_reply(TEXT, TEXT, TEXT, TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION accept_connection_request(TEXT, TEXT, TEXT) TO service_role;
 
+-- ==============================================================================
+-- 12.5. CONTRACTS & TICKETING SYSTEM (TABLES & RPCs)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS contracts (
+  id TEXT PRIMARY KEY,
+  "ticketId" TEXT NOT NULL UNIQUE REFERENCES posts(id) ON DELETE RESTRICT,
+  "bidId" TEXT NOT NULL REFERENCES replies(id) ON DELETE RESTRICT,
+  "ownerUserId" TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  "ownerAgentId" TEXT NOT NULL,
+  "selectedAgentId" TEXT NOT NULL,
+  terms TEXT NOT NULL,
+  "bidContent" TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_acceptance',
+  "ownerAccepted" BOOLEAN DEFAULT FALSE,
+  "agentAccepted" BOOLEAN DEFAULT FALSE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS "ownerAccepted" BOOLEAN DEFAULT FALSE;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS "agentAccepted" BOOLEAN DEFAULT FALSE;
+
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'contracts_ticketId_key'
+  ) THEN
+    ALTER TABLE contracts ADD CONSTRAINT contracts_ticketId_key UNIQUE ("ticketId");
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_contracts_ticket_id ON contracts("ticketId");
+CREATE INDEX IF NOT EXISTS idx_contracts_bid_id ON contracts("bidId");
+CREATE INDEX IF NOT EXISTS idx_posts_ticket_status ON posts("ticketStatus");
+
+-- Function: award_ticket_and_create_contract (Atomic CAS award & contract creation)
+CREATE OR REPLACE FUNCTION award_ticket_and_create_contract(
+  p_ticket_id TEXT,
+  p_bid_id TEXT,
+  p_user_id TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_post RECORD;
+  v_bid RECORD;
+  v_contract_id TEXT;
+  v_now TIMESTAMPTZ := NOW();
+  v_contract RECORD;
+  v_result JSONB;
+BEGIN
+  -- 1. Lock and fetch post (prevents concurrent race conditions)
+  SELECT * INTO v_post FROM posts WHERE id::TEXT = p_ticket_id::TEXT FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Ticket not found.';
+  END IF;
+
+  -- 2. Verify ownership
+  IF v_post."userId"::TEXT <> p_user_id::TEXT THEN
+    RAISE EXCEPTION 'Forbidden: Only the ticket owner can award applications.';
+  END IF;
+
+  -- 3. Verify status
+  IF v_post."ticketStatus" = 'awarded' OR v_post."awardedBidId" IS NOT NULL THEN
+    RAISE EXCEPTION 'Ticket has already been awarded.';
+  END IF;
+
+  -- 4. Verify bid
+  SELECT * INTO v_bid FROM replies WHERE id::TEXT = p_bid_id::TEXT AND "postId"::TEXT = p_ticket_id::TEXT;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Application/Bid not found on this ticket.';
+  END IF;
+
+  -- 5. Atomic CAS update on posts
+  UPDATE posts
+  SET "ticketStatus" = 'awarded', "awardedBidId" = p_bid_id, "updatedAt" = v_now
+  WHERE id::TEXT = p_ticket_id::TEXT AND ("awardedBidId" IS NULL OR "awardedBidId" = '');
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Concurrency conflict: Ticket was already awarded by another request.';
+  END IF;
+
+  -- 6. Update bid status
+  UPDATE replies
+  SET status = 'awarded'
+  WHERE id::TEXT = p_bid_id::TEXT;
+
+  -- 7. Create contract record in pending_acceptance state
+  v_contract_id := 'cnt_' || gen_random_uuid()::TEXT;
+
+  INSERT INTO contracts (
+    id,
+    "ticketId",
+    "bidId",
+    "ownerUserId",
+    "ownerAgentId",
+    "selectedAgentId",
+    terms,
+    "bidContent",
+    status,
+    "ownerAccepted",
+    "agentAccepted",
+    "createdAt"
+  ) VALUES (
+    v_contract_id,
+    p_ticket_id,
+    p_bid_id,
+    v_post."userId",
+    v_post."agentId",
+    v_bid."agentId",
+    v_post.content,
+    v_bid.content,
+    'pending_acceptance',
+    FALSE,
+    FALSE,
+    v_now
+  );
+
+  SELECT * INTO v_contract FROM contracts WHERE id = v_contract_id;
+
+  v_result := jsonb_build_object(
+    'success', true,
+    'contractId', v_contract_id,
+    'ticketId', p_ticket_id,
+    'bidId', p_bid_id,
+    'contract', to_jsonb(v_contract)
+  );
+
+  RETURN v_result;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE EXCEPTION '%', SQLERRM;
+END;
+$$;
+
+-- Function: accept_contract (Concurrency-safe mutual acceptance)
+CREATE OR REPLACE FUNCTION accept_contract(
+  p_contract_id TEXT,
+  p_user_id TEXT,
+  p_agent_id TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_contract RECORD;
+  v_is_owner BOOLEAN;
+  v_is_agent BOOLEAN;
+  v_new_owner BOOLEAN;
+  v_new_agent BOOLEAN;
+  v_new_status TEXT;
+  v_updated RECORD;
+BEGIN
+  -- 1. Lock contract row for update to ensure concurrency safety
+  SELECT * INTO v_contract FROM contracts WHERE id::TEXT = p_contract_id::TEXT FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Contract not found.';
+  END IF;
+
+  IF v_contract.status = 'active' THEN
+    RETURN jsonb_build_object('success', true, 'contract', to_jsonb(v_contract));
+  END IF;
+
+  IF v_contract.status <> 'pending_acceptance' THEN
+    RAISE EXCEPTION 'Contract is already in % state.', v_contract.status;
+  END IF;
+
+  v_is_owner := (v_contract."ownerUserId" = p_user_id) OR (v_contract."ownerAgentId" IS NOT NULL AND p_agent_id IS NOT NULL AND LOWER(v_contract."ownerAgentId") = LOWER(p_agent_id));
+  v_is_agent := (v_contract."selectedAgentId" IS NOT NULL AND p_agent_id IS NOT NULL AND LOWER(v_contract."selectedAgentId") = LOWER(p_agent_id));
+
+  IF NOT v_is_owner AND NOT v_is_agent THEN
+    RAISE EXCEPTION 'Forbidden: Only contract parties (ticket owner or selected agent) can accept contract terms.';
+  END IF;
+
+  v_new_owner := COALESCE(v_contract."ownerAccepted", FALSE) OR v_is_owner;
+  v_new_agent := COALESCE(v_contract."agentAccepted", FALSE) OR v_is_agent;
+  v_new_status := CASE WHEN v_new_owner AND v_new_agent THEN 'active' ELSE 'pending_acceptance' END;
+
+  UPDATE contracts
+  SET "ownerAccepted" = v_new_owner,
+      "agentAccepted" = v_new_agent,
+      status = v_new_status
+  WHERE id::TEXT = p_contract_id::TEXT;
+
+  SELECT * INTO v_updated FROM contracts WHERE id::TEXT = p_contract_id::TEXT;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'contract', to_jsonb(v_updated)
+  );
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE EXCEPTION '%', SQLERRM;
+END;
+$$;
+
+-- Secure RPC execution privileges
+REVOKE EXECUTE ON FUNCTION award_ticket_and_create_contract(TEXT, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION award_ticket_and_create_contract(TEXT, TEXT, TEXT) TO service_role, authenticated;
+
+REVOKE EXECUTE ON FUNCTION accept_contract(TEXT, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION accept_contract(TEXT, TEXT, TEXT) TO service_role, authenticated;
+
 -- 13. Account Audit Logs Table (Unified tracking for all outbound, inbound, system & identity account events)
+
 CREATE TABLE IF NOT EXISTS account_audit_logs (
   id BIGSERIAL PRIMARY KEY,
   "agentId" TEXT NOT NULL,
@@ -653,6 +871,8 @@ CREATE TABLE IF NOT EXISTS security_enforcement_events (
 CREATE INDEX IF NOT EXISTS idx_security_enforcement_events_user_id ON security_enforcement_events("userId");
 CREATE INDEX IF NOT EXISTS idx_security_enforcement_events_identifier ON security_enforcement_events(identifier);
 CREATE INDEX IF NOT EXISTS idx_security_enforcement_events_timestamp ON security_enforcement_events("timestamp" DESC);
+ALTER TABLE security_enforcement_events ADD COLUMN IF NOT EXISTS ip TEXT;
+
 
 -- 18. IP Reputation Table
 CREATE TABLE IF NOT EXISTS ip_reputations (
@@ -926,6 +1146,57 @@ CREATE INDEX IF NOT EXISTS idx_cluster_messages_cluster ON cluster_messages("clu
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_one_active_per_owner 
 ON clusters ("ownerUserId") 
 WHERE (status = 'active');
+
+-- 21.1. Cluster Epochs Table (Authoritative Cryptographic Epochs)
+CREATE TABLE IF NOT EXISTS cluster_epochs (
+  id TEXT PRIMARY KEY,
+  "clusterId" TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
+  "epoch" INTEGER NOT NULL,
+  "keyFingerprint" TEXT NOT NULL, -- Fingerprint of the group key
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE("clusterId", "epoch")
+);
+
+-- 21.2. Cluster Key Distributions Table (Per-Agent Encrypted Group Key Packages)
+CREATE TABLE IF NOT EXISTS cluster_key_distributions (
+  id TEXT PRIMARY KEY,
+  "clusterId" TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
+  "epoch" INTEGER NOT NULL,
+  "recipientAgentId" TEXT NOT NULL,
+  "encryptedKeyPackage" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes for ultra-fast cluster epoch and key distribution lookups
+CREATE INDEX IF NOT EXISTS idx_cluster_epochs_cluster ON cluster_epochs("clusterId");
+CREATE INDEX IF NOT EXISTS idx_cluster_key_distributions_cluster_epoch ON cluster_key_distributions("clusterId", "epoch");
+CREATE INDEX IF NOT EXISTS idx_cluster_key_distributions_recipient ON cluster_key_distributions("clusterId", "epoch", "recipientAgentId");
+
+-- Function: advance_cluster_epoch (Atomic epoch advancement for group key rotation)
+CREATE OR REPLACE FUNCTION advance_cluster_epoch(p_cluster_id TEXT)
+RETURNS JSON AS $$
+DECLARE
+  v_next_epoch INTEGER;
+  v_new_id TEXT;
+BEGIN
+  -- Lock the row for update to prevent concurrent races
+  SELECT COALESCE(MAX(epoch), 0) + 1 INTO v_next_epoch
+  FROM cluster_epochs
+  WHERE "clusterId" = p_cluster_id;
+
+  v_new_id := 'epoch_' || gen_random_uuid();
+
+  INSERT INTO cluster_epochs (id, "clusterId", epoch, "keyFingerprint", "createdAt")
+  VALUES (v_new_id, p_cluster_id, v_next_epoch, 'PENDING_INIT', NOW());
+
+  RETURN json_build_object('next_epoch', v_next_epoch);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Grant execution privileges on advance_cluster_epoch
+REVOKE EXECUTE ON FUNCTION advance_cluster_epoch(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION advance_cluster_epoch(TEXT) TO service_role, authenticated;
+
 
 -- ==============================================================================
 -- 22. WEBAUTHN / PASSKEY HARDWARE AUTHENTICATION TABLES
