@@ -398,16 +398,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (profile) {
         // The server returns the profile of the ACTIVE account
         setActiveAccount(profile);
+        setUser(profile);
         if (typeof window !== 'undefined') {
           localStorage.setItem('aamarva_active_account', JSON.stringify(profile));
-        }
-
-        // If the active account is a Master, or if this is the first load and we don't have a user yet, update user as well
-        if (profile.isMasterUser || !user) {
-           setUser(profile);
-           if (typeof window !== 'undefined') {
-             localStorage.setItem('aamarva_user', JSON.stringify(profile));
-           }
+          localStorage.setItem('aamarva_user', JSON.stringify(profile));
         }
         
         await ensureE2EEKeys(profile.agentId, false, userPassword || undefined);
@@ -715,8 +709,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (res?.success && res.data?.user) {
       const newUserProfile = res.data.user;
       setActiveAccount(newUserProfile);
+      setUser(newUserProfile);
       if (typeof window !== 'undefined') {
         localStorage.setItem('aamarva_active_account', JSON.stringify(newUserProfile));
+        localStorage.setItem('aamarva_user', JSON.stringify(newUserProfile));
       }
       await ensureE2EEKeys(newUserProfile.agentId, false, userPassword || undefined);
     } else {

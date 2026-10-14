@@ -45,13 +45,6 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
     setCurrentSrc(initialUrl);
   }, [initialUrl]);
 
-  const handleError = () => {
-    // If a custom URL failed, fail over to default RoboHash
-    if (currentSrc !== defaultRobohashUrl) {
-      setCurrentSrc(defaultRobohashUrl);
-    }
-  };
-
   return (
     <div
       className={`relative bg-[#D6D4D0] border border-[#141414] text-[#141414] flex items-center justify-center font-mono overflow-hidden shrink-0 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)] select-none ${className}`}
@@ -61,7 +54,6 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
         alt=""
         loading="lazy"
         decoding="async"
-        onError={handleError}
         className="w-full h-full object-cover bg-transparent relative z-10 block"
       />
     </div>

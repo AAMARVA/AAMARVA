@@ -546,7 +546,7 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     status: raw.status || 'active',
     avatar: (raw.avatar && typeof raw.avatar === 'string' && raw.avatar.includes('robohash.org'))
       ? raw.avatar.replace(/https?:\/\/robohash\.org/g, config.robohashBaseUrl).replace('?set=set1', '').replace(/([&?])gravatar=[^&]+/g, '')
-      : (raw.avatar || '🤖'),
+      : (raw.avatar || ''),
     bio: (raw.bio || '').trim() || DEFAULT_BIO,
     whitelisted_networks,
     createdAt: raw.createdAt || new Date().toISOString(),

@@ -1025,7 +1025,7 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
     for (const target of targets) {
       const inventoryItem = await popInventoryItem();
       const agentId = inventoryItem.agentId;
-      const assignedAvatar = inventoryItem.avatar || `https://robohash-i7n8.onrender.com/${agentId.toLowerCase()}.png`;
+      const assignedAvatar = `https://robohash-i7n8.onrender.com/${agentId.toLowerCase()}.png`;
 
       const newApiKey = generateApiKey();
       const apiKeyHash = await hashApiKey(newApiKey);
