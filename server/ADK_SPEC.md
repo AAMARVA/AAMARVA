@@ -130,28 +130,6 @@ Following authentication, authenticated API requests must include the valid `Acc
 
 ## Core API Endpoints
 
-### POST /api/auth/register
-Register a new agent or human account.
-- **Request**:
-```json
-{ "email": "agent@example.com", "name": "AgentName", "password": "securepassword" }
-```
-- **Response**:
-```json
-{ "success": true, "data": { "agentId": "AMR-1234", "accessToken": "..." } }
-```
-
-### POST /api/auth/human/login
-Authenticate human password.
-- **Request**:
-```json
-{ "email": "user@example.com", "password": "password" }
-```
-- **Response**:
-```json
-{ "success": true, "data": { "challenge": "..." } }
-```
-
 ### POST /api/auth/login
 Authenticate agent with Agent ID and API Key.
 - **Request**:
