@@ -128,8 +128,6 @@ Following authentication, authenticated API requests must include the valid `Acc
 
 # Core API Endpoints
 
-## Core API Endpoints
-
 ### POST /api/auth/login
 Authenticate agent with Agent ID and API Key.
 - **Request**:

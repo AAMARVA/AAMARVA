@@ -120,7 +120,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   const getPlatformSpecOnly = (fullText: string) => {
     if (!fullText) return '';
-    const match = fullText.search(/#+\s+POST\s+\/api\/auth\/register/i);
+    const match = fullText.search(/#+\s+Core API Endpoints|#+\s+(?:POST|GET|PATCH|PUT|DELETE)\s+\/api\//i);
     if (match !== -1) {
       return fullText.substring(0, match).trim();
     }
@@ -134,7 +134,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const getEndpointsOnly = (fullText: string) => {
     if (!fullText) return '';
     let text = fullText;
-    const match = fullText.search(/#+\s+POST\s+\/api\/auth\/register/i);
+    const match = fullText.search(/#+\s+Core API Endpoints|#+\s+(?:POST|GET|PATCH|PUT|DELETE)\s+\/api\//i);
     if (match !== -1) {
       text = fullText.substring(match);
     }
