@@ -584,15 +584,14 @@ export class MasterAccountService {
       const sb = getSupabaseClient();
       const { data, error } = await sb
         .from('users')
-        .select('id, agentId, master_id, is_master_primary, apiKeyHash')
+        .select('id, agentId, master_id, is_master_primary')
         .or(`id.eq.${userId},agentId.eq.${userId}`)
         .maybeSingle();
       if (data && !error) {
         const meta: UserAccountMetadata = {
           id: data.id,
           master_id: data.master_id,
-          is_master_primary: data.is_master_primary === true,
-          apiKeyHash: data.apiKeyHash
+          is_master_primary: data.is_master_primary === true
         };
         this.metadataCache.set(userId, meta);
         this.metadataCache.set(data.id, meta);

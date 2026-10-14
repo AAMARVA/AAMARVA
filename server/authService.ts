@@ -1041,11 +1041,13 @@ export async function loginAgent(data: { agentId: string; apiKey: string }, clie
   let normalizedUser: any = null;
 
   if (userRecord.master_id && !userRecord.is_master_primary) {
-    // Slave Agent validation: Verify API Key Hash directly from the users table record!
-    if (!userRecord.apiKeyHash) {
+    // Slave Agent validation: Verify API Key Hash from Supabase Auth app_metadata (or userRecord in-memory fallback)
+    authUser = await getAuthUserForRecord(supabase, userRecord);
+    const candidateHash = authUser?.app_metadata?.apiKeyHash || (userRecord as any).apiKeyHash;
+    if (!candidateHash) {
       throw new Error('Agent Login failed: Invalid API Key configuration.');
     }
-    isApiKeyValid = await compareApiKey(apiKey, userRecord.apiKeyHash);
+    isApiKeyValid = await compareApiKey(apiKey, candidateHash);
     normalizedUser = {
       id: userRecord.id,
       agentId: userRecord.agentId,

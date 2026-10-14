@@ -1045,7 +1045,6 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
         name: target.agentName.trim(),
         status: 'active',
         avatar: assignedAvatar,
-        apiKeyHash,
         apiKeyFingerprint,
         bio: (target.bio || '').trim() || DEFAULT_BIO || 'hello world',
         createdAt: new Date().toISOString(),
@@ -1064,7 +1063,7 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
         throw new Error(`Database insert failed for ${target.agentName}: ${insertErr.message}`);
       }
 
-      // Pre-provision Supabase Auth user record (without E2EE keys so identity registration is strictly enforced before talking)
+      // Pre-provision Supabase Auth user record with credentials in app_metadata
       try {
         await supabase.auth.admin.createUser({
           id: subAgentId,
@@ -1075,10 +1074,26 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
             name: subAgentRecord.name,
             avatar: subAgentRecord.avatar,
             bio: subAgentRecord.bio
+          },
+          app_metadata: {
+            apiKeyHash,
+            apiKeyFingerprint,
+            emailVerified: false,
+            whitelisted_networks: target.whitelisted_networks || []
           }
         });
       } catch (authCreateErr) {
-        // Non-fatal; ensureAuthUserRecord will auto-provision on first request if needed
+        // If auth user already existed or needs update, synchronize app_metadata
+        try {
+          await supabase.auth.admin.updateUserById(subAgentId, {
+            app_metadata: {
+              apiKeyHash,
+              apiKeyFingerprint,
+              emailVerified: false,
+              whitelisted_networks: target.whitelisted_networks || []
+            }
+          });
+        } catch {}
       }
 
       // Automatically establish canonical fleet connection between Master and Slave agent (WhatsApp style)
@@ -1174,11 +1189,22 @@ router.post(['/auth/master/rotate-sub-agent-key', '/v1/auth/master/rotate-sub-ag
     const apiKeyHash = await hashApiKey(newApiKey);
     const apiKeyFingerprint = computeApiKeyFingerprint(newApiKey);
 
-    // 4. Update table directly
+    // 4. Update Supabase Auth app_metadata (authoritative credentials store)
+    try {
+      await supabase.auth.admin.updateUserById(subAgentId, {
+        app_metadata: {
+          apiKeyHash,
+          apiKeyFingerprint
+        }
+      });
+    } catch (authErr: any) {
+      console.warn('Notice updating auth app_metadata for slave rotation:', authErr?.message);
+    }
+
+    // 5. Update table directly (users table only maintains apiKeyFingerprint)
     const { error: updateErr } = await supabase
       .from('users')
       .update({
-        apiKeyHash,
         apiKeyFingerprint,
         updatedAt: new Date().toISOString()
       })

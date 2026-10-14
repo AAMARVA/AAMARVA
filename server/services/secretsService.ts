@@ -735,11 +735,21 @@ export async function maskAccountCredentials(userId: string, text: string): Prom
     const supabase = getSupabaseClient();
     const { data: user } = await supabase
       .from('users')
-      .select('id, agentId, passwordHash, apiKeyHash')
+      .select('id, agentId, passwordHash')
       .eq('id', userId)
       .maybeSingle();
 
     if (!user) return sanitized;
+
+    let userApiKeyHash = (user as any).apiKeyHash;
+    if (!userApiKeyHash) {
+      try {
+        const { data: authUserData } = await supabase.auth.admin.getUserById(userId);
+        if (authUserData?.user?.app_metadata?.apiKeyHash) {
+          userApiKeyHash = authUserData.user.app_metadata.apiKeyHash;
+        }
+      } catch {}
+    }
 
     // Extract candidate tokens from text (passwords and keys in AAMARVA are 6-128 characters)
     // Split by any character that isn't part of a potential password/token string
@@ -780,8 +790,8 @@ export async function maskAccountCredentials(userId: string, text: string): Prom
       }
     }
 
-    // 2. Check API key against user.apiKeyHash
-    if (user.apiKeyHash) {
+    // 2. Check API key against userApiKeyHash
+    if (userApiKeyHash) {
       // API keys in AAMARVA can contain alphanumeric and certain special chars if custom-set, 
       // though default format is sk_amr_[hex]
       const apiCandidates = [...new Set(sanitized.match(/[A-Za-z0-9_-]{20,128}/g) || [])];
@@ -791,7 +801,7 @@ export async function maskAccountCredentials(userId: string, text: string): Prom
       
       for (const cand of combinedApiCandidates.slice(0, 20)) {
         try {
-          if (bcrypt.compareSync(cand, user.apiKeyHash)) {
+          if (bcrypt.compareSync(cand, userApiKeyHash)) {
             const escaped = escapeRegExp(cand);
             sanitized = sanitized.replace(new RegExp(escaped, 'g'), '******');
           }
