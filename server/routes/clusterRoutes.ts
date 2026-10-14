@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
-import { requireUserOrAgentAuth, requireAgentAuth, requireAgent, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { requireUserOrAgentAuth, requireHumanSession, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { getSupabaseClient } from '../supabase';
 import { logAgentFootprint, logExternalEvent } from '../services/auditService';
 import { getClusterSymbol } from '../lib/clusterSymbols';
@@ -384,7 +384,7 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
 });
 
 // 1. POST /clusters (Create a new cluster)
-router.post('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/clusters', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_create');
     const { name, description, memberAgentIds } = req.body;
@@ -767,8 +767,8 @@ router.get('/clusters/:clusterId/epoch', requireUserOrAgentAuth, async (req: Aut
   }
 });
 
-// 4. PATCH /clusters/:clusterId (Update cluster metadata - Agent only)
-router.patch('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+// 4. PATCH /clusters/:clusterId (Update cluster metadata - Human only)
+router.patch('/clusters/:clusterId', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_update');
     const clusterId = req.params.clusterId as string;
@@ -838,8 +838,8 @@ router.patch('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req:
   }
 });
 
-// 5. DELETE /clusters/:clusterId (Disband/Delete a cluster - Agent only)
-router.delete('/clusters/:clusterId', requireAgentAuth, requireAgent, async (req: AuthenticatedRequest, res: Response) => {
+// 5. DELETE /clusters/:clusterId (Disband/Delete a cluster - Human only)
+router.delete('/clusters/:clusterId', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_delete');
     const clusterId = req.params.clusterId as string;
@@ -1189,192 +1189,11 @@ router.post('/clusters/:clusterId/advance-epoch', requireUserOrAgentAuth, async 
 // });
 
 
-// 9. POST /clusters/:clusterId/join (Direct Join - Fleet Enclave Enforcement)
-router.post('/clusters/:clusterId/join', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    await SecurityService.getInstance().evaluateRequest(req, 'cluster_join');
-    const clusterId = req.params.clusterId as string;
-    const supabase = getSupabaseClient();
-    const tables = await getClusterTables(supabase);
-    const userId = req.user!.id;
-    const agentId = req.user!.agentId || userId;
-
-    // 1. Cluster existence and dissolution check
-    const { data: cluster, error: clusterErr } = await supabase
-      .from(tables.clusters)
-      .select('*')
-      .eq('id', clusterId)
-      .maybeSingle();
-
-    if (clusterErr || !cluster) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: 'CLUSTER_NOT_FOUND',
-          message: 'Cluster not found.'
-        }
-      });
-    }
-
-    if (cluster.status === 'dissolved') {
-      return res.status(403).json({
-        success: false,
-        error: {
-          code: 'CLUSTER_DISSOLVED',
-          message: 'Forbidden: This cluster has been dissolved.'
-        }
-      });
-    }
-
-    // 2. Authoritative Fleet Boundary Check: Cross-master cluster join denied by default
-    const { data: ownerUser } = await supabase
-      .from('users')
-      .select('id, master_id, is_master_primary')
-      .eq('id', cluster.ownerUserId)
-      .maybeSingle();
-
-    const clusterMasterId = (ownerUser?.master_id && !ownerUser?.is_master_primary)
-      ? ownerUser.master_id
-      : cluster.ownerUserId;
-
-    const { data: callerUser } = await supabase
-      .from('users')
-      .select('id, master_id, is_master_primary')
-      .eq('id', userId)
-      .maybeSingle();
-
-    const callerMasterId = (callerUser?.master_id && !callerUser?.is_master_primary)
-      ? callerUser.master_id
-      : userId;
-
-    if (clusterMasterId !== callerMasterId) {
-      return res.status(403).json({
-        success: false,
-        error: {
-          code: 'FORBIDDEN_CROSS_FLEET',
-          message: 'Forbidden: Cross-master cluster access is denied by default. You can only join clusters owned by your private fleet.'
-        }
-      });
-    }
-
-    // 3. Check existing membership
-    const { data: existingMember } = await supabase
-      .from(tables.members)
-      .select('*')
-      .eq('clusterId', clusterId)
-      .eq('userId', userId)
-      .maybeSingle();
-
-    const now = new Date().toISOString();
-
-    if (existingMember) {
-      if (existingMember.status !== 'dissolved') {
-        return res.status(409).json({
-          success: false,
-          error: {
-            code: 'ALREADY_MEMBER',
-            message: 'You are already an active member of this cluster.'
-          }
-        });
-      }
-
-      // Reactivate dissolved member
-      await supabase
-        .from(tables.members)
-        .update({
-          status: 'active',
-          role: 'member'
-        })
-        .eq('id', existingMember.id);
-
-      await logAgentFootprint(
-        userId,
-        'CLUSTER_JOINED',
-        `agent ${agentId} rejoined cluster "${cluster.name || clusterId}"`,
-        clusterId,
-        agentId
-      );
-
-      floorActivityService.recordFloorActivity({
-        agentId,
-        agentName: req.user!.name || agentId,
-        avatar: req.user!.avatar,
-        emailVerified: req.user!.emailVerified,
-        text: `joined Cluster "${cluster.name || clusterId}"`,
-        type: 'cluster',
-        cluster: { name: cluster.name || 'Cluster', id: clusterId, symbol: getClusterSymbol(clusterId) }
-      }).catch(console.warn);
-
-      return res.status(200).json({
-        success: true,
-        message: 'Successfully rejoined cluster.',
-        data: {
-          clusterId,
-          role: 'member',
-          status: 'active'
-        }
-      });
-    }
-
-    // 4. Insert new cluster member
-    const memberId = `member_${crypto.randomUUID()}`;
-    const { error: insertErr } = await supabase
-      .from(tables.members)
-      .insert({
-        id: memberId,
-        clusterId,
-        userId,
-        agentId,
-        role: 'member',
-        status: 'active',
-        createdAt: now
-      });
-
-    if (insertErr) {
-      throw new Error(`Failed to record cluster membership: ${insertErr.message}`);
-    }
-
-    await logAgentFootprint(
-      userId,
-      'CLUSTER_JOINED',
-      `agent ${agentId} joined cluster "${cluster.name || clusterId}"`,
-      clusterId,
-      agentId
-    );
-
-    floorActivityService.recordFloorActivity({
-      agentId,
-      agentName: req.user!.name || agentId,
-      avatar: req.user!.avatar,
-      emailVerified: req.user!.emailVerified,
-      text: `joined Cluster "${cluster.name || clusterId}"`,
-      type: 'cluster',
-      cluster: { name: cluster.name || 'Cluster', id: clusterId, symbol: getClusterSymbol(clusterId) }
-    }).catch(console.warn);
-
-    res.status(200).json({
-      success: true,
-      message: 'Successfully joined cluster.',
-      data: {
-        clusterId,
-        role: 'member',
-        status: 'active'
-      }
-    });
-  } catch (err: any) {
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'CLUSTER_JOIN_FAILED',
-        message: err.message || 'Internal server error.'
-      }
-    });
-  }
-});
 
 
-// 10. PATCH /clusters/:clusterId/members/:memberAgentId/role (Update member role: admin/member)
-router.patch('/clusters/:clusterId/members/:memberAgentId/role', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+
+// 10. PATCH /clusters/:clusterId/members/:memberAgentId/role (Update member role: admin/member - Human authorized only)
+router.patch('/clusters/:clusterId/members/:memberAgentId/role', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_member_role_update');
     const clusterId = req.params.clusterId as string;
@@ -2077,8 +1896,8 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
   }
 });
 
-// 13. DELETE /clusters/:clusterId/members/:memberAgentId (Kick member)
-router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+// 13. DELETE /clusters/:clusterId/members/:memberAgentId (Kick member - Human authorized only)
+router.delete('/clusters/:clusterId/members/:memberAgentId', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_member_kick');
     const clusterId = req.params.clusterId as string;
@@ -2215,8 +2034,8 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireUserOrAgentA
   }
 });
 
-// 14. DELETE /clusters/:clusterId/leave (Leave cluster voluntarily)
-router.delete('/clusters/:clusterId/leave', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+// 14. DELETE /clusters/:clusterId/leave (Leave cluster voluntarily - Human authorized only)
+router.delete('/clusters/:clusterId/leave', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_leave');
     const clusterId = req.params.clusterId as string;

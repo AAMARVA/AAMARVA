@@ -479,46 +479,6 @@ async function runTests() {
     record('GET /api/replies/:replyId', 'SKIP', 'No replyId available');
   }
 
-  // 17. POST /api/connections/requests + accept flow (Alpha connects with Beta via requested flow)
-  if (secondAgentId && secondAccessToken) {
-    try {
-      console.log('Testing 17. Modern Connection Flow (Alpha requests Beta, Beta accepts)...');
-      // Step A: Alpha sends request to Beta
-      const reqRes = await fetchWithTimeout(`${BASE_URL}/api/connections/requests`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({ receiverAgentId: secondAgentId })
-      });
-      const reqJson: any = await reqRes.json();
-      if (reqRes.status === 201 && reqJson.success) {
-        const tempRequestId = reqJson.data.requestId || reqJson.data.id;
-        
-        // Step B: Beta accepts request
-        const acceptRes = await fetchWithTimeout(`${BASE_URL}/api/connections/requests/${tempRequestId}/accept`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${secondAccessToken}`
-          }
-        });
-        const acceptJson: any = await acceptRes.json();
-        if (acceptRes.status === 200 && acceptJson.success) {
-          connectionId = acceptJson.data.connectionId || acceptJson.data.id;
-          record('POST /api/connections/requests (flow)', 'PASS', `Established connection via request-and-accept flow (ID: ${connectionId})`);
-        } else {
-          record('POST /api/connections/requests (flow)', 'FAIL', `Beta failed to accept request: ${JSON.stringify(acceptJson)}`);
-        }
-      } else {
-        record('POST /api/connections/requests (flow)', 'FAIL', `Alpha failed to request Beta: ${JSON.stringify(reqJson)}`);
-      }
-    } catch (err: any) {
-      record('POST /api/connections/requests (flow)', 'FAIL', err.message);
-    }
-  } else {
-    record('POST /api/connections/requests (flow)', 'SKIP', 'secondAgentId or secondAccessToken not available');
-  }
 
   // 18. GET /api/connections
   try {
@@ -601,72 +561,6 @@ async function runTests() {
     record('GET /api/connections/:connectionId/messages', 'SKIP', 'No connectionId available');
   }
 
-  // 21. POST /api/connections/requests (Alpha requests Gamma - no prior connection)
-  if (thirdAgentId) {
-    try {
-      console.log('Testing 21. POST /api/connections/requests (Alpha to Gamma)...');
-      const res = await fetchWithTimeout(`${BASE_URL}/api/connections/requests`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({ receiverAgentId: thirdAgentId })
-      });
-      const json: any = await res.json();
-      if (res.status === 201 && json.success) {
-        requestId = json.data.requestId || json.data.id;
-        record('POST /api/connections/requests', 'PASS', `Created connection request successfully (ID: ${requestId})`);
-      } else {
-        record('POST /api/connections/requests', 'FAIL', JSON.stringify(json));
-      }
-    } catch (err: any) {
-      record('POST /api/connections/requests', 'FAIL', err.message);
-    }
-  } else {
-    record('POST /api/connections/requests', 'SKIP', 'No thirdAgentId available');
-  }
-
-  // 22. GET /api/connections/requests (Gamma reads pending requests)
-  if (thirdAccessToken) {
-    try {
-      console.log('Testing 22. GET /api/connections/requests...');
-      const res = await fetchWithTimeout(`${BASE_URL}/api/connections/requests`, {
-        headers: { Authorization: `Bearer ${thirdAccessToken}` }
-      });
-      const json: any = await res.json();
-      if (res.status === 200 && json.success) {
-        record('GET /api/connections/requests', 'PASS', 'Listed connection requests successfully');
-      } else {
-        record('GET /api/connections/requests', 'FAIL', JSON.stringify(json));
-      }
-    } catch (err: any) {
-      record('GET /api/connections/requests', 'FAIL', err.message);
-    }
-  } else {
-    record('GET /api/connections/requests', 'SKIP', 'No thirdAccessToken available');
-  }
-
-  // 23. POST /api/connections/requests/:requestId/accept (Gamma accepts request)
-  if (requestId && thirdAccessToken) {
-    try {
-      console.log('Testing 23. POST /api/connections/requests/:requestId/accept...');
-      const res = await fetchWithTimeout(`${BASE_URL}/api/connections/requests/${requestId}/accept`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${thirdAccessToken}` }
-      });
-      const json: any = await res.json();
-      if (res.status === 200 && json.success) {
-        record('POST /api/connections/requests/:requestId/accept', 'PASS', 'Accepted connection request successfully');
-      } else {
-        record('POST /api/connections/requests/:requestId/accept', 'FAIL', JSON.stringify(json));
-      }
-    } catch (err: any) {
-      record('POST /api/connections/requests/:requestId/accept', 'FAIL', err.message);
-    }
-  } else {
-    record('POST /api/connections/requests/:requestId/accept', 'SKIP', 'No requestId or thirdAccessToken available');
-  }
 
 
 

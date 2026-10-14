@@ -476,7 +476,6 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
   let queryBuilder = supabase
     .from('users')
     .select('id, agentId, name, avatar, bio, createdAt, emailVerified, master_id, is_master_primary', { count: 'exact' })
-    .not('agentId', 'is', null)
     .or(`master_id.eq.${callerMasterId},id.eq.${callerMasterId}`);
 
   if (query && query.trim()) {
@@ -497,20 +496,19 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
     throw new Error(`Database error querying agents: ${error.message}`);
   }
 
-  // Strict in-memory fleet isolation guard: only include agents that belong to this master's fleet
-  // AND ensure only slave accounts are visible in search results.
+  // Strict in-memory fleet isolation guard: only include accounts that belong to this master's fleet.
+  // Returns both the Master account and all associated Slave accounts in the current fleet.
   const fleetAgents = (data || []).filter((u: any) => {
-    const isFleetMember = u.master_id === callerMasterId || (u.id === callerMasterId && (!u.master_id || u.is_master_primary === true));
-    const isSlave = u.master_id !== null && u.master_id !== u.id;
-    return isFleetMember && isSlave;
+    return u.master_id === callerMasterId || u.id === callerMasterId;
   });
 
   const agents = fleetAgents.map((u: any) => {
     const isVerified = Boolean(u.emailVerified === true);
     const vStatus = isVerified ? 'verified' : 'not verified';
+    const isMaster = u.id === callerMasterId && (!u.master_id || u.is_master_primary === true);
     return {
       id: u.id,
-      agentId: u.agentId,
+      agentId: u.agentId || u.id,
       verificationStatus: vStatus,
       verification_status: vStatus,
       ["verification status"]: vStatus,
@@ -519,6 +517,10 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
       bio: u.bio || '',
       createdAt: u.createdAt || new Date().toISOString(),
       emailVerified: isVerified,
+      role: isMaster ? 'master' : 'slave',
+      isMaster,
+      isSlave: !isMaster,
+      masterId: u.master_id || (isMaster ? u.id : null),
     };
   });
 
@@ -527,159 +529,5 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
     total: fleetAgents.length,
     page: safePage,
     limit: safeLimit,
-  };
-}
-
-export async function getAgentOwnerDossier(agentId: string, callerMasterId?: string | null) {
-  const trimmed = agentId.trim();
-  const normalizedTarget = trimmed.replace(/^@/, '');
-  const supabase = getSupabaseClient();
-
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
-  const orConditions = [
-    `agentId.ilike.${normalizedTarget}`,
-    `agentId.eq.${normalizedTarget}`,
-    `name.ilike.${normalizedTarget}`,
-    isUUID ? `id.eq.${trimmed}` : null
-  ].filter(Boolean).join(',');
-
-  const { data: rawUser, error: userError } = await supabase
-    .from('users')
-    .select('id, agentId, email, name, status, avatar, bio, master_id, is_master_primary, createdAt')
-    .or(orConditions)
-    .maybeSingle();
-
-  if (userError || !rawUser) {
-    throw new Error('Agent not found.');
-  }
-
-  // Fleet Isolation Guard for Owner Dossier:
-  const targetMasterId = (rawUser.master_id && !rawUser.is_master_primary)
-    ? rawUser.master_id
-    : rawUser.id;
-
-  if (!callerMasterId || targetMasterId !== callerMasterId) {
-    throw new Error('Agent not found.');
-  }
-
-  // Determine master user id (if this agent is a slave, master_id points to master account)
-  const masterUserId = (rawUser.master_id && rawUser.master_id !== rawUser.id) ? rawUser.master_id : rawUser.id;
-  
-  let masterUser = rawUser;
-  if (masterUserId !== rawUser.id) {
-    const { data: mUser } = await supabase
-      .from('users')
-      .select('id, agentId, email, name, status, avatar, bio, master_id, createdAt')
-      .eq('id', masterUserId)
-      .maybeSingle();
-    if (mUser) {
-      masterUser = mUser;
-    }
-  }
-
-  // Fetch all slave accounts operating under this master
-  const { data: slaveRecords } = await supabase
-    .from('users')
-    .select('id, agentId, name, avatar, status')
-    .eq('master_id', masterUserId);
-
-  const cleanSlaveAgents = (slaveRecords || [])
-    .filter((s: any) => s.id !== masterUserId)
-    .map((s: any) => ({
-      agentId: s.agentId,
-      name: s.name || 'Slave Agent',
-      avatar: s.avatar || '🤖',
-      status: s.status || 'active',
-      isCurrent: (s.agentId || '').toLowerCase() === (rawUser.agentId || '').toLowerCase()
-    }));
-
-  // Look up owner application by master user's email
-  let application: any = null;
-  try {
-    const { applicationService } = await import('./applicationService.js');
-    const allApps = await applicationService.getApplications();
-    if (masterUser.email) {
-      const normEmail = masterUser.email.toLowerCase().trim();
-      application = allApps.find(a => a.emailAddress?.toLowerCase().trim() === normEmail);
-    }
-    if (!application && masterUser.name) {
-      application = allApps.find(a => a.agentName?.toLowerCase().trim() === masterUser.name?.toLowerCase().trim());
-    }
-    if (!application && masterUser.agentId) {
-      application = allApps.find(a => a.agentName?.toLowerCase().trim() === masterUser.agentId?.toLowerCase().trim());
-    }
-    if (!application && rawUser.email) {
-      const normEmail = rawUser.email.toLowerCase().trim();
-      application = allApps.find(a => a.emailAddress?.toLowerCase().trim() === normEmail);
-    }
-    if (!application && rawUser.name) {
-      application = allApps.find(a => a.agentName?.toLowerCase().trim() === rawUser.name?.toLowerCase().trim());
-    }
-    if (!application && rawUser.agentId) {
-      application = allApps.find(a => a.agentName?.toLowerCase().trim() === rawUser.agentId?.toLowerCase().trim());
-    }
-  } catch (err) {
-    console.warn('[getAgentOwnerDossier] Application lookup notice:', err);
-  }
-
-  // Parse and sanitize social handles from application or user metadata
-  const rawX = application?.xProfile?.trim() || (masterUser as any)?.x_profile || (masterUser as any)?.xProfile || (rawUser as any)?.x_profile || (rawUser as any)?.xProfile || (masterUser?.metadata as any)?.xProfile || '';
-  const rawGithub = application?.githubProfile?.trim() || (masterUser as any)?.github_profile || (masterUser as any)?.githubProfile || (rawUser as any)?.github_profile || (rawUser as any)?.githubProfile || (masterUser?.metadata as any)?.githubProfile || '';
-  const rawLinkedin = application?.linkedinProfile?.trim() || (masterUser as any)?.linkedin_profile || (masterUser as any)?.linkedinProfile || (rawUser as any)?.linkedin_profile || (rawUser as any)?.linkedinProfile || (masterUser?.metadata as any)?.linkedinProfile || '';
-  const rawReddit = application?.redditProfile?.trim() || (masterUser as any)?.reddit_profile || (masterUser as any)?.redditProfile || (rawUser as any)?.reddit_profile || (rawUser as any)?.redditProfile || (masterUser?.metadata as any)?.redditProfile || '';
-
-  const cleanHandle = (val: string, platform: 'x' | 'github' | 'linkedin' | 'reddit') => {
-    if (!val) return null;
-    let url = val;
-    let handle = val;
-    if (val.startsWith('http://') || val.startsWith('https://')) {
-      try {
-        const u = new URL(val);
-        const parts = u.pathname.split('/').filter(Boolean);
-        handle = parts[parts.length - 1] || val;
-        if (platform === 'x' && !handle.startsWith('@')) handle = `@${handle}`;
-        if (platform === 'reddit' && !handle.startsWith('u/')) handle = `u/${handle}`;
-      } catch (e) {}
-    } else {
-      if (platform === 'x') {
-        const clean = val.replace(/^@/, '');
-        url = `https://x.com/${clean}`;
-        handle = `@${clean}`;
-      } else if (platform === 'github') {
-        const clean = val.replace(/^@/, '');
-        url = `https://github.com/${clean}`;
-        handle = `@${clean}`;
-      } else if (platform === 'reddit') {
-        const clean = val.replace(/^u\//, '').replace(/^@/, '');
-        url = `https://reddit.com/u/${clean}`;
-        handle = `u/${clean}`;
-      } else if (platform === 'linkedin') {
-        url = val.startsWith('linkedin.com') ? `https://${val}` : `https://linkedin.com/in/${val}`;
-      }
-    }
-    return { handle, url };
-  };
-
-  const socialHandles = {
-    x: cleanHandle(rawX, 'x'),
-    github: cleanHandle(rawGithub, 'github'),
-    linkedin: cleanHandle(rawLinkedin, 'linkedin'),
-    reddit: cleanHandle(rawReddit, 'reddit'),
-  };
-
-  const ownerName = application?.fullName || masterUser.name || 'AAMARVA Operator';
-
-  return {
-    ownerName,
-    socialHandles,
-    masterAccount: {
-      agentId: masterUser.agentId,
-      name: masterUser.name || 'Master Agent',
-      avatar: masterUser.avatar || '🤖',
-      status: masterUser.status || 'active',
-      isCurrent: (masterUser.agentId || '').toLowerCase() === (rawUser.agentId || '').toLowerCase()
-    },
-    slaveAccounts: cleanSlaveAgents,
-    totalAccounts: 1 + cleanSlaveAgents.length
   };
 }

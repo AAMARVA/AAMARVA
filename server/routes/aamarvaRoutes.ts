@@ -78,7 +78,7 @@ import {
 import { securityLayer } from '../middleware/securityLayerMiddleware';
 import { humanLoginFirewall } from '../middleware/humanLoginFirewallMiddleware';
 import { SecurityService, SecuritySeverity } from '../services/securityService';
-import { getAgentProfile, getAgentActivityStats, getAgents, getAgentOwnerDossier } from '../services/agentService';
+import { getAgentProfile, getAgentActivityStats, getAgents } from '../services/agentService';
 import {
   createConnection,
   ensureConnectionRecord,
@@ -108,256 +108,6 @@ import { getClusterTables } from './clusterRoutes';
 
 const router = Router();
 
-// ---------------------------------------------------------
-// NEW: Telemetry Activity Endpoint
-// ---------------------------------------------------------
-router.get('/telemetry/activity', securityLayer('public_reads'), async (req: Request, res: Response) => {
-  try {
-    const stats = await getAgentActivityStats();
-    res.json({ success: true, data: stats });
-  } catch (error: any) {
-    console.error('Error fetching telemetry activity:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ---------------------------------------------------------
-// Floor Activity Stream & History Endpoints
-// ---------------------------------------------------------
-router.get(['/floor/activity', '/telemetry/floor-logs'], securityLayer('public_reads'), async (req: Request, res: Response) => {
-  try {
-    const limit = parseInt(req.query.limit as string) || 100;
-    const activities = floorActivityService.getRecentFloorActivity(limit);
-    res.json({ success: true, data: activities });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-router.get('/floor/stream', (req: Request, res: Response) => {
-  floorActivityService.registerFloorStreamClient(res);
-});
-
-// ---------------------------------------------------------
-// Tickets & Broadcast Posts Endpoints
-// ---------------------------------------------------------
-router.get(['/tickets', '/posts', '/v1/tickets', '/v1/posts'], securityLayer('public_reads'), async (req: Request, res: Response) => {
-  try {
-    const sb = getSupabaseClient();
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
-
-    const { data: postsData, error: postsError } = await sb
-      .from('posts')
-      .select('*')
-      .order('createdAt', { ascending: false })
-      .range(from, to);
-
-    if (postsError) {
-      console.warn('Error fetching posts:', postsError);
-      return res.json({ success: true, data: { tickets: [], posts: [] } });
-    }
-
-    const postsList = postsData || [];
-    const postIds = postsList.map((p: any) => p.id);
-
-    let repliesMap: Record<string, any[]> = {};
-    if (postIds.length > 0) {
-      try {
-        const { data: repliesData } = await sb
-          .from('replies')
-          .select('*')
-          .in('postId', postIds);
-        if (repliesData) {
-          repliesData.forEach((r: any) => {
-            if (!repliesMap[r.postId]) repliesMap[r.postId] = [];
-            repliesMap[r.postId].push(r);
-          });
-        }
-      } catch (e) {}
-    }
-
-    const formatted = postsList.map((p: any) => {
-      const pReplies = repliesMap[p.id] || [];
-      return {
-        id: p.id,
-        postId: p.id,
-        ticketId: p.id,
-        agentName: p.agentName || 'Agent',
-        agentId: p.agentId,
-        avatar: p.avatar,
-        content: p.content,
-        createdAt: p.createdAt,
-        type: p.type || 'intake',
-        category: p.category,
-        price: p.price,
-        deadline: p.deadline,
-        ticketStatus: p.ticketStatus || 'open',
-        bidsCount: pReplies.length,
-        repliesCount: pReplies.length,
-        connectionsCount: 0,
-        emailVerified: true,
-        verificationStatus: 'verified',
-        bids: pReplies.map((r: any) => ({
-          id: r.id,
-          bidId: r.id,
-          replyId: r.id,
-          postId: r.postId,
-          agentName: r.agentName,
-          agentId: r.agentId,
-          avatar: r.avatar,
-          content: r.content,
-          createdAt: r.createdAt,
-          status: r.status,
-          emailVerified: true,
-          verificationStatus: 'verified',
-        })),
-        replies: pReplies,
-        connectionsList: [],
-      };
-    });
-
-    res.json({
-      success: true,
-      data: {
-        tickets: formatted,
-        posts: formatted,
-        page,
-        limit,
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-router.post(['/posts', '/tickets', '/v1/posts', '/v1/tickets'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const sb = getSupabaseClient();
-    const user = req.user!;
-
-    // Enforce identity registration for slave/agent accounts before talking or posting
-    const { data: dbUser } = await sb.from('users').select('master_id, is_master_primary').eq('id', user.id).maybeSingle();
-    const isSlaveAccount = (dbUser?.master_id && !dbUser?.is_master_primary) || user.type === 'agent';
-    if (isSlaveAccount) {
-      const authUser = await ensureAuthUserRecord(sb, user.id);
-      const meta = authUser?.user_metadata || {};
-      if (!meta.e2eePublicKey || typeof meta.e2eePublicKey !== 'string' || meta.e2eePublicKey.trim().length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: {
-            code: 'E2EE_KEY_REQUIRED',
-            message: 'Slave agent identity registration required. Register an E2EE public key via PUT /api/agents/me/e2ee before publishing tickets or posts.'
-          }
-        });
-      }
-    }
-
-    const { content, type, category, price, deadline } = req.body;
-    if (!content || typeof content !== 'string') {
-      return res.status(400).json({ success: false, message: 'Content is required.' });
-    }
-
-    const newPost: any = {
-      id: 'post_' + Math.random().toString(36).substring(2, 9),
-      userId: user.id,
-      agentId: user.agentId || user.id,
-      agentName: user.name || (user as any).agentName || 'Agent',
-      avatar: user.avatar,
-      content,
-      type: type || 'intake',
-      category: category || 'GENERAL',
-      price: price || undefined,
-      deadline: deadline || undefined,
-      ticketStatus: 'open',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    const { error } = await sb.from('posts').insert(newPost);
-    if (error) {
-      return res.status(500).json({ success: false, message: error.message });
-    }
-
-    floorActivityService.recordFloorActivity({
-      agentId: user.agentId || user.id,
-      agentName: user.name || 'Agent',
-      avatar: user.avatar,
-      emailVerified: user.emailVerified,
-      text: 'made a ticket on the floor',
-      type: 'post',
-      entityId: newPost.id,
-      post: newPost,
-    }).catch(console.warn);
-
-    res.status(201).json({ success: true, data: newPost });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-router.post(['/posts/:postId/bids', '/posts/:postId/replies'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const sb = getSupabaseClient();
-    const user = req.user!;
-
-    // Enforce identity registration for slave/agent accounts before bidding or talking
-    const { data: dbUser } = await sb.from('users').select('master_id, is_master_primary').eq('id', user.id).maybeSingle();
-    const isSlaveAccount = (dbUser?.master_id && !dbUser?.is_master_primary) || user.type === 'agent';
-    if (isSlaveAccount) {
-      const authUser = await ensureAuthUserRecord(sb, user.id);
-      const meta = authUser?.user_metadata || {};
-      if (!meta.e2eePublicKey || typeof meta.e2eePublicKey !== 'string' || meta.e2eePublicKey.trim().length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: {
-            code: 'E2EE_KEY_REQUIRED',
-            message: 'Slave agent identity registration required. Register an E2EE public key via PUT /api/agents/me/e2ee before bidding on tickets or posts.'
-          }
-        });
-      }
-    }
-
-    const postId = req.params.postId as string;
-    const { content } = req.body;
-    if (!content || typeof content !== 'string') {
-      return res.status(400).json({ success: false, message: 'Content is required.' });
-    }
-
-    const newReply: any = {
-      id: 'rep_' + Math.random().toString(36).substring(2, 9),
-      postId,
-      userId: user.id,
-      agentId: user.agentId || user.id,
-      agentName: user.name || (user as any).agentName || 'Agent',
-      avatar: user.avatar,
-      content,
-      status: 'submitted',
-      createdAt: new Date().toISOString(),
-    };
-
-    const { error } = await sb.from('replies').insert(newReply);
-    if (error) {
-      return res.status(500).json({ success: false, message: error.message });
-    }
-
-    floorActivityService.recordFloorActivity({
-      agentId: user.agentId || user.id,
-      agentName: user.name || 'Agent',
-      avatar: user.avatar,
-      emailVerified: user.emailVerified,
-      text: 'made a bid on ticket',
-      type: 'reply',
-      entityId: newReply.id,
-    }).catch(console.warn);
-
-    res.status(201).json({ success: true, data: newReply });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
 
 
 // 1. POST /api/auth/register & /api/v1/auth/register
@@ -2405,23 +2155,6 @@ router.get('/agents/:agentId', requireUserOrAgentAuth, securityLayer('public_rea
   }
 });
 
-// 6b. GET /api/agents/:agentId/owner (Fleet-isolated Owner dossier read)
-router.get('/agents/:agentId/owner', securityLayer('public_reads'), async (req: Request, res: Response) => {
-  try {
-    const agentId = req.params.agentId as string;
-    const callerMasterId = await resolveAuthMasterId(req);
-
-    if (!callerMasterId) {
-      return res.status(404).json({ success: false, error: { message: 'Owner dossier not found.' } });
-    }
-
-    const dossier = await getAgentOwnerDossier(agentId, callerMasterId);
-    res.json({ success: true, data: dossier });
-  } catch (err: any) {
-    res.status(404).json({ success: false, error: { message: 'Owner dossier not found.' } });
-  }
-});
-
 // 7b. DELETE /api/agents/me (Delete own account)
 router.delete('/agents/me', requireUserOrAgentAuth, securityLayer('agent_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -2672,17 +2405,14 @@ router.get('/connections', requireUserOrAgentAuth, securityLayer('public_reads')
   }
 });
 
-// 13b. GET /api/connections/:connectionId/peer-key (Authorized Participants Only)
-router.get('/connections/:connectionId/peer-key', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+// 13b. GET /api/connections/peer-key/:accountId (Authorized Participants Only)
+router.get(['/connections/peer-key/:accountId', '/connections/:accountId/peer-key'], requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const connectionId = req.params.connectionId as string;
-    const receiverAgentId = (req.query?.receiverAgentId as string) || (req.query?.peerAgentId as string);
-    const receiverUserId = (req.query?.receiverUserId as string) || (req.query?.peerUserId as string);
+    const targetAccountId = (req.params.accountId || (req.params as any).connectionId) as string;
     const supabase = getSupabaseClient();
 
-    const conn = await ensureConnectionRecord(connectionId, req.user!.id, {
-      receiverAgentId,
-      receiverUserId
+    const conn = await ensureConnectionRecord(targetAccountId, req.user!.id, {
+      receiverAgentId: targetAccountId
     });
 
     if (!conn) {
@@ -2765,8 +2495,8 @@ function isValidBase64String(str: string): boolean {
   return base64Regex.test(trimmed) || urlSafeRegex.test(trimmed);
 }
 
-// 14. POST /api/connections/:connectionId/messages (User or Agent - E2EE Encrypted Messaging)
-router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
+// 14. POST /api/connections/messages/:accountId (User or Agent - E2EE Encrypted Messaging)
+router.post(['/connections/messages/:accountId', '/connections/:accountId/messages', '/connections/:connectionId/messages'], requireUserOrAgentAuth, securityLayer('message_create'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user || !req.user.id) {
       return res.status(401).json({
@@ -2778,16 +2508,15 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, secur
       });
     }
 
-    const connectionId = req.params.connectionId as string;
+    const peerAccountId = (req.params.accountId || (req.params as any).connectionId) as string;
     const body = req.body || {};
     const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq, receiverAgentId, receiverUserId } = body;
 
     const supabase = getSupabaseClient();
 
     // Direct database lookup or auto-establishment for connection record
-    const connRecord = await ensureConnectionRecord(connectionId, req.user.id, {
-      receiverAgentId: receiverAgentId || (req.query?.receiverAgentId as string),
-      receiverUserId: receiverUserId || (req.query?.receiverUserId as string)
+    const connRecord = await ensureConnectionRecord(peerAccountId, req.user.id, {
+      receiverAgentId: peerAccountId
     });
 
     if (!connRecord) {
@@ -3119,7 +2848,7 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, secur
       const { data: conn } = await sb
         .from('connections')
         .select('postOwnerUserId, replyAuthorUserId')
-        .eq('id', connectionId)
+        .eq('id', connRecord.id)
         .maybeSingle();
 
       if (conn) {
@@ -3159,15 +2888,13 @@ router.post('/connections/:connectionId/messages', requireUserOrAgentAuth, secur
   }
 });
 
-// 15. GET /api/connections/:connectionId/messages (User or Agent - STRICT E2EE ENFORCEMENT)
-router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+// 15. GET /api/connections/messages/:accountId (User or Agent - STRICT E2EE ENFORCEMENT)
+router.get(['/connections/messages/:accountId', '/connections/:accountId/messages', '/connections/:connectionId/messages'], requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const connectionId = req.params.connectionId as string;
-    const receiverAgentId = (req.query?.receiverAgentId as string) || (req.query?.peerAgentId as string);
-    const receiverUserId = (req.query?.receiverUserId as string) || (req.query?.peerUserId as string);
-    const conn = await ensureConnectionRecord(connectionId, req.user!.id, { receiverAgentId, receiverUserId });
-    const targetConnId = conn?.id || connectionId;
-    const messages = await getConnectionMessages(targetConnId, req.user!.id, { receiverAgentId, receiverUserId });
+    const peerAccountId = (req.params.accountId || (req.params as any).connectionId) as string;
+    const conn = await ensureConnectionRecord(peerAccountId, req.user!.id, { receiverAgentId: peerAccountId });
+    const targetConnId = conn?.id || '';
+    const messages = await getConnectionMessages(targetConnId, req.user!.id, { receiverAgentId: peerAccountId });
     
     // Fetch connection info to get participant agent IDs
     const hostAgentId = conn?.postOwnerAgentId || 'Agent';
@@ -3196,62 +2923,40 @@ router.get('/connections/:connectionId/messages', requireUserOrAgentAuth, securi
   }
 });
 
-// 15b. POST /api/connections/establish or /api/connections/direct (WhatsApp-style direct connection creation on demand)
-router.post(['/connections/establish', '/connections/direct'], requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+
+// DELETE /api/connections/:accountId (Human authorized only)
+router.delete(['/connections/:accountId', '/connections/:connectionId'], requireHumanSession, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const sb = getSupabaseClient();
-    const user = req.user!;
+    const peerAccountId = (req.params.accountId || (req.params as any).connectionId) as string;
+    const connRecord = await ensureConnectionRecord(peerAccountId, req.user!.id, { receiverAgentId: peerAccountId });
+    if (!connRecord) return res.status(404).json({ success: false, error: 'Connection not found.' });
+    const connectionId = connRecord.id;
 
-    // Enforce identity registration for slave/agent accounts before establishing direct connections
-    const { data: dbUser } = await sb.from('users').select('master_id, is_master_primary').eq('id', user.id).maybeSingle();
-    const isSlaveAccount = (dbUser?.master_id && !dbUser?.is_master_primary) || user.type === 'agent';
-    if (isSlaveAccount) {
-      const authUser = await ensureAuthUserRecord(sb, user.id);
-      const meta = authUser?.user_metadata || {};
-      if (!meta.e2eePublicKey || typeof meta.e2eePublicKey !== 'string' || meta.e2eePublicKey.trim().length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: {
-            code: 'E2EE_KEY_REQUIRED',
-            message: 'Slave agent identity registration required. Register an E2EE public key via PUT /api/agents/me/e2ee before establishing connections or sending messages.'
-          }
-        });
-      }
-    }
-
-    const { targetAgentId, targetUserId, peerAgentId, peerUserId } = req.body || {};
-    const target = targetAgentId || peerAgentId || targetUserId || peerUserId;
-    if (!target) {
-      return res.status(400).json({ success: false, error: { message: 'targetAgentId or targetUserId is required.' } });
-    }
-    const { establishDirectConnection } = await import('../services/connectionService.js');
-    const conn = await establishDirectConnection(req.user!.id, target);
-    if (!conn) {
-      return res.status(404).json({ success: false, error: { message: 'Target user not found or connection could not be established.' } });
-    }
-    res.json({ success: true, data: conn });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err.message } });
-  }
-});
-
-// DELETE /api/connections/:connectionId (Agent only)
-router.delete('/connections/:connectionId', requireAgentAuth, requireAgent, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const connectionId = req.params.connectionId as string;
-
-    // Authorization Audit for Connections (Participant check is handled in service, but we add an audit layer here)
+    // Authorization Audit for Connections
     const sb = getSupabaseClient();
     const { data: conn } = await sb.from('connections').select('postOwnerUserId, replyAuthorUserId').eq('id', connectionId).maybeSingle();
     if (conn && conn.postOwnerUserId !== req.user!.id && conn.replyAuthorUserId !== req.user!.id) {
-      await SecurityService.getInstance().recordViolation(req.user!.id, req.user!.agentId, 'AUDIT_CONNECTIONS', SecuritySeverity.S2_ABUSE, `IDOR attempt: User ${req.user!.id} tried to delete connection ${connectionId}`);
+      await SecurityService.getInstance().recordViolation(req.user!.id, req.user!.agentId, 'AUDIT_CONNECTIONS', SecuritySeverity.S2_ABUSE, `IDOR attempt: User ${req.user!.id} tried to clear messages for connection ${connectionId}`);
       return res.status(403).json({ success: false, error: 'Forbidden: Not a participant of this connection.' });
     }
 
-    const result = await deleteConnection(connectionId, req.user!.id);
+    // Delete messages in this connection
+    const { error: msgDeleteError } = await sb
+      .from('messages')
+      .delete()
+      .eq('connectionId', connectionId);
+    
+    if (msgDeleteError) {
+      throw new Error(`Failed to delete messages: ${msgDeleteError.message}`);
+    }
 
     // Log deletion
-    await logAgentFootprint(req.user!.id, 'CONNECTION_REMOVED', `Connection ${connectionId} dissolved`, connectionId);
+    await logAccountAudit({
+      agentId: req.user!.agentId || req.user!.id,
+      eventType: 'CONNECTION_MESSAGES_CLEARED',
+      actionSource: 'IDENTITY',
+      details: { message: `Messages cleared for connection ${connectionId}`, connectionId }
+    });
 
     // Broadcast floor activity: [Agent Name] removed its connection with [Peer Agent]
     let peerName = 'Agent';
@@ -3280,15 +2985,12 @@ router.delete('/connections/:connectionId', requireAgentAuth, requireAgent, secu
       agentName: req.user!.name,
       avatar: req.user!.avatar,
       emailVerified: req.user!.emailVerified,
-      text: `removed its connection with ${peerName}`,
-      type: 'CONNECTION_SEVERED',
+      text: `cleared messages in connection with ${peerName}`,
+      type: 'CONNECTION_MESSAGES_CLEARED',
       peerName
     }).catch(console.warn);
 
-    res.json({
-      ...result,
-      connectionStatus: 'dissolved'
-    });
+    res.json({ success: true, message: 'Messages cleared successfully.' });
   } catch (err: any) {
     const status = err.statusCode || (err.message.includes('Forbidden') ? 403 : err.message.includes('not found') ? 404 : 400);
     res.status(status).json({ success: false, error: { message: err.message, code: err.code } });
@@ -3401,14 +3103,24 @@ router.get('/stats', securityLayer('public_reads'), async (req: Request, res: Re
   }
 });
 
-// 17. GET /api/agents (List fleet agents with database search support and pagination)
-router.get('/agents', securityLayer('public_reads'), async (req: Request, res: Response) => {
+// 17. GET /api/agents (Fleet-limited: List master and slave accounts belonging to caller's current fleet)
+router.get('/agents', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const q = (req.query.q as string) || '';
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
 
     const callerMasterId = await resolveAuthMasterId(req);
+    if (!callerMasterId) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'FLEET_AUTH_REQUIRED',
+          message: 'Authentication required. This endpoint is fleet-limited to the authenticated caller\'s fleet.'
+        }
+      });
+    }
+
     const result = await getAgents(q, page, limit, callerMasterId);
 
     res.json({
@@ -3872,9 +3584,6 @@ function getEndpointForAction(action: string, target?: string): string {
     case 'REPLY_DELETED': return target ? `DELETE /api/replies/${target}` : 'DELETE /api/replies/:id';
 
     // Direct Connections & Messaging
-    case 'CONNECTION_REQUEST_SENT': return 'POST /api/connections/requests';
-    case 'CONNECTION_ESTABLISHED': return 'POST /api/connections/requests/:id/accept';
-    case 'CONNECTION_REJECTED': return target ? `DELETE /api/connections/requests/${target}` : 'DELETE /api/connections/requests/:id';
     case 'CONNECTION_REMOVED': return target ? `DELETE /api/connections/${target}` : 'DELETE /api/connections/:id';
     case 'MESSAGE_SENT': return target ? `POST /api/connections/${target}/messages` : 'POST /api/connections/:id/messages';
 
@@ -4171,59 +3880,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
       }
     } catch (e) {}
 
-    // 4. Fetch user's sent connection requests
-    try {
-      const { data: reqs } = await sb
-        .from('connection_requests')
-        .select('id, receiverAgentId, receiverUserId, createdAt')
-        .eq('senderUserId', userId)
-        .order('createdAt', { ascending: false })
-        .limit(30);
-      if (reqs && reqs.length > 0) {
-        const receiverAgentIds = [...new Set(reqs.map((r: any) => r.receiverAgentId).filter(Boolean))];
-        const userMap: Record<string, any> = {};
-        if (receiverAgentIds.length > 0) {
-          try {
-            const { data: matchedUsers } = await sb
-              .from('users')
-              .select('agentId, name, avatar')
-              .in('agentId', receiverAgentIds);
-            if (matchedUsers) {
-              matchedUsers.forEach((u: any) => {
-                userMap[u.agentId] = u;
-              });
-            }
-          } catch (e) {}
-        }
-
-        reqs.forEach((r: any) => {
-          const key = `CONNECTION_REQUEST_SENT:${r.id}`;
-          if (!seenKeys.has(key)) {
-            seenKeys.add(key);
-            const targetUser = userMap[r.receiverAgentId];
-            dynamicFootprints.push({
-              id: `fp_req_${r.id}`,
-              action: 'CONNECTION_REQUEST_SENT',
-              endpoint: 'POST /api/connections/requests',
-              target: r.receiverAgentId || r.id,
-              targetAgentId: r.receiverAgentId,
-              targetAgentName: targetUser?.name || r.receiverAgentId,
-              targetAvatar: targetUser?.avatar,
-              requestId: r.id,
-              details: {
-                message: `Initiated handshake with agent ${r.receiverAgentId}`,
-                requestId: r.id,
-                targetAgentId: r.receiverAgentId,
-                targetAgentName: targetUser?.name || r.receiverAgentId,
-                targetAvatar: targetUser?.avatar,
-                receiverAgentId: r.receiverAgentId
-              },
-              timestamp: r.createdAt
-            });
-          }
-        });
-      }
-    } catch (e) {}
+    // 4. Removed connection request logic
 
     // 5. Fetch user's sent messages
     try {
@@ -4409,29 +4066,8 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
     const dynamicEvents: any[] = [];
 
     // 1. Pending connection requests received by this user
-    try {
-      const { data: requests } = await sb
-        .from('connection_requests')
-        .select('id, senderUserId, senderAgentId, createdAt')
-        .eq('receiverUserId', userId)
-        .order('createdAt', { ascending: false })
-        .limit(30);
-      if (requests && requests.length > 0) {
-        requests.forEach((r: any) => {
-          const key = `CONNECTION_REQUEST_RECEIVED:${r.id}`;
-          if (!seenEventKeys.has(key)) {
-            seenEventKeys.add(key);
-            dynamicEvents.push({
-              id: `evt_req_${r.id}`,
-              type: 'CONNECTION_REQUEST_RECEIVED',
-              senderId: r.senderAgentId || r.senderUserId,
-              targetId: agentId,
-              timestamp: r.createdAt
-            });
-          }
-        });
-      }
-    } catch (e) {}
+
+    // 1. Removed connection request event handling
 
     // 2. Incoming connection acceptances (where this user was the requester/replyAuthor or postOwner and connection got accepted)
     try {

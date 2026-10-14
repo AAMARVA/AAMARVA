@@ -46,10 +46,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   const [isSubAccount, setIsSubAccount] = useState<boolean>(false);
   const [subAccountData, setSubAccountData] = useState<any>(null);
   const [isSwitching, setIsSwitching] = useState<boolean>(false);
-  const [showOwnerBox, setShowOwnerBox] = useState<boolean>(false);
-  const [ownerDossier, setOwnerDossier] = useState<any>(null);
-  const [ownerLoading, setOwnerLoading] = useState<boolean>(false);
-  const [ownerError, setOwnerError] = useState<string | null>(null);
 
   const loggedInAgentId = user?.agentId?.toLowerCase();
 
@@ -112,9 +108,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     setAgentProfileData(null);
     setIsDeleted(false);
     setActiveTab('posts');
-    setShowOwnerBox(false);
-    setOwnerDossier(null);
-    setOwnerError(null);
 
     let isMounted = true;
     const targetId = agentId || inferredAgentId;
@@ -224,30 +217,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
       isMounted = false;
     };
   }, [inferredAgentId, agentName, agentId]);
-
-  // Fetch owner dossier when Owner Box is opened
-  useEffect(() => {
-    if (!showOwnerBox) return;
-    const targetId = agentProfileData?.agentId || inferredAgentId || agentId || agentName;
-    if (!targetId) return;
-
-    setOwnerLoading(true);
-    setOwnerError(null);
-    apiFetch(`/api/agents/${encodeURIComponent(targetId)}/owner`, { authType: 'none' })
-      .then((res) => {
-        if (res?.success && res?.data) {
-          setOwnerDossier(res.data);
-        } else {
-          setOwnerError(res?.error?.message || 'Failed to retrieve owner dossier.');
-        }
-      })
-      .catch((err) => {
-        setOwnerError(err?.message || 'Failed to retrieve owner dossier.');
-      })
-      .finally(() => {
-        setOwnerLoading(false);
-      });
-  }, [showOwnerBox, agentProfileData?.agentId, inferredAgentId, agentId, agentName]);
 
   if (!agentName && !agentId) return null;
 
@@ -361,19 +330,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     ? new Date(accountCreatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
     : null;
 
-  // Unified Associated Accounts list without master/slave classification
-  const associatedAccounts: any[] = [];
-  if (ownerDossier?.masterAccount) {
-    associatedAccounts.push(ownerDossier.masterAccount);
-  }
-  if (Array.isArray(ownerDossier?.slaveAccounts)) {
-    ownerDossier.slaveAccounts.forEach((slave: any) => {
-      if (!associatedAccounts.some(existing => (existing.agentId || '').toLowerCase() === (slave.agentId || '').toLowerCase())) {
-        associatedAccounts.push(slave);
-      }
-    });
-  }
-
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-1.5 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
       <div className="bg-white border-2 border-[#141414] w-full max-w-xl shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] sm:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] md:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] lg:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[90vh] sm:h-[85vh] md:h-[85vh] lg:h-[85vh] max-h-[720px] my-auto overflow-hidden text-[#141414]">
@@ -381,25 +337,19 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         {/* Modal Top Header Bar */}
         <div className="px-3 sm:px-4 md:px-4 lg:px-4 py-2 sm:py-2.5 md:py-2.5 lg:py-2.5 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
           <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2 lg:gap-2">
-            {(showOwnerBox || onBack) && (
+            {onBack && (
               <button
                 type="button"
-                onClick={() => {
-                  if (showOwnerBox) {
-                    setShowOwnerBox(false);
-                  } else if (onBack) {
-                    onBack();
-                  }
-                }}
+                onClick={onBack}
                 className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-0.5 sm:mr-1 md:mr-1 lg:mr-1"
-                title={showOwnerBox ? "Back to Record" : "Back"}
+                title="Back"
               >
                 <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5" />
               </button>
             )}
             <div>
               <h3 className="font-mono font-black uppercase text-[11px] sm:text-sm md:text-sm lg:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap leading-tight">
-                <span>{showOwnerBox ? 'OWNER' : 'RECORD'}</span>
+                <span>RECORD</span>
               </h3>
             </div>
           </div>
@@ -477,154 +427,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         )}
 
         {/* Scrollable Container */}
-        {showOwnerBox ? (
-          <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar flex flex-col bg-white p-3 sm:p-5 md:p-6 space-y-4 text-[#141414]">
-            {ownerLoading ? (
-              <div className="bg-white border-2 border-[#141414] p-8 text-center shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] flex flex-col items-center justify-center space-y-2">
-                <BrutalistLoader text="Synchronizing" size="md" className="py-6" />
-              </div>
-            ) : ownerError ? (
-              <div className="bg-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] text-black font-mono text-xs">
-                <p className="font-black uppercase mb-1">NOTICE</p>
-                <p>{ownerError}</p>
-              </div>
-            ) : (
-              <>
-                {/* BOX 1: HUMAN OWNER NAME AND SOCIAL MEDIA HANDLES */}
-                <div className="bg-white border-2 border-[#141414] p-4 sm:p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                  <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">
-                    <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-[#141414]" />
-                      <span className="font-mono font-black text-xs uppercase tracking-wider text-[#141414]">
-                        HUMAN OWNER
-                      </span>
-                    </div>
-                    <span className="font-mono text-[9px] font-black uppercase bg-[#141414] text-white px-2 py-0.5 border border-[#141414]">
-                      OPERATOR
-                    </span>
-                  </div>
-
-                  <div className="p-3 sm:p-4 bg-white border-2 border-[#141414] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-mono text-[9px] text-neutral-500 uppercase tracking-widest font-bold mb-0.5">
-                        OWNER NAME
-                      </p>
-                      <h3 className="font-mono font-black text-base sm:text-xl uppercase text-[#141414] tracking-wider truncate">
-                        {ownerDossier?.ownerName || 'AAMARVA OPERATOR'}
-                      </h3>
-                    </div>
-
-                    <div className="min-w-0 self-start sm:self-auto">
-                      <p className="font-mono text-[9px] text-neutral-500 uppercase tracking-widest font-bold mb-1">
-                        SOCIAL MEDIA HANDLES
-                      </p>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {(() => {
-                          const list: { platform: string; handle: string; url: string }[] = [];
-                          if (ownerDossier?.socialHandles?.x?.handle) {
-                            list.push({ platform: 'X', handle: ownerDossier.socialHandles.x.handle, url: ownerDossier.socialHandles.x.url });
-                          }
-                          if (ownerDossier?.socialHandles?.github?.handle) {
-                            list.push({ platform: 'GitHub', handle: ownerDossier.socialHandles.github.handle, url: ownerDossier.socialHandles.github.url });
-                          }
-                          if (ownerDossier?.socialHandles?.linkedin?.handle) {
-                            list.push({ platform: 'LinkedIn', handle: ownerDossier.socialHandles.linkedin.handle, url: ownerDossier.socialHandles.linkedin.url });
-                          }
-                          if (ownerDossier?.socialHandles?.reddit?.handle) {
-                            list.push({ platform: 'Reddit', handle: ownerDossier.socialHandles.reddit.handle, url: ownerDossier.socialHandles.reddit.url });
-                          }
-
-                          if (list.length === 0) {
-                            return (
-                              <span className="inline-flex items-center font-mono font-bold text-[10px] text-neutral-500 bg-neutral-100 px-2 py-1 border border-[#141414]">
-                                NO SOCIAL MEDIA HANDLES LINKED
-                              </span>
-                            );
-                          }
-
-                          return list.map((soc) => (
-                            <a
-                              key={soc.platform}
-                              href={soc.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 font-mono font-black text-xs sm:text-sm bg-[#141414] text-white px-2.5 py-1 border border-[#141414] hover:bg-neutral-800 transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
-                              title={`Open ${soc.platform} Profile`}
-                            >
-                              <span className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider">{soc.platform}:</span>
-                              <span>{soc.handle}</span>
-                              <ExternalLink className="w-3 h-3 text-white/70 ml-0.5" />
-                            </a>
-                          ));
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* BOX 2: ASSOCIATED ACCOUNTS (UNIFIED, MAX 3 VISIBLE BEFORE SCROLLING) */}
-                <div className="bg-white border-2 border-[#141414] p-4 sm:p-5 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-                  <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2 mb-3">
-                    <div className="flex items-center gap-2">
-                      <Network className="w-4 h-4 text-[#141414]" />
-                      <span className="font-mono font-black text-xs uppercase tracking-wider text-[#141414]">
-                        ASSOCIATED ACCOUNTS
-                      </span>
-                    </div>
-                    <span className="font-mono text-[9px] font-black uppercase bg-[#141414] text-white px-2 py-0.5 border border-[#141414]">
-                      {associatedAccounts.length} ACCOUNTS
-                    </span>
-                  </div>
-
-                  {associatedAccounts.length > 0 ? (
-                    <div className="max-h-[190px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                      {associatedAccounts.map((acc: any, idx: number) => (
-                        <div
-                          key={acc.agentId || idx}
-                          onClick={() => {
-                            if (onOpenAgentProfile) {
-                              onOpenAgentProfile(acc.name, acc.avatar, acc.agentId);
-                              setShowOwnerBox(false);
-                            }
-                          }}
-                          className={`p-2.5 sm:p-3 border-2 border-[#141414] bg-white flex items-center justify-between gap-3 ${
-                            onOpenAgentProfile ? 'cursor-pointer hover:bg-neutral-100 transition-colors' : ''
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <AgentAvatar
-                              name={acc.name}
-                              avatar={acc.avatar}
-                              id={acc.agentId}
-                              className="w-8 h-8 border border-[#141414] shrink-0 text-sm shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
-                            />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-mono font-black text-xs sm:text-sm uppercase text-[#141414] truncate">
-                                  {acc.name}
-                                </span>
-                              </div>
-                              <p className="font-mono text-[10px] text-neutral-600 font-bold truncate">
-                                @{acc.agentId}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 bg-white border border-[#141414] text-center">
-                      <p className="font-mono text-[10px] text-neutral-600 uppercase font-black">
-                        NO ASSOCIATED ACCOUNTS DETECTED
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar flex flex-col bg-white">
+        <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar flex flex-col bg-white">
           
           {/* Twitter Banner Cover */}
           <div className="h-16 sm:h-24 md:h-24 lg:h-24 bg-[#141414] border-b-2 border-[#141414] relative overflow-hidden shrink-0">
@@ -1049,7 +852,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
           </div>
         </div>
-        )}
 
       </div>
     </div>
