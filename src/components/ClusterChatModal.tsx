@@ -322,30 +322,16 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0] text-left" id="cluster-messages-list">
-          {hiddenMessageIds.size > 0 && (
-            <div className="flex items-center justify-between px-3 py-1.5 bg-[#141414]/5 border border-[#141414]/20 text-[10px] font-mono text-[#141414]/70 mb-2">
-              <span>{hiddenMessageIds.size} failed message(s) hidden</span>
-              <button
-                type="button"
-                onClick={() => setShowHiddenMessages(!showHiddenMessages)}
-                className="font-bold underline uppercase hover:text-[#141414] cursor-pointer"
-              >
-                {showHiddenMessages ? 'Hide again' : 'Show hidden'}
-              </button>
-            </div>
-          )}
-
-          {messages.length > 0 ? (
+          {messages.filter((m) => Boolean((m.isDecrypted && m.content && m.content.trim().length > 0) || !m.senderAgentId)).length > 0 ? (
             messages
-              .filter((m) => showHiddenMessages || !hiddenMessageIds.has(m.id))
+              .filter((m) => Boolean((m.isDecrypted && m.content && m.content.trim().length > 0) || !m.senderAgentId))
               .map((m) => {
                 const isCurrentUser = m.senderAgentId === user?.agentId || Boolean(user?.agentId && m.senderAgentId?.toLowerCase() === user.agentId.toLowerCase());
                 const isSystem = !m.senderAgentId;
                 const msgAvatar = isCurrentUser ? (user?.avatar || undefined) : m.senderAgentAvatar;
                 const msgName = isCurrentUser ? (user?.name || 'Me') : (m.senderAgentName || m.senderAgentId || 'Agent');
 
-                const hasDecryptedText = Boolean(m.isDecrypted && m.content && m.content.trim().length > 0);
-                const plainText = hasDecryptedText ? m.content.trim() : '';
+                const plainText = (m.content || '').trim();
 
                 if (isSystem) {
                   return (
@@ -383,45 +369,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                           {msgName}
                         </span>
                       </div>
-                      {hasDecryptedText ? (
-                        <ChatMessageContent content={m.content || plainText} isCurrentUser={isCurrentUser} />
-                      ) : (
-                        <div className="space-y-1.5">
-                          <div className={`flex items-start justify-between gap-2 font-mono text-xs font-bold leading-tight ${isCurrentUser ? 'text-white/95' : 'text-[#141414]/95'}`}>
-                            <span>{m.decryptionStatus?.title || '🔒 Cannot be decrypted because the AES-GCM authentication tag verification failed (bit-flip / payload modified)'}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setHiddenMessageIds((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(m.id)) {
-                                    next.delete(m.id);
-                                  } else {
-                                    next.add(m.id);
-                                  }
-                                  return next;
-                                });
-                              }}
-                              title="Hide this unverified/failed message from view"
-                              className={`text-[10px] uppercase font-bold shrink-0 underline opacity-70 hover:opacity-100 cursor-pointer ${
-                                isCurrentUser ? 'text-white' : 'text-[#141414]'
-                              }`}
-                            >
-                              {hiddenMessageIds.has(m.id) ? 'Unhide' : 'Hide'}
-                            </button>
-                          </div>
-                          {(m.decryptionStatus?.detail || true) && (
-                            <div 
-                              className={`text-[11px] font-mono pl-2.5 border-l-2 ${
-                                isCurrentUser ? 'text-white/70 border-white/30' : 'text-[#141414]/70 border-[#141414]/30'
-                              }`}
-                              title={m.decryptionStatus?.explanation || m.decryptionStatus?.detail || 'Cryptographic authentication tag mismatch'}
-                            >
-                              {m.decryptionStatus?.detail || 'Cryptographic authentication tag mismatch'}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <ChatMessageContent content={m.content || plainText} isCurrentUser={isCurrentUser} />
                       
                       <div className={`mt-2 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-between'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-75`}>
                         {typeof m.sequence === 'number' && (
