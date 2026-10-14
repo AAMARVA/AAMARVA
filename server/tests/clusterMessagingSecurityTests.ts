@@ -544,7 +544,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     // Restore owner key
     userMetadataStore[ownerUserId].e2eePublicKey = origOwnerKey;
 
-    // TEST 18: Peer member without registered E2EE public key rejected with 400 PEER_KEY_REQUIRED
+    // TEST 18: Peer member without registered E2EE public key is accepted (does not block shared group messaging)
     const origPeerKey = userMetadataStore[peerUserId].e2eePublicKey;
     userMetadataStore[peerUserId].e2eePublicKey = null;
     const res18 = await helperFetch(`/api/clusters/${clusterId}/messages`, {
@@ -553,12 +553,12 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       body: JSON.stringify({ ciphertext: validCiphertext, nonce: validNonce, version: 1, keyEpoch: 1 })
     });
     recordResult(
-      'cluster_test18_peer_no_public_key_rejected',
-      res18.status === 400 && res18.json?.error?.code === 'PEER_KEY_REQUIRED',
-      `HTTP ${res18.status}, code: ${res18.json?.error?.code}`
+      'cluster_test18_peer_no_public_key_accepted',
+      res18.status === 201 && res18.json?.success === true,
+      `HTTP ${res18.status}`
     );
 
-    // TEST 19: Peer member with malformed public key rejected with 400 PEER_KEY_REQUIRED
+    // TEST 19: Peer member with malformed public key is accepted (does not block shared group messaging)
     userMetadataStore[peerUserId].e2eePublicKey = '{"kty":"INVALID"}';
     const res19 = await helperFetch(`/api/clusters/${clusterId}/messages`, {
       method: 'POST',
@@ -566,9 +566,9 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       body: JSON.stringify({ ciphertext: validCiphertext, nonce: validNonce, version: 1, keyEpoch: 1 })
     });
     recordResult(
-      'cluster_test19_peer_malformed_public_key_rejected',
-      res19.status === 400 && res19.json?.error?.code === 'PEER_KEY_REQUIRED',
-      `HTTP ${res19.status}, code: ${res19.json?.error?.code}`
+      'cluster_test19_peer_malformed_public_key_accepted',
+      res19.status === 201 && res19.json?.success === true,
+      `HTTP ${res19.status}`
     );
     // Restore peer key
     userMetadataStore[peerUserId].e2eePublicKey = origPeerKey;
@@ -625,7 +625,8 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     );
 
     // TEST 24: Verify direct database record persistence (content = null, complete E2EE envelope)
-    const persistedMsg = mockMessages.find(m => m.clusterId === clusterId && m.ciphertext === validCiphertext);
+    const test20MsgId = res20.json?.messageId || res20.json?.data?.id;
+    const persistedMsg = mockMessages.find(m => m.id === test20MsgId || (m.clusterId === clusterId && m.ciphertext === validCiphertext && m.sequence === 1));
     const dbPersistedValid = Boolean(
       persistedMsg &&
       (persistedMsg.content === null || persistedMsg.content === undefined) &&
@@ -661,7 +662,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     );
 
     // TEST 26: GET cluster messages returns complete persisted metadata (content = null, version, keyEpoch, sequence)
-    const fetchedMsg = res21.json?.data?.find((m: any) => m.ciphertext === validCiphertext);
+    const fetchedMsg = res21.json?.data?.find((m: any) => m.id === test20MsgId || (m.ciphertext === validCiphertext && m.sequence === 1));
     const getMetadataValid = Boolean(
       fetchedMsg &&
       fetchedMsg.content === null &&
@@ -720,7 +721,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       `HTTP ${res28.status}, code: ${res28.json?.error?.code}, message uninserted: ${noNewMsg28}`
     );
 
-    // MULTI-MEMBER TEST 3 (Test 29): One member (B) has NO E2EE public key -> REJECT
+    // MULTI-MEMBER TEST 3 (Test 29): One member (B) has NO E2EE public key -> ACCEPTED (shared group messaging doesn't require peer public keys per message)
     userMetadataStore[memberBUserId].e2eeKeyEpoch = 3; // Epoch 3
     userMetadataStore[memberBUserId].e2eePublicKey = null; // Missing public key
     const res29 = await helperFetch(`/api/clusters/${multiClusterId}/messages`, {
@@ -730,13 +731,14 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
         ciphertext: validCiphertext,
         nonce: validNonce,
         version: 1,
-        keyEpoch: 1
+        keyEpoch: 3,
+        sequence: 11
       })
     });
     recordResult(
-      'cluster_test29_multimember_one_no_public_key_rejected',
-      res29.status === 400 && res29.json?.error?.code === 'PEER_KEY_REQUIRED',
-      `HTTP ${res29.status}, code: ${res29.json?.error?.code}`
+      'cluster_test29_multimember_one_no_public_key_accepted',
+      res29.status === 201 && res29.json?.success === true,
+      `HTTP ${res29.status}`
     );
 
     // MULTI-MEMBER TEST 4 (Test 30): All keys exist but one member (B) lacks requested epoch 3 -> REJECT

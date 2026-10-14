@@ -1582,7 +1582,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       });
     }
 
-    // 4. Authoritative active members query and recipient key authentication
+    // 4. Authoritative active members query
     const { data: authoritativeActiveMembers, error: peerErr } = await supabase
       .from(tables.members)
       .select('userId, agentId, status')
@@ -1591,71 +1591,6 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
 
     if (peerErr || !authoritativeActiveMembers) {
       throw new Error(`Failed to query authoritative cluster members: ${peerErr?.message || 'Unknown error'}`);
-    }
-
-    const peerMetas: Record<string, any>[] = [];
-
-    for (const peer of authoritativeActiveMembers) {
-      if (!peer.userId) continue;
-      let peerPublicKey: any = null;
-      let peerMeta: Record<string, any> = {};
-      try {
-        const { data: peerAuthData } = await supabase.auth.admin.getUserById(peer.userId);
-        peerMeta = peerAuthData?.user?.user_metadata || {};
-        peerPublicKey = peerMeta.e2eePublicKey;
-        peerMetas.push(peerMeta);
-      } catch {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'PEER_KEY_REQUIRED',
-            message: 'Recipient active member has not published an E2EE public key yet. Message creation is rejected.'
-          }
-        });
-      }
-
-      if (!peerPublicKey || typeof peerPublicKey !== 'string' || peerPublicKey.trim().length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'PEER_KEY_REQUIRED',
-            message: 'Recipient active member has not published an E2EE public key yet. Message creation is rejected.'
-          }
-        });
-      }
-
-      try {
-        const parsedPeerKey = typeof peerPublicKey === 'string' ? JSON.parse(peerPublicKey) : peerPublicKey;
-        if (!parsedPeerKey || parsedPeerKey.kty !== 'EC' || parsedPeerKey.crv !== 'P-256' || !parsedPeerKey.x || !parsedPeerKey.y) {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'PEER_KEY_REQUIRED',
-              message: 'Recipient active member E2EE public key is malformed. Message creation is rejected.'
-            }
-          });
-        }
-        const canonicalPeerJwk = JSON.stringify({ crv: parsedPeerKey.crv || 'P-256', kty: parsedPeerKey.kty || 'EC', x: parsedPeerKey.x, y: parsedPeerKey.y });
-        const peerDigestHex = crypto.createHash('sha256').update(canonicalPeerJwk).digest('hex').toUpperCase();
-        const computedPeerFingerprint = 'SHA256:' + (peerDigestHex.match(/.{2}/g)?.join(':') || peerDigestHex);
-        if (peerMeta.e2eePublicKeyFingerprint && peerMeta.e2eePublicKeyFingerprint !== computedPeerFingerprint) {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'INVALID_KEY_SIGNATURE',
-              message: 'Recipient active member E2EE public key fingerprint trust verification failed.'
-            }
-          });
-        }
-      } catch {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'PEER_KEY_REQUIRED',
-            message: 'Recipient active member E2EE public key is malformed or invalid.'
-          }
-        });
-      }
     }
 
     // 4.5 Server-side authoritative recipient completeness enforcement
@@ -1895,7 +1830,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
     const hasDistributions = Boolean(keyDistRecords && keyDistRecords.length > 0);
 
     if (!hasDistributions) {
-      // Fallback: Verify keyEpoch against registered active key epochs for ALL required cluster participants only when cluster key distribution packages are not used
+      // Fallback: Verify keyEpoch against registered active key epochs for cluster participants when key distributions are not used
       const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
       const senderEpochHistory = (senderMeta.e2eeEpochHistory as Record<string, any>) || {};
       const senderHasEpoch = parsedKeyEpoch === senderActiveEpoch ||
@@ -1911,22 +1846,29 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
         });
       }
 
-      if (peerMetas.length > 0) {
-        for (const peerMeta of peerMetas) {
-          const peerActiveEpoch = typeof peerMeta.e2eeKeyEpoch === 'number' ? peerMeta.e2eeKeyEpoch : 1;
-          const peerEpochHistory = (peerMeta.e2eeEpochHistory as Record<string, any>) || {};
-          const peerHasEpoch = parsedKeyEpoch === peerActiveEpoch ||
-            Boolean(peerEpochHistory[String(parsedKeyEpoch)] && peerEpochHistory[String(parsedKeyEpoch)].publicKey);
+      for (const peer of authoritativeActiveMembers) {
+        if (!peer.userId) continue;
+        try {
+          const { data: peerAuthData } = await supabase.auth.admin.getUserById(peer.userId);
+          const peerMeta = peerAuthData?.user?.user_metadata || {};
+          if (peerMeta.e2eePublicKey) {
+            const peerActiveEpoch = typeof peerMeta.e2eeKeyEpoch === 'number' ? peerMeta.e2eeKeyEpoch : 1;
+            const peerEpochHistory = (peerMeta.e2eeEpochHistory as Record<string, any>) || {};
+            const peerHasEpoch = parsedKeyEpoch === peerActiveEpoch ||
+              Boolean(peerEpochHistory[String(parsedKeyEpoch)] && peerEpochHistory[String(parsedKeyEpoch)].publicKey);
 
-          if (!peerHasEpoch) {
-            return res.status(400).json({
-              success: false,
-              error: {
-                code: 'KEY_EPOCH_NOT_FOUND',
-                message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
-              }
-            });
+            if (!peerHasEpoch) {
+              return res.status(400).json({
+                success: false,
+                error: {
+                  code: 'KEY_EPOCH_NOT_FOUND',
+                  message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
+                }
+              });
+            }
           }
+        } catch {
+          // Ignore lookup failures for optional peer keys in fallback mode
         }
       }
     }
