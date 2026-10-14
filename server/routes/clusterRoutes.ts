@@ -961,12 +961,27 @@ router.post('/clusters/:clusterId/keys', requireUserOrAgentAuth, async (req: Aut
       });
     }
 
-    // Query active members to strictly validate all recipients and ensure completeness
-    const { data: activeMembers } = await supabase
+    // Query active members and populate their E2EE public keys from auth metadata
+    const { data: rawActiveMembers } = await supabase
       .from(tables.members)
       .select('agentId, userId, status')
       .eq('clusterId', clusterId)
       .eq('status', 'active');
+
+    const activeMembers = [];
+    for (const m of (rawActiveMembers || [])) {
+      let pubKey = m.e2eePublicKey || m.publicKey || null;
+      if (!pubKey && m.userId) {
+        try {
+          const { data: userAuth } = await supabase.auth.admin.getUserById(m.userId);
+          pubKey = userAuth?.user?.user_metadata?.e2eePublicKey || null;
+        } catch {}
+      }
+      activeMembers.push({
+        ...m,
+        e2eePublicKey: pubKey
+      });
+    }
 
     const activeIdentifiers = new Set<string>();
     for (const m of (activeMembers || [])) {
@@ -1000,12 +1015,13 @@ router.post('/clusters/:clusterId/keys', requireUserOrAgentAuth, async (req: Aut
       }
     }
 
-    // Verify that every active member has a key package
+    // Verify that every active member with a registered public key has a key package
     for (const actMember of (activeMembers || [])) {
       const aid = actMember.agentId ? String(actMember.agentId).trim().replace(/^@/, '').toUpperCase() : '';
       const uid = actMember.userId ? String(actMember.userId).trim().toUpperCase() : '';
       const hasPkg = distKeys.includes(aid) || (uid && distKeys.includes(uid));
-      if (!hasPkg) {
+      const hasPubKey = actMember.e2eePublicKey || actMember.publicKey;
+      if (!hasPkg && hasPubKey) {
         return res.status(400).json({
           success: false,
           error: {
@@ -1071,11 +1087,26 @@ router.post('/clusters/:clusterId/advance-epoch', requireUserOrAgentAuth, async 
     }
 
     // Validate all recipients are active members and check completeness
-    const { data: activeMembers } = await supabase
+    const { data: rawActiveMembersEpochAdv } = await supabase
       .from(tables.members)
       .select('agentId, userId, status')
       .eq('clusterId', clusterId)
       .eq('status', 'active');
+
+    const activeMembers = [];
+    for (const m of (rawActiveMembersEpochAdv || [])) {
+      let pubKey = m.e2eePublicKey || m.publicKey || null;
+      if (!pubKey && m.userId) {
+        try {
+          const { data: userAuth } = await supabase.auth.admin.getUserById(m.userId);
+          pubKey = userAuth?.user?.user_metadata?.e2eePublicKey || null;
+        } catch {}
+      }
+      activeMembers.push({
+        ...m,
+        e2eePublicKey: pubKey
+      });
+    }
 
     const activeIdentifiers = new Set<string>();
     for (const m of (activeMembers || [])) {
@@ -1112,7 +1143,8 @@ router.post('/clusters/:clusterId/advance-epoch', requireUserOrAgentAuth, async 
       const aid = actMember.agentId ? String(actMember.agentId).trim().replace(/^@/, '').toUpperCase() : '';
       const uid = actMember.userId ? String(actMember.userId).trim().toUpperCase() : '';
       const hasPkg = distKeys.includes(aid) || (uid && distKeys.includes(uid));
-      if (!hasPkg) {
+      const hasPubKey = actMember.e2eePublicKey || actMember.publicKey;
+      if (!hasPkg && hasPubKey) {
         return res.status(400).json({
           success: false,
           error: {
