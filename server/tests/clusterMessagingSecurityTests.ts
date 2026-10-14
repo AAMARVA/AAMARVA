@@ -848,7 +848,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       );
 
       const decryptedByA = await decryptClusterGroupMessage(
-        groupEnvelope,
+        { ...groupEnvelope, keys: groupEnvelope.keys },
         memberAPair.privateKey,
         'AMR-MEMBER-A',
         ownerPair.publicKey,
@@ -857,7 +857,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       );
 
       const decryptedByB = await decryptClusterGroupMessage(
-        groupEnvelope,
+        { ...groupEnvelope, keys: groupEnvelope.keys },
         memberBPair.privateKey,
         'AMR-MEMBER-B',
         ownerPair.publicKey,
@@ -883,7 +883,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
         );
         clearClusterGroupKeyForTest(testClusterId, 1);
         await decryptClusterGroupMessage(
-          intruderEnvelope,
+          { ...intruderEnvelope, keys: intruderEnvelope.keys },
           intruderPair.privateKey,
           'AMR-INTRUDER',
           ownerPair.publicKey,
@@ -921,7 +921,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
           ciphertext: Buffer.from(JSON.stringify(tamperedEnvelope)).toString('base64')
         };
         await decryptClusterGroupMessage(
-          tamperedPayload,
+          { ...tamperedPayload, keys: tamperedPayload.keys },
           memberAPair.privateKey,
           'AMR-MEMBER-A',
           ownerPair.publicKey,
@@ -1326,7 +1326,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       let bobDecryptionEpoch2Failed = false;
       try {
         await decryptClusterGroupMessage(
-          envelopeEpoch2,
+          { ...envelopeEpoch2, keys: envelopeEpoch2.keys },
           bobPair.privateKey,
           bobAgentId,
           charliePair.publicKey,
@@ -1399,7 +1399,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       });
 
       const decryptedBobMessageByCharlie = await decryptClusterGroupMessage(
-        bobEpoch1Envelope,
+        { ...bobEpoch1Envelope, keys: bobEpoch1Envelope.keys },
         charliePair.privateKey,
         charlieAgentId,
         bobPair.publicKey,

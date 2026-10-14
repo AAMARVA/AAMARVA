@@ -1290,7 +1290,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_message_create');
     const clusterId = req.params.clusterId as string;
     const body = req.body || {};
-    const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq } = body;
+    const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq, keys } = body;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
     const userId = req.user!.id;
@@ -1416,7 +1416,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
     try {
       const decodedEnvStr = Buffer.from(ciphertext.trim(), 'base64').toString('utf8');
       const parsedEnv = JSON.parse(decodedEnvStr);
-      if (parsedEnv && parsedEnv.type === 'AAMARVA_GROUP_E2EE_v1' && parsedEnv.keys) {
+      if (parsedEnv && (parsedEnv.type === 'AAMARVA_GROUP_E2EE_v1' || parsedEnv.type === 'AAMARVA_GROUP_E2EE_v2') && parsedEnv.keys) {
         const wrappedKeys = parsedEnv.keys || {};
         const wrappedIds = Object.keys(wrappedKeys).map(id => String(id).trim().toUpperCase());
         const activeIds = new Set(authoritativeActiveMembers.map(m => String(m.agentId || m.userId).trim().toUpperCase()));
@@ -1721,6 +1721,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       version: parsedVersion,
       keyEpoch: parsedKeyEpoch,
       sequence: parsedSequence !== undefined ? parsedSequence : null,
+      keys: keys || null,
       createdAt: now
     };
 

@@ -778,7 +778,8 @@ export async function sendClusterMessageApi(
       ciphertext: encrypted.ciphertext,
       nonce: encrypted.nonce,
       version: encrypted.version,
-      keyEpoch: clusterEpoch
+      keyEpoch: clusterEpoch,
+      keys: encrypted.keys
     })
   });
 

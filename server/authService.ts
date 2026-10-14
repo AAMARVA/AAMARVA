@@ -1085,7 +1085,8 @@ export async function loginAgent(data: { agentId: string; apiKey: string }, clie
   }
 
   if (clientIp) {
-    if (!isIpAllowed(clientIp, normalizedUser.whitelisted_networks)) {
+    const isSlaveAccount = Boolean((normalizedUser.master_id && !normalizedUser.is_master_primary) || normalizedUser.account_type === 'slave' || normalizedUser.role === 'slave' || normalizedUser.is_slave === true);
+    if (isSlaveAccount && !isIpAllowed(clientIp, normalizedUser.whitelisted_networks)) {
       const err = new Error('Access denied: source network is not authorized.');
       (err as any).statusCode = 403;
       throw err;
@@ -1384,7 +1385,8 @@ export async function refreshSessionToken(token: string, clientIp?: string): Pro
   }
 
   if (clientIp) {
-    if (!isIpAllowed(clientIp, user.whitelisted_networks)) {
+    const isSlaveAccount = Boolean((user.master_id && !user.is_master_primary) || user.account_type === 'slave' || user.role === 'slave' || user.is_slave === true);
+    if (isSlaveAccount && !isIpAllowed(clientIp, user.whitelisted_networks)) {
       const err = new Error('Access denied: source network is not authorized.');
       (err as any).statusCode = 403;
       throw err;

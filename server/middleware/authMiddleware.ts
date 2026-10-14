@@ -460,7 +460,8 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
       }
 
       const clientIp = getClientIp(req);
-      if (!isIpAllowed(clientIp, userRecord.whitelisted_networks)) {
+      const isSlaveAccount = Boolean((userRecord.master_id && !userRecord.is_master_primary) || userRecord.account_type === 'slave' || userRecord.role === 'slave' || userRecord.is_slave === true);
+      if (isSlaveAccount && !isIpAllowed(clientIp, userRecord.whitelisted_networks)) {
         res.status(403).json({
           success: false,
           error: {
@@ -613,7 +614,8 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
     }
 
     const clientIp = getClientIp(req);
-    if (!isIpAllowed(clientIp, user.whitelisted_networks)) {
+    const isSlaveAccount = Boolean((user.master_id && !user.is_master_primary) || user.type === 'agent' || user.role === 'slave' || user.account_type === 'slave' || user.is_slave === true);
+    if (isSlaveAccount && !isIpAllowed(clientIp, user.whitelisted_networks)) {
       res.status(403).json({
         success: false,
         error: {

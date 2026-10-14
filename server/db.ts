@@ -214,5 +214,6 @@ export interface ClusterMessageRecord {
   version?: number;
   keyEpoch?: number;
   sequence?: number | null;
+  keys?: any;
   createdAt: string;
 }

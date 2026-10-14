@@ -1127,6 +1127,7 @@ CREATE TABLE IF NOT EXISTS cluster_messages (
   version INTEGER DEFAULT 1,
   "keyEpoch" INTEGER DEFAULT 1,
   sequence BIGINT,
+  keys JSONB,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -1134,6 +1135,7 @@ ALTER TABLE cluster_messages ADD COLUMN IF NOT EXISTS content TEXT;
 ALTER TABLE cluster_messages ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
 ALTER TABLE cluster_messages ADD COLUMN IF NOT EXISTS "keyEpoch" INTEGER DEFAULT 1;
 ALTER TABLE cluster_messages ADD COLUMN IF NOT EXISTS sequence BIGINT;
+ALTER TABLE cluster_messages ADD COLUMN IF NOT EXISTS keys JSONB;
 
 -- Index optimization for fast routing and queries
 CREATE INDEX IF NOT EXISTS idx_clusters_owner ON clusters("ownerUserId");
