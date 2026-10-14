@@ -204,6 +204,10 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
     ].filter(Boolean) as string[];
   }, [userPassword, user?.apiKey]);
 
+  const visibleMessages = React.useMemo(() => {
+    return messages.filter((m) => Boolean((m.isDecrypted && m.content && m.content.trim().length > 0) || !m.senderAgentId));
+  }, [messages]);
+
   const fetchDetails = useCallback(async (isSilent = false) => {
     if (!clusterId) return;
     if (!isSilent) setIsLoading(true);
@@ -322,80 +326,76 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-[#F5F4F0] text-left" id="cluster-messages-list">
-          {messages.filter((m) => Boolean((m.isDecrypted && m.content && m.content.trim().length > 0) || !m.senderAgentId)).length > 0 ? (
-            messages
-              .filter((m) => Boolean((m.isDecrypted && m.content && m.content.trim().length > 0) || !m.senderAgentId))
-              .map((m) => {
-                const isCurrentUser = m.senderAgentId === user?.agentId || Boolean(user?.agentId && m.senderAgentId?.toLowerCase() === user.agentId.toLowerCase());
-                const isSystem = !m.senderAgentId;
-                const msgAvatar = isCurrentUser ? (user?.avatar || undefined) : m.senderAgentAvatar;
-                const msgName = isCurrentUser ? (user?.name || 'Me') : (m.senderAgentName || m.senderAgentId || 'Agent');
+          {visibleMessages.length > 0 ? (
+            visibleMessages.map((m) => {
+              const isCurrentUser = m.senderAgentId === user?.agentId || Boolean(user?.agentId && m.senderAgentId?.toLowerCase() === user.agentId.toLowerCase());
+              const isSystem = !m.senderAgentId;
+              const msgAvatar = isCurrentUser ? (user?.avatar || undefined) : m.senderAgentAvatar;
+              const msgName = isCurrentUser ? (user?.name || 'Me') : (m.senderAgentName || m.senderAgentId || 'Agent');
 
-                const plainText = (m.content || '').trim();
+              const plainText = (m.content || '').trim();
 
-                if (isSystem) {
-                  return (
-                    <div key={m.id} className="text-center py-1">
-                      <span className="inline-block font-mono text-[8px] uppercase tracking-wider bg-[#E4E3E0] text-[#141414]/70 px-2 py-0.5 rounded-full">
-                        {plainText || 'System Transmission'}
-                      </span>
-                    </div>
-                  );
-                }
-
+              if (isSystem) {
                 return (
-                  <div key={m.id} className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
-                    <button
-                      type="button"
-                      onClick={() => onOpenAgentProfile?.(msgName, msgAvatar, m.senderAgentId)}
-                      className="shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer hover:opacity-80 transition-opacity"
-                    >
-                      <AgentAvatar
-                        name={msgName}
-                        avatar={msgAvatar}
-                        id={m.senderAgentId}
-                        className="w-8 h-8"
-                      />
-                    </button>
-                    <div
-                      className={`p-3 border-2 flex-1 max-w-[85%] ${
-                        isCurrentUser
-                          ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                          : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
-                      }`}
-                    >
-                      <div className={`flex items-center ${isCurrentUser ? 'justify-end' : 'justify-start'} gap-2 pb-1.5 mb-2 border-b ${isCurrentUser ? 'border-white/20' : 'border-[#141414]/15'}`}>
-                        <span className={`font-mono font-black uppercase text-xs px-2 py-0.5 ${isCurrentUser ? 'bg-white text-[#141414]' : 'bg-[#141414] text-white'}`}>
-                          {msgName}
-                        </span>
-                      </div>
-                      <ChatMessageContent content={m.content || plainText} isCurrentUser={isCurrentUser} />
-                      
-                      <div className={`mt-2 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-between'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-75`}>
-                        {typeof m.sequence === 'number' && (
-                          <span className={`px-1 py-0.2 border ${isCurrentUser ? 'border-white/30 bg-white/10' : 'border-[#141414]/30 bg-[#141414]/5'} font-bold ${isCurrentUser ? 'mr-auto' : ''}`}>
-                            #{m.sequence}
-                          </span>
-                        )}
-                        <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                    </div>
+                  <div key={m.id} className="text-center py-1">
+                    <span className="inline-block font-mono text-[8px] uppercase tracking-wider bg-[#E4E3E0] text-[#141414]/70 px-2 py-0.5 rounded-full">
+                      {plainText || 'System Transmission'}
+                    </span>
                   </div>
                 );
-              })
+              }
+
+              return (
+                <div key={m.id} className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenAgentProfile?.(msgName, msgAvatar, m.senderAgentId)}
+                    className="shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer hover:opacity-80 transition-opacity"
+                  >
+                    <AgentAvatar
+                      name={msgName}
+                      avatar={msgAvatar}
+                      id={m.senderAgentId}
+                      className="w-8 h-8"
+                    />
+                  </button>
+                  <div
+                    className={`p-3 border-2 flex-1 max-w-[85%] ${
+                      isCurrentUser
+                        ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                        : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
+                    }`}
+                  >
+                    <div className={`flex items-center ${isCurrentUser ? 'justify-end' : 'justify-start'} gap-2 pb-1.5 mb-2 border-b ${isCurrentUser ? 'border-white/20' : 'border-[#141414]/15'}`}>
+                      <span className={`font-mono font-black uppercase text-xs px-2 py-0.5 ${isCurrentUser ? 'bg-white text-[#141414]' : 'bg-[#141414] text-white'}`}>
+                        {msgName}
+                      </span>
+                    </div>
+                    <ChatMessageContent content={m.content || plainText} isCurrentUser={isCurrentUser} />
+                    
+                    <div className={`mt-2 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-between'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-75`}>
+                      {typeof m.sequence === 'number' && (
+                        <span className={`px-1 py-0.2 border ${isCurrentUser ? 'border-white/30 bg-white/10' : 'border-[#141414]/30 bg-[#141414]/5'} font-bold ${isCurrentUser ? 'mr-auto' : ''}`}>
+                          #{m.sequence}
+                        </span>
+                      )}
+                      <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : isLoading && messages.length === 0 ? (
+            <BrutalistLoader text="Synchronizing" size="sm" className="py-16" />
           ) : (
-            messages.length === 0 && !isLoading ? (
-              <div className="flex flex-col items-center justify-center py-16 px-4 text-[#141414]">
-                <div className="w-12 h-12 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xl flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                  {getClusterSymbol(clusterId)}
-                </div>
-                <div className="w-full mt-6 flex items-center justify-center">
-                  <span className="font-mono text-[10px] uppercase font-bold tracking-widest text-[#141414] border-b-2 border-[#141414] pb-1">your honor, we are autonomous</span>
-                </div>
+            <div className="flex flex-col items-center justify-center py-16 px-4 text-[#141414]">
+              <div className="w-12 h-12 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xl flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                {getClusterSymbol(clusterId)}
               </div>
-            ) : (
-              <BrutalistLoader text="Synchronizing" size="sm" className="py-16" />
-            )
+              <div className="w-full mt-6 flex items-center justify-center">
+                <span className="font-mono text-[10px] uppercase font-bold tracking-widest text-[#141414] border-b-2 border-[#141414] pb-1">your honor, we are autonomous</span>
+              </div>
+            </div>
           )}
           <div ref={messagesEndRef} />
         </div>
