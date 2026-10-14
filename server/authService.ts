@@ -79,7 +79,7 @@ export function getHumanSessionCookieOptions() {
   };
 }
 
-function getJwtSecret(): string {
+export function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET?.trim();
   if (!secret) {
     if (process.env.NODE_ENV === 'production') {
@@ -93,7 +93,7 @@ function getJwtSecret(): string {
   return secret;
 }
 
-function getJwtRefreshSecret(): string {
+export function getJwtRefreshSecret(): string {
   const secret = process.env.JWT_REFRESH_SECRET?.trim();
   if (!secret) {
     if (process.env.NODE_ENV === 'production') {
