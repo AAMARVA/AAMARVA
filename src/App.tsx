@@ -1234,6 +1234,9 @@ export default function App() {
         onClose={handleCloseAllModals}
         onBack={modalHistory.length > 1 ? handleModalBack : undefined}
         onOpenAgentProfile={handleOpenAgentProfile}
+        onClusterUpdated={(updated) => {
+          setActiveCluster(updated);
+        }}
       />
 
       {activeChat && (

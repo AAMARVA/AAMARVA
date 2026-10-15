@@ -109,13 +109,13 @@ async function isClusterMember(supabase: any, clusterId: string, userId: string,
 }
 
 // Helper to check if a user is an admin or owner of a cluster
-async function isClusterAdmin(supabase: any, clusterId: string, userId: string): Promise<boolean> {
+async function isClusterAdmin(supabase: any, clusterId: string, userId: string, agentId?: string): Promise<boolean> {
   const tables = await getClusterTables(supabase);
 
   // Check if owner
   const { data: cluster } = await supabase
     .from(tables.clusters)
-    .select('ownerUserId, status')
+    .select('ownerUserId, ownerAgentId, status')
     .eq('id', clusterId)
     .maybeSingle();
 
@@ -123,19 +123,41 @@ async function isClusterAdmin(supabase: any, clusterId: string, userId: string):
     return false;
   }
 
-  if (cluster && cluster.ownerUserId === userId) {
+  if (cluster && (
+    (cluster.ownerUserId && cluster.ownerUserId === userId) ||
+    (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase() === agentId.toLowerCase())
+  )) {
     return true;
   }
 
   // Check if admin role and active status
-  const { data: member } = await supabase
-    .from(tables.members)
-    .select('role, status')
-    .eq('clusterId', clusterId)
-    .eq('userId', userId)
-    .maybeSingle();
+  if (userId) {
+    const { data: memberByUser } = await supabase
+      .from(tables.members)
+      .select('role, status')
+      .eq('clusterId', clusterId)
+      .eq('userId', userId)
+      .maybeSingle();
 
-  return !!(member && member.role === 'admin' && member.status === 'active');
+    if (memberByUser && (memberByUser.role === 'admin' || memberByUser.role === 'owner') && memberByUser.status === 'active') {
+      return true;
+    }
+  }
+
+  if (agentId) {
+    const { data: memberByAgent } = await supabase
+      .from(tables.members)
+      .select('role, status')
+      .eq('clusterId', clusterId)
+      .eq('agentId', agentId)
+      .maybeSingle();
+
+    if (memberByAgent && (memberByAgent.role === 'admin' || memberByAgent.role === 'owner') && memberByAgent.status === 'active') {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // Helper to check if a cluster is dissolved
@@ -1061,9 +1083,16 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
     const isOwner = cluster.ownerUserId === userId || 
                     (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase() === agentId.toLowerCase()) || 
                     !cluster.ownerUserId;
+    const isAdmin = await isClusterAdmin(supabase, clusterId, userId, agentId);
+    const isMaster = Boolean(
+      req.user?.account_type === 'master' ||
+      req.user?.isMasterUser === true ||
+      req.user?.is_master_primary === true ||
+      (req.user as any)?.role === 'master'
+    );
 
-    if (!isOwner) {
-      return res.status(403).json({ success: false, error: { message: 'Forbidden: Only the owner can update this cluster.' } });
+    if (!isOwner && !isAdmin && !isMaster) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden: Only an admin or master can update this cluster.' } });
     }
 
     const updates: Record<string, any> = { updatedAt: new Date().toISOString() };

@@ -161,10 +161,12 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
 
     window.addEventListener('account-changed', handleAccountUpdate);
     window.addEventListener('aamarva-plan-updated', handleAccountUpdate);
+    window.addEventListener('cluster-updated', handleAccountUpdate);
 
     return () => {
       window.removeEventListener('account-changed', handleAccountUpdate);
       window.removeEventListener('aamarva-plan-updated', handleAccountUpdate);
+      window.removeEventListener('cluster-updated', handleAccountUpdate);
     };
   }, [fetchConnectionsAndFleet, fetchClusters]);
 
@@ -360,14 +362,28 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                           </span>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => onOpenClusterChat?.({ id: cluster.id, name: cluster.name })}
-                        className="bg-[#141414] text-white py-1 px-3 text-[10px] font-mono font-bold hover:bg-black/80 transition-colors shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
-                        title={`Command Cluster ${cluster.name}`}
-                      >
-                        COMMAND
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenClusterMembers) {
+                              onOpenClusterMembers(cluster);
+                            }
+                          }}
+                          className="bg-white text-[#141414] border-2 border-[#141414] py-1 px-2.5 text-[10px] font-mono font-bold hover:bg-[#141414] hover:text-white transition-colors shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                          title={`Edit Cluster ${cluster.name}`}
+                        >
+                          EDIT
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onOpenClusterChat?.({ id: cluster.id, name: cluster.name })}
+                          className="bg-[#141414] text-white py-1 px-3 text-[10px] font-mono font-bold hover:bg-black/80 transition-colors shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                          title={`Command Cluster ${cluster.name}`}
+                        >
+                          COMMAND
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

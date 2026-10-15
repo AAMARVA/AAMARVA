@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, ArrowLeft, AlertCircle } from 'lucide-react';
+import { X, ArrowLeft, AlertCircle, Edit3, Check } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
 import { VerifiedBadge } from './VerifiedBadge';
 import { BrutalistLoader } from './BrutalistLoader';
 import { apiFetch } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
+import { useAuth } from '../context/AuthContext';
 
 export interface ClusterMember {
   id: string;
@@ -36,6 +37,7 @@ interface ClusterMembersModalProps {
   onClose: () => void;
   onBack?: () => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onClusterUpdated?: (updatedCluster: ClusterData) => void;
 }
 
 // Modal component to display cluster members
@@ -45,10 +47,19 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   onClose,
   onBack,
   onOpenAgentProfile,
+  onClusterUpdated,
 }) => {
+  const { user, activeAccount, isAuthenticated } = useAuth();
   const [members, setMembers] = useState<ClusterMember[]>([]);
   const [clusterInfo, setClusterInfo] = useState<ClusterData | null>(cluster);
   const [loading, setLoading] = useState(false);
+
+  // Edit cluster state (admin or master only)
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -131,6 +142,107 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     };
   }, [cluster]);
 
+  const current = activeAccount || user;
+  const currentProfile = current ? ((current as any).profile || current) : null;
+  const currentAgentId = (currentProfile?.agentId || (currentProfile as any)?.agent_id || '').toLowerCase();
+  const currentUserId = (currentProfile?.id || '').toLowerCase();
+
+  const isMaster = Boolean(
+    currentProfile?.account_type === 'master' ||
+    currentProfile?.isMasterUser === true ||
+    currentProfile?.is_master_primary === true ||
+    currentProfile?.isMasterPrimary === true ||
+    user?.account_type === 'master' ||
+    (user as any)?.isMasterUser === true ||
+    (user as any)?.is_master_primary === true ||
+    (user as any)?.isMasterPrimary === true
+  );
+
+  const ownerAgentId = (
+    clusterInfo?.ownerAgentId || 
+    (clusterInfo as any)?.owner_agent_id || 
+    cluster?.ownerAgentId || 
+    (cluster as any)?.owner_agent_id || 
+    ''
+  ).toLowerCase();
+
+  const ownerUserId = (
+    (clusterInfo as any)?.ownerUserId || 
+    (clusterInfo as any)?.owner_user_id || 
+    (cluster as any)?.ownerUserId || 
+    (cluster as any)?.owner_user_id || 
+    ''
+  ).toLowerCase();
+
+  const isOwner = Boolean(
+    (ownerAgentId && currentAgentId && ownerAgentId === currentAgentId) ||
+    (ownerUserId && currentUserId && ownerUserId === currentUserId)
+  );
+
+  const isAdminMember = members.some((m) => {
+    const mAgentId = (m.agentId || '').toLowerCase();
+    const mUserId = (m.id || '').toLowerCase();
+    const matchesUser = (mAgentId && currentAgentId && mAgentId === currentAgentId) ||
+                        (mUserId && currentUserId && mUserId === currentUserId);
+    return matchesUser && (m.role === 'admin' || m.role === 'owner');
+  });
+
+  const canEdit = isAuthenticated && (isMaster || isOwner || isAdminMember || (clusterInfo as any)?.role === 'admin' || (cluster as any)?.role === 'admin');
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      setEditError('Cluster name cannot be empty.');
+      return;
+    }
+
+    setIsSaving(true);
+    setEditError(null);
+
+    const clusterId = clusterInfo?.id || cluster.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+    try {
+      const res = await apiFetch(`/api/clusters/${clusterId}`, {
+        authType: 'human',
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: trimmedName,
+          description: editDescription.trim() || undefined,
+        }),
+      });
+
+      if (res?.success) {
+        const updatedClusterData: ClusterData = {
+          ...cluster,
+          ...clusterInfo,
+          name: trimmedName,
+          description: editDescription.trim() || undefined,
+        } as ClusterData;
+
+        setClusterInfo(updatedClusterData);
+        setIsEditing(false);
+        if (onClusterUpdated) {
+          onClusterUpdated(updatedClusterData);
+        }
+        window.dispatchEvent(
+          new CustomEvent('cluster-updated', {
+            detail: {
+              id: clusterId,
+              name: trimmedName,
+              description: editDescription.trim() || undefined,
+            },
+          })
+        );
+      } else {
+        setEditError(res?.error?.message || 'Failed to update cluster.');
+      }
+    } catch (err: any) {
+      setEditError(err?.message || 'Failed to update cluster.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   if (isOpen === false || !cluster) return null;
 
   const clusterTitle = (clusterInfo?.name || cluster.name || 'ALPHA SECRET CLUSTER').toUpperCase();
@@ -175,25 +287,110 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-white">
           {/* Cluster Header Section */}
           <div className="border-2 border-[#141414] bg-[#E4E3E0]/30 p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] space-y-3">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center justify-center w-12 h-12 bg-[#141414] text-white border-2 border-[#141414] shrink-0 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)]">
-                <span className="font-mono font-black text-lg text-white grayscale [font-variant-emoji:text] select-none">
-                  {getClusterSymbol(clusterInfo?.id || cluster.id || 'cluster_alpha_secret')}
-                </span>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                <div className="flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 bg-[#141414] text-white border-2 border-[#141414] shrink-0 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)]">
+                  <span className="font-mono font-black text-lg text-white grayscale [font-variant-emoji:text] select-none">
+                    {getClusterSymbol(clusterInfo?.id || cluster.id || 'cluster_alpha_secret')}
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-mono font-black uppercase text-sm sm:text-base tracking-wider text-[#141414] break-words">
+                    {clusterTitle.replace(/🛡️|🛡/g, '').trim()}
+                  </h2>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h2 className="font-mono font-black uppercase text-sm sm:text-base tracking-wider text-[#141414] break-words">
-                  {clusterTitle.replace(/🛡️|🛡/g, '').trim()}
-                </h2>
-              </div>
+
+              {canEdit && !isEditing && !isClusterDissolved && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditName(clusterInfo?.name || cluster.name || '');
+                    setEditDescription(clusterInfo?.description || (cluster as any)?.description || '');
+                    setEditError(null);
+                    setIsEditing(true);
+                  }}
+                  className="px-2.5 py-1 bg-white text-[#141414] border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
+                  title="Edit Cluster (Admin or Master only)"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>EDIT</span>
+                </button>
+              )}
             </div>
-            
-            {clusterInfo?.description && (
-              <div className="pt-3">
-                <p className="font-sans text-xs sm:text-sm text-[#141414] leading-relaxed italic border-l-[3px] border-[#141414] pl-2.5">
-                  "{clusterInfo.description}"
-                </p>
-              </div>
+
+            {isEditing ? (
+              <form onSubmit={handleSaveEdit} className="space-y-3 pt-2 border-t-2 border-[#141414]/20 animate-in fade-in duration-150">
+                {editError && (
+                  <div className="p-2 bg-red-100 border-2 border-red-500 text-red-700 font-mono text-[10px] sm:text-xs font-bold">
+                    {editError}
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/70">
+                    Cluster Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="CLUSTER NAME"
+                    maxLength={50}
+                    required
+                    className="w-full bg-white border-2 border-[#141414] p-2 font-mono font-bold text-xs uppercase focus:outline-none shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/70">
+                    Description (Optional)
+                  </label>
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    placeholder="Cluster directives and protocols..."
+                    rows={2}
+                    maxLength={200}
+                    className="w-full bg-white border-2 border-[#141414] p-2 font-mono text-xs focus:outline-none resize-none shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => {
+                      setIsEditing(false);
+                      setEditError(null);
+                    }}
+                    className="px-3 py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider bg-white hover:bg-[#E4E3E0] transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="px-3 py-1.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:bg-black active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSaving ? (
+                      <span>Saving...</span>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Save Cluster</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              clusterInfo?.description && (
+                <div className="pt-2">
+                  <p className="font-sans text-xs sm:text-sm text-[#141414] leading-relaxed italic border-l-[3px] border-[#141414] pl-2.5">
+                    "{clusterInfo.description}"
+                  </p>
+                </div>
+              )
             )}
           </div>
 

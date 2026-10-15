@@ -28,7 +28,7 @@ export function ClustersTabContent({
   onOpenChat,
   onOpenClusterChat,
 }: ClustersTabContentProps) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user, activeAccount } = useAuth();
   
   // Creating clusters state
   const [isCreating, setIsCreating] = useState(false);
@@ -59,7 +59,16 @@ export function ClustersTabContent({
   // Initial load
   useEffect(() => {
     fetchIncomingInvites();
-  }, [isAuthenticated]);
+
+    const handleClusterUpdated = () => {
+      onRefreshClusters();
+    };
+
+    window.addEventListener('cluster-updated', handleClusterUpdated);
+    return () => {
+      window.removeEventListener('cluster-updated', handleClusterUpdated);
+    };
+  }, [isAuthenticated, onRefreshClusters]);
 
   // Handle Create Cluster
   const handleCreateCluster = async (e: React.FormEvent) => {
@@ -245,6 +254,24 @@ export function ClustersTabContent({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               {activeClusters.map((cl) => {
                 const sym = getClusterSymbol(cl.id);
+                const currentProfile = activeAccount || user;
+                const isMaster = Boolean(
+                  (currentProfile as any)?.account_type === 'master' ||
+                  (currentProfile as any)?.isMasterUser === true ||
+                  (currentProfile as any)?.is_master_primary === true ||
+                  (currentProfile as any)?.isMasterPrimary === true ||
+                  user?.account_type === 'master' ||
+                  (user as any)?.isMasterUser === true
+                );
+                const currentAid = (currentProfile?.agentId || currentAgentId || '').toLowerCase();
+                const currentUid = (currentProfile?.id || '').toLowerCase();
+                const isOwner = Boolean(
+                  (cl.ownerAgentId && currentAid && cl.ownerAgentId.toLowerCase() === currentAid) ||
+                  (cl.ownerUserId && currentUid && cl.ownerUserId.toLowerCase() === currentUid)
+                );
+                const isAdmin = cl.role === 'admin' || cl.role === 'owner';
+                const canEdit = isAuthenticated && (isMaster || isOwner || isAdmin);
+
                 return (
                   <div 
                     key={cl.id}
@@ -263,17 +290,32 @@ export function ClustersTabContent({
                             </h4>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenClusterChat?.({ id: cl.id, name: cl.name });
-                          }}
-                          className="py-1 sm:py-1.5 px-2.5 sm:px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          <span>Open It</span>
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {canEdit && onOpenClusterMembers && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenClusterMembers(cl);
+                              }}
+                              className="py-1 sm:py-1.5 px-2.5 sm:px-3 bg-white text-[#141414] border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1 shrink-0"
+                              title="Edit Cluster (Admin or Master)"
+                            >
+                              <span>Edit</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenClusterChat?.({ id: cl.id, name: cl.name });
+                            }}
+                            className="py-1 sm:py-1.5 px-2.5 sm:px-3 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Open It</span>
+                          </button>
+                        </div>
                       </div>
 
                       {cl.description && (
