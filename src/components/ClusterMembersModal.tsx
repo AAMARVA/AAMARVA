@@ -825,7 +825,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   SPOG
                 </span>
                 <span className="text-xs font-black uppercase tracking-widest">
-                  {spogMode === 'addition' ? 'SLAVE ADDITION PROTOCOL' : 'SLAVE SELECTION PROTOCOL'}
+                  {spogMode === 'addition' ? 'SLAVE ADDITION PROTOCOL' : 'SLAVE EVALUATION PROTOCOL'}
                 </span>
               </div>
               <button
