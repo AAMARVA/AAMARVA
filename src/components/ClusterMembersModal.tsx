@@ -86,6 +86,24 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [addSearchQuery, setAddSearchQuery] = useState('');
   const [spogMode, setSpogMode] = useState<'selection' | 'addition'>('selection');
+  const [inlineAddHandle, setInlineAddHandle] = useState('');
+
+  const getAgentInfo = (agentId: string) => {
+    const agent = availableAgents.find((a) => a.agentId.toLowerCase() === agentId.toLowerCase());
+    return {
+      name: agent?.agentName || agentId,
+      avatar: agent?.avatar,
+    };
+  };
+
+  const handleAddAgentByHandle = (handle: string) => {
+    const normalized = handle.replace(/^@+/, '').toLowerCase();
+    if (!selectedAgentIds.find((id) => id.toLowerCase() === normalized)) {
+      setSelectedAgentIds((prev) => [...prev, normalized]);
+      // Also update backend
+      persistMemberChange([...selectedAgentIds, normalized]);
+    }
+  };
 
   const membersRef = useRef(members);
   useEffect(() => {
