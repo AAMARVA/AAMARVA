@@ -1129,8 +1129,9 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
       // 2. Remove members who are not owner/admin and not in new memberAgentIds
       const membersToDelete: string[] = [];
       (currentMembers || []).forEach((m: any) => {
-        if (m.role !== 'admin' && m.role !== 'owner' && m.userId !== userId && m.agentId?.toLowerCase() !== agentId?.toLowerCase()) {
-          const mKey = (m.agentId || '').toLowerCase();
+        const isOwnerOrAdmin = m.role === 'admin' || m.role === 'owner';
+        if (!isOwnerOrAdmin) {
+          const mKey = (m.agentId || '').toLowerCase().replace(/^@+/, '');
           if (!cleanSet.has(mKey)) {
             membersToDelete.push(m.id);
           }

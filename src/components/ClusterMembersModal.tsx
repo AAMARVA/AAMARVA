@@ -287,7 +287,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
             .filter((m) => m.status !== 'dissolved')
             .map((m) => m.agentId)
             .filter(Boolean);
-          if (!isEditingRef.current) setSelectedAgentIds(currentMemberIds);
+          setSelectedAgentIds(currentMemberIds);
         } else {
           const fallbackMembers = [
             {
@@ -458,9 +458,20 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
       });
 
       if (res?.success) {
-        // Deselect the removed agents
+        // Deselect and remove from local state immediately
         setSelectedAgentIds((prev) =>
           prev.filter((id) => !toRemoveSet.has(id.toLowerCase().replace(/^@+/, '')))
+        );
+        setMembers((prev) =>
+          prev.filter((m) => !toRemoveSet.has((m.agentId || '').toLowerCase().replace(/^@+/, '')))
+        );
+        setAvailableAgents((prev) =>
+          prev.map((a) => {
+            if (toRemoveSet.has(a.agentId.toLowerCase().replace(/^@+/, ''))) {
+              return { ...a, isMember: false };
+            }
+            return a;
+          })
         );
         fetchClusterMembers(clusterId);
       } else {
