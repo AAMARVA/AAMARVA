@@ -388,6 +388,8 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
       : selectedAgentIds.filter((id) => id.toLowerCase() !== agentToRemove.agentId.toLowerCase());
 
     const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+    console.log('Attempting removal for cluster:', clusterId, 'newAgentIds:', newAgentIds);
+    
     if (!clusterId) {
       setEditError('Cluster ID not found.');
       setAgentToRemove(null);
@@ -404,14 +406,17 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
         }),
       });
 
+      console.log('Removal response:', res);
+
       if (res?.success) {
         setSelectedAgentIds(newAgentIds);
         fetchClusterMembers(clusterId);
       } else {
-        setEditError('Failed to remove agent.');
+        setEditError('Failed to remove agent: ' + (res?.message || 'Unknown error'));
       }
     } catch (e) {
-      setEditError('Failed to remove agent.');
+      console.error('Removal error:', e);
+      setEditError('Failed to remove agent: ' + (e instanceof Error ? e.message : 'Unknown error'));
     }
     
     setAgentToRemove(null);
