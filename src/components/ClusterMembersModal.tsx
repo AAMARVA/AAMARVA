@@ -1048,9 +1048,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                           onClick={async () => {
                             if (isSelected) {
                               const newAgentIds = selectedAgentIds.filter((id) => id.toLowerCase() !== agent.agentId.toLowerCase());
+                              setSelectedAgentIds(newAgentIds); // Immediate feedback
                               await persistMemberChange(newAgentIds);
                             } else {
                               const newAgentIds = [...selectedAgentIds, agent.agentId];
+                              setSelectedAgentIds(newAgentIds); // Immediate feedback
                               await persistMemberChange(newAgentIds);
                             }
                           }}
@@ -1094,22 +1096,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                               <span className="text-[9px] font-black uppercase text-white/80">
                                 In Cluster
                               </span>
-                              {spogMode !== 'addition' && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setAgentToRemove({
-                                      agentId: agent.agentId,
-                                      agentName: agent.agentName || agent.agentId,
-                                    });
-                                  }}
-                                  className="px-2 py-0.5 bg-red-600 text-white font-mono text-[9px] font-black uppercase border border-white hover:bg-red-700 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] transition-all cursor-pointer flex items-center gap-1"
-                                >
-                                  <X className="w-2.5 h-2.5" />
-                                  <span>Remove</span>
-                                </button>
-                              )}
+
                             </div>
                           ) : (
                             <div className="pt-2 border-t border-[#141414]/15 flex items-center justify-between">
