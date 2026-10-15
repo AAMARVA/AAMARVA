@@ -86,6 +86,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [addSearchQuery, setAddSearchQuery] = useState('');
 
+  const membersRef = useRef(members);
+  useEffect(() => {
+    membersRef.current = members;
+  }, [members]);
+
   const fetchClusterMembers = useCallback(async (cId: string) => {
     try {
       const res = await apiFetch(`/api/clusters/public/${cId}/members`, { authType: 'none' });
@@ -105,7 +110,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   const fetchAvailableAgents = useCallback(async () => {
     // Immediately seed with existing cluster members so the UI is responsive without waiting
     const map = new Map<string, SpogAgent>();
-    members.forEach((m) => {
+    membersRef.current.forEach((m) => {
       if (m.agentId) {
         map.set(m.agentId.toUpperCase(), {
           id: m.id || m.agentId,
@@ -205,7 +210,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     } finally {
       setIsLoadingAgents(false);
     }
-  }, [members]);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -581,8 +586,8 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                       </div>
                       <div className="max-h-40 overflow-y-auto custom-scrollbar border-2 border-[#141414] p-1.5 bg-white space-y-1">
                         {selectedAgentIds.map((aid) => {
-                          const agentObj = availableAgents.find((a) => a.agentId.toLowerCase() === aid.toLowerCase()) ||
-                            members.find((m) => m.agentId.toLowerCase() === aid.toLowerCase());
+                          // Isolate data lookup to current members only for this view
+                          const agentObj = members.find((m) => m.agentId.toLowerCase() === aid.toLowerCase());
                           const displayName = agentObj?.agentName || aid;
                           return (
                             <div
@@ -623,11 +628,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                         })}
                       </div>
                     </div>
-                  ) : (
-                    <div className="p-3 border-2 border-dashed border-[#141414]/30 bg-white text-center font-mono text-[10px] uppercase text-[#141414]/60">
-                      No agents selected.
-                    </div>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* 4. Option called ADD below SPOG */}
