@@ -518,6 +518,21 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => {
+                    const primarySet = new Set<string>();
+                    members.forEach((m: any) => {
+                      if (m.role === 'admin' || m.role === 'owner' || m.is_master_primary) {
+                        primarySet.add(m.agentId);
+                      }
+                    });
+                    setSelectedRecipientIds(primarySet);
+                  }}
+                  className="text-[10px] font-mono font-bold uppercase border border-[#141414] px-2 py-1 bg-white hover:bg-[#141414] hover:text-white cursor-pointer"
+                >
+                  SPOG
+                </button>
+                <button
+                  type="button"
                   onClick={() => setSelectedRecipientIds(new Set([user?.agentId || '']))}
                   className="text-[10px] font-mono font-bold uppercase border border-[#141414] px-2 py-1 bg-white hover:bg-[#141414] hover:text-white cursor-pointer"
                 >
@@ -525,47 +540,51 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto space-y-2 py-2 border-y border-[#141414]/20 custom-scrollbar max-h-[300px]">
-                {members.map((m) => {
-                  const mId = m.agentId;
-                  const isSelected = selectedRecipientIds.size === 0 || selectedRecipientIds.has(mId);
-                  const isSelf = mId?.toLowerCase() === user?.agentId?.toLowerCase();
-                  return (
-                    <label
-                      key={mId}
-                      className="flex items-center justify-between p-2.5 border border-[#141414] bg-[#F5F4F0] hover:bg-white cursor-pointer select-none"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <AgentAvatar name={m.name || mId} avatar={m.avatar} id={mId} className="w-7 h-7" />
-                        <div className="flex flex-col text-left">
-                          <span className="font-mono font-bold text-xs uppercase text-[#141414]">
-                            {m.name || mId} {isSelf && '(You)'}
-                          </span>
-                          <span className="font-mono text-[9px] text-[#141414]/60">
-                            {mId} {m.membershipRole ? `• ${m.membershipRole}` : ''}
-                          </span>
+                {members.length === 0 ? (
+                    <p className="p-4 font-mono text-[11px] text-[#141414]/70">No members found.</p>
+                ) : (
+                  members.map((m) => {
+                    const mId = m.agentId;
+                    const isSelected = selectedRecipientIds.size === 0 || selectedRecipientIds.has(mId);
+                    const isSelf = mId?.toLowerCase() === user?.agentId?.toLowerCase();
+                    return (
+                      <label
+                        key={mId}
+                        className="flex items-center justify-between p-2.5 border border-[#141414] bg-[#F5F4F0] hover:bg-white cursor-pointer select-none"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <AgentAvatar name={m.name || mId} avatar={m.avatar} id={mId} className="w-7 h-7" />
+                          <div className="flex flex-col text-left">
+                            <span className="font-mono font-bold text-xs uppercase text-[#141414]">
+                              {m.name || mId} {isSelf && '(You)'}
+                            </span>
+                            <span className="font-mono text-[9px] text-[#141414]/60">
+                              {mId} {m.membershipRole ? `• ${m.membershipRole}` : ''}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        disabled={isSelf}
-                        onChange={(e) => {
-                          const next = new Set(selectedRecipientIds);
-                          if (next.size === 0) {
-                            members.forEach(item => next.add(item.agentId));
-                          }
-                          if (e.target.checked) {
-                            next.add(mId);
-                          } else {
-                            next.delete(mId);
-                          }
-                          setSelectedRecipientIds(next);
-                        }}
-                        className="w-4 h-4 accent-[#141414] cursor-pointer"
-                      />
-                    </label>
-                  );
-                })}
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isSelf}
+                          onChange={(e) => {
+                            const next = new Set(selectedRecipientIds);
+                            if (next.size === 0) {
+                              members.forEach(item => next.add(item.agentId));
+                            }
+                            if (e.target.checked) {
+                              next.add(mId);
+                            } else {
+                              next.delete(mId);
+                            }
+                            setSelectedRecipientIds(next);
+                          }}
+                          className="w-4 h-4 accent-[#141414] cursor-pointer"
+                        />
+                      </label>
+                    );
+                  })
+                )}
               </div>
               <div className="pt-3 flex justify-end">
                 <button
