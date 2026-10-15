@@ -85,6 +85,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   // Option called Add below SPOG
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [addSearchQuery, setAddSearchQuery] = useState('');
+  const [spogMode, setSpogMode] = useState<'selection' | 'addition'>('selection');
 
   const membersRef = useRef(members);
   useEffect(() => {
@@ -564,6 +565,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                     type="button"
                     onClick={() => {
                       fetchAvailableAgents();
+                      setSpogMode('selection');
                       setIsSpogModalOpen(true);
                     }}
                     className="w-full py-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
@@ -637,6 +639,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                     type="button"
                     onClick={() => {
                       fetchAvailableAgents();
+                      setSpogMode('addition');
                       setIsSpogModalOpen(true);
                     }}
                     className="w-full py-2.5 bg-white text-[#141414] border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
@@ -822,7 +825,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   SPOG
                 </span>
                 <span className="text-xs font-black uppercase tracking-widest">
-                  SLAVE SELECTION PROTOCOL ({availableAgents.length} FLEET AGENTS)
+                  {spogMode === 'addition' ? 'SLAVE ADDITION PROTOCOL' : 'SLAVE SELECTION PROTOCOL'}
                 </span>
               </div>
               <button
