@@ -867,15 +867,17 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                       >
                         {isAllSelected ? 'Deselect All' : 'Select All'}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAgentToRemove({ agentId: 'ALL', agentName: 'All Selected Agents' });
-                        }}
-                        className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white text-red-600 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
-                      >
-                        Remove
-                      </button>
+                      {spogMode !== 'addition' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAgentToRemove({ agentId: 'ALL', agentName: 'All Selected Agents' });
+                          }}
+                          className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white text-red-600 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </div>
                   );
                 })()}
@@ -998,20 +1000,22 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                               <span className="text-[9px] font-black uppercase text-white/80">
                                 In Cluster
                               </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setAgentToRemove({
-                                    agentId: agent.agentId,
-                                    agentName: agent.agentName || agent.agentId,
-                                  });
-                                }}
-                                className="px-2 py-0.5 bg-red-600 text-white font-mono text-[9px] font-black uppercase border border-white hover:bg-red-700 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] transition-all cursor-pointer flex items-center gap-1"
-                              >
-                                <X className="w-2.5 h-2.5" />
-                                <span>Remove</span>
-                              </button>
+                              {spogMode !== 'addition' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setAgentToRemove({
+                                      agentId: agent.agentId,
+                                      agentName: agent.agentName || agent.agentId,
+                                    });
+                                  }}
+                                  className="px-2 py-0.5 bg-red-600 text-white font-mono text-[9px] font-black uppercase border border-white hover:bg-red-700 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] transition-all cursor-pointer flex items-center gap-1"
+                                >
+                                  <X className="w-2.5 h-2.5" />
+                                  <span>Remove</span>
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <div className="pt-2 border-t border-[#141414]/15 flex items-center justify-between">
