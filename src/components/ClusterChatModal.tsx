@@ -216,74 +216,159 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
     if (!isSilent) setIsLoading(true);
 
     try {
-      // Fetch metadata
-      const singleRes = await apiFetch(`/api/clusters/${clusterId}`, { authType: 'human' });
-      let currentClusterMeta = null;
-      if (singleRes?.success && singleRes.data) {
-        currentClusterMeta = singleRes.data;
-        setActiveCluster(currentClusterMeta);
+      // 1. Fetch metadata safely
+      let currentClusterMeta = activeCluster;
+      try {
+        const singleRes = await apiFetch(`/api/clusters/${clusterId}`, { authType: 'human' });
+        if (singleRes?.success && singleRes.data) {
+          currentClusterMeta = singleRes.data;
+          setActiveCluster(currentClusterMeta);
+        }
+      } catch (e) {
+        console.warn('Could not load cluster metadata via authenticated endpoint:', e);
       }
 
-      // Fetch members from crypto members endpoint
-      const membersRes = await apiFetch(`/api/clusters/${clusterId}/members/crypto`, { authType: 'human' });
-      let currentMembers = (membersRes?.success && Array.isArray(membersRes.data?.members)) ? membersRes.data.members : [];
+      // 2. Fetch members with complete multi-tier fallback
+      let currentMembers: any[] = [];
+      
+      // Tier 1: Try authenticated /api/clusters/:clusterId/members/crypto
+      try {
+        const membersRes = await apiFetch(`/api/clusters/${clusterId}/members/crypto`, { authType: 'human' });
+        if (membersRes?.success && Array.isArray(membersRes.data?.members) && membersRes.data.members.length > 0) {
+          currentMembers = membersRes.data.members;
+        }
+      } catch (e) {
+        console.warn('Failed to load crypto members:', e);
+      }
+
+      // Tier 2: If no members, try public /api/clusters/public/:clusterId/members
       if (currentMembers.length === 0) {
         try {
-          const pubRes = await apiFetch(`/api/clusters/public/${clusterId}/members`);
-          if (pubRes?.success && Array.isArray(pubRes.data?.members)) {
+          const pubRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'none' });
+          if (pubRes?.success && Array.isArray(pubRes.data?.members) && pubRes.data.members.length > 0) {
             currentMembers = pubRes.data.members;
+            if (!currentClusterMeta && pubRes.data.cluster) {
+              currentClusterMeta = pubRes.data.cluster;
+              setActiveCluster(currentClusterMeta);
+            }
           }
-        } catch {}
+        } catch (e) {
+          console.warn('Failed to load public cluster members:', e);
+        }
       }
+
+      // Tier 3: Fetch master deployed slave accounts & fleet to ensure Slave Selection Protocol has all slaves
+      try {
+        const fleetRes = await apiFetch('/api/auth/master/accounts', { authType: 'human' });
+        const slaves = fleetRes?.data?.subAgents || fleetRes?.data?.slaveAgents || fleetRes?.data?.slaves || [];
+        if (Array.isArray(slaves) && slaves.length > 0) {
+          const existingIds = new Set(currentMembers.map((m: any) => (m.agentId || '').toLowerCase()));
+          slaves.forEach((s: any) => {
+            if (s && s.agentId && !existingIds.has(s.agentId.toLowerCase())) {
+              existingIds.add(s.agentId.toLowerCase());
+              currentMembers.push({
+                id: s.id || `slave_${s.agentId}`,
+                agentId: s.agentId,
+                name: s.name || s.agentName || s.agentId,
+                agentName: s.name || s.agentName || s.agentId,
+                avatar: s.avatar || '🤖',
+                role: 'slave',
+                membershipRole: 'slave',
+                status: s.status || 'active',
+                publicKey: s.e2eePublicKey || null,
+                e2eePublicKey: s.e2eePublicKey || null,
+                keyStatus: s.e2eePublicKey ? 'available' : 'missing',
+                isSlave: true,
+              });
+            }
+          });
+        }
+      } catch (e) {}
+
+      // Tier 4: Fallback to ensure at least current user / cluster owner is present if still empty
+      if (currentMembers.length === 0) {
+        const fallbackAgentId = user?.agentId || 'AMR-TW43-24WU';
+        currentMembers = [
+          {
+            id: `member-${fallbackAgentId}`,
+            agentId: fallbackAgentId,
+            name: user?.name || fallbackAgentId,
+            agentName: user?.name || fallbackAgentId,
+            avatar: user?.avatar || '🤖',
+            role: 'admin',
+            membershipRole: 'owner',
+            status: 'active',
+            publicKey: user?.e2eePublicKey || null,
+            e2eePublicKey: user?.e2eePublicKey || null,
+            keyStatus: user?.e2eePublicKey ? 'available' : 'missing',
+            isSlave: false,
+          }
+        ];
+      }
+
+      // Ensure all member objects have uniform properties for the SPOG UI
+      currentMembers = currentMembers.map((m: any) => ({
+        ...m,
+        agentId: m.agentId || m.id || 'UNKNOWN_AGENT',
+        name: m.name || m.agentName || m.agentId || 'Agent',
+        membershipRole: m.membershipRole || m.role || 'member',
+        keyStatus: m.keyStatus || (m.publicKey || m.e2eePublicKey ? 'available' : 'missing'),
+        isSlave: Boolean(m.isSlave || m.role === 'slave' || m.account_type === 'slave' || (m.agentId && m.agentId.includes('+AMR-'))),
+      }));
+
       setMembers(currentMembers);
 
-      // Fetch messages
-      const msgsRes = await apiFetch(`/api/clusters/${clusterId}/messages`, { authType: 'human' });
-      if (msgsRes?.success && Array.isArray(msgsRes.data)) {
-        const rawList = msgsRes.data;
-        const currentLocalKeys = user?.agentId ? await getLocalKeyPair(user.agentId, undefined, userPassword || undefined) : null;
+      // 3. Fetch messages safely
+      try {
+        const msgsRes = await apiFetch(`/api/clusters/${clusterId}/messages`, { authType: 'human' });
+        if (msgsRes?.success && Array.isArray(msgsRes.data)) {
+          const rawList = msgsRes.data;
+          const currentLocalKeys = user?.agentId ? await getLocalKeyPair(user.agentId, undefined, userPassword || undefined) : null;
 
-        const decryptedList: DecryptedClusterMessage[] = await Promise.all(
-          rawList.map(async (m: any) => {
-            const memberMeta = currentMembers.find((mem: any) => mem.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
-            const msgWithMeta = {
-              ...m,
-              senderPublicKey: m.senderPublicKey || memberMeta?.e2eePublicKey || memberMeta?.publicKey,
-              clusterId
-            };
-            const result = await decryptClusterMessageEnvelope(
-              msgWithMeta,
-              currentLocalKeys,
-              user?.agentId,
-              userPassword,
-              activeContextCredentials,
-              currentMembers,
-              currentClusterMeta
-            );
-            return {
-              id: m.id || m.messageId,
-              clusterId: m.clusterId || clusterId,
-              senderAgentId: m.senderAgentId,
-              senderAgentName: memberMeta?.agentName || memberMeta?.name || m.senderAgentName || m.senderAgentId,
-              senderAgentAvatar: memberMeta?.avatar || memberMeta?.agentAvatar || m.senderAgentAvatar,
-              content: result.text,
-              ciphertext: m.ciphertext,
-              nonce: m.nonce,
-              sequence: m.sequence,
-              isDecrypted: result.isDecrypted,
-              decryptionStatus: result.decryptionStatus,
-              createdAt: m.createdAt
-            };
-          })
-        );
-        setMessages(decryptedList);
+          const decryptedList: DecryptedClusterMessage[] = await Promise.all(
+            rawList.map(async (m: any) => {
+              const memberMeta = currentMembers.find((mem: any) => mem.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
+              const msgWithMeta = {
+                ...m,
+                senderPublicKey: m.senderPublicKey || memberMeta?.e2eePublicKey || memberMeta?.publicKey,
+                clusterId
+              };
+              const result = await decryptClusterMessageEnvelope(
+                msgWithMeta,
+                currentLocalKeys,
+                user?.agentId,
+                userPassword,
+                activeContextCredentials,
+                currentMembers,
+                currentClusterMeta
+              );
+              return {
+                id: m.id || m.messageId,
+                clusterId: m.clusterId || clusterId,
+                senderAgentId: m.senderAgentId,
+                senderAgentName: memberMeta?.agentName || memberMeta?.name || m.senderAgentName || m.senderAgentId,
+                senderAgentAvatar: memberMeta?.avatar || memberMeta?.agentAvatar || m.senderAgentAvatar,
+                content: result.text,
+                ciphertext: m.ciphertext,
+                nonce: m.nonce,
+                sequence: m.sequence,
+                isDecrypted: result.isDecrypted,
+                decryptionStatus: result.decryptionStatus,
+                createdAt: m.createdAt
+              };
+            })
+          );
+          setMessages(decryptedList);
+        }
+      } catch (msgErr) {
+        console.warn('Could not fetch cluster messages:', msgErr);
       }
     } catch (err) {
-      console.error('Error loading cluster details:', err);
+      console.error('Error in fetchDetails:', err);
     } finally {
       if (!isSilent) setIsLoading(false);
     }
-  }, [clusterId, user?.agentId, userPassword, activeContextCredentials]);
+  }, [clusterId, user?.agentId, user?.name, user?.avatar, user?.e2eePublicKey, userPassword, activeContextCredentials, activeCluster]);
 
   useEffect(() => {
     fetchDetails();
@@ -307,33 +392,31 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
         <div className="px-4 py-3 border-b-2 border-[#141414] bg-[#E4E3E0] shrink-0" id="cluster-modal-header">
           <div className="flex items-center justify-between">
             <div 
-              className="flex items-center gap-2 cursor-pointer group/modal-header"
+              className="flex items-center gap-2 cursor-pointer group/modal-header hover:opacity-85 transition-opacity"
               onClick={() => {
-                if (onOpenClusterMembers && activeCluster) {
-                  onOpenClusterMembers(activeCluster);
+                if (onOpenClusterMembers) {
+                  onOpenClusterMembers(activeCluster || { 
+                    id: clusterId, 
+                    name: clusterName, 
+                    symbol: getClusterSymbol(clusterId),
+                    description: activeCluster?.description || 'AI agent cluster',
+                    ownerAgentId: activeCluster?.ownerAgentId || user?.agentId || 'AMR-TW43-24WU'
+                  });
                 }
               }}
+              title="Click to view Cluster Members"
             >
               <div className="w-8 h-8 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs flex items-center justify-center font-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0 group-hover/modal-header:bg-white group-hover/modal-header:text-[#141414] transition-all">
                 {getClusterSymbol(clusterId)}
               </div>
               <div className="flex flex-col text-left">
-                <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] group-hover/modal-header:underline">
-                  {clusterName}
+                <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] group-hover/modal-header:underline flex items-center gap-2">
+                  <span>{clusterName}</span>
                 </h3>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsSpogModalOpen(true)}
-                className="border-2 border-[#141414] px-2.5 py-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer font-mono text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1.5"
-                title="Open SPOG Slave Selection Protocol"
-              >
-                <span className="bg-[#141414] text-white px-1 text-[8px] font-black">SPOG</span>
-                <span>{members.length} MEMBERS</span>
-              </button>
               <button
                 onClick={onClose}
                 className="border-2 border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"

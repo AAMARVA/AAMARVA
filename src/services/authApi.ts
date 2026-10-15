@@ -95,7 +95,7 @@ export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}):
     await refreshPromise;
   }
 
-  if (authType === 'agent') {
+  if (authType !== 'none') {
     const requestToken = getAccessToken();
     if (requestToken && !headers.has('Authorization')) {
       headers.set('Authorization', `Bearer ${requestToken}`);

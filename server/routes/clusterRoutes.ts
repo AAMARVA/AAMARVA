@@ -68,17 +68,44 @@ function isValidBase64String(str: string): boolean {
 }
 
 // Helper to check if a user is a member of a cluster
-async function isClusterMember(supabase: any, clusterId: string, userId: string): Promise<boolean> {
+async function isClusterMember(supabase: any, clusterId: string, userId: string, agentId?: string): Promise<boolean> {
   const tables = await getClusterTables(supabase);
-  const { data, error } = await supabase
-    .from(tables.members)
-    .select('id, status')
-    .eq('clusterId', clusterId)
-    .eq('userId', userId)
+  
+  // 1. Check if owner of the cluster
+  const { data: cluster } = await supabase
+    .from(tables.clusters)
+    .select('ownerUserId, ownerAgentId, status')
+    .eq('id', clusterId)
     .maybeSingle();
-  if (!data || error) return false;
-  if (data.status !== 'active') return false;
-  return true;
+
+  if (cluster && cluster.status !== 'dissolved') {
+    if (cluster.ownerUserId && cluster.ownerUserId === userId) return true;
+    if (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase() === agentId.toLowerCase()) return true;
+  }
+
+  // 2. Check by userId
+  if (userId) {
+    const { data: byUser } = await supabase
+      .from(tables.members)
+      .select('id, status')
+      .eq('clusterId', clusterId)
+      .eq('userId', userId)
+      .maybeSingle();
+    if (byUser && byUser.status !== 'dissolved') return true;
+  }
+
+  // 3. Check by agentId
+  if (agentId) {
+    const { data: byAgent } = await supabase
+      .from(tables.members)
+      .select('id, status')
+      .eq('clusterId', clusterId)
+      .eq('agentId', agentId)
+      .maybeSingle();
+    if (byAgent && byAgent.status !== 'dissolved') return true;
+  }
+
+  return false;
 }
 
 // Helper to check if a user is an admin or owner of a cluster
@@ -310,15 +337,30 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
                 (mUserId ? userMap.get(String(mUserId).toLowerCase()) : null);
       
       const realName = (u?.name && String(u.name).trim()) || '';
+      const isSlave = Boolean(
+        u?.account_type === 'slave' ||
+        u?.role === 'slave' ||
+        u?.is_slave === true ||
+        (u?.master_id && !u?.is_master_primary) ||
+        m.role === 'slave' ||
+        m.is_slave === true ||
+        (mAgentId && mAgentId.includes('+AMR-'))
+      );
+
       return {
         id: m.id,
         agentId: mAgentId || u?.agentId || u?.agent_id,
         agentName: realName || mAgentId || 'Cluster Member',
+        name: realName || mAgentId || 'Cluster Member',
         avatar: u?.avatar || '🤖',
         role: m.role || 'member',
+        membershipRole: m.role || 'member',
         status: m.status || 'active',
         emailVerified: Boolean(u?.emailVerified),
         e2eePublicKey: u?.e2eePublicKey || null,
+        publicKey: u?.e2eePublicKey || null,
+        keyStatus: u?.e2eePublicKey ? 'available' : 'missing',
+        isSlave,
         e2eeKeyEpoch: u?.e2eeKeyEpoch || 1,
         createdAt: m.createdAt || m.created_at
       };
@@ -332,15 +374,23 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
                         (oUid ? userMap.get(String(oUid).toLowerCase()) : null);
       const adminAgentId = cluster.ownerAgentId || 'AMR-TW43-24WU';
       const adminName = (ownerInfo?.name && String(ownerInfo.name).trim()) || adminAgentId;
+      const adminPubKey = ownerInfo?.e2eePublicKey || null;
       
       membersList = [
         {
           id: `admin-${cluster.id}`,
           agentId: adminAgentId,
           agentName: adminName,
+          name: adminName,
           avatar: ownerInfo?.avatar || '🤖',
           role: 'admin',
+          membershipRole: 'admin',
+          status: 'active',
           emailVerified: Boolean(ownerInfo?.emailVerified),
+          e2eePublicKey: adminPubKey,
+          publicKey: adminPubKey,
+          keyStatus: adminPubKey ? 'available' : 'missing',
+          isSlave: false,
           createdAt: cluster.createdAt
         }
       ];
@@ -792,7 +842,7 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
     }
 
     // 2. Enforce active membership check for caller
-    const isMember = await isClusterMember(supabase, clusterId, userId);
+    const isMember = await isClusterMember(supabase, clusterId, userId, req.user?.agentId);
     if (!isMember) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: You must be an active member of this cluster to view the cryptographic member directory.' } });
     }
@@ -906,6 +956,35 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
         isSlave
       };
     });
+
+    // Ensure cluster owner/admin is included in membersList
+    const ownerAgentId = cluster.ownerAgentId;
+    const hasOwner = membersList.some((mem: any) => 
+      ownerAgentId && mem.agentId?.toLowerCase() === ownerAgentId.toLowerCase()
+    );
+    if (!hasOwner && (cluster.ownerAgentId || cluster.ownerUserId)) {
+      const oAid = cluster.ownerAgentId;
+      const oUid = cluster.ownerUserId;
+      const ownerInfo = (oAid ? userMap.get(String(oAid).toLowerCase()) : null) || 
+                        (oUid ? userMap.get(String(oUid).toLowerCase()) : null);
+      const adminAgentId = cluster.ownerAgentId || 'AMR-TW43-24WU';
+      const adminName = (ownerInfo?.name && String(ownerInfo.name).trim()) || adminAgentId;
+      const ownerPubKey = ownerInfo?.e2eePublicKey || null;
+      
+      membersList.unshift({
+        agentId: adminAgentId,
+        name: adminName,
+        avatar: ownerInfo?.avatar || '🤖',
+        bio: ownerInfo?.bio || null,
+        publicKey: ownerPubKey,
+        keyId: ownerInfo?.e2eePublicKeyFingerprint || (ownerPubKey ? `key_${adminAgentId}` : null),
+        keyVersion: ownerInfo?.e2eeKeyEpoch || membershipVersion,
+        keyStatus: (ownerPubKey && typeof ownerPubKey === 'string' && ownerPubKey.trim().length > 0) ? 'available' : 'missing',
+        membershipRole: 'owner',
+        status: 'active',
+        isSlave: false
+      });
+    }
 
     res.json({
       success: true,

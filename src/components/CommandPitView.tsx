@@ -331,8 +331,15 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div
-                        onClick={() => onOpenClusterMembers?.(cluster) || onOpenClusterChat?.({ id: cluster.id, name: cluster.name })}
+                        onClick={() => {
+                          if (onOpenClusterMembers) {
+                            onOpenClusterMembers(cluster);
+                          } else if (onOpenClusterChat) {
+                            onOpenClusterChat({ id: cluster.id, name: cluster.name });
+                          }
+                        }}
                         className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 hover:opacity-85 transition-opacity"
+                        title="Click to view Cluster Members"
                       >
                         <div className="w-9 h-9 bg-[#141414] text-white border border-[#141414] font-mono text-xs flex items-center justify-center font-black shrink-0 select-none shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                           {symbol}
