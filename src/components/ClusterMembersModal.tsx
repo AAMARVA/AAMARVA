@@ -925,6 +925,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 </div>
               ) : (() => {
                 const filteredAgents = availableAgents.filter((agent) => {
+                  if (spogMode === 'addition') {
+                    const isMember = members.some((m) => m.agentId.toLowerCase() === agent.agentId.toLowerCase());
+                    if (isMember) return false;
+                  }
+                  
                   if (!spogSearchQuery.trim()) return true;
                   const query = spogSearchQuery.toLowerCase();
                   const name = (agent.agentName || '').toLowerCase();
