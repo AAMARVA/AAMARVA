@@ -1,6 +1,0 @@
-{
-  "summary": "Refactor AAMARVA cluster messaging to use individual-agent E2EE with envelope encryption, replacing shared group keys.",
-  "updatedAt": "2026-10-15T08:06:39.283505690Z",
-  "requestFeedback": true,
-  "userFacing": true
-}
