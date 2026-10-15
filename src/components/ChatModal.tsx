@@ -157,45 +157,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     if (!targetAgentId) return false;
     setIsActivatingPeer(true);
     try {
-      const { generateAgentCryptoIdentity, saveLocalKeyPair } = await import('../lib/e2ee.js');
-      const identity = await generateAgentCryptoIdentity(targetAgentId);
-      await saveLocalKeyPair(
-        targetAgentId,
-        identity.e2eePublicKey,
-        identity.e2eePrivateKey,
-        identity.fingerprint,
-        identity.identityPublicKey,
-        identity.identityPrivateKey,
-        identity.signature,
-        identity.keyEpoch || 1,
-        identity.transientPrivateKeyJwk,
-        identity.transientIdentityPrivateKeyJwk
-      );
-      const res = await apiFetch('/api/auth/master/initialize-slave-e2ee', {
-        method: 'POST',
-        authType: 'human',
-        body: JSON.stringify({
-          slaveAgentId: targetAgentId,
-          publicKey: identity.e2eePublicKey,
-          fingerprint: identity.fingerprint,
-          identityKey: identity.identityPublicKey,
-          signature: identity.signature,
-          keyEpoch: identity.keyEpoch || 1
-        })
-      });
-      if (res?.success) {
-        setPeerKey(identity.e2eePublicKey);
-        await fetchAndDecryptMessages(identity.e2eePublicKey);
-        return true;
-      } else if (res?.error?.message && res.error.message.includes('E2EE_EPOCH_ALREADY_EXISTS')) {
-        await fetchAndDecryptMessages();
+      const res = await apiFetch(`/api/agents/${targetAgentId}/e2ee`, { authType: sessionAuthType });
+      const pubKey = res?.data?.publicKey || res?.publicKey;
+      if (pubKey) {
+        setPeerKey(pubKey);
+        await fetchAndDecryptMessages(pubKey);
         return true;
       } else {
-        alert(res?.error?.message || 'Failed to initialize agent identity.');
+        alert('Slave agent manages its own cryptographic identity via its own runtime. Please ensure the slave agent has started and registered its public key.');
         return false;
       }
     } catch (err: any) {
-      alert(`Failed to activate agent: ${err?.message || err}`);
+      alert(`Failed to fetch agent public key: ${err?.message || err}`);
       return false;
     } finally {
       if (isMountedRef.current) {

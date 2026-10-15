@@ -518,6 +518,24 @@ export async function sendPrivateMessageApi(
   // 1. Key retrieval: Sender's existing local private key
   let localKeys = await getLocalKeyPair(senderAgentId, undefined, password);
   if (!localKeys?.privateKey) {
+    const isSlave = Boolean(
+      resolvedAuthType === 'agent' ||
+      senderAgentId.toUpperCase().includes('SLAVE') ||
+      senderAgentId.toUpperCase().includes('+AMR-') ||
+      (typeof localStorage !== 'undefined' && (
+        localStorage.getItem('aamarva_active_account_type') === 'slave' ||
+        localStorage.getItem('aamarva_account_type') === 'slave' ||
+        JSON.parse(localStorage.getItem('aamarva_user') || '{}').account_type === 'slave' ||
+        JSON.parse(localStorage.getItem('aamarva_active_account') || '{}').account_type === 'slave'
+      ))
+    );
+
+    if (isSlave) {
+      throw new Error(
+        `E2EE Error: Missing local private key for slave agent ${senderAgentId}. Slave identities must be generated and managed by their own agent runtime, not the browser.`
+      );
+    }
+
     try {
       const { generateAgentCryptoIdentity, saveLocalKeyPair } = await import('../lib/e2ee.js');
       const identity = await generateAgentCryptoIdentity(senderAgentId);

@@ -146,6 +146,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         let keys = await getLocalKeyPair(normalizedAgentId);
         const isCompleteKey = !!(keys && keys.publicKey && keys.privateKey && keys.identityPublicKey && keys.signature);
 
+        // Check if current user or target is a slave account
+        const currentUserOrActive = user || activeAccount;
+        const isSlave = Boolean(
+          currentUserOrActive?.account_type === 'slave' ||
+          currentUserOrActive?.role === 'slave' ||
+          currentUserOrActive?.is_slave === true ||
+          currentUserOrActive?.isSlave === true ||
+          (currentUserOrActive?.master_id && !currentUserOrActive?.is_master_primary) ||
+          currentUserOrActive?.type === 'agent' ||
+          (currentUserOrActive?.email && currentUserOrActive?.email.includes('+AMR-')) ||
+          normalizedAgentId.includes('SLAVE') ||
+          (normalizedAgentId.startsWith('AMR-') && currentUserOrActive?.master_id)
+        );
+
+        if (isSlave) {
+          // Slave accounts manage their own cryptographic identity via their own agent runtime.
+          // Master browser must not generate private keys or register keys for slave accounts.
+          setE2EEStatus('ready');
+          return true;
+        }
+
         if (!isCompleteKey && !forceRotate) {
           setE2EEStatus('recovery_in_progress');
 
@@ -573,7 +594,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const agentId = resData.agentId || user?.agentId || '';
 
     // Automatic E2EE Bootstrap
-    if (agentId) {
+    const isSlave = 
+      user?.account_type === 'slave' || 
+      user?.isSlave === true || 
+      resData.account_type === 'slave' ||
+      resData.data?.account_type === 'slave';
+
+    if (agentId && !isSlave) {
       try {
         const { identity } = await bootstrapAgentIdentity(agentId, password);
         await apiFetch('/api/agents/me/e2ee', {
@@ -586,6 +613,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Automatic E2EE bootstrap failed during registration:', e);
         setE2EEStatus('failed');
       }
+    } else if (isSlave) {
+      console.log('Slave account detected: skipping automatic browser-side E2EE bootstrap.');
+      setE2EEStatus('ready'); // Or whatever status is appropriate
     }
 
     return { 

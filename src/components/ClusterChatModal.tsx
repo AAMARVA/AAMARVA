@@ -459,12 +459,11 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             <button
               type="button"
               onClick={() => setShowRecipientModal(true)}
-              className="text-[10px] font-mono font-bold uppercase tracking-wider bg-white border border-[#141414] px-2.5 py-1 hover:bg-[#141414] hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+              className="text-[10px] font-mono font-bold uppercase tracking-wider bg-white border border-[#141414] px-2.5 py-1 hover:bg-[#141414] hover:text-white transition-colors cursor-pointer flex items-center shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
             >
-              <span>👥</span>
               <span>
                 {selectedRecipientIds.size === 0 || selectedRecipientIds.size === members.length
-                  ? `Recipients: All Members (${members.length || 'All'})`
+                  ? `Recipients: All Members`
                   : `Recipients: ${selectedRecipientIds.size} of ${members.length} selected`}
               </span>
             </button>
@@ -493,13 +492,29 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               <p className="font-mono text-[11px] text-[#141414]/70 pb-2">
                 Choose which cluster members receive the encrypted message envelope. Only selected members will be able to decrypt and see this message.
               </p>
-              <div className="flex gap-2 py-2">
+              <div className="flex gap-2 py-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setSelectedRecipientIds(new Set())}
                   className="text-[10px] font-mono font-bold uppercase border border-[#141414] px-2 py-1 bg-[#E4E3E0] hover:bg-[#141414] hover:text-white cursor-pointer"
                 >
                   Select All (Default)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const slaveSet = new Set<string>();
+                    if (user?.agentId) slaveSet.add(user.agentId);
+                    members.forEach((m: any) => {
+                      if (m.isSlave || m.account_type === 'slave' || m.role === 'slave' || m.is_slave === true) {
+                        slaveSet.add(m.agentId);
+                      }
+                    });
+                    setSelectedRecipientIds(slaveSet);
+                  }}
+                  className="text-[10px] font-mono font-bold uppercase border border-[#141414] px-2 py-1 bg-white hover:bg-[#141414] hover:text-white cursor-pointer"
+                >
+                  Select Slaves Only
                 </button>
                 <button
                   type="button"

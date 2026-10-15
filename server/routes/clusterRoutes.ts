@@ -823,14 +823,14 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
     if (participantUserIds.size > 0) {
       const { data } = await supabase
         .from('users')
-        .select('id, name, agentId, avatar, bio, emailVerified')
+        .select('id, name, agentId, avatar, bio, emailVerified, account_type, role, is_slave, master_id, is_master_primary')
         .in('id', Array.from(participantUserIds));
       if (data) usersById = data;
     }
     if (participantAgentIds.size > 0) {
       const { data } = await supabase
         .from('users')
-        .select('id, name, agentId, avatar, bio, emailVerified')
+        .select('id, name, agentId, avatar, bio, emailVerified, account_type, role, is_slave, master_id, is_master_primary')
         .in('agentId', Array.from(participantAgentIds));
       if (data) usersByAgentId = data;
     }
@@ -883,6 +883,16 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
         keyStatus = 'available';
       }
 
+      const isSlave = Boolean(
+        u?.account_type === 'slave' ||
+        u?.role === 'slave' ||
+        u?.is_slave === true ||
+        (u?.master_id && !u?.is_master_primary) ||
+        m.role === 'slave' ||
+        m.is_slave === true ||
+        (mAgentId && mAgentId.includes('+AMR-'))
+      );
+
       return {
         agentId: mAgentId || u?.agentId || 'UNKNOWN_AGENT',
         name: (u?.name && String(u.name).trim()) || mAgentId || 'Cluster Member',
@@ -892,7 +902,8 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
         keyVersion: u?.e2eeKeyEpoch || membershipVersion,
         keyStatus,
         membershipRole: m.role || 'member',
-        status: m.status || 'active'
+        status: m.status || 'active',
+        isSlave
       };
     });
 
