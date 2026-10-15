@@ -703,14 +703,17 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                       type="button"
                       onClick={() => {
                         const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
-                        if (clusterId) fetchClusterMembers(clusterId);
+                        if (clusterId) {
+                          fetchClusterMembers(clusterId);
+                        }
                         fetchAvailableAgents();
-                        setSpogMode('selection');
+                        setSpogMode('addition');
                         setIsSpogModalOpen(true);
                       }}
-                      className="px-2.5 py-1 bg-[#141414] text-white font-mono text-[10px] font-black uppercase hover:bg-black transition-colors cursor-pointer border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
+                      className="px-2.5 py-1 bg-[#141414] text-white font-mono text-[10px] font-black uppercase tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] hover:bg-black transition-colors cursor-pointer flex items-center gap-1 active:translate-x-0.5 active:translate-y-0.5"
                     >
-                      <span>SPOG Selection</span>
+                      <Plus className="w-3 h-3" />
+                      Add
                     </button>
                   </div>
 
