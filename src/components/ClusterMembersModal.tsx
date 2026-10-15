@@ -693,6 +693,95 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   </div>
                 </div>
 
+                {/* 3. Members Directory */}
+                <div className="space-y-2 pt-3 border-t-2 border-[#141414]/20">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414]">
+                      Members Directory ({members.filter(m => m.status !== 'dissolved').length})
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+                        if (clusterId) fetchClusterMembers(clusterId);
+                        fetchAvailableAgents();
+                        setSpogMode('selection');
+                        setIsSpogModalOpen(true);
+                      }}
+                      className="px-2.5 py-1 bg-[#141414] text-white font-mono text-[10px] font-black uppercase hover:bg-black transition-colors cursor-pointer border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
+                    >
+                      <span>SPOG Selection</span>
+                    </button>
+                  </div>
+
+                  <div className="max-h-56 overflow-y-auto custom-scrollbar border-2 border-[#141414] p-2 bg-[#F5F4F0] space-y-1.5">
+                    {members.filter(m => m.status !== 'dissolved').length > 0 ? (
+                      members.filter(m => m.status !== 'dissolved').map((member) => {
+                        const ownerAid = (clusterInfo?.ownerAgentId || cluster?.ownerAgentId || '').toLowerCase().replace(/^@+/, '');
+                        const isOwner = (member.agentId || '').toLowerCase().replace(/^@+/, '') === ownerAid || member.role === 'owner' || member.role === 'admin';
+                        return (
+                          <div
+                            key={member.id || member.agentId}
+                            className="flex items-center justify-between gap-2 p-2 bg-white border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <AgentAvatar
+                                name={member.agentName}
+                                avatar={member.avatar}
+                                id={member.agentId}
+                                className="w-7 h-7 border border-[#141414] shrink-0"
+                              />
+                              <div className="flex flex-col min-w-0">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="font-mono text-xs font-black uppercase truncate text-[#141414]">
+                                    {member.agentName}
+                                  </span>
+                                  {isOwner && (
+                                    <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-[#141414] text-white shrink-0">
+                                      OWNER/ADMIN
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="font-mono text-[9px] text-[#141414]/70 truncate">
+                                  @{member.agentId}
+                                </span>
+                              </div>
+                            </div>
+
+                            {!isOwner && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const ownerAid = (clusterInfo?.ownerAgentId || cluster?.ownerAgentId || '').toLowerCase().replace(/^@+/, '');
+                                  const cleanTarget = (member.agentId || '').toLowerCase().replace(/^@+/, '');
+                                  if (cleanTarget === ownerAid) return;
+                                  const currentMemberIds = members
+                                    .filter((m) => m.status !== 'dissolved')
+                                    .map((m) => m.agentId)
+                                    .filter(Boolean);
+                                  const remainingMemberIds = currentMemberIds.filter((aid) => {
+                                    const clean = aid.toLowerCase().replace(/^@+/, '');
+                                    return clean !== cleanTarget;
+                                  });
+                                  persistMemberChange(remainingMemberIds);
+                                }}
+                                className="px-2 py-1 bg-red-600 text-white font-mono text-[9px] font-black uppercase border border-red-700 hover:bg-red-700 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 shrink-0 flex items-center gap-1 cursor-pointer"
+                                title={`Remove @${member.agentId} from cluster`}
+                              >
+                                <X className="w-2.5 h-2.5" />
+                                <span>Remove</span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="py-4 text-center font-mono text-xs text-[#141414]/60">
+                        No members found in cluster.
+                      </div>
+                    )}
+                  </div>
+                </div>
 
               </div>
             </div>
