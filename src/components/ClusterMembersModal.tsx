@@ -388,6 +388,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
       : selectedAgentIds.filter((id) => id.toLowerCase() !== agentToRemove.agentId.toLowerCase());
 
     const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+    if (!clusterId) {
+      setEditError('Cluster ID not found.');
+      setAgentToRemove(null);
+      return;
+    }
     
     // Persist immediately
     try {
