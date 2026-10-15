@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, ArrowLeft, AlertCircle, Edit3, Check, Users, Plus } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
 import { VerifiedBadge } from './VerifiedBadge';
@@ -65,6 +65,10 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
   // Edit cluster state (admin or master only)
   const [isEditing, setIsEditing] = useState(false);
+  const isEditingRef = useRef(isEditing);
+  useEffect(() => {
+    isEditingRef.current = isEditing;
+  }, [isEditing]);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -270,7 +274,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
             .filter((m) => m.status !== 'dissolved')
             .map((m) => m.agentId)
             .filter(Boolean);
-          setSelectedAgentIds(currentMemberIds);
+          if (!isEditingRef.current) setSelectedAgentIds(currentMemberIds);
         } else {
           const fallbackMembers = [
             {
@@ -283,7 +287,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
             },
           ];
           setMembers(fallbackMembers);
-          setSelectedAgentIds([ownerAgentId]);
+          if (!isEditingRef.current) setSelectedAgentIds([ownerAgentId]);
         }
       })
       .catch(() => {
@@ -299,7 +303,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
           },
         ];
         setMembers(fallbackMembers);
-        setSelectedAgentIds([ownerAgentId]);
+        if (!isEditingRef.current) setSelectedAgentIds([ownerAgentId]);
       })
       .finally(() => {
         if (isMounted) setLoading(false);
