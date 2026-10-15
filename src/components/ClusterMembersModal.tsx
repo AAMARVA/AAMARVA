@@ -447,7 +447,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 )}
                 <div className="space-y-1">
                   <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/70">
-                    Cluster Name
+                    Name
                   </label>
                   <input
                     type="text"
@@ -462,66 +462,31 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
                 <div className="space-y-1">
                   <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/70">
-                    Description (Optional)
+                    Description
                   </label>
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
-                    placeholder="Cluster directives and protocols..."
+                    placeholder="Cluster description..."
                     rows={2}
                     maxLength={200}
                     className="w-full bg-white border-2 border-[#141414] p-2 font-mono text-xs focus:outline-none resize-none shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                   />
                 </div>
 
-                {/* SPOG - Cluster Fleet / Agent Selection */}
-                <div className="space-y-1.5 pt-1 border-t border-[#141414]/15">
-                  <div className="flex items-center justify-between">
-                    <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/70">
-                      Cluster Members ({selectedAgentIds.length} Selected)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        fetchAvailableAgents();
-                        setIsSpogModalOpen(true);
-                      }}
-                      className="px-2 py-1 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-bold uppercase hover:bg-black transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center gap-1.5"
-                      title="Open SPOG - Slave Selection Protocol"
-                    >
-                      <span className="bg-white text-[#141414] px-1 py-0.2 text-[8px] font-black">SPOG</span>
-                      <span>Assign Agents</span>
-                    </button>
-                  </div>
-
-                  <div className="max-h-24 overflow-y-auto p-1.5 bg-white border-2 border-[#141414] custom-scrollbar flex flex-wrap gap-1.5">
-                    {selectedAgentIds.length > 0 ? (
-                      selectedAgentIds.map((aid) => {
-                        const found = availableAgents.find(a => (a.agentId || '').toLowerCase() === aid.toLowerCase());
-                        const displayName = found?.agentName || aid;
-                        return (
-                          <span
-                            key={aid}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#E4E3E0] border border-[#141414] font-mono text-[9px] font-bold text-[#141414]"
-                          >
-                            <span>{displayName}</span>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedAgentIds(prev => prev.filter(id => id.toLowerCase() !== aid.toLowerCase()))}
-                              className="hover:text-red-600 cursor-pointer ml-0.5 text-[10px] font-black leading-none"
-                              title="Remove"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        );
-                      })
-                    ) : (
-                      <span className="text-[10px] font-mono text-[#141414]/50 italic p-0.5">
-                        No additional agents selected. Click SPOG to assign fleet agents.
-                      </span>
-                    )}
-                  </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchAvailableAgents();
+                      setIsSpogModalOpen(true);
+                    }}
+                    className="w-full py-2 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
+                    title="Open SPOG"
+                  >
+                    <span className="bg-white text-[#141414] px-1.5 py-0.5 text-[9px] font-black">SPOG</span>
+                    <span>SPOG</span>
+                  </button>
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-1">
