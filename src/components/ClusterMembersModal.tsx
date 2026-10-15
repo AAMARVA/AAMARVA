@@ -418,12 +418,81 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     }
   };
 
+  const [isRemoving, setIsRemoving] = useState(false);
+
+  const handleRemoveSelected = async () => {
+    if (selectedAgentIds.length === 0) return;
+
+    const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+    if (!clusterId) {
+      setEditError('Cluster ID not found.');
+      return;
+    }
+
+    setIsRemoving(true);
+    setEditError(null);
+
+    try {
+      const ownerAid = (clusterInfo?.ownerAgentId || cluster?.ownerAgentId || '').toLowerCase().replace(/^@+/, '');
+      const toRemoveSet = new Set(selectedAgentIds.map((id) => id.toLowerCase().replace(/^@+/, '')));
+
+      // Get current cluster members from members state
+      const currentMemberIds = members
+        .filter((m) => m.status !== 'dissolved')
+        .map((m) => m.agentId)
+        .filter(Boolean);
+
+      // Remaining members are current members except the selected ones (never remove owner)
+      const remainingMemberIds = currentMemberIds.filter((aid) => {
+        const clean = aid.toLowerCase().replace(/^@+/, '');
+        if (clean === ownerAid) return true; // Keep owner
+        return !toRemoveSet.has(clean);
+      });
+
+      const res = await apiFetch(`/api/clusters/${clusterId}`, {
+        authType: 'human',
+        method: 'PATCH',
+        body: JSON.stringify({
+          memberAgentIds: remainingMemberIds,
+        }),
+      });
+
+      if (res?.success) {
+        // Deselect the removed agents
+        setSelectedAgentIds((prev) =>
+          prev.filter((id) => !toRemoveSet.has(id.toLowerCase().replace(/^@+/, '')))
+        );
+        fetchClusterMembers(clusterId);
+      } else {
+        setEditError('Failed to remove selected agents: ' + (res?.message || res?.error?.message || 'Unknown error'));
+      }
+    } catch (err: any) {
+      console.error('Error removing selected agents:', err);
+      setEditError('Failed to remove selected agents: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setIsRemoving(false);
+    }
+  };
+
   const handleConfirmRemove = async () => {
     if (!agentToRemove) return;
 
-    const newAgentIds = agentToRemove.agentId === 'ALL'
-      ? []
-      : selectedAgentIds.filter((id) => id.toLowerCase() !== agentToRemove.agentId.toLowerCase());
+    const ownerAid = (clusterInfo?.ownerAgentId || cluster?.ownerAgentId || '').toLowerCase().replace(/^@+/, '');
+    let newAgentIds: string[] = [];
+
+    if (agentToRemove.agentId === 'ALL') {
+      newAgentIds = selectedAgentIds.filter(
+        (id) => id.toLowerCase().replace(/^@+/, '') === ownerAid
+      );
+      if (newAgentIds.length === 0 && ownerAid) {
+        newAgentIds = [clusterInfo?.ownerAgentId || cluster?.ownerAgentId || ownerAid];
+      }
+    } else {
+      const targetClean = agentToRemove.agentId.toLowerCase().replace(/^@+/, '');
+      newAgentIds = selectedAgentIds.filter(
+        (id) => id.toLowerCase().replace(/^@+/, '') !== targetClean
+      );
+    }
 
     const success = await persistMemberChange(newAgentIds);
     if (success) {
@@ -941,8 +1010,10 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 )}
                 {/* Header Actions */}
                 {(() => {
-                  const isAllSelected = availableAgents.length > 0 && selectedAgentIds.length === availableAgents.length;
-                  const allIds = availableAgents.map((a) => a.agentId).filter(Boolean);
+                  const allIds = availableAgents.map((a) => a.agentId.replace(/^@+/, '')).filter(Boolean);
+                  const isAllSelected = allIds.length > 0 && allIds.every((aid) =>
+                    selectedAgentIds.some((s) => s.toLowerCase().replace(/^@+/, '') === aid.toLowerCase())
+                  );
                   return (
                     <div className="flex items-center gap-1.5 p-1 bg-white border border-[#141414]/20 shadow-inner">
                       <button
@@ -961,12 +1032,13 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                       {spogMode !== 'addition' && (
                         <button
                           type="button"
-                          onClick={() => {
-                            setAgentToRemove({ agentId: 'ALL', agentName: 'All Selected Agents' });
-                          }}
-                          className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white text-red-600 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
+                          disabled={isRemoving || selectedAgentIds.length === 0}
+                          onClick={handleRemoveSelected}
+                          className="text-[9px] font-black uppercase border-2 border-[#141414] px-2.5 py-0.5 bg-white text-red-600 hover:bg-red-600 hover:text-white transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
+                          title={selectedAgentIds.length === 0 ? 'Select agent(s) to remove' : `Remove ${selectedAgentIds.length} selected agent(s) from cluster`}
                         >
-                          Remove
+                          <X className="w-2.5 h-2.5" />
+                          <span>{isRemoving ? 'Removing...' : 'Remove'}</span>
                         </button>
                       )}
                     </div>
@@ -991,16 +1063,21 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   Selected:
                 </span>
                 {selectedAgentIds.map((aid) => {
-                  const agentObj = availableAgents.find((a) => a.agentId.toLowerCase() === aid.toLowerCase());
-                  const displayName = agentObj?.agentName || aid;
+                  const clean = aid.replace(/^@+/, '');
+                  const agentObj = availableAgents.find((a) => a.agentId.toLowerCase().replace(/^@+/, '') === clean.toLowerCase());
+                  const displayName = agentObj?.agentName || clean;
                   return (
                     <span
                       key={aid}
-                      onClick={() => setAgentToRemove({ agentId: aid, agentName: displayName })}
+                      onClick={() => {
+                        setSelectedAgentIds((prev) =>
+                          prev.filter((id) => id.toLowerCase().replace(/^@+/, '') !== clean.toLowerCase())
+                        );
+                      }}
                       className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#141414] text-white text-[9px] font-bold uppercase shrink-0 border border-[#141414] cursor-pointer hover:bg-red-600 hover:border-red-700 transition-colors"
-                      title="Click to remove"
+                      title={`Click to deselect @${clean}`}
                     >
-                      <span>@{aid}</span>
+                      <span>@{clean}</span>
                       <X className="w-2.5 h-2.5 hover:text-white" />
                     </span>
                   );
@@ -1039,24 +1116,31 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {filteredAgents.map((agent) => {
+                      const cleanAgentId = agent.agentId.replace(/^@+/, '');
                       const isSelected = selectedAgentIds.some(
-                        (id) => id.toLowerCase() === agent.agentId.toLowerCase()
+                        (id) => id.toLowerCase().replace(/^@+/, '') === cleanAgentId.toLowerCase()
+                      );
+                      const isCurrentMember = members.some(
+                        (m) => m.agentId?.toLowerCase().replace(/^@+/, '') === cleanAgentId.toLowerCase() && m.status !== 'dissolved'
                       );
                       return (
                         <div
                           key={agent.agentId}
-                          onClick={async () => {
-                            if (isSelected) {
-                              const newAgentIds = selectedAgentIds.filter((id) => id.toLowerCase() !== agent.agentId.toLowerCase());
-                              setSelectedAgentIds(newAgentIds); // Immediate feedback
-                              await persistMemberChange(newAgentIds);
-                            } else {
-                              const newAgentIds = [...selectedAgentIds, agent.agentId];
-                              setSelectedAgentIds(newAgentIds); // Immediate feedback
-                              await persistMemberChange(newAgentIds);
-                            }
+                          onClick={() => {
+                            setSelectedAgentIds((prev) => {
+                              const exists = prev.some(
+                                (id) => id.toLowerCase().replace(/^@+/, '') === cleanAgentId.toLowerCase()
+                              );
+                              if (exists) {
+                                return prev.filter(
+                                  (id) => id.toLowerCase().replace(/^@+/, '') !== cleanAgentId.toLowerCase()
+                                );
+                              } else {
+                                return [...prev, cleanAgentId];
+                              }
+                            });
                           }}
-                          className={`p-3 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2.5 cursor-pointer transition-all ${
+                          className={`p-3 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2.5 cursor-pointer transition-all select-none ${
                             isSelected
                               ? 'bg-[#141414] text-white ring-2 ring-[#141414]'
                               : 'bg-white text-[#141414] hover:bg-[#E4E3E0]/30'
@@ -1078,25 +1162,24 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                                   isSelected ? 'text-white/80' : 'text-[#141414]/60'
                                 }`}
                               >
-                                @{agent.agentId}
+                                @{cleanAgentId}
                               </span>
                             </div>
                             <div
                               className={`w-4 h-4 border-2 border-[#141414] flex items-center justify-center font-mono text-[10px] shrink-0 ${
-                                isSelected ? 'bg-white text-[#141414]' : 'bg-white'
+                                isSelected ? 'bg-white text-[#141414] font-black' : 'bg-white'
                               }`}
                             >
                               {isSelected ? '✓' : ''}
                             </div>
                           </div>
 
-                          {/* Action area: if selected, display Remove option */}
+                          {/* Action area: badge */}
                           {isSelected ? (
                             <div className="pt-2 border-t border-white/20 flex items-center justify-between">
                               <span className="text-[9px] font-black uppercase text-white/80">
-                                In Cluster
+                                {isCurrentMember ? 'In Cluster' : 'Selected'}
                               </span>
-
                             </div>
                           ) : (
                             <div className="pt-2 border-t border-[#141414]/15 flex items-center justify-between">
@@ -1116,14 +1199,20 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
             {/* Footer */}
             <div className="bg-[#E4E3E0] px-4 py-3 border-t-4 border-[#141414] flex items-center justify-between shrink-0">
               <span className="text-[10px] font-black uppercase text-[#141414]/70">
-                {selectedAgentIds.length} AGENTS SELECTED FOR THIS CLUSTER
+                {selectedAgentIds.length} AGENT{selectedAgentIds.length === 1 ? '' : 'S'} SELECTED
               </span>
               <button
                 type="button"
-                onClick={() => setIsSpogModalOpen(false)}
-                className="px-4 py-1.5 bg-[#141414] text-white border-2 border-[#141414] text-xs font-black uppercase tracking-wider hover:bg-black transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
+                disabled={isSaving}
+                onClick={async () => {
+                  setIsSaving(true);
+                  await persistMemberChange(selectedAgentIds);
+                  setIsSaving(false);
+                  setIsSpogModalOpen(false);
+                }}
+                className="px-4 py-1.5 bg-[#141414] text-white border-2 border-[#141414] text-xs font-black uppercase tracking-wider hover:bg-black transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 disabled:opacity-50"
               >
-                Confirm Selection
+                {isSaving ? 'Saving...' : 'Confirm Selection'}
               </button>
             </div>
           </div>
