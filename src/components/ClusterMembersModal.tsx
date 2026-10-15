@@ -545,13 +545,10 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
                 {/* 3. SPOG */}
                 <div className="space-y-2.5 border-2 border-[#141414] p-3.5 bg-[#E4E3E0]/20 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
-                  <div className="flex items-center justify-between">
+                  <div>
                     <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414]">
                       SPOG to evaluate agents
                     </label>
-                    <span className="font-mono text-[10px] font-bold uppercase text-[#141414]/70">
-                      {selectedAgentIds.length} {selectedAgentIds.length === 1 ? 'Agent' : 'Agents'} Selected
-                    </span>
                   </div>
 
                   <button
@@ -857,11 +854,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setAgentToRemove({ agentId: 'ALL', agentName: 'All Selected Agents' });
+                      setSelectedAgentIds([]);
                     }}
-                    className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white text-red-600 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
+                    className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
                   >
-                    Remove All
+                    Deselect All
                   </button>
                 </div>
               </div>
@@ -934,11 +931,10 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                           key={agent.agentId}
                           onClick={() => {
                             if (isSelected) {
-                              // Clicking selected agent gives option to remove
-                              setAgentToRemove({
-                                agentId: agent.agentId,
-                                agentName: agent.agentName || agent.agentId,
-                              });
+                              // Deselect agent
+                              setSelectedAgentIds((prev) =>
+                                prev.filter((id) => id.toLowerCase() !== agent.agentId.toLowerCase())
+                              );
                             } else {
                               // Select agent into cluster
                               setSelectedAgentIds((prev) => [...prev, agent.agentId]);
