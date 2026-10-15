@@ -547,7 +547,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 <div className="space-y-2.5 border-2 border-[#141414] p-3.5 bg-[#E4E3E0]/20 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
                   <div className="flex items-center justify-between">
                     <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414]">
-                      SPOG
+                      SPOG to evaluate agents
                     </label>
                     <span className="font-mono text-[10px] font-bold uppercase text-[#141414]/70">
                       {selectedAgentIds.length} {selectedAgentIds.length === 1 ? 'Agent' : 'Agents'} Selected
@@ -569,10 +569,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   {/* Selected Agents in SPOG with option to remove */}
                   {selectedAgentIds.length > 0 ? (
                     <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-[9px] font-black uppercase tracking-wider text-[#141414]/70">
-                          Assigned Agents (Click to remove):
-                        </span>
+                      <div className="flex items-center justify-end">
                         <button
                           type="button"
                           onClick={() => setAgentToRemove({ agentId: 'ALL', agentName: 'All Agents' })}
@@ -634,21 +631,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
                 {/* 4. Option called ADD below SPOG */}
                 <div className="space-y-2 border-2 border-[#141414] p-3.5 bg-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
-                  <div className="flex items-center justify-between">
-                    <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414] flex items-center gap-1.5">
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add</span>
-                    </label>
-                    <span className="font-mono text-[10px] font-bold uppercase text-[#141414]/60">
-                      Add Agents To Cluster
-                    </span>
-                  </div>
-
                   <button
                     type="button"
                     onClick={() => {
                       fetchAvailableAgents();
-                      setIsAddOpen((prev) => !prev);
+                      setIsSpogModalOpen(true);
                     }}
                     className="w-full py-2.5 bg-white text-[#141414] border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
                     title="Add agents to cluster"
@@ -656,94 +643,6 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add</span>
                   </button>
-
-                  {/* Quick Add agents drawer */}
-                  {isAddOpen && (
-                    <div className="space-y-2 pt-2 border-t-2 border-[#141414]">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={addSearchQuery}
-                          onChange={(e) => setAddSearchQuery(e.target.value)}
-                          placeholder="SEARCH AGENT TO ADD..."
-                          className="w-full bg-white border-2 border-[#141414] px-2.5 py-1.5 font-mono text-xs uppercase focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            fetchAvailableAgents();
-                            setIsSpogModalOpen(true);
-                          }}
-                          className="px-2.5 py-1.5 bg-[#141414] text-white font-mono text-[10px] font-black uppercase border-2 border-[#141414] hover:bg-black shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] whitespace-nowrap"
-                          title="Open full SPOG fleet selection"
-                        >
-                          SPOG Fleet
-                        </button>
-                      </div>
-
-                      {/* List of agents available to add */}
-                      <div className="max-h-48 overflow-y-auto custom-scrollbar border-2 border-[#141414] p-1.5 bg-[#F5F4F0] space-y-1">
-                        {(() => {
-                          const query = addSearchQuery.toLowerCase().trim();
-                          const unselected = availableAgents.filter((a) => {
-                            const isAlreadySelected = selectedAgentIds.some(
-                              (id) => id.toLowerCase() === a.agentId.toLowerCase()
-                            );
-                            if (isAlreadySelected) return false;
-                            if (!query) return true;
-                            return (
-                              (a.agentName || '').toLowerCase().includes(query) ||
-                              (a.agentId || '').toLowerCase().includes(query)
-                            );
-                          });
-
-                          if (unselected.length === 0) {
-                            return (
-                              <div className="p-3 text-center font-mono text-[10px] uppercase text-[#141414]/60 bg-white border border-[#141414]/20">
-                                {availableAgents.length === 0
-                                  ? 'No fleet agents available.'
-                                  : 'All available agents are already assigned to this cluster.'}
-                              </div>
-                            );
-                          }
-
-                          return unselected.map((agent) => (
-                            <div
-                              key={agent.agentId}
-                              className="flex items-center justify-between p-2 bg-white border border-[#141414] hover:bg-[#E4E3E0]/40 transition-colors"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <AgentAvatar
-                                  name={agent.agentName}
-                                  avatar={agent.avatar}
-                                  id={agent.agentId}
-                                  className="w-6 h-6 border border-[#141414] shrink-0"
-                                />
-                                <div className="flex flex-col min-w-0">
-                                  <span className="font-mono text-xs font-black uppercase truncate text-[#141414]">
-                                    {agent.agentName}
-                                  </span>
-                                  <span className="font-mono text-[9px] text-[#141414]/60 truncate">
-                                    @{agent.agentId}
-                                  </span>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedAgentIds((prev) => [...prev, agent.agentId]);
-                                }}
-                                className="px-2.5 py-1 bg-[#141414] text-white font-mono text-[9px] font-black uppercase border border-[#141414] hover:bg-black shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 shrink-0 flex items-center gap-1 cursor-pointer"
-                              >
-                                <Plus className="w-2.5 h-2.5" />
-                                <span>Add</span>
-                              </button>
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* Save & Cancel */}
