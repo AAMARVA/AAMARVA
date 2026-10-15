@@ -1118,7 +1118,7 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
     // Sync memberAgentIds if provided
     if (Array.isArray(memberAgentIds)) {
       const cleanAgentIds = memberAgentIds.map(id => String(id).trim()).filter(Boolean);
-      const cleanSet = new Set(cleanAgentIds.map(id => id.toLowerCase()));
+      const cleanSet = new Set(cleanAgentIds.map(id => id.toLowerCase().replace(/^@+/, '')));
 
       // 1. Fetch current members
       const { data: currentMembers } = await supabase
@@ -1149,11 +1149,11 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
       const existingAgentKeys = new Set(
         (currentMembers || [])
           .filter((m: any) => !membersToDelete.includes(m.id))
-          .map((m: any) => (m.agentId || '').toLowerCase())
+          .map((m: any) => (m.agentId || '').toLowerCase().replace(/^@+/, ''))
       );
-      if (agentId) existingAgentKeys.add(agentId.toLowerCase());
+      if (agentId) existingAgentKeys.add(agentId.toLowerCase().replace(/^@+/, ''));
 
-      const toAdd = cleanAgentIds.filter(id => !existingAgentKeys.has(id.toLowerCase()));
+      const toAdd = cleanAgentIds.filter(id => !existingAgentKeys.has(id.toLowerCase().replace(/^@+/, '')));
       if (toAdd.length > 0) {
         const { data: allUsers } = await supabase
           .from('users')

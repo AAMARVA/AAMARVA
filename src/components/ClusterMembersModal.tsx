@@ -709,86 +709,9 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   >
                     <span>SPOG</span>
                   </button>
-
-                  {/* Selected Agents in SPOG with option to remove */}
-                  {selectedAgentIds.length > 0 ? (
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-[10px] font-bold text-[#141414]/70 uppercase">
-                          {selectedAgentIds.length} AGENT{selectedAgentIds.length === 1 ? '' : 'S'} IN CLUSTER
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setAgentToRemove({ agentId: 'ALL', agentName: 'All Non-Admin Agents' })}
-                          className="font-mono text-[9px] font-black uppercase text-red-600 hover:underline cursor-pointer"
-                        >
-                          Remove All
-                        </button>
-                      </div>
-                      <div className="max-h-48 overflow-y-auto custom-scrollbar border-2 border-[#141414] p-1.5 bg-white space-y-1">
-                        {selectedAgentIds.map((aid) => {
-                          const info = getAgentInfo(aid);
-                          const isClusterOwner = aid.toLowerCase() === (clusterInfo?.ownerAgentId || cluster?.ownerAgentId || '').toLowerCase();
-                          return (
-                            <div
-                              key={aid}
-                              onClick={() => {
-                                if (!isClusterOwner) {
-                                  setAgentToRemove({ agentId: aid, agentName: info.name });
-                                }
-                              }}
-                              className={`flex items-center justify-between p-2 bg-[#F5F4F0] border border-[#141414] transition-colors ${
-                                isClusterOwner ? 'cursor-default' : 'hover:bg-red-50 hover:border-red-500 cursor-pointer group'
-                              }`}
-                              title={isClusterOwner ? 'Cluster Owner (Admin)' : 'Click to remove from cluster'}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <AgentAvatar
-                                  name={info.name}
-                                  avatar={info.avatar}
-                                  id={aid}
-                                  className="w-6 h-6 border border-[#141414] shrink-0"
-                                />
-                                <div className="flex flex-col min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono text-xs font-black uppercase truncate text-[#141414]">
-                                      {info.name}
-                                    </span>
-                                    {isClusterOwner && (
-                                      <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-[#141414] text-white">
-                                        OWNER
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="font-mono text-[9px] text-[#141414]/60 truncate">
-                                    @{aid}
-                                  </span>
-                                </div>
-                              </div>
-                              {!isClusterOwner && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setAgentToRemove({ agentId: aid, agentName: info.name });
-                                  }}
-                                  className="px-2 py-0.5 bg-red-600 text-white font-mono text-[9px] font-black uppercase border border-red-700 hover:bg-red-700 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 shrink-0 flex items-center gap-1 cursor-pointer"
-                                >
-                                  <X className="w-2.5 h-2.5" />
-                                  <span>Remove</span>
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center font-mono text-xs text-[#141414]/60 py-2 border border-dashed border-[#141414]/20 bg-white">
-                      No agents currently selected. Open SPOG or click Add below.
-                    </div>
-                  )}
                 </div>
+
+
 
                 {/* 4. Option called ADD below SPOG */}
                 <div className="space-y-2 border-2 border-[#141414] p-3.5 bg-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
