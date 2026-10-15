@@ -844,27 +844,37 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                     Syncing...
                   </span>
                 )}
-                <div className="flex items-center gap-1.5 p-1 bg-white border border-[#141414]/20 shadow-inner">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const allIds = availableAgents.map((a) => a.agentId).filter(Boolean);
-                      setSelectedAgentIds(allIds);
-                    }}
-                    className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedAgentIds([]);
-                    }}
-                    className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
-                  >
-                    Deselect All
-                  </button>
-                </div>
+                {/* Header Actions */}
+                {(() => {
+                  const isAllSelected = availableAgents.length > 0 && selectedAgentIds.length === availableAgents.length;
+                  const allIds = availableAgents.map((a) => a.agentId).filter(Boolean);
+                  return (
+                    <div className="flex items-center gap-1.5 p-1 bg-white border border-[#141414]/20 shadow-inner">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isAllSelected) {
+                            setSelectedAgentIds([]);
+                          } else {
+                            setSelectedAgentIds(allIds);
+                          }
+                        }}
+                        className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
+                      >
+                        {isAllSelected ? 'Deselect All' : 'Select All'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAgentToRemove({ agentId: 'ALL', agentName: 'All Selected Agents' });
+                        }}
+                        className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white text-red-600 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -1004,17 +1014,6 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                               <span className="text-[9px] font-black uppercase text-[#141414]/60">
                                 Available
                               </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedAgentIds((prev) => [...prev, agent.agentId]);
-                                }}
-                                className="px-2 py-0.5 bg-[#141414] text-white font-mono text-[9px] font-black uppercase border border-[#141414] hover:bg-black shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 transition-all cursor-pointer flex items-center gap-1"
-                              >
-                                <Plus className="w-2.5 h-2.5" />
-                                <span>Add</span>
-                              </button>
                             </div>
                           )}
                         </div>
