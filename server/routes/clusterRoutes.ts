@@ -485,26 +485,59 @@ router.post('/clusters', requireHumanSession, async (req: AuthenticatedRequest, 
     if (Array.isArray(memberAgentIds) && memberAgentIds.length > 0) {
       const cleanAgentIds = memberAgentIds.map(id => String(id).trim()).filter(Boolean);
       if (cleanAgentIds.length > 0) {
-        const { data: targetUsers } = await supabase
+        const { data: allUsers } = await supabase
           .from('users')
-          .select('id, agentId')
-          .or(`agentId.in.(${cleanAgentIds.join(',')}),id.in.(${cleanAgentIds.join(',')})`);
+          .select('id, agentId');
 
-        if (targetUsers && targetUsers.length > 0) {
-          const memberInserts = targetUsers
-            .filter((u: any) => u.id !== userId)
-            .map((u: any) => ({
+        const cleanSet = new Set(cleanAgentIds.map(id => id.toLowerCase()));
+        const memberInserts: any[] = [];
+        const seenAgentKeys = new Set<string>();
+
+        if (agentId) {
+          seenAgentKeys.add(agentId.toLowerCase());
+        }
+
+        // Match existing users
+        (allUsers || []).forEach((u: any) => {
+          if (u.id !== userId) {
+            const uAgentLower = (u.agentId || '').toLowerCase();
+            const uIdLower = (u.id || '').toLowerCase();
+            if (cleanSet.has(uAgentLower) || cleanSet.has(uIdLower)) {
+              const effectiveAgentId = u.agentId || u.id;
+              const key = effectiveAgentId.toLowerCase();
+              if (!seenAgentKeys.has(key)) {
+                seenAgentKeys.add(key);
+                memberInserts.push({
+                  id: `member_${crypto.randomUUID()}`,
+                  clusterId,
+                  userId: u.id,
+                  agentId: effectiveAgentId,
+                  role: 'member',
+                  createdAt: now
+                });
+              }
+            }
+          }
+        });
+
+        // Also add any agent IDs that might be slaves not yet in users table
+        cleanAgentIds.forEach((cId) => {
+          const key = cId.toLowerCase();
+          if (!seenAgentKeys.has(key) && key !== agentId?.toLowerCase()) {
+            seenAgentKeys.add(key);
+            memberInserts.push({
               id: `member_${crypto.randomUUID()}`,
               clusterId,
-              userId: u.id,
-              agentId: u.agentId,
+              userId: null,
+              agentId: cId,
               role: 'member',
               createdAt: now
-            }));
-
-          if (memberInserts.length > 0) {
-            await supabase.from(tables.members).insert(memberInserts);
+            });
           }
+        });
+
+        if (memberInserts.length > 0) {
+          await supabase.from(tables.members).insert(memberInserts);
         }
       }
     }
@@ -1004,15 +1037,16 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_update');
     const clusterId = req.params.clusterId as string;
-    const { name, description } = req.body;
+    const { name, description, memberAgentIds } = req.body;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
     const userId = req.user!.id;
+    const agentId = req.user!.agentId;
 
     // Verify ownership
     const { data: cluster } = await supabase
       .from(tables.clusters)
-      .select('ownerUserId, name, status')
+      .select('ownerUserId, ownerAgentId, name, status')
       .eq('id', clusterId)
       .maybeSingle();
 
@@ -1024,7 +1058,11 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
       return res.status(403).json({ success: false, error: { message: 'Forbidden: This cluster has been dissolved and cannot be modified.' } });
     }
 
-    if (cluster.ownerUserId !== userId) {
+    const isOwner = cluster.ownerUserId === userId || 
+                    (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase() === agentId.toLowerCase()) || 
+                    !cluster.ownerUserId;
+
+    if (!isOwner) {
       return res.status(403).json({ success: false, error: { message: 'Forbidden: Only the owner can update this cluster.' } });
     }
 
@@ -1046,6 +1084,78 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
 
     if (updateErr) {
       throw new Error(`Failed to update cluster: ${updateErr.message}`);
+    }
+
+    // Sync memberAgentIds if provided
+    if (Array.isArray(memberAgentIds)) {
+      const cleanAgentIds = memberAgentIds.map(id => String(id).trim()).filter(Boolean);
+      const cleanSet = new Set(cleanAgentIds.map(id => id.toLowerCase()));
+
+      // 1. Fetch current members
+      const { data: currentMembers } = await supabase
+        .from(tables.members)
+        .select('id, agentId, userId, role')
+        .eq('clusterId', clusterId);
+
+      // 2. Remove members who are not owner/admin and not in new memberAgentIds
+      const membersToDelete: string[] = [];
+      (currentMembers || []).forEach((m: any) => {
+        if (m.role !== 'admin' && m.role !== 'owner' && m.userId !== userId && m.agentId?.toLowerCase() !== agentId?.toLowerCase()) {
+          const mKey = (m.agentId || '').toLowerCase();
+          if (!cleanSet.has(mKey)) {
+            membersToDelete.push(m.id);
+          }
+        }
+      });
+
+      if (membersToDelete.length > 0) {
+        await supabase
+          .from(tables.members)
+          .delete()
+          .in('id', membersToDelete);
+      }
+
+      // 3. Find which members need to be added
+      const existingAgentKeys = new Set(
+        (currentMembers || [])
+          .filter((m: any) => !membersToDelete.includes(m.id))
+          .map((m: any) => (m.agentId || '').toLowerCase())
+      );
+      if (agentId) existingAgentKeys.add(agentId.toLowerCase());
+
+      const toAdd = cleanAgentIds.filter(id => !existingAgentKeys.has(id.toLowerCase()));
+      if (toAdd.length > 0) {
+        const { data: allUsers } = await supabase
+          .from('users')
+          .select('id, agentId');
+
+        const now = new Date().toISOString();
+        const memberInserts: any[] = [];
+        const addedKeys = new Set<string>();
+
+        toAdd.forEach((cId) => {
+          const cLower = cId.toLowerCase();
+          if (!addedKeys.has(cLower)) {
+            addedKeys.add(cLower);
+            const matched = (allUsers || []).find((u: any) => 
+              (u.agentId && u.agentId.toLowerCase() === cLower) || 
+              (u.id && u.id.toLowerCase() === cLower)
+            );
+            memberInserts.push({
+              id: `member_${crypto.randomUUID()}`,
+              clusterId,
+              userId: matched ? matched.id : null,
+              agentId: matched?.agentId || cId,
+              role: 'member',
+              createdAt: now
+            });
+          }
+        });
+
+        if (memberInserts.length > 0) {
+          await supabase.from(tables.members).insert(memberInserts);
+        }
+      }
     }
 
     const effectiveClusterName = updates.name || cluster.name || 'Cluster';

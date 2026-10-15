@@ -184,7 +184,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   onOpenAgentProfile,
   onOpenClusterMembers,
 }) => {
-  const { user, userPassword } = useAuth();
+  const { user, activeAccount, userPassword } = useAuth();
   const [messages, setMessages] = useState<DecryptedClusterMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -212,13 +212,28 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   }, [messages]);
 
   const recipientCandidates = React.useMemo(() => {
+    const myAgentId = (user?.agentId || activeAccount?.agentId || '').toLowerCase().trim();
+    const myUserId = (user?.id || activeAccount?.id || '').toLowerCase().trim();
+    const myName = (user?.name || activeAccount?.name || '').toLowerCase().trim();
+    const myEmail = (user?.email || activeAccount?.email || '').toLowerCase().trim();
+
     return members.filter((m: any) => {
-      if (!user?.agentId) return true;
-      const mId = (m.agentId || m.id || '').toLowerCase().trim();
-      const myId = user.agentId.toLowerCase().trim();
-      return mId !== myId;
+      const mAgentId = (m.agentId || '').toLowerCase().trim();
+      const mId = (m.id || '').toLowerCase().trim();
+      const mUserId = (m.userId || m.user_id || '').toLowerCase().trim();
+      const mName = (m.name || m.agentName || '').toLowerCase().trim();
+      const mEmail = (m.email || '').toLowerCase().trim();
+
+      // Strictly exclude user's own account from recipient / slave selection
+      if (myAgentId && (mAgentId === myAgentId || mId === myAgentId)) return false;
+      if (myUserId && (mUserId === myUserId || mId === myUserId)) return false;
+      if (mId.startsWith('admin-') && (mAgentId === myAgentId || !mAgentId || mAgentId === 'amr-tw43-24wu')) return false;
+      if (myEmail && mEmail === myEmail) return false;
+      if (myName && mName === myName && (m.membershipRole === 'admin' || m.membershipRole === 'owner' || m.role === 'admin' || m.role === 'owner')) return false;
+
+      return true;
     });
-  }, [members, user?.agentId]);
+  }, [members, user?.agentId, user?.id, user?.name, user?.email, activeAccount?.agentId, activeAccount?.id, activeAccount?.name, activeAccount?.email]);
 
   const fetchDetails = useCallback(async (isSilent = false) => {
     if (!clusterId) return;
@@ -612,7 +627,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex flex-wrap items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-black uppercase tracking-wider text-[#141414] mr-1">
-                    Slave Selection Protocol
+                    Recipients Selection
                   </span>
                   <div className="flex items-center gap-1.5 p-1 bg-white border border-[#141414]/20 shadow-inner">
                     <button

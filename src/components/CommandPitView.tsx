@@ -3,7 +3,8 @@ import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { getClusterSymbol } from '../lib/clusterSymbols';
-import { Plus, X, Search } from 'lucide-react';
+import { Plus, X, Search, Pencil, MessageSquare } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface CommandPitViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
@@ -18,6 +19,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   onOpenClusterChat,
   onOpenClusterMembers,
 }) => {
+  const { user, activeAccount } = useAuth();
   const [activeConnections, setActiveConnections] = useState<any[]>([]);
   const [clusters, setClusters] = useState<any[]>([]);
   const [isLoadingConnections, setIsLoadingConnections] = useState<boolean>(true);
@@ -27,7 +29,15 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
   
-  const [spogMode, setSpogMode] = useState<'connections' | 'cluster'>('connections');
+  // Edit cluster state
+  const [editingCluster, setEditingCluster] = useState<any | null>(null);
+  const [editClusterName, setEditClusterName] = useState('');
+  const [editClusterDescription, setEditClusterDescription] = useState('');
+  const [editSelectedAgentIds, setEditSelectedAgentIds] = useState<string[]>([]);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editClusterError, setEditClusterError] = useState<string | null>(null);
+
+  const [spogMode, setSpogMode] = useState<'connections' | 'cluster' | 'edit-cluster'>('connections');
   const [selectedSpogAgentIds, setSelectedSpogAgentIds] = useState<string[]>([]);
   const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState('');
