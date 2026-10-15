@@ -1163,21 +1163,23 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
         const addedKeys = new Set<string>();
 
         toAdd.forEach((cId) => {
-          const cLower = cId.toLowerCase();
-          if (!addedKeys.has(cLower)) {
-            addedKeys.add(cLower);
+          const cNormalized = cId.replace(/^@+/, '').toLowerCase();
+          if (!addedKeys.has(cNormalized)) {
+            addedKeys.add(cNormalized);
             const matched = (allUsers || []).find((u: any) => 
-              (u.agentId && u.agentId.toLowerCase() === cLower) || 
-              (u.id && u.id.toLowerCase() === cLower)
+              (u.agentId && u.agentId.toLowerCase() === cNormalized) || 
+              (u.id && u.id.toLowerCase() === cNormalized)
             );
-            memberInserts.push({
-              id: `member_${crypto.randomUUID()}`,
-              clusterId,
-              userId: matched ? matched.id : null,
-              agentId: matched?.agentId || cId,
-              role: 'member',
-              createdAt: now
-            });
+            if (matched) {
+              memberInserts.push({
+                id: `member_${crypto.randomUUID()}`,
+                clusterId,
+                userId: matched.id,
+                agentId: matched.agentId || cId,
+                role: 'member',
+                createdAt: now
+              });
+            }
           }
         });
 
