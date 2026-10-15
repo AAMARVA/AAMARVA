@@ -119,6 +119,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
         }
         if (Array.isArray(res.data.members)) {
           setMembers(res.data.members);
+          const currentMemberIds = res.data.members
+            .filter((m: any) => m.status !== 'dissolved')
+            .map((m: any) => m.agentId)
+            .filter(Boolean);
+          setSelectedAgentIds(currentMemberIds);
         }
       }
     } catch (e) {
@@ -378,14 +383,13 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     setEditName(clusterInfo?.name || cluster?.name || '');
     setEditDescription(clusterInfo?.description || (cluster as any)?.description || '');
     setEditError(null);
-    const currentMemberIds = members
-      .filter((m) => m.status !== 'dissolved')
-      .map((m) => m.agentId)
-      .filter(Boolean);
-    setSelectedAgentIds(currentMemberIds);
+    const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+    if (clusterId) {
+      fetchClusterMembers(clusterId);
+    }
     fetchAvailableAgents();
     setIsEditing(true);
-  }, [clusterInfo, cluster, members, fetchAvailableAgents]);
+  }, [clusterInfo, cluster, fetchClusterMembers, fetchAvailableAgents]);
 
   const persistMemberChange = async (newAgentIds: string[]) => {
     const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
@@ -700,6 +704,8 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+                      if (clusterId) fetchClusterMembers(clusterId);
                       fetchAvailableAgents();
                       setSpogMode('selection');
                       setIsSpogModalOpen(true);
@@ -724,6 +730,8 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+                      if (clusterId) fetchClusterMembers(clusterId);
                       fetchAvailableAgents();
                       setSpogMode('addition');
                       setIsSpogModalOpen(true);
