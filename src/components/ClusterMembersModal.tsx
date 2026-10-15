@@ -99,32 +99,60 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   }, []);
 
   const fetchAvailableAgents = useCallback(async () => {
-    setIsLoadingAgents(true);
+    // Immediately seed with existing cluster members so the UI is responsive without waiting
+    const map = new Map<string, SpogAgent>();
+    members.forEach((m) => {
+      if (m.agentId) {
+        map.set(m.agentId.toUpperCase(), {
+          id: m.id || m.agentId,
+          agentId: m.agentId,
+          agentName: m.agentName || m.agentId,
+          avatar: m.avatar,
+          role: m.role,
+        });
+      }
+    });
+
+    if (map.size > 0) {
+      setAvailableAgents((prev) => {
+        const merged = new Map(map);
+        prev.forEach((p) => {
+          if (!merged.has(p.agentId.toUpperCase())) {
+            merged.set(p.agentId.toUpperCase(), p);
+          }
+        });
+        return Array.from(merged.values());
+      });
+    }
+
+    // Only display full-screen loader if we have zero available agents to display
+    setAvailableAgents((curr) => {
+      if (curr.length === 0 && map.size === 0) {
+        setIsLoadingAgents(true);
+      }
+      return curr;
+    });
+
     try {
-      const [connRes, masterRes] = await Promise.allSettled([
-        apiFetch('/api/connections', { authType: 'human' }),
-        apiFetch('/api/auth/master/accounts', { authType: 'human' }),
+      // Safe fetch helper with 1.5s timeout guarantee to avoid hanging
+      const safeFetchWithTimeout = async (url: string) => {
+        try {
+          const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500));
+          const fetchCall = apiFetch(url, { authType: 'human' }).catch(() => null);
+          return await Promise.race([fetchCall, timeout]);
+        } catch {
+          return null;
+        }
+      };
+
+      const [connRes, masterRes] = await Promise.all([
+        safeFetchWithTimeout('/api/connections'),
+        safeFetchWithTimeout('/api/auth/master/accounts'),
       ]);
 
-      const map = new Map<string, SpogAgent>();
-
-      // 1. Existing members in this cluster
-      members.forEach((m) => {
-        if (m.agentId) {
-          map.set(m.agentId.toUpperCase(), {
-            id: m.id || m.agentId,
-            agentId: m.agentId,
-            agentName: m.agentName || m.agentId,
-            avatar: m.avatar,
-            role: m.role,
-          });
-        }
-      });
-
-      // 2. Active connections
-      if (connRes.status === 'fulfilled' && connRes.value) {
-        const val = connRes.value;
-        const list = val?.data?.connections || val?.data || [];
+      // Active connections
+      if (connRes && (connRes.data?.connections || connRes.data)) {
+        const list = connRes.data?.connections || connRes.data || [];
         if (Array.isArray(list)) {
           list.forEach((c: any) => {
             if (c && c.status !== 'dissolved' && (c.agentId || c.agentName)) {
@@ -144,9 +172,9 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
         }
       }
 
-      // 3. Sub-agents / fleet from master accounts
-      if (masterRes.status === 'fulfilled' && masterRes.value?.success && masterRes.value?.data) {
-        const data = masterRes.value.data;
+      // Sub-agents / fleet from master accounts
+      if (masterRes && masterRes.success && masterRes.data) {
+        const data = masterRes.data;
         const subAgents = data.subAgents || data.slaveAgents || [];
         if (Array.isArray(subAgents)) {
           subAgents.forEach((s: any) => {
@@ -518,9 +546,8 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 {/* 3. SPOG */}
                 <div className="space-y-2.5 border-2 border-[#141414] p-3.5 bg-[#E4E3E0]/20 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
                   <div className="flex items-center justify-between">
-                    <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414] flex items-center gap-1.5">
-                      <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[9px] font-black">SPOG</span>
-                      <span>SPOG</span>
+                    <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414]">
+                      SPOG
                     </label>
                     <span className="font-mono text-[10px] font-bold uppercase text-[#141414]/70">
                       {selectedAgentIds.length} {selectedAgentIds.length === 1 ? 'Agent' : 'Agents'} Selected
@@ -536,7 +563,6 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                     className="w-full py-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
                     title="Open SPOG to select or remove agents"
                   >
-                    <span className="bg-white text-[#141414] px-1.5 py-0.5 text-[9px] font-black">SPOG</span>
                     <span>SPOG</span>
                   </button>
 
@@ -913,6 +939,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 <span className="text-xs font-black uppercase tracking-wider text-[#141414] mr-1">
                   Cluster Member Selection ({selectedAgentIds.length} Selected)
                 </span>
+                {isLoadingAgents && (
+                  <span className="text-[9px] font-black uppercase tracking-wider text-[#141414]/60 animate-pulse px-1.5 py-0.5 bg-[#E4E3E0] border border-[#141414]/20">
+                    Syncing...
+                  </span>
+                )}
                 <div className="flex items-center gap-1.5 p-1 bg-white border border-[#141414]/20 shadow-inner">
                   <button
                     type="button"
@@ -972,7 +1003,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
             {/* Agent Grid */}
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
-              {isLoadingAgents ? (
+              {isLoadingAgents && availableAgents.length === 0 ? (
                 <div className="py-12 flex flex-col items-center justify-center">
                   <BrutalistLoader text="Accessing Fleet Protocols" size="sm" />
                 </div>
