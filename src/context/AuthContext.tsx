@@ -13,6 +13,7 @@ import {
   deleteAccountApi,
   updateProfileApi,
   apiFetch,
+  isSlaveAccount,
 } from '../services/authApi';
 import { 
   generateAgentCryptoIdentity, 
@@ -146,25 +147,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         let keys = await getLocalKeyPair(normalizedAgentId);
         const isCompleteKey = !!(keys && keys.publicKey && keys.privateKey && keys.identityPublicKey && keys.signature);
 
-        // Check if current user or target is a slave account
-        const currentUserOrActive = user || activeAccount;
-        const isSlave = Boolean(
-          currentUserOrActive?.account_type === 'slave' ||
-          currentUserOrActive?.role === 'slave' ||
-          currentUserOrActive?.is_slave === true ||
-          currentUserOrActive?.isSlave === true ||
-          (currentUserOrActive?.master_id && !currentUserOrActive?.is_master_primary) ||
-          currentUserOrActive?.type === 'agent' ||
-          (currentUserOrActive?.email && currentUserOrActive?.email.includes('+AMR-')) ||
-          normalizedAgentId.includes('SLAVE') ||
-          (normalizedAgentId.startsWith('AMR-') && currentUserOrActive?.master_id)
-        );
+        // Determine account role authoritatively
+        let profile = null;
+        if (user?.agentId === normalizedAgentId) {
+          profile = user;
+        } else if (activeAccount?.agentId === normalizedAgentId) {
+          profile = activeAccount;
+        } else {
+          try {
+            const profileRes = await apiFetch(`/api/agents/${normalizedAgentId}`);
+            profile = profileRes.data;
+          } catch (e) {
+            console.error('Failed to resolve authoritative account role:', e);
+          }
+        }
+        
+        const isSlave = isSlaveAccount(profile);
 
         if (isSlave) {
           // Slave accounts manage their own cryptographic identity via their own agent runtime.
-          // Master browser must not generate private keys or register keys for slave accounts.
-          setE2EEStatus('ready');
-          return true;
+          // Only mark ready if public key is confirmed registered.
+          if (profile?.e2eePublicKey) {
+            setE2EEStatus('ready');
+            return true;
+          } else {
+            console.warn('Slave account E2EE ready check failed: missing registered public key.');
+            setE2EEStatus('failed');
+            return false;
+          }
+        }
+        
+        // Fail safe if we cannot resolve the role authoritatively
+        if (!profile && !keys) {
+          console.error('Cannot resolve account role and no existing keys found. Aborting E2EE setup.');
+          setE2EEStatus('failed');
+          return false;
         }
 
         if (!isCompleteKey && !forceRotate) {
@@ -594,11 +611,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const agentId = resData.agentId || user?.agentId || '';
 
     // Automatic E2EE Bootstrap
-    const isSlave = 
-      user?.account_type === 'slave' || 
-      user?.isSlave === true || 
-      resData.account_type === 'slave' ||
-      resData.data?.account_type === 'slave';
+    const isSlave = isSlaveAccount(user) || resData.account_type === 'slave' || resData.data?.account_type === 'slave';
+
 
     if (agentId && !isSlave) {
       try {
@@ -717,7 +731,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('aamarva_active_account', JSON.stringify(updatedUser));
       }
       // If the updated profile is the Master, sync Master state
-      if (updatedUser.isMasterUser) {
+      if (!isSlaveAccount(updatedUser)) {
          setUser(updatedUser);
          if (typeof window !== 'undefined') {
            localStorage.setItem('aamarva_user', JSON.stringify(updatedUser));

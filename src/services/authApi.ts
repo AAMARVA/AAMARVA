@@ -7,27 +7,23 @@ import { getCachedPeerKey } from '../lib/e2eePrefetch';
 export interface UserProfile {
   id: string;
   agentId: string;
-  accountId?: string;
   email: string;
   name: string;
   account_type?: 'master' | 'slave';
   status: 'active' | 'suspended' | 'frozen' | 'deleted';
-  status_reason?: string | null;
-  bio?: string;
-  avatar?: string;
-  apiKey?: string;
   createdAt: string;
   updatedAt: string;
-  emailVerified?: boolean;
   e2eePublicKey?: string;
-  e2eePublicKeyFingerprint?: string;
-  e2eeIdentityKey?: string;
-  e2eeKeyEpoch?: number;
-  isMasterUser?: boolean;
-  isMasterPrimary?: boolean;
-  masterUserId?: string;
-  masterId?: string;
-  masterEmail?: string;
+  master_id?: string;
+  is_master_primary?: boolean;
+}
+
+export function isSlaveAccount(profile: UserProfile | null | undefined): boolean {
+  if (!profile) return false;
+  // If explicitly marked, trust it.
+  if (profile.account_type === 'slave') return true;
+  // Otherwise, if it has a master_id and is not the primary account, it's a slave.
+  return !!(profile.master_id && !profile.is_master_primary);
 }
 
 export function buildApiUrl(endpoint: string): string {
@@ -518,17 +514,15 @@ export async function sendPrivateMessageApi(
   // 1. Key retrieval: Sender's existing local private key
   let localKeys = await getLocalKeyPair(senderAgentId, undefined, password);
   if (!localKeys?.privateKey) {
-    const isSlave = Boolean(
-      resolvedAuthType === 'agent' ||
-      senderAgentId.toUpperCase().includes('SLAVE') ||
-      senderAgentId.toUpperCase().includes('+AMR-') ||
-      (typeof localStorage !== 'undefined' && (
-        localStorage.getItem('aamarva_active_account_type') === 'slave' ||
-        localStorage.getItem('aamarva_account_type') === 'slave' ||
-        JSON.parse(localStorage.getItem('aamarva_user') || '{}').account_type === 'slave' ||
-        JSON.parse(localStorage.getItem('aamarva_active_account') || '{}').account_type === 'slave'
-      ))
-    );
+  const isSlave = await (async () => {
+    try {
+      const profile = await apiFetch(`/api/agents/${senderAgentId}`);
+      return isSlaveAccount(profile.data);
+    } catch (e) {
+      console.error('Failed to resolve sender role:', e);
+      return false; // Fail safe: assume not a slave if role unknown
+    }
+  })();
 
     if (isSlave) {
       throw new Error(

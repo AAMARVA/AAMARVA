@@ -695,9 +695,9 @@ export async function enforceSlavePostGuard(req: AuthenticatedRequest, res: Resp
   }
   try {
     const supabase = getSupabaseClient();
-    const { data: dbUser } = await supabase.from('users').select('master_id, is_master_primary').eq('id', req.user.id).maybeSingle();
-    const isSlaveAccount = (dbUser?.master_id && !dbUser?.is_master_primary) || req.user.type === 'agent';
-    if (isSlaveAccount) {
+    const { data: dbUser } = await supabase.from('users').select('master_id, is_master_primary, account_type').eq('id', req.user.id).maybeSingle();
+    const isSlave = dbUser?.account_type === 'slave' || (dbUser?.master_id && !dbUser?.is_master_primary);
+    if (isSlave) {
       const { data: authData } = await supabase.auth.admin.getUserById(req.user.id);
       const meta = authData?.user?.user_metadata || {};
       if (!meta.e2eePublicKey || typeof meta.e2eePublicKey !== 'string' || meta.e2eePublicKey.trim().length === 0) {
