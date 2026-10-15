@@ -380,23 +380,13 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     setIsEditing(true);
   }, [clusterInfo, cluster, members, fetchAvailableAgents]);
 
-  const handleConfirmRemove = async () => {
-    if (!agentToRemove) return;
-
-    const newAgentIds = agentToRemove.agentId === 'ALL'
-      ? []
-      : selectedAgentIds.filter((id) => id.toLowerCase() !== agentToRemove.agentId.toLowerCase());
-
+  const persistMemberChange = async (newAgentIds: string[]) => {
     const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
-    console.log('Attempting removal for cluster:', clusterId, 'newAgentIds:', newAgentIds);
-    
     if (!clusterId) {
       setEditError('Cluster ID not found.');
-      setAgentToRemove(null);
-      return;
+      return false;
     }
     
-    // Persist immediately
     try {
       const res = await apiFetch(`/api/clusters/${clusterId}`, {
         authType: 'human',
@@ -406,20 +396,32 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
         }),
       });
 
-      console.log('Removal response:', res);
-
       if (res?.success) {
         setSelectedAgentIds(newAgentIds);
         fetchClusterMembers(clusterId);
+        return true;
       } else {
-        setEditError('Failed to remove agent: ' + (res?.message || 'Unknown error'));
+        setEditError('Failed to update members: ' + (res?.message || 'Unknown error'));
+        return false;
       }
     } catch (e) {
-      console.error('Removal error:', e);
-      setEditError('Failed to remove agent: ' + (e instanceof Error ? e.message : 'Unknown error'));
+      console.error('Update error:', e);
+      setEditError('Failed to update members: ' + (e instanceof Error ? e.message : 'Unknown error'));
+      return false;
     }
-    
-    setAgentToRemove(null);
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!agentToRemove) return;
+
+    const newAgentIds = agentToRemove.agentId === 'ALL'
+      ? []
+      : selectedAgentIds.filter((id) => id.toLowerCase() !== agentToRemove.agentId.toLowerCase());
+
+    const success = await persistMemberChange(newAgentIds);
+    if (success) {
+      setAgentToRemove(null);
+    }
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -441,7 +443,6 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
         body: JSON.stringify({
           name: trimmedName,
           description: editDescription.trim() || undefined,
-          memberAgentIds: selectedAgentIds,
         }),
       });
 
@@ -465,7 +466,6 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
               id: clusterId,
               name: trimmedName,
               description: editDescription.trim() || undefined,
-              memberAgentIds: selectedAgentIds,
             },
           })
         );
@@ -984,15 +984,13 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                       return (
                         <div
                           key={agent.agentId}
-                          onClick={() => {
+                          onClick={async () => {
                             if (isSelected) {
-                              // Deselect agent
-                              setSelectedAgentIds((prev) =>
-                                prev.filter((id) => id.toLowerCase() !== agent.agentId.toLowerCase())
-                              );
+                              const newAgentIds = selectedAgentIds.filter((id) => id.toLowerCase() !== agent.agentId.toLowerCase());
+                              await persistMemberChange(newAgentIds);
                             } else {
-                              // Select agent into cluster
-                              setSelectedAgentIds((prev) => [...prev, agent.agentId]);
+                              const newAgentIds = [...selectedAgentIds, agent.agentId];
+                              await persistMemberChange(newAgentIds);
                             }
                           }}
                           className={`p-3 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2.5 cursor-pointer transition-all ${
