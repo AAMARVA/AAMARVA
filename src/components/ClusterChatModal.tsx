@@ -211,6 +211,15 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
     return messages.filter((m) => Boolean((m.isDecrypted && m.content && m.content.trim().length > 0) || !m.senderAgentId));
   }, [messages]);
 
+  const recipientCandidates = React.useMemo(() => {
+    return members.filter((m: any) => {
+      if (!user?.agentId) return true;
+      const mId = (m.agentId || m.id || '').toLowerCase().trim();
+      const myId = user.agentId.toLowerCase().trim();
+      return mId !== myId;
+    });
+  }, [members, user?.agentId]);
+
   const fetchDetails = useCallback(async (isSilent = false) => {
     if (!clusterId) return;
     if (!isSilent) setIsLoading(true);
@@ -519,7 +528,9 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 { 
                   password: userPassword || undefined, 
                   authType: 'human',
-                  selectedRecipientAgentIds: selectedRecipientIds.size > 0 ? Array.from(selectedRecipientIds) : undefined
+                  selectedRecipientAgentIds: (selectedRecipientIds.size > 0 && !selectedRecipientIds.has('__NONE__'))
+                    ? (Array.from(selectedRecipientIds).filter((id) => Boolean(id && id !== user.agentId && id !== '__NONE__')) as string[])
+                    : undefined
                 }
               );
               if (res?.success || res?.id || res?.messageId) {
@@ -563,9 +574,9 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             >
               <span className="bg-white text-[#141414] px-1 text-[8px] font-black">SPOG</span>
               <span>
-                {selectedRecipientIds.size > 0 && selectedRecipientIds.size < members.length
-                  ? `Recipients: ${selectedRecipientIds.size} of ${members.length} Selected`
-                  : `Recipients: All Members (${members.length})`}
+                {selectedRecipientIds.size > 0 && !selectedRecipientIds.has('__NONE__') && selectedRecipientIds.size < recipientCandidates.length
+                  ? `Recipients: ${selectedRecipientIds.size} of ${recipientCandidates.length} Selected`
+                  : `Recipients: All (${recipientCandidates.length})`}
               </span>
             </button>
             <span className="text-[9px] font-mono text-[#141414]/70 uppercase font-bold">
@@ -585,7 +596,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                     SPOG
                   </span>
                   <span className="text-xs font-black uppercase tracking-widest">
-                    SLAVE SELECTION PROTOCOL ({members.length} CLUSTER MEMBERS)
+                    SLAVE SELECTION PROTOCOL ({recipientCandidates.length} RECIPIENTS)
                   </span>
                 </div>
                 <button
@@ -617,7 +628,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                       type="button"
                       onClick={() => {
                         const slaveSet = new Set<string>();
-                        members.forEach((m: any) => {
+                        recipientCandidates.forEach((m: any) => {
                           if (m.isSlave || m.role === 'slave' || m.account_type === 'slave' || (m.agentId && m.agentId.includes('+AMR-'))) {
                             slaveSet.add(m.agentId);
                           }
@@ -631,7 +642,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        setSelectedRecipientIds(new Set(user?.agentId ? [user.agentId] : []));
+                        setSelectedRecipientIds(new Set(['__NONE__']));
                       }}
                       className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
                     >
@@ -654,7 +665,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               {/* Members Grid */}
               <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
                 {(() => {
-                  const filteredMembers = members.filter((m: any) => {
+                  const filteredMembers = recipientCandidates.filter((m: any) => {
                     if (!spogSearchQuery.trim()) return true;
                     const query = spogSearchQuery.toLowerCase();
                     const name = (m.name || '').toLowerCase();
@@ -666,7 +677,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                   if (filteredMembers.length === 0) {
                     return (
                       <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
-                        {members.length === 0 ? 'No members in this cluster yet' : 'No cluster members match search query'}
+                        {recipientCandidates.length === 0 ? 'No other recipients in this cluster' : 'No recipients match search query'}
                       </div>
                     );
                   }
@@ -675,9 +686,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                       {filteredMembers.map((m: any) => {
                         const mId = m.agentId;
-                        const isAll = selectedRecipientIds.size === 0 || selectedRecipientIds.size === members.length;
-                        const isSelected = isAll ? true : selectedRecipientIds.has(mId);
-                        const isSelf = mId?.toLowerCase() === user?.agentId?.toLowerCase();
+                        const isAll = selectedRecipientIds.size === 0 || (selectedRecipientIds.size === recipientCandidates.length && !selectedRecipientIds.has('__NONE__'));
+                        const isSelected = selectedRecipientIds.has('__NONE__') ? false : (isAll ? true : selectedRecipientIds.has(mId));
                         const isSlave = Boolean(
                           m.isSlave || 
                           m.role === 'slave' || 
@@ -689,8 +699,9 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                           <div
                             key={mId}
                             onClick={() => {
-                              const allIds = members.map((mem: any) => mem.agentId);
+                              const allIds = recipientCandidates.map((mem: any) => mem.agentId);
                               const current = isAll ? new Set(allIds) : new Set(selectedRecipientIds);
+                              current.delete('__NONE__');
                               if (current.has(mId)) {
                                 current.delete(mId);
                               } else {
@@ -711,7 +722,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                               />
                               <div className="min-w-0 flex-1 text-left">
                                 <p className="text-xs font-black uppercase truncate">
-                                  {m.name || mId} {isSelf && '(YOU)'}
+                                  {m.name || mId}
                                 </p>
                                 <p className={`text-[9px] font-mono truncate ${isSelected ? 'text-white/70' : 'text-[#141414]/70'}`}>
                                   @{mId}
@@ -744,7 +755,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
                             <div className="flex items-center justify-between pt-1 border-t border-current/15">
                               <span className="text-[8px] font-mono opacity-80 uppercase">
-                                {isSelected ? 'Recipients Active' : 'Excluded'}
+                                {isSelected ? 'Recipient Active' : 'Excluded'}
                               </span>
                               <div className={`w-4 h-4 border-2 ${
                                 isSelected ? 'border-white bg-white text-[#141414]' : 'border-[#141414] bg-white'
@@ -765,9 +776,9 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 <div className="text-xs font-mono uppercase tracking-wider">
                   <span className="font-black text-white">RECIPIENTS: </span>
                   <span className="text-white/80">
-                    {selectedRecipientIds.size === 0 || selectedRecipientIds.size === members.length
-                      ? `ALL (${members.length}) MEMBERS ENCRYPTED`
-                      : `${selectedRecipientIds.size} OF ${members.length} SELECTED`}
+                    {selectedRecipientIds.size === 0 || selectedRecipientIds.size === recipientCandidates.length
+                      ? `ALL (${recipientCandidates.length}) RECIPIENTS ENCRYPTED`
+                      : `${selectedRecipientIds.has('__NONE__') ? 0 : selectedRecipientIds.size} OF ${recipientCandidates.length} SELECTED`}
                   </span>
                 </div>
                 <button
