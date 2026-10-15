@@ -194,8 +194,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<Set<string>>(new Set());
-
-
+  const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
+  const [spogSearchQuery, setSpogSearchQuery] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeContextCredentials = React.useMemo(() => {
@@ -226,7 +226,15 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
       // Fetch members from crypto members endpoint
       const membersRes = await apiFetch(`/api/clusters/${clusterId}/members/crypto`, { authType: 'human' });
-      const currentMembers = (membersRes?.success && Array.isArray(membersRes.data?.members)) ? membersRes.data.members : [];
+      let currentMembers = (membersRes?.success && Array.isArray(membersRes.data?.members)) ? membersRes.data.members : [];
+      if (currentMembers.length === 0) {
+        try {
+          const pubRes = await apiFetch(`/api/clusters/public/${clusterId}/members`);
+          if (pubRes?.success && Array.isArray(pubRes.data?.members)) {
+            currentMembers = pubRes.data.members;
+          }
+        } catch {}
+      }
       setMembers(currentMembers);
 
       // Fetch messages
@@ -317,6 +325,15 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSpogModalOpen(true)}
+                className="border-2 border-[#141414] px-2.5 py-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer font-mono text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1.5"
+                title="Open SPOG Slave Selection Protocol"
+              >
+                <span className="bg-[#141414] text-white px-1 text-[8px] font-black">SPOG</span>
+                <span>{members.length} MEMBERS</span>
+              </button>
               <button
                 onClick={onClose}
                 className="border-2 border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
@@ -458,35 +475,231 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
           <div className="mt-2 flex items-center justify-between">
             <button
               type="button"
-              onClick={() => {
-                const primarySet = new Set<string>();
-                members.forEach((m: any) => {
-                  if (
-                    m.role === 'admin' || 
-                    m.role === 'owner' || 
-                    m.membershipRole === 'admin' || 
-                    m.membershipRole === 'owner' || 
-                    m.is_master_primary
-                  ) {
-                    primarySet.add(m.agentId);
-                  }
-                });
-                setSelectedRecipientIds(primarySet);
-              }}
-              className="text-[10px] font-mono font-bold uppercase tracking-wider bg-white border border-[#141414] px-2.5 py-1 hover:bg-[#141414] hover:text-white transition-colors cursor-pointer flex items-center shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+              onClick={() => setIsSpogModalOpen(true)}
+              className="text-[10px] font-mono font-black uppercase tracking-wider bg-[#141414] text-white border-2 border-[#141414] px-2.5 py-1 hover:bg-black transition-colors cursor-pointer flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
             >
+              <span className="bg-white text-[#141414] px-1 text-[8px] font-black">SPOG</span>
               <span>
                 {selectedRecipientIds.size > 0 && selectedRecipientIds.size < members.length
-                  ? `Recipients: ${selectedRecipientIds.size} (SPOG)`
-                  : `Recipients: All`}
+                  ? `Recipients: ${selectedRecipientIds.size} of ${members.length} Selected`
+                  : `Recipients: All Members (${members.length})`}
               </span>
             </button>
-            <span className="text-[9px] font-mono text-[#141414]/70 uppercase">
-              Individual-Agent E2EE
+            <span className="text-[9px] font-mono text-[#141414]/70 uppercase font-bold">
+              Slave Selection Protocol • E2EE
             </span>
           </div>
         </form>
+
+        {/* SPOG - Slave Selection Protocol Modal */}
+        {isSpogModalOpen && (
+          <div className="fixed inset-0 z-60 overflow-y-auto bg-black/80 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
+            <div className="relative w-full max-w-4xl bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] max-h-[90vh] flex flex-col font-mono">
+              {/* Header */}
+              <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="bg-white text-[#141414] px-1.5 py-0.5 text-[9px] font-black tracking-widest">
+                    SPOG
+                  </span>
+                  <span className="text-xs font-black uppercase tracking-widest">
+                    SLAVE SELECTION PROTOCOL ({members.length} CLUSTER MEMBERS)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSpogModalOpen(false)}
+                  className="p-1 bg-white text-[#141414] border-2 border-white hover:bg-black hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Controls bar */}
+              <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex flex-wrap items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-black uppercase tracking-wider text-[#141414] mr-1">
+                    Slave Selection Protocol
+                  </span>
+                  <div className="flex items-center gap-1.5 p-1 bg-white border border-[#141414]/20 shadow-inner">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRecipientIds(new Set());
+                      }}
+                      className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const slaveSet = new Set<string>();
+                        members.forEach((m: any) => {
+                          if (m.isSlave || m.role === 'slave' || m.account_type === 'slave' || (m.agentId && m.agentId.includes('+AMR-'))) {
+                            slaveSet.add(m.agentId);
+                          }
+                        });
+                        setSelectedRecipientIds(slaveSet);
+                      }}
+                      className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
+                    >
+                      Select Slaves Only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRecipientIds(new Set(user?.agentId ? [user.agentId] : []));
+                      }}
+                      className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
+                    >
+                      Clear Selection
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Search Member / Slave"
+                    value={spogSearchQuery}
+                    onChange={(e) => setSpogSearchQuery(e.target.value)}
+                    className="px-2.5 py-1 text-xs font-bold uppercase bg-white border-2 border-[#141414] focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Members Grid */}
+              <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
+                {(() => {
+                  const filteredMembers = members.filter((m: any) => {
+                    if (!spogSearchQuery.trim()) return true;
+                    const query = spogSearchQuery.toLowerCase();
+                    const name = (m.name || '').toLowerCase();
+                    const agentId = (m.agentId || '').toLowerCase();
+                    const role = (m.membershipRole || m.role || '').toLowerCase();
+                    return name.includes(query) || agentId.includes(query) || role.includes(query);
+                  });
+
+                  if (filteredMembers.length === 0) {
+                    return (
+                      <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
+                        {members.length === 0 ? 'No members in this cluster yet' : 'No cluster members match search query'}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {filteredMembers.map((m: any) => {
+                        const mId = m.agentId;
+                        const isAll = selectedRecipientIds.size === 0 || selectedRecipientIds.size === members.length;
+                        const isSelected = isAll ? true : selectedRecipientIds.has(mId);
+                        const isSelf = mId?.toLowerCase() === user?.agentId?.toLowerCase();
+                        const isSlave = Boolean(
+                          m.isSlave || 
+                          m.role === 'slave' || 
+                          m.account_type === 'slave' || 
+                          (mId && mId.includes('+AMR-'))
+                        );
+
+                        return (
+                          <div
+                            key={mId}
+                            onClick={() => {
+                              const allIds = members.map((mem: any) => mem.agentId);
+                              const current = isAll ? new Set(allIds) : new Set(selectedRecipientIds);
+                              if (current.has(mId)) {
+                                current.delete(mId);
+                              } else {
+                                current.add(mId);
+                              }
+                              setSelectedRecipientIds(current);
+                            }}
+                            className={`p-3 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2.5 cursor-pointer transition-all ${
+                              isSelected ? 'bg-[#141414] text-white' : 'bg-white text-[#141414] hover:bg-neutral-50'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2.5 min-w-0">
+                              <AgentAvatar
+                                name={m.name || mId}
+                                avatar={m.avatar}
+                                id={mId}
+                                className="w-8 h-8 border border-[#141414] shrink-0"
+                              />
+                              <div className="min-w-0 flex-1 text-left">
+                                <p className="text-xs font-black uppercase truncate">
+                                  {m.name || mId} {isSelf && '(YOU)'}
+                                </p>
+                                <p className={`text-[9px] font-mono truncate ${isSelected ? 'text-white/70' : 'text-[#141414]/70'}`}>
+                                  @{mId}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-current/15">
+                              {isSlave ? (
+                                <span className={`text-[8px] font-black px-1.5 py-0.2 uppercase border ${
+                                  isSelected ? 'border-red-400 bg-red-600 text-white' : 'border-red-700 bg-red-100 text-red-900'
+                                }`}>
+                                  SLAVE
+                                </span>
+                              ) : (
+                                <span className={`text-[8px] font-black px-1.5 py-0.2 uppercase border ${
+                                  isSelected ? 'border-white/30 bg-white/10 text-white' : 'border-[#141414]/30 bg-[#141414]/5 text-[#141414]'
+                                }`}>
+                                  {m.membershipRole ? m.membershipRole.toUpperCase() : 'MEMBER'}
+                                </span>
+                              )}
+                              <span className={`text-[8px] font-mono px-1 py-0.2 ${
+                                m.keyStatus === 'available' 
+                                  ? (isSelected ? 'text-green-300' : 'text-green-700')
+                                  : (isSelected ? 'text-yellow-300' : 'text-yellow-700')
+                              }`}>
+                                {m.keyStatus === 'available' ? '• KEY READY' : '• NO KEY'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-1 border-t border-current/15">
+                              <span className="text-[8px] font-mono opacity-80 uppercase">
+                                {isSelected ? 'Recipients Active' : 'Excluded'}
+                              </span>
+                              <div className={`w-4 h-4 border-2 ${
+                                isSelected ? 'border-white bg-white text-[#141414]' : 'border-[#141414] bg-white'
+                              } flex items-center justify-center font-mono text-xs font-black`}>
+                                {isSelected ? '✓' : ''}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Footer */}
+              <div className="bg-[#141414] text-white p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 border-t-4 border-[#141414] shrink-0">
+                <div className="text-xs font-mono uppercase tracking-wider">
+                  <span className="font-black text-white">RECIPIENTS: </span>
+                  <span className="text-white/80">
+                    {selectedRecipientIds.size === 0 || selectedRecipientIds.size === members.length
+                      ? `ALL (${members.length}) MEMBERS ENCRYPTED`
+                      : `${selectedRecipientIds.size} OF ${members.length} SELECTED`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSpogModalOpen(false)}
+                  className="bg-white text-[#141414] px-6 py-2.5 font-black uppercase text-xs tracking-widest border-2 border-white hover:bg-neutral-200 transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]"
+                >
+                  APPLY SELECTION & CLOSE
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
