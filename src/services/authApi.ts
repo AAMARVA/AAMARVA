@@ -662,6 +662,7 @@ export async function sendClusterMessageApi(
   options?: {
     password?: string;
     authType?: 'human' | 'agent';
+    selectedRecipientAgentIds?: string[];
   }
 ): Promise<any> {
   const password = options?.password;
@@ -679,14 +680,14 @@ export async function sendClusterMessageApi(
     );
   }
 
-  // 2. Fetch active members for the cluster to retrieve public keys
-  const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, {
+  // 2. Fetch active members and public keys from the new crypto members endpoint
+  const membersRes = await apiFetch(`/api/clusters/${clusterId}/members/crypto`, {
     authType: resolvedAuthType,
     method: 'GET'
   });
-  const membersList: any[] = Array.isArray(membersRes?.data)
-    ? membersRes.data
-    : (membersRes?.data?.members || []);
+  const membersList: any[] = Array.isArray(membersRes?.data?.members)
+    ? membersRes.data.members
+    : (Array.isArray(membersRes?.data) ? membersRes.data : []);
 
   const memberPublicKeys: Record<string, any> = {};
   // Include sender's own public key so sender can decrypt their own message
@@ -694,9 +695,16 @@ export async function sendClusterMessageApi(
     memberPublicKeys[senderAgentId] = localKeys.publicKey;
   }
 
+  const selectedSet = options?.selectedRecipientAgentIds 
+    ? new Set(options.selectedRecipientAgentIds.map(id => id.toLowerCase())) 
+    : null;
+
   for (const m of membersList) {
-    if (m.status !== 'dissolved' && m.agentId && (m.e2eePublicKey || m.publicKey)) {
-      memberPublicKeys[m.agentId] = m.e2eePublicKey || m.publicKey;
+    if (m.status !== 'dissolved' && m.agentId && m.publicKey) {
+      const agentIdLower = m.agentId.toLowerCase();
+      if (!selectedSet || selectedSet.has(agentIdLower) || agentIdLower === senderAgentId.toLowerCase()) {
+        memberPublicKeys[m.agentId] = m.publicKey;
+      }
     }
   }
 
@@ -704,63 +712,15 @@ export async function sendClusterMessageApi(
     throw new Error('E2EE Error: No active cluster members with registered public keys found.');
   }
 
-  // 2.1 Obtain authoritative cluster epoch (DO NOT use localKeys.keyEpoch)
+  // 2.1 Obtain authoritative cluster epoch / membership version
   let clusterEpoch = 1;
-  if (typeof membersRes?.data?.cluster?.epoch === 'number' && membersRes.data.cluster.epoch > 0) {
-    clusterEpoch = membersRes.data.cluster.epoch;
-  } else if (typeof membersRes?.data?.cluster?.currentEpoch === 'number' && membersRes.data.cluster.currentEpoch > 0) {
-    clusterEpoch = membersRes.data.cluster.currentEpoch;
+  if (membersRes?.data?.membershipVersion && typeof membersRes.data.membershipVersion === 'number') {
+    clusterEpoch = membersRes.data.membershipVersion;
   } else {
     clusterEpoch = await getClusterAuthoritativeEpochApi(clusterId, resolvedAuthType);
   }
 
-  // 2.5 Ensure authoritative group key exists locally for this cluster and authoritative clusterEpoch
-  let existingGroupKey = await getClusterGroupKey(clusterId, clusterEpoch);
-  if (!existingGroupKey) {
-    try {
-      const adminMember = membersList.find((m: any) => m.role === 'admin' || m.role === 'owner');
-      const authorityPubKey = adminMember?.e2eePublicKey || adminMember?.publicKey || localKeys.publicKey;
-      await retrieveAndUnwrapClusterGroupKey({
-        clusterId,
-        epoch: clusterEpoch,
-        receiverPrivateKey: localKeys.privateKey,
-        receiverAgentId: senderAgentId,
-        distributorAgentId: adminMember?.agentId,
-        distributorPublicKeyJwk: authorityPubKey,
-        senderPublicKeyJwk: authorityPubKey,
-        members: membersList,
-        apiFetchFn: async (url, opts) => apiFetch(url, { ...opts, authType: resolvedAuthType })
-      });
-      existingGroupKey = await getClusterGroupKey(clusterId, clusterEpoch);
-    } catch {
-      // If no key package exists on server yet, and sender is cluster admin, initialize distribution
-      const isAdmin = membersList.some((m: any) => 
-        (String(m.agentId || '').toLowerCase() === senderAgentId.toLowerCase()) && (m.role === 'admin' || m.role === 'owner')
-      );
-      if (isAdmin || membersList.length <= 1) {
-        const activeMembersArray = membersList
-          .filter((m: any) => m.status !== 'dissolved' && m.agentId)
-          .map((m: any) => ({
-            agentId: m.agentId,
-            publicKey: m.e2eePublicKey || m.publicKey
-          }));
-        if (!activeMembersArray.some((m: any) => String(m.agentId || '').toLowerCase() === senderAgentId.toLowerCase())) {
-          activeMembersArray.push({ agentId: senderAgentId, publicKey: localKeys.publicKey });
-        }
-        await distributeClusterGroupKeyFlow({
-          clusterId,
-          epoch: clusterEpoch,
-          senderPrivateKey: localKeys.privateKey,
-          senderAgentId,
-          senderPublicKeyJwk: localKeys.publicKey,
-          members: activeMembersArray,
-          apiFetchFn: async (url, opts) => apiFetch(url, { ...opts, authType: resolvedAuthType })
-        });
-      }
-    }
-  }
-
-  // 3. Encrypt message using genuine hybrid group encryption with authoritative clusterEpoch
+  // 3. Encrypt message using individual-agent hybrid group encryption (AAMARVA_GROUP_E2EE_v2)
   const encrypted = await encryptClusterGroupMessage(
     plaintext,
     localKeys.privateKey,
@@ -770,7 +730,7 @@ export async function sendClusterMessageApi(
     clusterEpoch
   );
 
-  // 4. Submit encrypted envelope to server with authoritative clusterEpoch
+  // 4. Submit encrypted envelope to server
   const res = await apiFetch(`/api/clusters/${clusterId}/messages`, {
     authType: resolvedAuthType,
     method: 'POST',

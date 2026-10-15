@@ -2408,7 +2408,7 @@ export async function encryptClusterGroupMessage(
 
     wrappedKeysMap[recipientId] = {
       iv: bufferToBase64(wrapIv.buffer),
-      key: bufferToBase64(wrappedCekBuf.buffer)
+      key: bufferToBase64(wrappedCekBuf)
     };
   }
 

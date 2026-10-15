@@ -980,7 +980,8 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       );
 
     } catch (cryptoTestErr: any) {
-      recordResult('cluster_real_crypto_suite_execution', false, `Crypto test exception: ${cryptoTestErr?.message}`);
+      console.error(cryptoTestErr);
+      recordResult('cluster_real_crypto_suite_execution', false, `Crypto test exception: ${cryptoTestErr?.message}\n${cryptoTestErr?.stack}`);
     }
 
     // =========================================================================
@@ -1437,7 +1438,8 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       );
 
     } catch (test37Err: any) {
-      recordResult('cluster_test37_independent_agents_key_distribution_and_rotation', false, `Test 37 exception: ${test37Err?.message}`);
+      console.error(test37Err);
+      recordResult('cluster_test37_independent_agents_key_distribution_and_rotation', false, `Test 37 exception: ${test37Err?.message}\n${test37Err?.stack}`);
     }
 
   } finally {

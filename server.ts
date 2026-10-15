@@ -12,6 +12,7 @@ import { initVerifiedUsersCache } from './server/authService';
 import { ADK_SPECIFICATION, getAdkSpecification } from './server/adk_spec';
 import { observabilityMiddleware } from './server/middleware/observabilityMiddleware';
 import { securityMiddleware } from './server/middleware/securityMiddleware';
+import { slaveActivityMiddleware } from './server/middleware/slaveActivityMiddleware';
 
 dotenv.config();
 
@@ -62,6 +63,9 @@ export async function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
+
+  // Automatically record slave agent activities across any non-human-only endpoint
+  app.use(slaveActivityMiddleware);
 
   // Mount API endpoints strictly under /api prefix and root prefix for flexible serverless rewrites
   app.use('/api', aamarvaRoutes);

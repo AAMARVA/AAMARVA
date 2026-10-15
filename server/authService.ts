@@ -24,12 +24,19 @@ export interface UserTokenPayload {
   status?: string;
   activeAccountId?: string;
   masterId?: string;
+  master_id?: string;
   masterUserId?: string;
   isMasterUser?: boolean;
+  is_master_primary?: boolean;
+  account_type?: string;
+  role?: string;
+  is_slave?: boolean;
+  isSlave?: boolean;
 }
 
 export interface HumanSessionPayload {
   id: string;
+  userId?: string;
   agentId: string;
   email: string;
   emailVerified?: boolean;
@@ -46,6 +53,8 @@ export interface AgentTokenPayload {
   email: string;
   emailVerified?: boolean;
   type: 'agent';
+  name?: string;
+  avatar?: string;
   iat?: number;
 }
 

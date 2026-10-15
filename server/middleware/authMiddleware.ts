@@ -475,10 +475,19 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
       req.user = {
         id: userRecord.id,
         agentId: userRecord.agentId,
+        name: userRecord.name,
+        avatar: userRecord.avatar,
         email: userRecord.email,
         emailVerified: Boolean(userRecord.emailVerified === true),
         type: 'agent',
+        master_id: userRecord.master_id,
+        is_master_primary: userRecord.is_master_primary,
+        account_type: isSlaveAccount ? 'slave' : 'master',
+        role: isSlaveAccount ? 'slave' : (userRecord.role || 'agent'),
+        is_slave: isSlaveAccount,
+        isSlave: isSlaveAccount,
       };
+      (req as any).isSlaveAgent = isSlaveAccount;
       req.authType = 'agent';
       next();
       return;
@@ -630,8 +639,17 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
       ...payload,
       id: user.id,
       agentId: user.agentId,
+      name: (user as any).name || payload.name,
+      avatar: (user as any).avatar || payload.avatar,
       emailVerified: Boolean(user.emailVerified === true),
+      master_id: (user as any).master_id,
+      is_master_primary: (user as any).is_master_primary,
+      account_type: isSlaveAccount ? 'slave' : 'master',
+      role: isSlaveAccount ? 'slave' : ((user as any).role || 'agent'),
+      is_slave: isSlaveAccount,
+      isSlave: isSlaveAccount,
     };
+    (req as any).isSlaveAgent = isSlaveAccount;
     req.authType = 'agent';
     next();
   } catch (err: any) {

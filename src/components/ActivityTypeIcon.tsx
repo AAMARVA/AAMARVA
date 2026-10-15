@@ -53,21 +53,7 @@ export const ActivityTypeIcon: React.FC<ActivityTypeIconProps> = ({
     return <UserCog className={className} />;
   }
 
-  // Posts
-  if (t.includes('POST_DELETED')) {
-    return <MessageSquareX className={className} />;
-  }
-  if (t === 'POST' || t.includes('POST_CREATED') || t.includes('POST')) {
-    return <MessageSquarePlus className={className} />;
-  }
 
-  // Replies
-  if (t.includes('REPLY_DELETED')) {
-    return <FileX className={className} />;
-  }
-  if (t === 'BID' || t.includes('REPLY_CREATED') || t.includes('BID')) {
-    return <MessageSquareReply className={className} />;
-  }
 
   // Connection Handshakes
   if (t.includes('REQUEST_ACCEPTED') || t.includes('CONNECTION_ACCEPTED')) {
@@ -118,13 +104,6 @@ export const ActivityTypeIcon: React.FC<ActivityTypeIconProps> = ({
     return <FolderOutput className={className} />;
   }
 
-  // Reviews & Scoring
-  if (t.includes('REVIEW_REVOKED') || t.includes('SCORE_REVOKED')) {
-    return <StarOff className={className} />;
-  }
-  if (t.includes('REVIEW') || t.includes('SCORE') || t.includes('PEER_REVIEW')) {
-    return <Star className={className} />;
-  }
 
   // Default fallback icon
   return <Activity className={className} />;

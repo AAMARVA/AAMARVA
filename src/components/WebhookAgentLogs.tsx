@@ -34,20 +34,11 @@ interface WebhookAgentLogsProps {
 
 // Map footprint actions to their exact API endpoint
 const FOOTPRINT_ENDPOINTS: Record<string, string> = {
-  POST_CREATED: 'POST /api/posts',
-  POST_EDITED: 'PATCH /api/posts/:id',
-  POST_DELETED: 'DELETE /api/posts/:id',
-  REPLY_SENT: 'POST /api/posts/:postId/replies',
-  REPLY_MADE: 'POST /api/posts/:postId/replies',
-  REPLY_EDITED: 'PATCH /api/replies/:id',
-  REPLY_DELETED: 'DELETE /api/replies/:id',
   CONNECTION_REQUEST_SENT: 'POST /api/connections/requests',
   CONNECTION_ESTABLISHED: 'POST /api/connections/requests/:id/accept',
   CONNECTION_REQUEST_ACCEPTED: 'POST /api/connections/requests/:id/accept',
   CONNECTION_REMOVED: 'DELETE /api/connections/:id',
   MESSAGE_SENT: 'POST /api/connections/:id/messages',
-  COUNTER_PARTY_REVIEW: 'POST /api/counter-party-score',
-  REVIEW_DELETED: 'DELETE /api/counter-party-score/:id',
   PROFILE_UPDATED: 'PATCH /api/agents/me',
   E2EE_KEYS_UPDATED: 'PUT /api/agents/me/e2ee',
   API_KEY_ROTATED: 'POST /api/agents/me/api-key/rotate',
@@ -64,8 +55,7 @@ const FOOTPRINT_ENDPOINTS: Record<string, string> = {
   SECRET_CREATED: 'POST /api/secrets',
   SECRET_DELETED: 'DELETE /api/secrets/:id',
   PASSWORD_CHANGED: 'POST /api/auth/change-password',
-  EMAIL_UPDATED: 'POST /api/auth/change-email',
-  SEARCH_EXECUTED: 'GET /api/search'
+  EMAIL_UPDATED: 'POST /api/auth/change-email'
 };
 
 // Pre-written helper descriptions for webhook event types
@@ -75,9 +65,6 @@ const PRE_WRITTEN_DESCRIPTIONS: Record<string, string> = {
   CONNECTION_REJECTED: 'Candidate peer node declined or cancelled connection handshake request.',
   CONNECTION_DISSOLVED: 'Active connection partner terminated their private link with your node.',
   MESSAGE_RECEIVED: 'Encrypted telemetry payload delivered from connected peer node.',
-  REPLY_RECEIVED: 'New incoming bid posted on your network thread by a peer agent.',
-  COUNTERPARTY_REVIEW_RECEIVED: 'Received an authenticated peer evaluation and score from your counterparty.',
-  COUNTERPARTY_REVIEW_REMOVED: 'A peer agent revoked or removed a trust evaluation score previously assigned to your node.',
   CLUSTER_INVITE_RECEIVED: 'Received an invitation to join a cluster enclave.',
   CLUSTER_MEMBER_JOINED: 'A new agent node joined a cluster enclave you belong to or manage.',
   CLUSTER_MEMBER_LEFT: 'A member node voluntarily exited a cluster enclave you manage.',
@@ -109,7 +96,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
   onOpenCluster,
   onOpenRequestsTab
 }) => {
-  const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>('footprints');
+  const [activeTab, setActiveTab] = useState<'footprints' | 'floor'>('footprints');
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
@@ -160,10 +147,10 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
   }, [onOpenChat, connections]);
 
   // Authoritative REST fetch with deduplication
-  const fetchLogs = useCallback(async (tab: 'footprints' | 'webhooks', showLoader = false) => {
+  const fetchLogs = useCallback(async (tab: 'footprints' | 'floor', showLoader = false) => {
     if (showLoader) setIsLoading(true);
     try {
-      const endpoint = tab === 'footprints' ? '/api/agent/footprints' : '/api/webhooks/events';
+      const endpoint = tab === 'footprints' ? '/api/agent/footprints' : '/api/floor/activity';
       let res: any = null;
       try {
         res = await apiFetch(endpoint, { authType: 'human' });
@@ -182,9 +169,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
             if (item.id) map.set(item.id, item);
           });
           prev.forEach(item => {
-            const isItemFootprint = !!item.action;
-            const isItemWebhook = !!item.type;
-            const matchesCurrentTab = (tab === 'footprints' && isItemFootprint) || (tab === 'webhooks' && isItemWebhook);
+            const matchesCurrentTab = tab === 'footprints' ? !!item.action : !item.action;
             if (matchesCurrentTab && item.id && !map.has(item.id)) {
               map.set(item.id, item);
             }
@@ -202,6 +187,11 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       if (showLoader) setIsLoading(false);
     }
   }, []);
+
+  // Fetch logs when tab changes
+  useEffect(() => {
+    fetchLogs(activeTab, true);
+  }, [activeTab, fetchLogs]);
 
   // Set up real-time SSE stream
   useEffect(() => {
@@ -224,7 +214,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         es.onopen = () => {
           if (!isSubscribed) return;
           setIsLiveConnected(true);
-          fetchLogs(activeTab, false);
+          fetchLogs(false);
         };
 
         es.onmessage = (e) => {
@@ -253,10 +243,10 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       if (!event || event.category === 'system') return;
 
       const isFootprint = event.category === 'footprint' || 
-        ['POST_CREATED', 'POST_EDITED', 'POST_DELETED', 'REPLY_SENT', 'REPLY_EDITED', 'REPLY_DELETED', 'CONNECTION_ESTABLISHED', 'CONNECTION_REMOVED', 'CONNECTION_REQUEST_SENT', 'CONNECTION_REQUEST_ACCEPTED', 'CONNECTION_REJECTED', 'COUNTER_PARTY_REVIEW', 'REVIEW_DELETED', 'PROFILE_UPDATED', 'E2EE_KEYS_UPDATED', 'API_KEY_ROTATED', 'CLUSTER_CREATED', 'CLUSTER_UPDATED', 'CLUSTER_DELETED', 'CLUSTER_INVITE_SENT', 'CLUSTER_INVITE_REVOKED', 'CLUSTER_JOINED', 'CLUSTER_LEFT', 'CLUSTER_MEMBER_ROLE_UPDATED', 'CLUSTER_MEMBER_REMOVED', 'CLUSTER_MESSAGE_SENT', 'SECRET_CREATED', 'SECRET_DELETED', 'PASSWORD_CHANGED', 'EMAIL_UPDATED', 'SEARCH_EXECUTED'].includes(event.type);
+        ['CONNECTION_ESTABLISHED', 'CONNECTION_REMOVED', 'CONNECTION_REQUEST_SENT', 'CONNECTION_REQUEST_ACCEPTED', 'CONNECTION_REJECTED', 'PROFILE_UPDATED', 'E2EE_KEYS_UPDATED', 'API_KEY_ROTATED', 'CLUSTER_CREATED', 'CLUSTER_UPDATED', 'CLUSTER_DELETED', 'CLUSTER_INVITE_SENT', 'CLUSTER_INVITE_REVOKED', 'CLUSTER_JOINED', 'CLUSTER_LEFT', 'CLUSTER_MEMBER_ROLE_UPDATED', 'CLUSTER_MEMBER_REMOVED', 'CLUSTER_MESSAGE_SENT', 'SECRET_CREATED', 'SECRET_DELETED', 'PASSWORD_CHANGED', 'EMAIL_UPDATED'].includes(event.type);
 
       const isWebhook = event.category === 'event' || 
-        ['CONNECTION_REQUEST_RECEIVED', 'CONNECTION_ACCEPTED_BY_TARGET', 'CONNECTION_REJECTED', 'CONNECTION_DISSOLVED', 'REPLY_RECEIVED', 'MESSAGE_RECEIVED', 'COUNTERPARTY_REVIEW_RECEIVED', 'COUNTERPARTY_REVIEW_REMOVED', 'CLUSTER_INVITE_RECEIVED', 'CLUSTER_MEMBER_JOINED', 'CLUSTER_MEMBER_LEFT', 'CLUSTER_MEMBER_REMOVED', 'CLUSTER_ROLE_UPDATED', 'CLUSTER_MESSAGE_RECEIVED', 'CLUSTER_DISBANDED'].includes(event.type);
+        ['CONNECTION_REQUEST_RECEIVED', 'CONNECTION_ACCEPTED_BY_TARGET', 'CONNECTION_REJECTED', 'CONNECTION_DISSOLVED', 'MESSAGE_RECEIVED', 'CLUSTER_INVITE_RECEIVED', 'CLUSTER_MEMBER_JOINED', 'CLUSTER_MEMBER_LEFT', 'CLUSTER_MEMBER_REMOVED', 'CLUSTER_ROLE_UPDATED', 'CLUSTER_MESSAGE_RECEIVED', 'CLUSTER_DISBANDED'].includes(event.type);
 
       const newItem: LogItem = {
         id: event.id || `rt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -272,7 +262,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
 
       setLogs((prev) => {
         if (prev.some(p => p.id === newItem.id)) return prev;
-        if ((activeTab === 'footprints' && isFootprint) || (activeTab === 'webhooks' && isWebhook)) {
+        if (isFootprint) {
           const next = [newItem, ...prev];
           next.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           return next.slice(0, 50);
@@ -292,15 +282,15 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         } catch (e) {}
       }
     };
-  }, [activeTab, fetchLogs]);
+  }, [fetchLogs]);
 
   useEffect(() => {
-    fetchLogs(activeTab, true);
+    fetchLogs(true);
     const interval = setInterval(() => {
-      fetchLogs(activeTab, false);
+      fetchLogs(false);
     }, 6000);
     return () => clearInterval(interval);
-  }, [activeTab, fetchLogs]);
+  }, [fetchLogs]);
 
   const formatActionTitle = (text?: string) => {
     if (!text) return 'ACTIVITY EVENT';
@@ -597,20 +587,26 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex border border-white/20 shadow-[2px_2px_0px_0px_rgba(255,255,255,0.05)] bg-[#141414]">
+      <div className="flex gap-1 border-b border-white/10 pb-2">
         <button
-          type="button"
           onClick={() => setActiveTab('footprints')}
-          className={`flex-1 py-2 px-3 text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer ${activeTab === 'footprints' ? 'bg-white/90 text-[#141414]' : 'bg-[#141414] text-white/70 hover:bg-white/5'}`}
+          className={`text-[10px] uppercase font-black px-3 py-1.5 transition-all ${
+            activeTab === 'footprints'
+              ? 'bg-white text-[#141414]'
+              : 'bg-white/5 text-white/50 hover:bg-white/10'
+          }`}
         >
-          <span>Agent Footprints</span>
+          Footprints
         </button>
         <button
-          type="button"
-          onClick={() => setActiveTab('webhooks')}
-          className={`flex-1 py-2 px-3 text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer ${activeTab === 'webhooks' ? 'bg-white/90 text-[#141414]' : 'bg-[#141414] text-white/70 hover:bg-white/5'}`}
+          onClick={() => setActiveTab('floor')}
+          className={`text-[10px] uppercase font-black px-3 py-1.5 transition-all ${
+            activeTab === 'floor'
+              ? 'bg-white text-[#141414]'
+              : 'bg-white/5 text-white/50 hover:bg-white/10'
+          }`}
         >
-          <span>Webhook Events</span>
+          Floor Activity
         </button>
       </div>
 
@@ -620,223 +616,97 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
           <div className="flex justify-center items-center py-12 bg-white/5 border-2 border-dashed border-white/20">
             <BrutalistLoader text="Synchronizing" size="sm" theme="dark" className="py-4" />
           </div>
-        ) : logs.length > 0 ? (
-          (() => {
-            const filteredLogs = logs.filter(log => {
-              const isFootprint = !!log.action;
-              const isWebhook = !!log.type;
-              return activeTab === 'footprints' ? isFootprint : isWebhook;
-            });
+        ) : logs.filter(l => activeTab === 'footprints' ? !!l.action : !l.action).length > 0 ? (
+          logs.filter(l => activeTab === 'footprints' ? !!l.action : !l.action).map((log) => {
+            const title = formatActionTitle(log.action || log.type);
+            const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
+            const actionKey = (log.action || log.type || '').toUpperCase();
+            const isChatable = CHAT_ELIGIBLE_TYPES.has(actionKey);
+            const targetStr = log.target || log.targetId || log.details?.targetId || log.details?.postId || log.details?.connectionId;
+            const targetShort = targetStr ? (targetStr.length > 14 ? `${targetStr.slice(0, 12)}...` : targetStr) : null;
+            const isReplyTarget = actionKey.includes('BID') || (log.endpoint && log.endpoint.includes('/replies')) || (targetStr && (targetStr.startsWith('rep_') || targetStr.startsWith('REP_')));
+            const isPostTarget = !isReplyTarget && (actionKey.includes('POST') || (log.endpoint && log.endpoint.includes('/posts')) || (targetStr && (targetStr.startsWith('post_') || targetStr.startsWith('POST_'))));
+            const isThreadTarget = isPostTarget || isReplyTarget;
+            const isClusterTarget = actionKey.includes('CLUSTER') || (targetStr && (targetStr.startsWith('cluster_') || targetStr.startsWith('cls_'))) || Boolean(log.details?.clusterId);
+            const entities = resolveLogEntities(log);
 
-            if (filteredLogs.length === 0) {
-              return (
-                <div className="p-8 text-center text-xs text-white/60 border-2 border-dashed border-white/20 bg-white/5 uppercase tracking-wider font-bold">
-                  No activity records found.
+            return (
+              <div key={log.id} className="p-3.5 bg-[#1e1e1e] border border-white/10 text-xs space-y-2.5 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/15 transition-all duration-150">
+                {/* Row 1: Action Title & Time */}
+                <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90">
+                  <span>{title}</span>
+                  <span className="text-[10px] text-white/50 font-medium">{timeStr}</span>
                 </div>
-              );
-            }
 
-            return filteredLogs.map((log) => {
-              const title = formatActionTitle(log.action || log.type);
-              const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
-              const actionKey = (log.action || log.type || '').toUpperCase();
-              const isChatable = CHAT_ELIGIBLE_TYPES.has(actionKey);
+                {/* Row 2: Endpoint Used */}
+                <div className="text-[11px] text-white/80 font-bold flex flex-wrap items-center gap-1.5">
+                  <span className="text-white/50 text-[10px] uppercase tracking-wider font-semibold">Endpoint Used:</span>
+                  <code className="bg-white/5 px-2 py-0.5 border border-white/15 text-[11px] font-bold text-white/90">
+                    {parseEndpoint(log.endpoint, log.action)}
+                  </code>
+                </div>
 
-              const targetStr = log.target || log.targetId || log.details?.targetId || log.details?.postId || log.details?.connectionId;
-              const senderStr = log.senderId || log.details?.senderId;
-              const targetShort = targetStr ? (targetStr.length > 14 ? `${targetStr.slice(0, 12)}...` : targetStr) : null;
-
-              const isReplyTarget = actionKey.includes('BID') || (log.endpoint && log.endpoint.includes('/replies')) || (targetStr && (targetStr.startsWith('rep_') || targetStr.startsWith('REP_')));
-              const isPostTarget = !isReplyTarget && (actionKey.includes('POST') || (log.endpoint && log.endpoint.includes('/posts')) || (targetStr && (targetStr.startsWith('post_') || targetStr.startsWith('POST_'))));
-              const isThreadTarget = isPostTarget || isReplyTarget;
-              const isClusterTarget = actionKey.includes('CLUSTER') || (targetStr && (targetStr.startsWith('cluster_') || targetStr.startsWith('cls_'))) || Boolean(log.details?.clusterId);
-              const entities = resolveLogEntities(log);
-
-              // Footprint Layout
-              if (activeTab === 'footprints') {
-                const fullEndpoint = parseEndpoint(log.endpoint, log.action);
-
-                return (
-                  <div key={log.id} className="p-3.5 bg-[#1e1e1e] border border-white/10 text-xs space-y-2.5 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/15 transition-all duration-150">
-                    {/* Row 1: Action Title & Time */}
-                    <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90">
-                      <span>{title}</span>
-                      <span className="text-[10px] text-white/50 font-medium">{timeStr}</span>
-                    </div>
-
-                    {/* Row 2: Endpoint Used */}
-                    <div className="text-[11px] text-white/80 font-bold flex flex-wrap items-center gap-1.5">
-                      <span className="text-white/50 text-[10px] uppercase tracking-wider font-semibold">Endpoint Used:</span>
-                      <code className="bg-white/5 px-2 py-0.5 border border-white/15 text-[11px] font-bold text-white/90">
-                        {fullEndpoint}
-                      </code>
-                    </div>
-
-                    {/* Row 3: Direct Link Boxes (Agent Profile Badge + Request Badge + Action Boxes) */}
-                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
-                      {/* Cluster Badge if cluster event */}
-                      {isClusterTarget && (
-                        renderClusterBadge(targetStr || log.details?.clusterId, log.details)
-                      )}
-
-                      {/* Thread or Direct Post Link Box */}
-                      {isThreadTarget && targetStr && (onOpenThread || onOpenPost) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const targetId = log.details?.postId || log.details?.id || targetStr.replace('#', '');
-                            if (isPostTarget) {
-                              if (onOpenPost) {
-                                onOpenPost(targetId, log.details);
-                              } else if (onOpenThread) {
-                                onOpenThread(targetId, log.details, 'post');
-                              }
-                            } else {
-                              if (onOpenThread) {
-                                onOpenThread(targetId, log.details, 'bid');
-                              }
-                            }
-                          }}
-                          className="font-black text-white/80 bg-[#141414] hover:bg-white hover:text-[#141414] border border-white/20 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
-                        >
-                          Thread #{targetShort}
-                        </button>
-                      )}
-
-                      {/* If Connection Request: Show Agent Profile Badge (opens Profile Modal) AND Request Link (redirects to Requests tab) */}
-                      {!isClusterTarget && !isThreadTarget && entities.isRequest && (
-                        <>
-                          {entities.agentId && renderAgentBadge(entities.agentId, entities.agentName, entities.agentAvatar, log.details)}
-                          {entities.requestId && renderRequestBadge(entities.requestId)}
-                        </>
-                      )}
-
-                      {/* Standard Agent Badge if NOT a Request and NOT Cluster/Thread */}
-                      {!isClusterTarget && !isThreadTarget && !entities.isRequest && (
-                        renderAgentBadge(entities.agentId || targetStr, entities.agentName, entities.agentAvatar, log.details)
-                      )}
-
-                      {/* Open Chat Direct Link Box */}
-                      {onOpenChat && isChatable && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenChat(log)}
-                          className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
-                        >
-                          Open Chat
-                        </button>
-                      )}
-
-                      {/* Account Requests Direct Link Box */}
-                      {onOpenRequestsTab && entities.isRequest && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenRequestsTab();
-                          }}
-                          className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-1.5"
-                          title="Redirect to Account Requests tab"
-                        >
-                          <Inbox className="w-3.5 h-3.5 text-[#141414]" />
-                          <span>Account Requests</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-
-              // Webhook Event Layout
-              const description = getLogDescription(log);
-
-              return (
-                <div key={log.id} className="p-3.5 bg-[#1e1e1e] border border-white/10 text-xs space-y-2.5 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/15 transition-all duration-150">
-                  {/* Row 1: Action Title & Time */}
-                  <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90">
-                    <span>{title}</span>
-                    <span className="text-[10px] text-white/50 font-medium">{timeStr}</span>
-                  </div>
-
-                  {/* Row 2: Description */}
-                  <div className="text-[11px] text-white/80 font-sans font-medium leading-relaxed">
-                    <span className="font-mono text-[10px] uppercase font-bold text-white/50 tracking-wider mr-1.5 block sm:inline">Description:</span>
-                    {description}
-                  </div>
-
-                  {/* Row 3: Direct Link Boxes */}
-                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
-                    {/* Cluster Badge if cluster event */}
-                    {isClusterTarget && renderClusterBadge(log.details?.clusterId || targetStr, log.details)}
-
-                    {/* Thread or Direct Post Link Box */}
-                    {isThreadTarget && targetStr && (onOpenThread || onOpenPost) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const targetId = log.details?.postId || log.details?.id || targetStr.replace('#', '');
-                          if (isPostTarget) {
-                            if (onOpenPost) {
-                              onOpenPost(targetId, log.details);
-                            } else if (onOpenThread) {
-                              onOpenThread(targetId, log.details, 'post');
-                            }
-                          } else {
-                            if (onOpenThread) {
-                              onOpenThread(targetId, log.details, 'bid');
-                            }
+                {/* Row 3: Direct Link Boxes */}
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
+                  {isClusterTarget && renderClusterBadge(targetStr || log.details?.clusterId, log.details)}
+                  {isThreadTarget && targetStr && (onOpenThread || onOpenPost) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetId = log.details?.postId || log.details?.id || targetStr.replace('#', '');
+                        if (isPostTarget) {
+                          if (onOpenPost) {
+                            onOpenPost(targetId, log.details);
+                          } else if (onOpenThread) {
+                            onOpenThread(targetId, log.details, 'post');
                           }
-                        }}
-                        className="font-black text-white/80 bg-[#141414] hover:bg-white hover:text-[#141414] border border-white/20 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
-                      >
-                        Thread #{targetShort}
-                      </button>
-                    )}
-
-                    {/* If Connection Request: Show Agent Profile Badge (opens Profile Modal) AND Request Link (redirects to Requests tab) */}
-                    {!isClusterTarget && !isThreadTarget && entities.isRequest && (
-                      <>
-                        {entities.agentId && renderAgentBadge(entities.agentId, entities.agentName, entities.agentAvatar, log.details)}
-                        {entities.requestId && renderRequestBadge(entities.requestId)}
-                      </>
-                    )}
-
-                    {/* Standard Agent Badge if NOT a Request and NOT Cluster/Thread */}
-                    {!isClusterTarget && !isThreadTarget && !entities.isRequest && (
-                      renderAgentBadge(entities.agentId || senderStr || targetStr, entities.agentName, entities.agentAvatar, log.details)
-                    )}
-
-                    {/* Open Chat Direct Link Box */}
-                    {onOpenChat && isChatable && (
-                      <button
-                        type="button"
-                        onClick={() => handleOpenChat(log)}
-                        className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
-                      >
-                        Open Chat
-                      </button>
-                    )}
-
-                    {/* Account Requests Direct Link Box */}
-                    {onOpenRequestsTab && entities.isRequest && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenRequestsTab();
-                        }}
-                        className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-1.5"
-                        title="Redirect to Account Requests tab"
-                      >
-                        <Inbox className="w-3.5 h-3.5 text-[#141414]" />
-                        <span>Account Requests</span>
-                      </button>
-                    )}
-                  </div>
+                        } else {
+                          if (onOpenThread) {
+                            onOpenThread(targetId, log.details, 'bid');
+                          }
+                        }
+                      }}
+                      className="font-black text-white/80 bg-[#141414] hover:bg-white hover:text-[#141414] border border-white/20 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
+                    >
+                      Thread #{targetShort}
+                    </button>
+                  )}
+                  {!isClusterTarget && !isThreadTarget && entities.isRequest && (
+                    <>
+                      {entities.agentId && renderAgentBadge(entities.agentId, entities.agentName, entities.agentAvatar, log.details)}
+                      {entities.requestId && renderRequestBadge(entities.requestId)}
+                    </>
+                  )}
+                  {!isClusterTarget && !isThreadTarget && !entities.isRequest && (
+                    renderAgentBadge(entities.agentId || targetStr, entities.agentName, entities.agentAvatar, log.details)
+                  )}
+                  {onOpenChat && isChatable && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenChat(log)}
+                      className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
+                    >
+                      Open Chat
+                    </button>
+                  )}
+                  {onOpenRequestsTab && entities.isRequest && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenRequestsTab();
+                      }}
+                      className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-1.5"
+                      title="Redirect to Account Requests tab"
+                    >
+                      <Inbox className="w-3.5 h-3.5 text-[#141414]" />
+                      <span>Account Requests</span>
+                    </button>
+                  )}
                 </div>
-              );
-            });
-          })()
+              </div>
+            );
+          })
         ) : (
           <div className="p-8 text-center text-xs text-white/60 border-2 border-dashed border-white/20 bg-white/5 uppercase tracking-wider font-bold">
             No activity records found.

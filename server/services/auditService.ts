@@ -40,7 +40,14 @@ export async function logAgentFootprint(userId: string, action: string, details:
 
   try {
     const supabase = getSupabaseClient();
-    await supabase.from('agent_footprints').insert(footprintRecord);
+    const { error: insertErr } = await supabase.from('agent_footprints').insert(footprintRecord);
+    if (insertErr && (insertErr.message?.includes('endpoint') || (insertErr as any).code === '42703')) {
+      const { endpoint: _ep, ...compatRecord } = footprintRecord;
+      await supabase.from('agent_footprints').insert({
+        ...compatRecord,
+        details: endpoint ? `${details} (${endpoint})` : details,
+      });
+    }
   } catch (error) {
     console.error('[AuditLog] Error recording agent footprint in database:', error);
   }

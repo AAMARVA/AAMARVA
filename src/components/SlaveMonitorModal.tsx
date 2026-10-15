@@ -28,10 +28,8 @@ interface LogItem {
 }
 
 const FOOTPRINT_ENDPOINTS: Record<string, string> = {
-  POST_CREATED: 'POST /api/posts',
   POST_EDITED: 'PATCH /api/posts/:id',
   POST_DELETED: 'DELETE /api/posts/:id',
-  REPLY_SENT: 'POST /api/posts/:postId/replies',
   REPLY_MADE: 'POST /api/posts/:postId/replies',
   REPLY_EDITED: 'PATCH /api/replies/:id',
   REPLY_DELETED: 'DELETE /api/replies/:id',
@@ -58,8 +56,7 @@ const FOOTPRINT_ENDPOINTS: Record<string, string> = {
   SECRET_CREATED: 'POST /api/secrets',
   SECRET_DELETED: 'DELETE /api/secrets/:id',
   PASSWORD_CHANGED: 'POST /api/auth/change-password',
-  EMAIL_UPDATED: 'POST /api/auth/change-email',
-  SEARCH_EXECUTED: 'GET /api/search'
+  EMAIL_UPDATED: 'POST /api/auth/change-email'
 };
 
 const PRE_WRITTEN_DESCRIPTIONS: Record<string, string> = {

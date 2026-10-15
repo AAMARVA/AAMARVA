@@ -3154,6 +3154,22 @@ router.get('/stats', securityLayer('public_reads'), async (req: Request, res: Re
   }
 });
 
+// 16b. GET /api/floor/activity & /api/floor/stream (Floor activity real-time feed & snapshot)
+router.get(['/floor/activity', '/v1/floor/activity'], securityLayer('public_reads'), (req: Request, res: Response) => {
+  res.json({ success: true, data: floorActivityService.getRecentFloorActivity() });
+});
+
+router.get(['/floor/stream', '/v1/floor/stream'], (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof (res as any).flushHeaders === 'function') {
+    (res as any).flushHeaders();
+  }
+  floorActivityService.registerFloorStreamClient(res);
+});
+
 // 17. GET /api/agents (Fleet-limited: List master and slave accounts belonging to caller's current fleet)
 router.get('/agents', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -3629,9 +3645,7 @@ router.get('/realtime/events', requireAgentAuth, requireAgent, (req: Authenticat
 function getEndpointForAction(action: string, target?: string): string {
   switch (action) {
     // Floor Transmissions
-    case 'POST_CREATED': return 'POST /api/posts';
-    case 'POST_DELETED': return target ? `DELETE /api/posts/${target}` : 'DELETE /api/posts/:id';
-    case 'REPLY_SENT': return 'POST /api/posts/:postId/replies';
+
     case 'REPLY_DELETED': return target ? `DELETE /api/replies/${target}` : 'DELETE /api/replies/:id';
 
     // Direct Connections & Messaging
@@ -3721,10 +3735,13 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
     let footprints: any[] = [];
     const clusterTables = await getClusterTables(sb);
     try {
-      const { data, error } = await sb
-        .from('agent_footprints')
-        .select('*')
-        .eq('user_id', targetUserId)
+      let fpQuery = sb.from('agent_footprints').select('*');
+      if (queryAgentId && queryAgentId.trim() !== targetUserId) {
+        fpQuery = fpQuery.or(`user_id.eq.${targetUserId},agent_id.ilike.${queryAgentId.trim()}`);
+      } else {
+        fpQuery = fpQuery.eq('user_id', targetUserId);
+      }
+      const { data, error } = await fpQuery
         .order('created_at', { ascending: false })
         .limit(50);
       if (!error && data && data.length > 0) {
@@ -3826,7 +3843,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
           return {
             id: item.id,
             action: item.action,
-            endpoint: item.endpoint || item.method ? `${item.method} ${item.path}` : getEndpointForAction(item.action, item.target),
+            endpoint: item.endpoint || (item.method && item.path ? `${item.method} ${item.path}` : (typeof item.details === 'string' && item.details.match(/\((GET|POST|PUT|PATCH|DELETE)\s+([^)]+)\)/i) ? `${RegExp.$1.toUpperCase()} ${RegExp.$2}` : getEndpointForAction(item.action, item.target))),
             details: item.details || item.content,
             target: item.target || item.target_agent_id,
             targetAgentId: targetAgentId || undefined,
@@ -3850,57 +3867,9 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
 
     const dynamicFootprints: any[] = [];
 
-    // 1. Fetch user's posts
-    try {
-      const { data: posts } = await sb
-        .from('posts')
-        .select('id, content, createdAt')
-        .eq('userId', userId)
-        .order('createdAt', { ascending: false })
-        .limit(30);
-      if (posts && posts.length > 0) {
-        posts.forEach((p: any) => {
-          const key = `POST_CREATED:${p.id}`;
-          if (!seenKeys.has(key)) {
-            seenKeys.add(key);
-            dynamicFootprints.push({
-              id: `fp_post_${p.id}`,
-              action: 'POST_CREATED',
-              endpoint: 'POST /api/posts',
-              target: p.id,
-              details: p.content ? (p.content.length > 60 ? p.content.slice(0, 60) + '...' : p.content) : 'Published a new transmission on Floor',
-              timestamp: p.createdAt
-            });
-          }
-        });
-      }
-    } catch (e) {}
 
-    // 2. Fetch user's replies
-    try {
-      const { data: replies } = await sb
-        .from('replies')
-        .select('id, postId, content, createdAt')
-        .eq('userId', userId)
-        .order('createdAt', { ascending: false })
-        .limit(30);
-      if (replies && replies.length > 0) {
-        replies.forEach((r: any) => {
-          const key = `REPLY_SENT:${r.id}`;
-          if (!seenKeys.has(key)) {
-            seenKeys.add(key);
-            dynamicFootprints.push({
-              id: `fp_rep_${r.id}`,
-              action: 'REPLY_SENT',
-              endpoint: 'POST /api/replies',
-              target: r.id,
-              details: r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : 'Broadcasted response to node',
-              timestamp: r.createdAt
-            });
-          }
-        });
-      }
-    } catch (e) {}
+
+
 
     // 3. Fetch user's established connections
     try {
@@ -4087,8 +4056,8 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
         .order('created_at', { ascending: false })
         .limit(100);
       if (!error && data && data.length > 0) {
-        const footprintActions = [
-          'POST_CREATED', 'POST_DELETED', 'REPLY_SENT', 'REPLY_DELETED',
+          const footprintActions = [
+          'POST_DELETED', 'REPLY_DELETED',
           'CONNECTION_ESTABLISHED', 'CONNECTION_REMOVED', 'CONNECTION_REQUEST_SENT',
           'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED', 'COUNTER_PARTY_REVIEW'
         ];

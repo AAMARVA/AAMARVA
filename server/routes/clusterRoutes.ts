@@ -767,6 +767,148 @@ router.get('/clusters/:clusterId/epoch', requireUserOrAgentAuth, async (req: Aut
   }
 });
 
+// 3.2 GET /clusters/:clusterId/members/crypto (Get cluster member directory with cryptographic identities & public keys)
+router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_get_crypto_members');
+    const clusterId = req.params.clusterId as string;
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+
+    // 1. Check if cluster exists and is not dissolved
+    const { data: cluster, error: clError } = await supabase
+      .from(tables.clusters)
+      .select('id, status, ownerUserId, ownerAgentId, createdAt')
+      .eq('id', clusterId)
+      .maybeSingle();
+
+    if (clError || !cluster) {
+      return res.status(404).json({ success: false, error: { code: 'CLUSTER_NOT_FOUND', message: 'Cluster not found.' } });
+    }
+
+    if (cluster.status === 'dissolved') {
+      return res.status(403).json({ success: false, error: { code: 'CLUSTER_DISSOLVED', message: 'Forbidden: This cluster has been dissolved.' } });
+    }
+
+    // 2. Enforce active membership check for caller
+    const isMember = await isClusterMember(supabase, clusterId, userId);
+    if (!isMember) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: You must be an active member of this cluster to view the cryptographic member directory.' } });
+    }
+
+    // 3. Query cluster members
+    const { data: dbMembers, error: memErr } = await supabase
+      .from(tables.members)
+      .select('id, clusterId, userId, agentId, role, status, createdAt')
+      .eq('clusterId', clusterId)
+      .order('createdAt', { ascending: true });
+
+    if (memErr) {
+      throw new Error(`Failed to query cluster members: ${memErr.message}`);
+    }
+
+    // 4. Collect all participant user IDs and agent IDs
+    const participantUserIds = new Set<string>();
+    const participantAgentIds = new Set<string>();
+    (dbMembers || []).forEach((m: any) => {
+      if (m.userId) participantUserIds.add(m.userId);
+      if (m.agentId) participantAgentIds.add(String(m.agentId).trim());
+    });
+    if (cluster.ownerUserId) participantUserIds.add(cluster.ownerUserId);
+    if (cluster.ownerAgentId) participantAgentIds.add(String(cluster.ownerAgentId).trim());
+
+    let usersById: any[] = [];
+    let usersByAgentId: any[] = [];
+    if (participantUserIds.size > 0) {
+      const { data } = await supabase
+        .from('users')
+        .select('id, name, agentId, avatar, bio, emailVerified')
+        .in('id', Array.from(participantUserIds));
+      if (data) usersById = data;
+    }
+    if (participantAgentIds.size > 0) {
+      const { data } = await supabase
+        .from('users')
+        .select('id, name, agentId, avatar, bio, emailVerified')
+        .in('agentId', Array.from(participantAgentIds));
+      if (data) usersByAgentId = data;
+    }
+
+    const users = [...usersById, ...usersByAgentId];
+    const userMap = new Map<string, any>();
+    users.forEach((u: any) => {
+      if (u.id) userMap.set(String(u.id).toLowerCase(), u);
+      if (u.agentId) userMap.set(String(u.agentId).toLowerCase(), u);
+    });
+
+    // Populate E2EE public keys and metadata from user auth metadata
+    for (const uId of Array.from(participantUserIds)) {
+      try {
+        const { data: authData } = await supabase.auth.admin.getUserById(uId);
+        const meta = authData?.user?.user_metadata;
+        if (meta?.e2eePublicKey) {
+          const existing = userMap.get(String(uId).toLowerCase()) || {};
+          existing.e2eePublicKey = meta.e2eePublicKey;
+          existing.e2eeKeyEpoch = meta.e2eeKeyEpoch || 1;
+          existing.e2eePublicKeyFingerprint = meta.e2eePublicKeyFingerprint || null;
+          userMap.set(String(uId).toLowerCase(), existing);
+          if (existing.agentId) {
+            userMap.set(String(existing.agentId).toLowerCase(), existing);
+          }
+        }
+      } catch {}
+    }
+
+    // Query latest epoch for membership version
+    const { data: latestEpochRecord } = await supabase
+      .from('cluster_epochs')
+      .select('epoch')
+      .eq('clusterId', clusterId)
+      .order('epoch', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const membershipVersion = latestEpochRecord?.epoch || 1;
+
+    const membersList = (dbMembers || []).map((m: any) => {
+      const mAgentId = m.agentId || m.agent_id;
+      const mUserId = m.userId || m.user_id;
+      const u = (mAgentId ? userMap.get(String(mAgentId).toLowerCase()) : null) || 
+                (mUserId ? userMap.get(String(mUserId).toLowerCase()) : null);
+
+      const pubKey = u?.e2eePublicKey || m.e2eePublicKey || null;
+      let keyStatus = 'missing';
+      if (pubKey && typeof pubKey === 'string' && pubKey.trim().length > 0) {
+        keyStatus = 'available';
+      }
+
+      return {
+        agentId: mAgentId || u?.agentId || 'UNKNOWN_AGENT',
+        name: (u?.name && String(u.name).trim()) || mAgentId || 'Cluster Member',
+        bio: u?.bio || null,
+        publicKey: pubKey,
+        keyId: u?.e2eePublicKeyFingerprint || (pubKey ? `key_${mAgentId || 'agent'}` : null),
+        keyVersion: u?.e2eeKeyEpoch || membershipVersion,
+        keyStatus,
+        membershipRole: m.role || 'member',
+        status: m.status || 'active'
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        clusterId,
+        membershipVersion,
+        members: membersList
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+  }
+});
+
 // 4. PATCH /clusters/:clusterId (Update cluster metadata - Human only)
 router.patch('/clusters/:clusterId', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {

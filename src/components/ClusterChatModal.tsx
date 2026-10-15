@@ -192,6 +192,9 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   const [showHiddenMessages, setShowHiddenMessages] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
+  const [members, setMembers] = useState<any[]>([]);
+  const [selectedRecipientIds, setSelectedRecipientIds] = useState<Set<string>>(new Set());
+  const [showRecipientModal, setShowRecipientModal] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -221,9 +224,10 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
         setActiveCluster(currentClusterMeta);
       }
 
-      // Fetch members
-      const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'human' });
-      const currentMembers = (membersRes?.success && Array.isArray(membersRes.data)) ? membersRes.data : [];
+      // Fetch members from crypto members endpoint
+      const membersRes = await apiFetch(`/api/clusters/${clusterId}/members/crypto`, { authType: 'human' });
+      const currentMembers = (membersRes?.success && Array.isArray(membersRes.data?.members)) ? membersRes.data.members : [];
+      setMembers(currentMembers);
 
       // Fetch messages
       const msgsRes = await apiFetch(`/api/clusters/${clusterId}/messages`, { authType: 'human' });
@@ -412,7 +416,11 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 clusterId,
                 messageToSend,
                 user.agentId,
-                { password: userPassword || undefined, authType: 'human' }
+                { 
+                  password: userPassword || undefined, 
+                  authType: 'human',
+                  selectedRecipientAgentIds: selectedRecipientIds.size > 0 ? Array.from(selectedRecipientIds) : undefined
+                }
               );
               if (res?.success || res?.id || res?.messageId) {
                 setNewMessage('');
@@ -446,7 +454,116 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               {isSending ? '...' : 'Send'}
             </button>
           </div>
+          {/* Button below the text input box to select members to send message to */}
+          <div className="mt-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setShowRecipientModal(true)}
+              className="text-[10px] font-mono font-bold uppercase tracking-wider bg-white border border-[#141414] px-2.5 py-1 hover:bg-[#141414] hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+            >
+              <span>👥</span>
+              <span>
+                {selectedRecipientIds.size === 0 || selectedRecipientIds.size === members.length
+                  ? `Recipients: All Members (${members.length || 'All'})`
+                  : `Recipients: ${selectedRecipientIds.size} of ${members.length} selected`}
+              </span>
+            </button>
+            <span className="text-[9px] font-mono text-[#141414]/70 uppercase">
+              Individual-Agent E2EE
+            </span>
+          </div>
         </form>
+
+        {/* Recipient Selection Modal */}
+        {showRecipientModal && (
+          <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white border-2 border-[#141414] w-full max-w-md shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-4 flex flex-col max-h-[80vh] text-[#141414]">
+              <div className="flex items-center justify-between pb-3 border-b-2 border-[#141414] bg-[#E4E3E0] -mx-4 -mt-4 p-4 mb-3">
+                <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider">
+                  Select Recipients
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowRecipientModal(false)}
+                  className="border border-[#141414] p-1 bg-white hover:bg-[#141414] hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="font-mono text-[11px] text-[#141414]/70 pb-2">
+                Choose which cluster members receive the encrypted message envelope. Only selected members will be able to decrypt and see this message.
+              </p>
+              <div className="flex gap-2 py-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedRecipientIds(new Set())}
+                  className="text-[10px] font-mono font-bold uppercase border border-[#141414] px-2 py-1 bg-[#E4E3E0] hover:bg-[#141414] hover:text-white cursor-pointer"
+                >
+                  Select All (Default)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRecipientIds(new Set([user?.agentId || '']))}
+                  className="text-[10px] font-mono font-bold uppercase border border-[#141414] px-2 py-1 bg-white hover:bg-[#141414] hover:text-white cursor-pointer"
+                >
+                  Clear All
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-2 py-2 border-y border-[#141414]/20 custom-scrollbar max-h-[300px]">
+                {members.map((m) => {
+                  const mId = m.agentId;
+                  const isSelected = selectedRecipientIds.size === 0 || selectedRecipientIds.has(mId);
+                  const isSelf = mId?.toLowerCase() === user?.agentId?.toLowerCase();
+                  return (
+                    <label
+                      key={mId}
+                      className="flex items-center justify-between p-2.5 border border-[#141414] bg-[#F5F4F0] hover:bg-white cursor-pointer select-none"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <AgentAvatar name={m.name || mId} avatar={m.avatar} id={mId} className="w-7 h-7" />
+                        <div className="flex flex-col text-left">
+                          <span className="font-mono font-bold text-xs uppercase text-[#141414]">
+                            {m.name || mId} {isSelf && '(You)'}
+                          </span>
+                          <span className="font-mono text-[9px] text-[#141414]/60">
+                            {mId} {m.membershipRole ? `• ${m.membershipRole}` : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={isSelf}
+                        onChange={(e) => {
+                          const next = new Set(selectedRecipientIds);
+                          if (next.size === 0) {
+                            members.forEach(item => next.add(item.agentId));
+                          }
+                          if (e.target.checked) {
+                            next.add(mId);
+                          } else {
+                            next.delete(mId);
+                          }
+                          setSelectedRecipientIds(next);
+                        }}
+                        className="w-4 h-4 accent-[#141414] cursor-pointer"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="pt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowRecipientModal(false)}
+                  className="bg-[#141414] text-white px-4 py-2 font-mono font-bold text-xs uppercase hover:bg-black cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                >
+                  Done ({selectedRecipientIds.size === 0 ? members.length : selectedRecipientIds.size} Recipients)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
