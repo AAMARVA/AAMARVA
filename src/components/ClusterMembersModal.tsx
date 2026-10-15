@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, ArrowLeft, AlertCircle, Edit3, Check, Users } from 'lucide-react';
+import { X, ArrowLeft, AlertCircle, Edit3, Check, Users, Plus } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
 import { VerifiedBadge } from './VerifiedBadge';
 import { BrutalistLoader } from './BrutalistLoader';
@@ -76,6 +76,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   const [availableAgents, setAvailableAgents] = useState<SpogAgent[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState('');
+  const [agentToRemove, setAgentToRemove] = useState<{ agentId: string; agentName?: string } | null>(null);
+
+  // Option called Add below SPOG
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [addSearchQuery, setAddSearchQuery] = useState('');
 
   const fetchClusterMembers = useCallback(async (cId: string) => {
     try {
@@ -173,16 +178,35 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        if (agentToRemove) {
+          setAgentToRemove(null);
+        } else if (isSpogModalOpen) {
+          setIsSpogModalOpen(false);
+        } else if (isEditing) {
+          setIsEditing(false);
+        } else {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, agentToRemove, isSpogModalOpen, isEditing]);
 
   useEffect(() => {
     if (!cluster) return;
     setClusterInfo(cluster);
+
+    const isInitialEdit = Boolean((cluster as any)?.initialEdit);
+    if (isInitialEdit) {
+      setIsEditing(true);
+      setEditName(cluster.name || '');
+      setEditDescription(cluster.description || (cluster as any)?.description || '');
+      setEditError(null);
+      fetchAvailableAgents();
+    } else {
+      setIsEditing(false);
+    }
 
     let isMounted = true;
     setLoading(true);
@@ -201,7 +225,6 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
           }
           let fetchedMembers: ClusterMember[] = res.data.members || [];
           
-          // Fallback if no members found: consider admin as the first member
           if (fetchedMembers.length === 0) {
             fetchedMembers = [
               {
@@ -215,9 +238,13 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
             ];
           }
           setMembers(fetchedMembers);
+          const currentMemberIds = fetchedMembers
+            .filter((m) => m.status !== 'dissolved')
+            .map((m) => m.agentId)
+            .filter(Boolean);
+          setSelectedAgentIds(currentMemberIds);
         } else {
-          // Fallback logic if API endpoint returns empty or error
-          setMembers([
+          const fallbackMembers = [
             {
               id: `admin-${clusterId}`,
               agentId: ownerAgentId,
@@ -226,12 +253,14 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
               role: 'admin',
               emailVerified: true,
             },
-          ]);
+          ];
+          setMembers(fallbackMembers);
+          setSelectedAgentIds([ownerAgentId]);
         }
       })
       .catch(() => {
         if (!isMounted) return;
-        setMembers([
+        const fallbackMembers = [
           {
             id: `admin-${clusterId}`,
             agentId: ownerAgentId,
@@ -240,7 +269,9 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
             role: 'admin',
             emailVerified: true,
           },
-        ]);
+        ];
+        setMembers(fallbackMembers);
+        setSelectedAgentIds([ownerAgentId]);
       })
       .finally(() => {
         if (isMounted) setLoading(false);
@@ -249,7 +280,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [cluster]);
+  }, [cluster, fetchAvailableAgents]);
 
   const current = activeAccount || user;
   const currentProfile = current ? ((current as any).profile || current) : null;
@@ -298,6 +329,31 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
   const canEdit = isAuthenticated && (isMaster || isOwner || isAdminMember || (clusterInfo as any)?.role === 'admin' || (cluster as any)?.role === 'admin');
 
+  const startEditing = useCallback(() => {
+    setEditName(clusterInfo?.name || cluster?.name || '');
+    setEditDescription(clusterInfo?.description || (cluster as any)?.description || '');
+    setEditError(null);
+    const currentMemberIds = members
+      .filter((m) => m.status !== 'dissolved')
+      .map((m) => m.agentId)
+      .filter(Boolean);
+    setSelectedAgentIds(currentMemberIds);
+    fetchAvailableAgents();
+    setIsEditing(true);
+  }, [clusterInfo, cluster, members, fetchAvailableAgents]);
+
+  const handleConfirmRemove = () => {
+    if (!agentToRemove) return;
+    if (agentToRemove.agentId === 'ALL') {
+      setSelectedAgentIds([]);
+    } else {
+      setSelectedAgentIds((prev) =>
+        prev.filter((id) => id.toLowerCase() !== agentToRemove.agentId.toLowerCase())
+      );
+    }
+    setAgentToRemove(null);
+  };
+
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedName = editName.trim();
@@ -309,7 +365,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     setIsSaving(true);
     setEditError(null);
 
-    const clusterId = clusterInfo?.id || cluster.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+    const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
     try {
       const res = await apiFetch(`/api/clusters/${clusterId}`, {
         authType: 'human',
@@ -364,89 +420,73 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     <>
       <div 
         className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[640px] my-auto overflow-hidden text-[#141414]">
-        
-        {/* Header */}
-        <div className="px-4 py-3 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
-          <div className="flex items-center gap-2 min-w-0 pr-2">
-            {onBack && (
-              <button
-                type="button"
-                onClick={onBack}
-                className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-1 shrink-0"
-                title="Back"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-              </button>
-            )}
-            <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-[0.1em] text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
-              <span>CLUSTER</span>
-            </h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="border border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shrink-0"
-            aria-label="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Scrollable Members Area */}
-        <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-white">
-          {/* Cluster Header Section */}
-          <div className="border-2 border-[#141414] bg-[#E4E3E0]/30 p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
-                <div className="flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 bg-[#141414] text-white border-2 border-[#141414] shrink-0 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)]">
-                  <span className="font-mono font-black text-lg text-white grayscale [font-variant-emoji:text] select-none">
-                    {getClusterSymbol(clusterInfo?.id || cluster.id || 'cluster_alpha_secret')}
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-mono font-black uppercase text-sm sm:text-base tracking-wider text-[#141414] break-words">
-                    {clusterTitle.replace(/🛡️|🛡/g, '').trim()}
-                  </h2>
-                </div>
-              </div>
-
-              {canEdit && !isEditing && !isClusterDissolved && (
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            if (isEditing) {
+              setIsEditing(false);
+            } else {
+              onClose();
+            }
+          }
+        }}
+      >
+        <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[85vh] max-h-[640px] my-auto overflow-hidden text-[#141414]">
+          
+          {/* Header */}
+          <div className="px-4 py-3 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
+            <div className="flex items-center gap-2 min-w-0 pr-2">
+              {isEditing ? (
                 <button
                   type="button"
                   onClick={() => {
-                    setEditName(clusterInfo?.name || cluster.name || '');
-                    setEditDescription(clusterInfo?.description || (cluster as any)?.description || '');
+                    setIsEditing(false);
                     setEditError(null);
-                    const currentMemberIds = members
-                      .filter(m => m.status !== 'dissolved')
-                      .map(m => m.agentId)
-                      .filter(Boolean);
-                    setSelectedAgentIds(currentMemberIds);
-                    fetchAvailableAgents();
-                    setIsEditing(true);
                   }}
-                  className="px-2.5 py-1 bg-white text-[#141414] border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
-                  title="Edit Cluster (Admin or Master only)"
+                  className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-1 shrink-0"
+                  title="Cancel Edit"
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>EDIT</span>
+                  <ArrowLeft className="w-3.5 h-3.5" />
                 </button>
-              )}
+              ) : onBack ? (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="p-1 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-colors cursor-pointer mr-1 shrink-0"
+                  title="Back"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </button>
+              ) : null}
+              <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-[0.1em] text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
+                <span>{isEditing ? 'EDIT CLUSTER' : 'CLUSTER'}</span>
+              </h3>
             </div>
+            <button
+              onClick={onClose}
+              className="border border-[#141414] p-1 bg-white text-[#141414] hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
 
-            {isEditing ? (
-              <form onSubmit={handleSaveEdit} className="space-y-3 pt-2 border-t-2 border-[#141414]/20 animate-in fade-in duration-150">
+          {/* Body Content */}
+          {isEditing ? (
+            /* ========================================================= */
+            /* EDIT CLUSTER OPTION: ONLY NAME, DESCRIPTION, AND SPOG     */
+            /* ========================================================= */
+            <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 sm:p-5 bg-white">
+              <form onSubmit={handleSaveEdit} className="space-y-4">
                 {editError && (
-                  <div className="p-2 bg-red-100 border-2 border-red-500 text-red-700 font-mono text-[10px] sm:text-xs font-bold">
-                    {editError}
+                  <div className="p-2.5 bg-red-100 border-2 border-red-500 text-red-700 font-mono text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{editError}</span>
                   </div>
                 )}
-                <div className="space-y-1">
-                  <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/70">
+
+                {/* 1. Name */}
+                <div className="space-y-1.5">
+                  <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414]">
                     Name
                   </label>
                   <input
@@ -456,40 +496,232 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                     placeholder="CLUSTER NAME"
                     maxLength={50}
                     required
-                    className="w-full bg-white border-2 border-[#141414] p-2 font-mono font-bold text-xs uppercase focus:outline-none shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                    className="w-full bg-white border-2 border-[#141414] p-2.5 font-mono font-bold text-xs uppercase focus:outline-none shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/70">
+                {/* 2. Description */}
+                <div className="space-y-1.5">
+                  <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414]">
                     Description
                   </label>
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
                     placeholder="Cluster description..."
-                    rows={2}
+                    rows={3}
                     maxLength={200}
-                    className="w-full bg-white border-2 border-[#141414] p-2 font-mono text-xs focus:outline-none resize-none shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                    className="w-full bg-white border-2 border-[#141414] p-2.5 font-mono text-xs focus:outline-none resize-none shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] leading-relaxed"
                   />
                 </div>
 
-                <div>
+                {/* 3. SPOG */}
+                <div className="space-y-2.5 border-2 border-[#141414] p-3.5 bg-[#E4E3E0]/20 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414] flex items-center gap-1.5">
+                      <span className="bg-[#141414] text-white px-1.5 py-0.5 text-[9px] font-black">SPOG</span>
+                      <span>SPOG</span>
+                    </label>
+                    <span className="font-mono text-[10px] font-bold uppercase text-[#141414]/70">
+                      {selectedAgentIds.length} {selectedAgentIds.length === 1 ? 'Agent' : 'Agents'} Selected
+                    </span>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => {
                       fetchAvailableAgents();
                       setIsSpogModalOpen(true);
                     }}
-                    className="w-full py-2 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
-                    title="Open SPOG"
+                    className="w-full py-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-black transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
+                    title="Open SPOG to select or remove agents"
                   >
                     <span className="bg-white text-[#141414] px-1.5 py-0.5 text-[9px] font-black">SPOG</span>
                     <span>SPOG</span>
                   </button>
+
+                  {/* Selected Agents in SPOG with option to remove */}
+                  {selectedAgentIds.length > 0 ? (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[9px] font-black uppercase tracking-wider text-[#141414]/70">
+                          Assigned Agents (Click to remove):
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAgentToRemove({ agentId: 'ALL', agentName: 'All Agents' })}
+                          className="font-mono text-[9px] font-black uppercase text-red-600 hover:underline cursor-pointer"
+                        >
+                          Remove All
+                        </button>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto custom-scrollbar border-2 border-[#141414] p-1.5 bg-white space-y-1">
+                        {selectedAgentIds.map((aid) => {
+                          const agentObj = availableAgents.find((a) => a.agentId.toLowerCase() === aid.toLowerCase()) ||
+                            members.find((m) => m.agentId.toLowerCase() === aid.toLowerCase());
+                          const displayName = agentObj?.agentName || aid;
+                          return (
+                            <div
+                              key={aid}
+                              onClick={() => setAgentToRemove({ agentId: aid, agentName: displayName })}
+                              className="flex items-center justify-between p-2 bg-[#F5F4F0] border border-[#141414] hover:bg-red-50 hover:border-red-500 transition-colors cursor-pointer group"
+                              title="Click or select to remove from cluster"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <AgentAvatar
+                                  name={displayName}
+                                  avatar={agentObj?.avatar}
+                                  id={aid}
+                                  className="w-6 h-6 border border-[#141414] shrink-0"
+                                />
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-mono text-xs font-black uppercase truncate text-[#141414]">
+                                    {displayName}
+                                  </span>
+                                  <span className="font-mono text-[9px] text-[#141414]/60 truncate">
+                                    @{aid}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAgentToRemove({ agentId: aid, agentName: displayName });
+                                }}
+                                className="px-2 py-0.5 bg-red-600 text-white font-mono text-[9px] font-black uppercase border border-red-700 hover:bg-red-700 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 shrink-0 flex items-center gap-1 cursor-pointer"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                                <span>Remove</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 border-2 border-dashed border-[#141414]/30 bg-white text-center font-mono text-[10px] uppercase text-[#141414]/60">
+                      No agents selected.
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-1">
+                {/* 4. Option called ADD below SPOG */}
+                <div className="space-y-2 border-2 border-[#141414] p-3.5 bg-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-mono text-xs font-black uppercase tracking-wider text-[#141414] flex items-center gap-1.5">
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add</span>
+                    </label>
+                    <span className="font-mono text-[10px] font-bold uppercase text-[#141414]/60">
+                      Add Agents To Cluster
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchAvailableAgents();
+                      setIsAddOpen((prev) => !prev);
+                    }}
+                    className="w-full py-2.5 bg-white text-[#141414] border-2 border-[#141414] font-mono text-xs font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center justify-center gap-2"
+                    title="Add agents to cluster"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add</span>
+                  </button>
+
+                  {/* Quick Add agents drawer */}
+                  {isAddOpen && (
+                    <div className="space-y-2 pt-2 border-t-2 border-[#141414]">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={addSearchQuery}
+                          onChange={(e) => setAddSearchQuery(e.target.value)}
+                          placeholder="SEARCH AGENT TO ADD..."
+                          className="w-full bg-white border-2 border-[#141414] px-2.5 py-1.5 font-mono text-xs uppercase focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            fetchAvailableAgents();
+                            setIsSpogModalOpen(true);
+                          }}
+                          className="px-2.5 py-1.5 bg-[#141414] text-white font-mono text-[10px] font-black uppercase border-2 border-[#141414] hover:bg-black shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] whitespace-nowrap"
+                          title="Open full SPOG fleet selection"
+                        >
+                          SPOG Fleet
+                        </button>
+                      </div>
+
+                      {/* List of agents available to add */}
+                      <div className="max-h-48 overflow-y-auto custom-scrollbar border-2 border-[#141414] p-1.5 bg-[#F5F4F0] space-y-1">
+                        {(() => {
+                          const query = addSearchQuery.toLowerCase().trim();
+                          const unselected = availableAgents.filter((a) => {
+                            const isAlreadySelected = selectedAgentIds.some(
+                              (id) => id.toLowerCase() === a.agentId.toLowerCase()
+                            );
+                            if (isAlreadySelected) return false;
+                            if (!query) return true;
+                            return (
+                              (a.agentName || '').toLowerCase().includes(query) ||
+                              (a.agentId || '').toLowerCase().includes(query)
+                            );
+                          });
+
+                          if (unselected.length === 0) {
+                            return (
+                              <div className="p-3 text-center font-mono text-[10px] uppercase text-[#141414]/60 bg-white border border-[#141414]/20">
+                                {availableAgents.length === 0
+                                  ? 'No fleet agents available.'
+                                  : 'All available agents are already assigned to this cluster.'}
+                              </div>
+                            );
+                          }
+
+                          return unselected.map((agent) => (
+                            <div
+                              key={agent.agentId}
+                              className="flex items-center justify-between p-2 bg-white border border-[#141414] hover:bg-[#E4E3E0]/40 transition-colors"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <AgentAvatar
+                                  name={agent.agentName}
+                                  avatar={agent.avatar}
+                                  id={agent.agentId}
+                                  className="w-6 h-6 border border-[#141414] shrink-0"
+                                />
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-mono text-xs font-black uppercase truncate text-[#141414]">
+                                    {agent.agentName}
+                                  </span>
+                                  <span className="font-mono text-[9px] text-[#141414]/60 truncate">
+                                    @{agent.agentId}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedAgentIds((prev) => [...prev, agent.agentId]);
+                                }}
+                                className="px-2.5 py-1 bg-[#141414] text-white font-mono text-[9px] font-black uppercase border border-[#141414] hover:bg-black shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 shrink-0 flex items-center gap-1 cursor-pointer"
+                              >
+                                <Plus className="w-2.5 h-2.5" />
+                                <span>Add</span>
+                              </button>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Save & Cancel */}
+                <div className="flex items-center justify-end gap-2 pt-2 border-t-2 border-[#141414]">
                   <button
                     type="button"
                     disabled={isSaving}
@@ -497,14 +729,14 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                       setIsEditing(false);
                       setEditError(null);
                     }}
-                    className="px-3 py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider bg-white hover:bg-[#E4E3E0] transition-colors cursor-pointer"
+                    className="px-3.5 py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider bg-white hover:bg-[#E4E3E0] transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSaving}
-                    className="px-3 py-1.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:bg-black active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    className="px-4 py-1.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:bg-black active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                   >
                     {isSaving ? (
                       <span>Saving...</span>
@@ -517,105 +749,140 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   </button>
                 </div>
               </form>
-            ) : (
-              clusterInfo?.description && (
-                <div className="pt-2">
-                  <p className="font-sans text-xs sm:text-sm text-[#141414] leading-relaxed italic border-l-[3px] border-[#141414] pl-2.5">
-                    "{clusterInfo.description}"
-                  </p>
-                </div>
-              )
-            )}
-          </div>
-
-          <div className="pt-3 pb-2">
-            <div className="border-l-4 border-[#141414] pl-3 py-1 flex items-center justify-between">
-              <span className="font-mono font-black uppercase text-2xl sm:text-3xl tracking-widest text-[#141414]">
-                ASSEMBLY
-              </span>
-              <span className="font-mono text-[10px] sm:text-xs font-bold uppercase bg-[#141414] text-white px-2 py-0.5 border border-[#141414]">
-                MEMBERS DIRECTORY
-              </span>
             </div>
-          </div>
+          ) : (
+            /* ========================================================= */
+            /* NORMAL VIEW: CLUSTER CARD + ASSEMBLY MEMBERS DIRECTORY    */
+            /* ========================================================= */
+            <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar p-4 space-y-4 bg-white">
+              {/* Cluster Header Section */}
+              <div className="border-2 border-[#141414] bg-[#E4E3E0]/30 p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                    <div className="flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 bg-[#141414] text-white border-2 border-[#141414] shrink-0 shadow-[3px_3px_0px_0px_rgba(20,20,20,0.3)]">
+                      <span className="font-mono font-black text-lg text-white grayscale [font-variant-emoji:text] select-none">
+                        {getClusterSymbol(clusterInfo?.id || cluster.id || 'cluster_alpha_secret')}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h2 className="font-mono font-black uppercase text-sm sm:text-base tracking-wider text-[#141414] break-words">
+                        {clusterTitle.replace(/🛡️|🛡/g, '').trim()}
+                      </h2>
+                    </div>
+                  </div>
 
-          {loading ? (
-            <div className="py-20 flex items-center justify-center">
-              <BrutalistLoader text="Accessing Assembly" size="sm" />
-            </div>
-          ) : members.length > 0 ? (
-            members.map((member) => (
-              <div
-                key={member.id || member.agentId}
-                className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/20 transition-all relative"
-              >
-                {(member.status === 'dissolved' || isClusterDissolved) && (
-                  <span className="absolute top-2.5 right-2.5 font-mono text-[9px] font-black uppercase text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                    DISSOLVED
-                  </span>
-                )}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  {/* Avatar */}
-                  <button
-                    type="button"
-                    onClick={() => onOpenAgentProfile?.(member.agentName, member.avatar, member.agentId)}
-                    className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
-                    title={`View profile for ${member.agentName}`}
-                  >
-                    <AgentAvatar
-                      name={member.agentName}
-                      avatar={member.avatar}
-                      id={member.agentId}
-                      className="w-10 h-10 border-2 border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]"
-                    />
-                  </button>
-
-                  {/* Agent Info & Badge */}
-                  <div className="min-w-0 flex-1 pr-16">
+                  {canEdit && !isClusterDissolved && (
                     <button
                       type="button"
-                      onClick={() => onOpenAgentProfile?.(member.agentName, member.avatar, member.agentId)}
-                      className="hover:underline cursor-pointer text-left overflow-x-auto no-scrollbar whitespace-nowrap max-w-full flex flex-col"
+                      onClick={startEditing}
+                      className="px-2.5 py-1 bg-white text-[#141414] border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
+                      title="Edit Cluster (Admin or Master only)"
                     >
-                      <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
-                        <span>{member.agentName}</span>
-                      </span>
-                      
-                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                        <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-hidden">
-                          <span>@{member.agentId}</span>
-                          {member.emailVerified && (
-                            <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-[#141414]">
-                              <VerifiedBadge size="xs" />
-                            </span>
-                          )}
-                          <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
-                        </span>
-
-                        {member.role === 'admin' ? (
-                          <span className="font-mono text-[9px] font-black uppercase text-white bg-[#141414] px-1.5 py-0.5 border border-[#141414]">
-                            ADMIN
-                          </span>
-                        ) : (
-                          <span className="font-mono text-[9px] font-black uppercase text-[#141414] bg-white px-1.5 py-0.5 border border-[#141414]">
-                            MEMBER
-                          </span>
-                        )}
-                      </div>
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>EDIT</span>
                     </button>
+                  )}
+                </div>
+
+                {clusterInfo?.description && (
+                  <div className="pt-2">
+                    <p className="font-sans text-xs sm:text-sm text-[#141414] leading-relaxed italic border-l-[3px] border-[#141414] pl-2.5">
+                      "{clusterInfo.description}"
+                    </p>
                   </div>
+                )}
+              </div>
+
+              {/* Assembly Header */}
+              <div className="pt-3 pb-2">
+                <div className="border-l-4 border-[#141414] pl-3 py-1 flex items-center justify-between">
+                  <span className="font-mono font-black uppercase text-2xl sm:text-3xl tracking-widest text-[#141414]">
+                    ASSEMBLY
+                  </span>
+                  <span className="font-mono text-[10px] sm:text-xs font-bold uppercase bg-[#141414] text-white px-2 py-0.5 border border-[#141414]">
+                    MEMBERS DIRECTORY
+                  </span>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="py-12 text-center border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/20 font-mono text-xs uppercase tracking-wider text-[#141414]/60">
-              No cluster members found.
+
+              {loading ? (
+                <div className="py-20 flex items-center justify-center">
+                  <BrutalistLoader text="Accessing Assembly" size="sm" />
+                </div>
+              ) : members.length > 0 ? (
+                members.map((member) => (
+                  <div
+                    key={member.id || member.agentId}
+                    className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:bg-[#E4E3E0]/20 transition-all relative"
+                  >
+                    {(member.status === 'dissolved' || isClusterDissolved) && (
+                      <span className="absolute top-2.5 right-2.5 font-mono text-[9px] font-black uppercase text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                        DISSOLVED
+                      </span>
+                    )}
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      {/* Avatar */}
+                      <button
+                        type="button"
+                        onClick={() => onOpenAgentProfile?.(member.agentName, member.avatar, member.agentId)}
+                        className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
+                        title={`View profile for ${member.agentName}`}
+                      >
+                        <AgentAvatar
+                          name={member.agentName}
+                          avatar={member.avatar}
+                          id={member.agentId}
+                          className="w-10 h-10 border-2 border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]"
+                        />
+                      </button>
+
+                      {/* Agent Info & Badge */}
+                      <div className="min-w-0 flex-1 pr-16">
+                        <button
+                          type="button"
+                          onClick={() => onOpenAgentProfile?.(member.agentName, member.avatar, member.agentId)}
+                          className="hover:underline cursor-pointer text-left overflow-x-auto no-scrollbar whitespace-nowrap max-w-full flex flex-col"
+                        >
+                          <span className="font-black uppercase text-xs sm:text-sm tracking-wider text-[#141414] overflow-x-auto no-scrollbar whitespace-nowrap">
+                            <span>{member.agentName}</span>
+                          </span>
+                          
+                          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                            <span className="relative inline-flex items-center gap-1 font-mono text-[9px] sm:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-hidden">
+                              <span>@{member.agentId}</span>
+                              {member.emailVerified && (
+                                <span className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-[#141414]">
+                                  <VerifiedBadge size="xs" />
+                                </span>
+                              )}
+                              <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                            </span>
+
+                            {member.role === 'admin' ? (
+                              <span className="font-mono text-[9px] font-black uppercase text-white bg-[#141414] px-1.5 py-0.5 border border-[#141414]">
+                                ADMIN
+                              </span>
+                            ) : (
+                              <span className="font-mono text-[9px] font-black uppercase text-[#141414] bg-white px-1.5 py-0.5 border border-[#141414]">
+                                MEMBER
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-12 text-center border-2 border-dashed border-[#141414]/30 bg-[#E4E3E0]/20 font-mono text-xs uppercase tracking-wider text-[#141414]/60">
+                  No cluster members found.
+                </div>
+              )}
             </div>
           )}
-        </div>
 
+        </div>
       </div>
-    </div>
 
       {/* SPOG - Slave Selection Protocol Modal for Cluster Members */}
       {isSpogModalOpen && (
@@ -650,7 +917,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const allIds = availableAgents.map(a => a.agentId).filter(Boolean);
+                      const allIds = availableAgents.map((a) => a.agentId).filter(Boolean);
                       setSelectedAgentIds(allIds);
                     }}
                     className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
@@ -660,11 +927,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedAgentIds([]);
+                      setAgentToRemove({ agentId: 'ALL', agentName: 'All Selected Agents' });
                     }}
-                    className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
+                    className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white text-red-600 hover:bg-red-600 hover:text-white transition-all cursor-pointer"
                   >
-                    Deselect All
+                    Remove All
                   </button>
                 </div>
               </div>
@@ -678,6 +945,30 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 />
               </div>
             </div>
+
+            {/* Selected Agent Quick Bar with Removal Options */}
+            {selectedAgentIds.length > 0 && (
+              <div className="bg-white px-4 py-2 border-b-2 border-[#141414] flex items-center gap-1.5 overflow-x-auto custom-scrollbar shrink-0">
+                <span className="text-[9px] font-black uppercase text-[#141414]/60 shrink-0 mr-1">
+                  Selected:
+                </span>
+                {selectedAgentIds.map((aid) => {
+                  const agentObj = availableAgents.find((a) => a.agentId.toLowerCase() === aid.toLowerCase());
+                  const displayName = agentObj?.agentName || aid;
+                  return (
+                    <span
+                      key={aid}
+                      onClick={() => setAgentToRemove({ agentId: aid, agentName: displayName })}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#141414] text-white text-[9px] font-bold uppercase shrink-0 border border-[#141414] cursor-pointer hover:bg-red-600 hover:border-red-700 transition-colors"
+                      title="Click to remove"
+                    >
+                      <span>@{aid}</span>
+                      <X className="w-2.5 h-2.5 hover:text-white" />
+                    </span>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Agent Grid */}
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
@@ -705,19 +996,28 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {filteredAgents.map((agent) => {
-                      const isSelected = selectedAgentIds.some(id => id.toLowerCase() === agent.agentId.toLowerCase());
+                      const isSelected = selectedAgentIds.some(
+                        (id) => id.toLowerCase() === agent.agentId.toLowerCase()
+                      );
                       return (
                         <div
                           key={agent.agentId}
                           onClick={() => {
                             if (isSelected) {
-                              setSelectedAgentIds(prev => prev.filter(id => id.toLowerCase() !== agent.agentId.toLowerCase()));
+                              // Clicking selected agent gives option to remove
+                              setAgentToRemove({
+                                agentId: agent.agentId,
+                                agentName: agent.agentName || agent.agentId,
+                              });
                             } else {
-                              setSelectedAgentIds(prev => [...prev, agent.agentId]);
+                              // Select agent into cluster
+                              setSelectedAgentIds((prev) => [...prev, agent.agentId]);
                             }
                           }}
                           className={`p-3 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2.5 cursor-pointer transition-all ${
-                            isSelected ? 'bg-[#141414] text-white' : 'bg-white text-[#141414] hover:bg-[#E4E3E0]/30'
+                            isSelected
+                              ? 'bg-[#141414] text-white ring-2 ring-[#141414]'
+                              : 'bg-white text-[#141414] hover:bg-[#E4E3E0]/30'
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
@@ -731,16 +1031,62 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                               <span className="font-bold text-xs uppercase truncate">
                                 {agent.agentName}
                               </span>
-                              <span className={`text-[10px] truncate ${isSelected ? 'text-white/80' : 'text-[#141414]/60'}`}>
+                              <span
+                                className={`text-[10px] truncate ${
+                                  isSelected ? 'text-white/80' : 'text-[#141414]/60'
+                                }`}
+                              >
                                 @{agent.agentId}
                               </span>
                             </div>
-                            <div className={`w-4 h-4 border-2 border-[#141414] flex items-center justify-center font-mono text-[10px] shrink-0 ${
-                              isSelected ? 'bg-white text-[#141414]' : 'bg-white'
-                            }`}>
+                            <div
+                              className={`w-4 h-4 border-2 border-[#141414] flex items-center justify-center font-mono text-[10px] shrink-0 ${
+                                isSelected ? 'bg-white text-[#141414]' : 'bg-white'
+                              }`}
+                            >
                               {isSelected ? '✓' : ''}
                             </div>
                           </div>
+
+                          {/* Action area: if selected, display Remove option */}
+                          {isSelected ? (
+                            <div className="pt-2 border-t border-white/20 flex items-center justify-between">
+                              <span className="text-[9px] font-black uppercase text-white/80">
+                                In Cluster
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAgentToRemove({
+                                    agentId: agent.agentId,
+                                    agentName: agent.agentName || agent.agentId,
+                                  });
+                                }}
+                                className="px-2 py-0.5 bg-red-600 text-white font-mono text-[9px] font-black uppercase border border-white hover:bg-red-700 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                                <span>Remove</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="pt-2 border-t border-[#141414]/15 flex items-center justify-between">
+                              <span className="text-[9px] font-black uppercase text-[#141414]/60">
+                                Available
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedAgentIds((prev) => [...prev, agent.agentId]);
+                                }}
+                                className="px-2 py-0.5 bg-[#141414] text-white font-mono text-[9px] font-black uppercase border border-[#141414] hover:bg-black shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                <Plus className="w-2.5 h-2.5" />
+                                <span>Add</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -765,6 +1111,73 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
           </div>
         </div>
       )}
+
+      {/* Remove Option Dialog */}
+      {agentToRemove && (
+        <div className="fixed inset-0 z-80 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] p-5 max-w-sm w-full font-mono space-y-4 text-[#141414]">
+            <div className="flex items-center justify-between border-b-2 border-[#141414] pb-2">
+              <span className="font-black text-xs uppercase tracking-wider text-red-600 flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4" />
+                Remove Option
+              </span>
+              <button
+                type="button"
+                onClick={() => setAgentToRemove(null)}
+                className="p-1 hover:bg-[#141414]/10 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold uppercase text-[#141414]">
+                {agentToRemove.agentId === 'ALL'
+                  ? 'Remove all agents from cluster?'
+                  : 'Remove agent from cluster?'}
+              </p>
+              <div className="text-[11px] text-[#141414]/80 break-words bg-[#E4E3E0]/40 p-2 border border-[#141414]/20 space-y-0.5">
+                {agentToRemove.agentId === 'ALL' ? (
+                  <span className="font-black text-red-600">ALL SELECTED AGENTS</span>
+                ) : (
+                  <>
+                    <div>
+                      Agent: <span className="font-black">@{agentToRemove.agentId}</span>
+                    </div>
+                    {agentToRemove.agentName && agentToRemove.agentName !== agentToRemove.agentId && (
+                      <div className="text-[10px] text-[#141414]/70 uppercase">
+                        {agentToRemove.agentName}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <p className="text-[10px] text-[#141414]/60">
+                This will remove the agent from this cluster configuration.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#141414]/20">
+              <button
+                type="button"
+                onClick={() => setAgentToRemove(null)}
+                className="px-3 py-1.5 bg-white border-2 border-[#141414] text-[10px] font-black uppercase hover:bg-[#E4E3E0] transition-colors cursor-pointer"
+              >
+                Cancel / Keep
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRemove}
+                className="px-3.5 py-1.5 bg-red-600 text-white border-2 border-[#141414] text-[10px] font-black uppercase shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] hover:bg-red-700 active:translate-x-0.5 active:translate-y-0.5 cursor-pointer flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Confirm Remove</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
+

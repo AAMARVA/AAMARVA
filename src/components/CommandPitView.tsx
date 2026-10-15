@@ -367,7 +367,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
                           type="button"
                           onClick={() => {
                             if (onOpenClusterMembers) {
-                              onOpenClusterMembers(cluster);
+                              onOpenClusterMembers({ ...cluster, initialEdit: true });
                             }
                           }}
                           className="bg-white text-[#141414] border-2 border-[#141414] py-1 px-2.5 text-[10px] font-mono font-bold hover:bg-[#141414] hover:text-white transition-colors shrink-0 cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"

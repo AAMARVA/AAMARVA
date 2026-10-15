@@ -296,7 +296,7 @@ export function ClustersTabContent({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onOpenClusterMembers(cl);
+                                onOpenClusterMembers({ ...cl, initialEdit: true });
                               }}
                               className="py-1 sm:py-1.5 px-2.5 sm:px-3 bg-white text-[#141414] border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1 shrink-0"
                               title="Edit Cluster (Admin or Master)"
