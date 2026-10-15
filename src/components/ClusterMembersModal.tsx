@@ -1,11 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { X, ArrowLeft, AlertCircle, Edit3, Check } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, ArrowLeft, AlertCircle, Edit3, Check, Users } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
 import { VerifiedBadge } from './VerifiedBadge';
 import { BrutalistLoader } from './BrutalistLoader';
 import { apiFetch } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { useAuth } from '../context/AuthContext';
+
+export interface SpogAgent {
+  id: string;
+  agentId: string;
+  agentName: string;
+  avatar?: string;
+  role?: string;
+  isSlave?: boolean;
+}
 
 export interface ClusterMember {
   id: string;
@@ -60,6 +69,106 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   const [editDescription, setEditDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // SPOG state for cluster edit
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+  const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
+  const [availableAgents, setAvailableAgents] = useState<SpogAgent[]>([]);
+  const [isLoadingAgents, setIsLoadingAgents] = useState(false);
+  const [spogSearchQuery, setSpogSearchQuery] = useState('');
+
+  const fetchClusterMembers = useCallback(async (cId: string) => {
+    try {
+      const res = await apiFetch(`/api/clusters/public/${cId}/members`, { authType: 'none' });
+      if (res?.success && res?.data) {
+        if (res.data.cluster) {
+          setClusterInfo((prev) => ({ ...prev, ...res.data.cluster }));
+        }
+        if (Array.isArray(res.data.members)) {
+          setMembers(res.data.members);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to refresh cluster members:', e);
+    }
+  }, []);
+
+  const fetchAvailableAgents = useCallback(async () => {
+    setIsLoadingAgents(true);
+    try {
+      const [connRes, masterRes] = await Promise.allSettled([
+        apiFetch('/api/connections', { authType: 'human' }),
+        apiFetch('/api/auth/master/accounts', { authType: 'human' }),
+      ]);
+
+      const map = new Map<string, SpogAgent>();
+
+      // 1. Existing members in this cluster
+      members.forEach((m) => {
+        if (m.agentId) {
+          map.set(m.agentId.toUpperCase(), {
+            id: m.id || m.agentId,
+            agentId: m.agentId,
+            agentName: m.agentName || m.agentId,
+            avatar: m.avatar,
+            role: m.role,
+          });
+        }
+      });
+
+      // 2. Active connections
+      if (connRes.status === 'fulfilled' && connRes.value) {
+        const val = connRes.value;
+        const list = val?.data?.connections || val?.data || [];
+        if (Array.isArray(list)) {
+          list.forEach((c: any) => {
+            if (c && c.status !== 'dissolved' && (c.agentId || c.agentName)) {
+              const aid = (c.agentId || c.agentName).toUpperCase();
+              if (!map.has(aid)) {
+                map.set(aid, {
+                  id: c.id || c.connectionId || aid,
+                  agentId: c.agentId || aid,
+                  agentName: c.agentName || c.agentId || aid,
+                  avatar: c.avatar,
+                  role: c.role || 'member',
+                  isSlave: Boolean(c.isSlave),
+                });
+              }
+            }
+          });
+        }
+      }
+
+      // 3. Sub-agents / fleet from master accounts
+      if (masterRes.status === 'fulfilled' && masterRes.value?.success && masterRes.value?.data) {
+        const data = masterRes.value.data;
+        const subAgents = data.subAgents || data.slaveAgents || [];
+        if (Array.isArray(subAgents)) {
+          subAgents.forEach((s: any) => {
+            if (s && s.agentId) {
+              const aid = s.agentId.toUpperCase();
+              if (!map.has(aid)) {
+                map.set(aid, {
+                  id: s.id || aid,
+                  agentId: s.agentId,
+                  agentName: s.name || s.agentId,
+                  avatar: s.avatar,
+                  role: 'member',
+                  isSlave: true,
+                });
+              }
+            }
+          });
+        }
+      }
+
+      setAvailableAgents(Array.from(map.values()));
+    } catch (e) {
+      console.warn('Failed to load fleet agents for SPOG:', e);
+    } finally {
+      setIsLoadingAgents(false);
+    }
+  }, [members]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -208,6 +317,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
         body: JSON.stringify({
           name: trimmedName,
           description: editDescription.trim() || undefined,
+          memberAgentIds: selectedAgentIds,
         }),
       });
 
@@ -221,6 +331,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
         setClusterInfo(updatedClusterData);
         setIsEditing(false);
+        fetchClusterMembers(clusterId);
         if (onClusterUpdated) {
           onClusterUpdated(updatedClusterData);
         }
@@ -230,6 +341,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
               id: clusterId,
               name: trimmedName,
               description: editDescription.trim() || undefined,
+              memberAgentIds: selectedAgentIds,
             },
           })
         );
@@ -249,8 +361,9 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   const isClusterDissolved = (clusterInfo?.status || (cluster as any)?.status) === 'dissolved';
 
   return (
-    <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200"
+    <>
+      <div 
+        className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-3 sm:p-4 flex items-center justify-center animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -308,6 +421,12 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                     setEditName(clusterInfo?.name || cluster.name || '');
                     setEditDescription(clusterInfo?.description || (cluster as any)?.description || '');
                     setEditError(null);
+                    const currentMemberIds = members
+                      .filter(m => m.status !== 'dissolved')
+                      .map(m => m.agentId)
+                      .filter(Boolean);
+                    setSelectedAgentIds(currentMemberIds);
+                    fetchAvailableAgents();
                     setIsEditing(true);
                   }}
                   className="px-2.5 py-1 bg-white text-[#141414] border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider hover:bg-[#141414] hover:text-white transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none flex items-center gap-1.5 shrink-0"
@@ -353,6 +472,56 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                     maxLength={200}
                     className="w-full bg-white border-2 border-[#141414] p-2 font-mono text-xs focus:outline-none resize-none shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                   />
+                </div>
+
+                {/* SPOG - Cluster Fleet / Agent Selection */}
+                <div className="space-y-1.5 pt-1 border-t border-[#141414]/15">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-mono text-[10px] font-black uppercase text-[#141414]/70">
+                      Cluster Members ({selectedAgentIds.length} Selected)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fetchAvailableAgents();
+                        setIsSpogModalOpen(true);
+                      }}
+                      className="px-2 py-1 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-bold uppercase hover:bg-black transition-colors cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 flex items-center gap-1.5"
+                      title="Open SPOG - Slave Selection Protocol"
+                    >
+                      <span className="bg-white text-[#141414] px-1 py-0.2 text-[8px] font-black">SPOG</span>
+                      <span>Assign Agents</span>
+                    </button>
+                  </div>
+
+                  <div className="max-h-24 overflow-y-auto p-1.5 bg-white border-2 border-[#141414] custom-scrollbar flex flex-wrap gap-1.5">
+                    {selectedAgentIds.length > 0 ? (
+                      selectedAgentIds.map((aid) => {
+                        const found = availableAgents.find(a => (a.agentId || '').toLowerCase() === aid.toLowerCase());
+                        const displayName = found?.agentName || aid;
+                        return (
+                          <span
+                            key={aid}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#E4E3E0] border border-[#141414] font-mono text-[9px] font-bold text-[#141414]"
+                          >
+                            <span>{displayName}</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAgentIds(prev => prev.filter(id => id.toLowerCase() !== aid.toLowerCase()))}
+                              className="hover:text-red-600 cursor-pointer ml-0.5 text-[10px] font-black leading-none"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })
+                    ) : (
+                      <span className="text-[10px] font-mono text-[#141414]/50 italic p-0.5">
+                        No additional agents selected. Click SPOG to assign fleet agents.
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-1">
@@ -482,5 +651,155 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
       </div>
     </div>
+
+      {/* SPOG - Slave Selection Protocol Modal for Cluster Members */}
+      {isSpogModalOpen && (
+        <div className="fixed inset-0 z-70 overflow-y-auto bg-black/80 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
+          <div className="relative w-full max-w-4xl bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] max-h-[90vh] flex flex-col font-mono">
+            {/* Header */}
+            <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="bg-white text-[#141414] px-1.5 py-0.5 text-[9px] font-black tracking-widest">
+                  SPOG
+                </span>
+                <span className="text-xs font-black uppercase tracking-widest">
+                  SLAVE SELECTION PROTOCOL ({availableAgents.length} FLEET AGENTS)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSpogModalOpen(false)}
+                className="p-1 bg-white text-[#141414] border-2 border-white hover:bg-black hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Controls bar */}
+            <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider text-[#141414] mr-1">
+                  Cluster Member Selection ({selectedAgentIds.length} Selected)
+                </span>
+                <div className="flex items-center gap-1.5 p-1 bg-white border border-[#141414]/20 shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allIds = availableAgents.map(a => a.agentId).filter(Boolean);
+                      setSelectedAgentIds(allIds);
+                    }}
+                    className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedAgentIds([]);
+                    }}
+                    className="text-[9px] font-black uppercase border-2 border-[#141414] px-2 py-0.5 bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer"
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="SEARCH AGENT / ID..."
+                  value={spogSearchQuery}
+                  onChange={(e) => setSpogSearchQuery(e.target.value)}
+                  className="px-2.5 py-1 text-xs font-bold uppercase bg-white border-2 border-[#141414] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Agent Grid */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
+              {isLoadingAgents ? (
+                <div className="py-12 flex flex-col items-center justify-center">
+                  <BrutalistLoader text="Accessing Fleet Protocols" size="sm" />
+                </div>
+              ) : (() => {
+                const filteredAgents = availableAgents.filter((agent) => {
+                  if (!spogSearchQuery.trim()) return true;
+                  const query = spogSearchQuery.toLowerCase();
+                  const name = (agent.agentName || '').toLowerCase();
+                  const id = (agent.agentId || '').toLowerCase();
+                  return name.includes(query) || id.includes(query);
+                });
+
+                if (filteredAgents.length === 0) {
+                  return (
+                    <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
+                      No matching fleet agents found
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {filteredAgents.map((agent) => {
+                      const isSelected = selectedAgentIds.some(id => id.toLowerCase() === agent.agentId.toLowerCase());
+                      return (
+                        <div
+                          key={agent.agentId}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedAgentIds(prev => prev.filter(id => id.toLowerCase() !== agent.agentId.toLowerCase()));
+                            } else {
+                              setSelectedAgentIds(prev => [...prev, agent.agentId]);
+                            }
+                          }}
+                          className={`p-3 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2.5 cursor-pointer transition-all ${
+                            isSelected ? 'bg-[#141414] text-white' : 'bg-white text-[#141414] hover:bg-[#E4E3E0]/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <AgentAvatar
+                              name={agent.agentName}
+                              avatar={agent.avatar}
+                              id={agent.agentId}
+                              className="w-8 h-8 border border-[#141414] shrink-0"
+                            />
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className="font-bold text-xs uppercase truncate">
+                                {agent.agentName}
+                              </span>
+                              <span className={`text-[10px] truncate ${isSelected ? 'text-white/80' : 'text-[#141414]/60'}`}>
+                                @{agent.agentId}
+                              </span>
+                            </div>
+                            <div className={`w-4 h-4 border-2 border-[#141414] flex items-center justify-center font-mono text-[10px] shrink-0 ${
+                              isSelected ? 'bg-white text-[#141414]' : 'bg-white'
+                            }`}>
+                              {isSelected ? '✓' : ''}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-[#E4E3E0] px-4 py-3 border-t-4 border-[#141414] flex items-center justify-between shrink-0">
+              <span className="text-[10px] font-black uppercase text-[#141414]/70">
+                {selectedAgentIds.length} AGENTS SELECTED FOR THIS CLUSTER
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsSpogModalOpen(false)}
+                className="px-4 py-1.5 bg-[#141414] text-white border-2 border-[#141414] text-xs font-black uppercase tracking-wider hover:bg-black transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
+              >
+                Confirm Selection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
