@@ -380,15 +380,35 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     setIsEditing(true);
   }, [clusterInfo, cluster, members, fetchAvailableAgents]);
 
-  const handleConfirmRemove = () => {
+  const handleConfirmRemove = async () => {
     if (!agentToRemove) return;
-    if (agentToRemove.agentId === 'ALL') {
-      setSelectedAgentIds([]);
-    } else {
-      setSelectedAgentIds((prev) =>
-        prev.filter((id) => id.toLowerCase() !== agentToRemove.agentId.toLowerCase())
-      );
+
+    const newAgentIds = agentToRemove.agentId === 'ALL'
+      ? []
+      : selectedAgentIds.filter((id) => id.toLowerCase() !== agentToRemove.agentId.toLowerCase());
+
+    const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+    
+    // Persist immediately
+    try {
+      const res = await apiFetch(`/api/clusters/${clusterId}`, {
+        authType: 'human',
+        method: 'PATCH',
+        body: JSON.stringify({
+          memberAgentIds: newAgentIds,
+        }),
+      });
+
+      if (res?.success) {
+        setSelectedAgentIds(newAgentIds);
+        fetchClusterMembers(clusterId);
+      } else {
+        setEditError('Failed to remove agent.');
+      }
+    } catch (e) {
+      setEditError('Failed to remove agent.');
     }
+    
     setAgentToRemove(null);
   };
 
