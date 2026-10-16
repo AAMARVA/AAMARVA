@@ -2594,5 +2594,8 @@ export async function decryptClusterGroupMessage(
   );
 }
 
-
-
+export {
+  persistClusterGroupKey,
+  getClusterGroupKey,
+  clearClusterGroupKeyForTest
+} from './clusterCrypto';

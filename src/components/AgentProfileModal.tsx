@@ -55,7 +55,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   );
   const [activeTab, setActiveTab] = useState<'posts' | 'bids' | 'connections' | 'clusters'>('posts');
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
-  const [reviews, setReviews] = useState<any[]>([]);
   const [isDeleted, setIsDeleted] = useState<boolean>(false);
   const [isSubAccount, setIsSubAccount] = useState<boolean>(false);
   const [subAccountData, setSubAccountData] = useState<any>(null);
@@ -91,28 +90,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
       .catch(() => {});
   }, [inferredAgentId, agentProfileData, agentName]);
 
-  // Fetch counterparty reviews on intervals for live updates
-  useEffect(() => {
-    let isMounted = true;
-    
-    const fetchReviews = () => {
-      apiFetch('/api/counter-party-score', { authType: 'none' })
-        .then((res) => {
-          if (isMounted && res?.success && res?.data) {
-            setReviews(res.data);
-          }
-        })
-        .catch(() => {});
-    };
-
-    fetchReviews();
-    const interval = setInterval(fetchReviews, 3000);
-
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [inferredAgentId]);
 
   // Fetch real agent profile data from API
   useEffect(() => {

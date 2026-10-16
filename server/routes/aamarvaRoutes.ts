@@ -3085,13 +3085,34 @@ router.delete(['/connections/:accountId', '/connections/:connectionId'], require
   }
 });
 
-// GET /api/connections/recent (Public read)
-router.get('/connections/recent', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+// GET /api/connection-requests/recent (Public / Authenticated read)
+router.get('/connection-requests/recent', securityLayer('public_reads'), async (req: Request, res: Response) => {
   try {
     const callerMasterId = await resolveAuthMasterId(req);
     if (!callerMasterId) {
       return res.json({ success: true, data: [] });
     }
+    const sb = getSupabaseClient();
+    const { data: requests } = await sb
+      .from('connection_requests')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    return res.json({ success: true, data: requests || [] });
+  } catch (err: any) {
+    return res.json({ success: true, data: [] });
+  }
+});
+
+// GET /api/connections/recent (Public read)
+router.get('/connections/recent', securityLayer('public_reads'), async (req: Request, res: Response) => {
+  try {
+    const callerMasterId = await resolveAuthMasterId(req);
+    if (!callerMasterId) {
+      return res.json({ success: true, data: [] });
+    }
+
 
     // Get connections that belong to the caller's fleet
     // This requires a helper or updated query. 

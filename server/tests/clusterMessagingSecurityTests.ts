@@ -1148,7 +1148,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
         resIncompleteDist.json?.error?.code === 'INCOMPLETE_DISTRIBUTION_MAP';
 
       // Step 3: Distribution (Direct DB insert, bypassing removed API)
-      await origSupabase.from('cluster_key_distributions').insert([
+      const distPayload = [
         {
           id: `dist_${crypto.randomUUID()}`,
           clusterId: indepClusterId,
@@ -1176,15 +1176,20 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
           senderPublicKey: JSON.stringify(alicePair.publicKey),
           createdAt: new Date().toISOString()
         }
-      ]);
+      ];
+      await getSupabaseClient().from('cluster_key_distributions').insert(distPayload);
+      await origSupabase.from('cluster_key_distributions').insert(distPayload);
       
-      await origSupabase.from('cluster_epochs').insert({
+      const epochPayload = {
         id: `epoch_${crypto.randomUUID()}`,
         clusterId: indepClusterId,
         epoch: 1,
         keyFingerprint: indepFingerprint1,
         createdAt: new Date().toISOString()
-      });
+      };
+      await getSupabaseClient().from('cluster_epochs').insert(epochPayload);
+      await origSupabase.from('cluster_epochs').insert(epochPayload);
+
 
       // persistClusterGroupKey remains to support retrieveAndUnwrapClusterGroupKey's local state
       await persistClusterGroupKey(indepClusterId, indepGroupKeyEpoch1, 1, aliceStore);

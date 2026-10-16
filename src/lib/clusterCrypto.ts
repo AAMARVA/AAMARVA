@@ -253,8 +253,10 @@ export async function wrapGroupKeyForMember(
   senderPrivateKey: CryptoKey | string,
   recipientPublicKeyJwk: any,
   clusterId: string,
-  epoch: number
+  epochOrMemberId: any,
+  maybeEpoch?: any
 ): Promise<{ iv: string; key: string }> {
+  const epoch = typeof maybeEpoch === 'number' ? maybeEpoch : (typeof epochOrMemberId === 'number' ? epochOrMemberId : 1);
   const channelKey = await deriveChannelKey(senderPrivateKey, recipientPublicKeyJwk, clusterId);
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
   const wrapIv = cryptoObj.getRandomValues(new Uint8Array(12));
@@ -276,8 +278,10 @@ export async function unwrapGroupKeyForMember(
   receiverPrivateKey: CryptoKey | string,
   senderPublicKeyJwk: any,
   clusterId: string,
-  epoch: number
+  epochOrMemberId?: any,
+  maybeEpoch?: any
 ): Promise<string> {
+  const epoch = typeof maybeEpoch === 'number' ? maybeEpoch : (typeof epochOrMemberId === 'number' ? epochOrMemberId : 1);
   const channelKey = await deriveChannelKey(receiverPrivateKey, senderPublicKeyJwk, clusterId);
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
   const wrapIv = base64ToBuffer(wrappedKeyObj.iv);
@@ -291,11 +295,151 @@ export async function unwrapGroupKeyForMember(
   return bufferToBase64(unwrapped);
 }
 
+const inMemoryGroupKeys = new Map<string, string>();
+
+export async function persistClusterGroupKey(
+  clusterId: string,
+  groupKey: string,
+  epoch: number = 1,
+  isolatedStore?: Map<string, string>
+): Promise<void> {
+  const key = `${clusterId}:group_key:${epoch}`;
+  if (isolatedStore) {
+    isolatedStore.set(key, groupKey);
+  } else if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(key, groupKey);
+  } else {
+    inMemoryGroupKeys.set(key, groupKey);
+  }
+}
+
+export async function getClusterGroupKey(
+  clusterId: string,
+  epoch: number = 1,
+  isolatedStore?: Map<string, string>
+): Promise<string | null> {
+  const key = `${clusterId}:group_key:${epoch}`;
+  if (isolatedStore) {
+    return isolatedStore.get(key) || null;
+  } else if (typeof localStorage !== 'undefined') {
+    return localStorage.getItem(key);
+  } else {
+    return inMemoryGroupKeys.get(key) || null;
+  }
+}
+
+export function clearClusterGroupKeyForTest(
+  clusterId: string,
+  epoch?: number,
+  isolatedStore?: Map<string, string>
+): void {
+  if (epoch !== undefined) {
+    const key = `${clusterId}:group_key:${epoch}`;
+    if (isolatedStore) {
+      isolatedStore.delete(key);
+    } else if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(key);
+    } else {
+      inMemoryGroupKeys.delete(key);
+    }
+  } else {
+    if (isolatedStore) {
+      for (const k of Array.from(isolatedStore.keys())) {
+        if (k.startsWith(`${clusterId}:group_key:`)) isolatedStore.delete(k);
+      }
+    } else if (typeof localStorage !== 'undefined') {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(`${clusterId}:group_key:`)) localStorage.removeItem(k);
+      }
+    } else {
+      for (const k of Array.from(inMemoryGroupKeys.keys())) {
+        if (k.startsWith(`${clusterId}:group_key:`)) inMemoryGroupKeys.delete(k);
+      }
+    }
+  }
+}
+
 export async function distributeClusterGroupKeyFlow(params: any): Promise<any> {
   return { success: true };
 }
 
-export async function retrieveAndUnwrapClusterGroupKey(params: any): Promise<any> {
-  return params.expectedKey || '';
+export async function retrieveAndUnwrapClusterGroupKey(params: {
+  clusterId: string;
+  epoch: number;
+  receiverPrivateKey: CryptoKey | string;
+  receiverAgentId: string;
+  distributorPublicKeyJwk: any;
+  expectedFingerprint?: string;
+  apiFetchFn: (url: string, opts?: any) => Promise<any>;
+  isolatedStore?: Map<string, string>;
+}): Promise<string> {
+  const {
+    clusterId,
+    epoch,
+    receiverPrivateKey,
+    receiverAgentId,
+    distributorPublicKeyJwk,
+    expectedFingerprint,
+    apiFetchFn,
+    isolatedStore
+  } = params;
+
+  const res = await apiFetchFn(`/api/clusters/${clusterId}/keys/${epoch}`, {
+    method: 'GET'
+  });
+
+  const status = res?.status;
+  const resData = res?.json || res?.data || res;
+
+  if (status && status !== 200) {
+    const err: any = new Error(resData?.error?.message || `Failed to retrieve key package (HTTP ${status})`);
+    err.status = status;
+    err.code = resData?.error?.code || 'FORBIDDEN';
+    throw err;
+  }
+
+  const payload = resData?.data || resData;
+  let pkg = payload?.encryptedKeyPackage;
+  if (!pkg) {
+    throw new Error('No encryptedKeyPackage found in response.');
+  }
+  if (typeof pkg === 'string') {
+    try { pkg = JSON.parse(pkg); } catch {}
+  }
+
+  let senderKey = payload?.senderPublicKey;
+  if (typeof senderKey === 'string') {
+    try { senderKey = JSON.parse(senderKey); } catch {}
+  }
+
+  // Security check: verify distributor public key matches sender
+  if (distributorPublicKeyJwk && senderKey) {
+    const distKeyObj = typeof distributorPublicKeyJwk === 'string' ? JSON.parse(distributorPublicKeyJwk) : distributorPublicKeyJwk;
+    const sKeyObj = typeof senderKey === 'string' ? JSON.parse(senderKey) : senderKey;
+    if (distKeyObj.x && sKeyObj.x && (distKeyObj.x !== sKeyObj.x || distKeyObj.y !== sKeyObj.y)) {
+      throw new Error('E2EE Security Error: Distributor public key mismatch.');
+    }
+  }
+
+  const unwrappedGroupKey = await unwrapGroupKeyForMember(
+    pkg,
+    receiverPrivateKey,
+    senderKey || distributorPublicKeyJwk,
+    clusterId,
+    receiverAgentId,
+    epoch
+  );
+
+  if (expectedFingerprint) {
+    const computedFp = await computeGroupKeyFingerprint(unwrappedGroupKey);
+    if (computedFp !== expectedFingerprint) {
+      throw new Error(`E2EE Security Error: Fingerprint mismatch. Expected ${expectedFingerprint}, got ${computedFp}`);
+    }
+  }
+
+  await persistClusterGroupKey(clusterId, unwrappedGroupKey, epoch, isolatedStore);
+  return unwrappedGroupKey;
 }
+
 

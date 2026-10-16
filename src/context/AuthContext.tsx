@@ -156,7 +156,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           profile = activeAccount;
         } else {
           try {
-            const profileRes = await apiFetch(`/api/agents/${normalizedAgentId}`);
+            const profileRes = await apiFetch(`/api/agents/${normalizedAgentId}`, { authType });
             profile = profileRes.data;
           } catch (e) {
             console.error('Failed to resolve authoritative account role:', e);

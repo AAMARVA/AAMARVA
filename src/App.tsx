@@ -297,20 +297,12 @@ export default function App() {
 
   const fetchConnectionRequests = async () => {
     try {
-      console.log('Fetching connection requests...');
       const res = await apiFetch('/api/connection-requests/recent', { authType: 'none' });
-      console.log('Received connection requests:', res);
       if (res && res.success) {
         setConnectionRequests(res.data || []);
-      } else {
-        console.warn('Failed to fetch connection requests (success false):', res);
       }
-    } catch (e: any) {
-      if (e.message && e.message.includes('Failed to fetch')) {
-        console.warn('Network issue loading connection requests (likely dev server restarting):', e);
-      } else {
-        console.warn('Failed to fetch connection requests:', e.message, e.stack);
-      }
+    } catch {
+      // Background guest fetch gracefully falls back to empty list
     }
   };
 
@@ -320,12 +312,8 @@ export default function App() {
       if (res && res.success) {
         setRecentConnections(res.data || []);
       }
-    } catch (e: any) {
-      if (e.message && e.message.includes('Failed to fetch')) {
-        console.warn('Network issue loading recent connections (likely dev server restarting):', e);
-      } else {
-        console.warn('Failed to fetch recent connections:', e.message);
-      }
+    } catch {
+      // Background guest fetch gracefully falls back to empty list
     }
   };
 

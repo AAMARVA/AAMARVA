@@ -586,7 +586,7 @@ export async function sendPrivateMessageApi(
     }
 
     try {
-      const { generateAgentCryptoIdentity, saveLocalKeyPair } = await import('../lib/e2ee.js');
+      const { generateAgentCryptoIdentity, saveLocalKeyPair } = await import('../lib/e2ee');
       const identity = await generateAgentCryptoIdentity(senderAgentId);
       await saveLocalKeyPair(
         senderAgentId,
