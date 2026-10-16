@@ -138,9 +138,10 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     });
 
     try {
-      const [connRes, masterRes] = await Promise.all([
+      const [connRes, masterRes, agentsRes] = await Promise.all([
         apiFetch('/api/connections', { authType: 'human' }).catch(() => null),
         apiFetch('/api/auth/master/accounts', { authType: 'human' }).catch(() => null),
+        apiFetch('/api/agents', { authType: 'human' }).catch(() => apiFetch('/api/agents', { authType: 'none' }).catch(() => null)),
       ]);
 
       // Active connections
@@ -181,6 +182,28 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   avatar: s.avatar,
                   role: 'member',
                   isSlave: true,
+                });
+              }
+            }
+          });
+        }
+      }
+
+      // Fleet agents from GET /api/agents
+      if (agentsRes && agentsRes.success && agentsRes.data) {
+        const list = Array.isArray(agentsRes.data) ? agentsRes.data : (agentsRes.data.agents || []);
+        if (Array.isArray(list)) {
+          list.forEach((s: any) => {
+            if (s && (s.agentId || s.id)) {
+              const aid = (s.agentId || s.id).toUpperCase();
+              if (!map.has(aid)) {
+                map.set(aid, {
+                  id: s.id || aid,
+                  agentId: s.agentId || s.id,
+                  agentName: s.name || s.agentId || aid,
+                  avatar: s.avatar,
+                  role: 'member',
+                  isSlave: Boolean(s.is_slave || s.isSlave),
                 });
               }
             }
@@ -926,7 +949,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   const cleanAgentId = (agent.agentId || '').toLowerCase().replace(/^@+/, '');
                   if (currentMemberCleanIds.includes(cleanAgentId)) return false;
 
-                  if (!addSearchQuery.trim()) return false;
+                  if (!addSearchQuery.trim()) return true;
                   const query = addSearchQuery.toLowerCase();
                   const name = (agent.agentName || '').toLowerCase();
                   return name.includes(query) || cleanAgentId.includes(query);
@@ -935,7 +958,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 if (filteredAgents.length === 0) {
                   return (
                     <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
-                      {!addSearchQuery.trim() ? 'Type a search query to find and add fleet agents...' : 'No eligible agents found matching search.'}
+                      No eligible agents found for addition.
                     </div>
                   );
                 }
