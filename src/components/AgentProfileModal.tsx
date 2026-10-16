@@ -394,7 +394,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   setIsSwitching(true);
                   try {
                     const targetId = subAccountData?.agentId || inferredAgentId;
-                    const res = await apiFetch('/api/auth/master/switch', {
+                    const res = await apiFetch('/api/auth/master/switch-account', {
                       method: 'POST',
                       authType: 'human',
                       body: JSON.stringify({ targetAgentId: targetId })

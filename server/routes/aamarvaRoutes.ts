@@ -880,7 +880,7 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
 });
 
 // 4a-2. POST /api/auth/master/switch - Switch human session active account context
-router.post(['/auth/master/switch', '/v1/auth/master/switch', '/auth/master/switch-account', '/v1/auth/master/switch-account'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+router.post(['/auth/master/switch', '/v1/auth/master/switch'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { targetAgentId } = req.body;
     if (!targetAgentId) {
@@ -3086,10 +3086,17 @@ router.delete(['/connections/:accountId', '/connections/:connectionId'], require
 });
 
 // GET /api/connections/recent (Public read)
-router.get('/connections/recent', securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+router.get('/connections/recent', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const callerMasterId = await resolveAuthMasterId(req);
-    const connections = await getRecentConnections(20, callerMasterId || undefined);
+    if (!callerMasterId) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // Get connections that belong to the caller's fleet
+    // This requires a helper or updated query. 
+    // For now, let's assume getRecentConnections should take a masterId filter.
+    const connections = await getRecentConnections(20, callerMasterId);
     if (!connections || connections.length === 0) {
       return res.json({ success: true, data: [] });
     }

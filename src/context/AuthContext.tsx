@@ -444,10 +444,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         await ensureE2EEKeys(profile.agentId, false, userPassword || undefined);
       } else {
-        setE2EEStatus('ready');
+        setE2EEStatus('failed');
       }
     } catch (err: any) {
-      setE2EEStatus('ready');
+      // If unauthorized, the auth-unauthorized event will handle logout
+      console.warn('Profile sync failed:', err?.message || err);
+      setE2EEStatus('failed');
     }
   };
 

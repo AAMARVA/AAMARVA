@@ -113,7 +113,6 @@ export function MyAgentsCard() {
         await refreshProfile();
         await fetchAccounts();
         setSuccessMsg(res?.message || 'Successfully switched active identity.');
-        window.location.reload();
       } else {
         setErrorMsg(res?.error?.message || 'Switch identity failed.');
       }

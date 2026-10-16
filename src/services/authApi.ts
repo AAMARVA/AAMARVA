@@ -65,37 +65,17 @@ let memoryRefreshToken: string | null = null;
 
 export function setAccessToken(token: string | null) {
   memoryAccessToken = token;
-  if (typeof window !== 'undefined') {
-    if (token) {
-      localStorage.setItem('aamarva_access_token', token);
-    } else {
-      localStorage.removeItem('aamarva_access_token');
-    }
-  }
 }
 
 export function getAccessToken(): string | null {
-  if (!memoryAccessToken && typeof window !== 'undefined') {
-    memoryAccessToken = localStorage.getItem('aamarva_access_token');
-  }
   return memoryAccessToken;
 }
 
 export function setRefreshToken(token: string | null) {
   memoryRefreshToken = token;
-  if (typeof window !== 'undefined') {
-    if (token) {
-      localStorage.setItem('aamarva_refresh_token', token);
-    } else {
-      localStorage.removeItem('aamarva_refresh_token');
-    }
-  }
 }
 
 export function getRefreshToken(): string | null {
-  if (!memoryRefreshToken && typeof window !== 'undefined') {
-    memoryRefreshToken = localStorage.getItem('aamarva_refresh_token');
-  }
   return memoryRefreshToken;
 }
 
@@ -120,7 +100,7 @@ const inFlightGetRequests = new Map<string, Promise<any>>();
 export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}): Promise<any> {
   const method = (options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
-  const authType: AuthType = options.authType || (getAccessToken() ? 'agent' : 'none');
+  const authType: AuthType = options.authType || 'none';
   const fullUrl = buildApiUrl(endpoint);
 
   // Deduplicate identical concurrent GET requests in flight
@@ -135,39 +115,6 @@ export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}):
     if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
       headers.set('Content-Type', 'application/json');
     }
-
-  // Proactively refresh if agent auth is needed but access token is missing and refresh token exists
-  if (authType === 'agent' && !getAccessToken() && getRefreshToken()) {
-    if (!refreshPromise) {
-      refreshPromise = (async () => {
-        try {
-          let refreshUrl = buildApiUrl('/api/auth/refresh');
-          const currentRt = getRefreshToken();
-          const refreshRes = await fetch(refreshUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: currentRt ? JSON.stringify({ refreshToken: currentRt }) : undefined,
-            credentials: 'include',
-          });
-          if (refreshRes.ok) {
-            const refreshData = await refreshRes.json();
-            const resTokens = refreshData.data?.tokens || refreshData.tokens || refreshData.data || refreshData;
-            if (resTokens?.refreshToken) setRefreshToken(resTokens.refreshToken);
-            if (resTokens?.accessToken) {
-              setAccessToken(resTokens.accessToken);
-              return true;
-            }
-          }
-          return false;
-        } catch {
-          return false;
-        } finally {
-          refreshPromise = null;
-        }
-      })();
-    }
-    await refreshPromise;
-  }
 
   // If a refresh is currently running, wait for it before sending an agent request
   if (authType === 'agent' && refreshPromise) {
@@ -424,22 +371,13 @@ export async function deleteAccountApi(authType: 'human' | 'agent' = 'human') {
   return res;
 }
 
-export async function fetchCurrentProfileApi(authType?: 'human' | 'agent'): Promise<UserProfile | null> {
-  const token = getAccessToken();
-  const hasSession = typeof document !== 'undefined' && document.cookie.includes('aamarva');
-  if (!token && !hasSession) {
-    return null;
-  }
-  const resolvedAuth: AuthType = authType || (token ? 'agent' : 'human');
-  try {
-    const res = await apiFetch('/api/agents/me', {
-      method: 'GET',
-      authType: resolvedAuth,
-    });
-    return res.data;
-  } catch (err) {
-    return null;
-  }
+export async function fetchCurrentProfileApi(authType?: 'human' | 'agent'): Promise<UserProfile> {
+  const resolvedAuth: AuthType = authType || (getAccessToken() ? 'agent' : 'human');
+  const res = await apiFetch('/api/agents/me', {
+    method: 'GET',
+    authType: resolvedAuth,
+  });
+  return res.data;
 }
 
 export async function updateProfileApi(updates: any, authType: 'human' | 'agent' = 'human'): Promise<UserProfile> {
