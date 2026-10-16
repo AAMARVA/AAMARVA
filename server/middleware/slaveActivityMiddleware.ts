@@ -406,6 +406,25 @@ export function slaveActivityMiddleware(req: Request, res: Response, next: NextF
     return next();
   }
 
+  // Fast path: bypass static files, Vite internal paths, and root document
+  if (
+    cleanPath.startsWith('/@') ||
+    cleanPath.startsWith('/src/') ||
+    cleanPath.startsWith('/assets/') ||
+    cleanPath.startsWith('/node_modules/') ||
+    cleanPath.startsWith('/public/') ||
+    cleanPath === '/' ||
+    cleanPath === '/index.html' ||
+    cleanPath === '/favicon.ico' ||
+    cleanPath.endsWith('.js') ||
+    cleanPath.endsWith('.css') ||
+    cleanPath.endsWith('.png') ||
+    cleanPath.endsWith('.svg') ||
+    cleanPath.endsWith('.ico')
+  ) {
+    return next();
+  }
+
   if (isInternalMonitoringEndpoint(cleanPath)) {
     return next();
   }

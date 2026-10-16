@@ -3,55 +3,65 @@ import { Search, Globe, BarChart3, Bot, FileText, Terminal, Key, Lock } from 'lu
 import { Header } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
-import { ThreadModal } from './components/ThreadModal';
-import { ConnectionsModal } from './components/ConnectionsModal';
+import { ThreadModal as ThreadModalEager } from './components/ThreadModal';
+import { ConnectionsModal as ConnectionsModalEager } from './components/ConnectionsModal';
 import { NewPostModal } from './components/NewPostModal';
-import { AgentProfileModal } from './components/AgentProfileModal';
-import { ResetPasswordModal } from './components/ResetPasswordModal';
-import { ClusterMembersModal } from './components/ClusterMembersModal';
-import { ChatModal } from './components/ChatModal';
-import { ClusterChatModal } from './components/ClusterChatModal';
-import { ExploreView } from './components/ExploreView';
-import { ExploreViewDesktop } from './components/ExploreViewDesktop';
-import { ExploreViewTablet } from './components/ExploreViewTablet';
-import { CommandPitView } from './components/CommandPitView';
-import { ExploreViewMobile } from './components/ExploreViewMobile';
-
-import { TelemetryView } from './components/TelemetryView';
-import { TelemetryViewDesktop } from './components/TelemetryViewDesktop';
-import { TelemetryViewDesktop as TelemetryViewTablet } from './components/TelemetryViewDesktop';
-import { TelemetryViewMobile } from './components/TelemetryViewMobile';
-
-import { UserDashboardView } from './components/UserDashboardView';
-import { UserDashboardViewTablet } from './components/UserDashboardViewTablet';
-
-import { TermsView } from './components/TermsView';
-import { TermsViewTablet } from './components/TermsViewTablet';
-
 import { FloorViewDesktop } from './components/FloorViewDesktop.tsx';
 import { FloorViewTablet } from './components/FloorViewTablet.tsx';
 import { FloorViewMobile } from './components/FloorViewMobile.tsx';
-import { EmailChangeVerificationView } from './components/EmailChangeVerificationView';
-import { ConfirmApiKeyRotationView } from './components/ConfirmApiKeyRotationView';
 import { BrutalistLoader } from './components/BrutalistLoader';
 import { AgentAvatar } from './components/AgentAvatar';
-import { DedicatedPostModal } from './components/DedicatedPostModal';
-import { FloorRegistrationModal } from './components/FloorRegistrationModal.tsx';
-import { ApiKeyDisplayModal } from './components/ApiKeyDisplayModal.tsx';
 import { NetworkTicket } from './types.ts';
 import { useAuth } from './context/AuthContext.tsx';
 import { apiFetch } from './services/authApi.ts';
 import { supabase } from './lib/supabase.ts';
 
-import { runE2EEUnitTest, runE2EUnitTest } from './lib/test-e2ee.ts';
-import { runIntegrationTest, testIntegration } from './test-integration.ts';
+// Code-split heavy secondary views and modals to optimize initial bundle size and FCP
+const CommandPitView = React.lazy(() => import('./components/CommandPitView').then(m => ({ default: m.CommandPitView })));
+const ExploreView = React.lazy(() => import('./components/ExploreView').then(m => ({ default: m.ExploreView })));
+const ExploreViewDesktop = React.lazy(() => import('./components/ExploreViewDesktop').then(m => ({ default: m.ExploreViewDesktop })));
+const ExploreViewTablet = React.lazy(() => import('./components/ExploreViewTablet').then(m => ({ default: m.ExploreViewTablet })));
+const ExploreViewMobile = React.lazy(() => import('./components/ExploreViewMobile').then(m => ({ default: m.ExploreViewMobile })));
+const TelemetryView = React.lazy(() => import('./components/TelemetryView').then(m => ({ default: m.TelemetryView })));
+const TelemetryViewDesktop = React.lazy(() => import('./components/TelemetryViewDesktop').then(m => ({ default: m.TelemetryViewDesktop })));
+const TelemetryViewTablet = TelemetryViewDesktop;
+const TelemetryViewMobile = React.lazy(() => import('./components/TelemetryViewMobile').then(m => ({ default: m.TelemetryViewMobile })));
+const UserDashboardView = React.lazy(() => import('./components/UserDashboardView').then(m => ({ default: m.UserDashboardView })));
+const UserDashboardViewTablet = React.lazy(() => import('./components/UserDashboardViewTablet').then(m => ({ default: m.UserDashboardViewTablet })));
+const TermsView = React.lazy(() => import('./components/TermsView').then(m => ({ default: m.TermsView })));
+const TermsViewTablet = React.lazy(() => import('./components/TermsViewTablet').then(m => ({ default: m.TermsViewTablet })));
+const EmailChangeVerificationView = React.lazy(() => import('./components/EmailChangeVerificationView').then(m => ({ default: m.EmailChangeVerificationView })));
+const ConfirmApiKeyRotationView = React.lazy(() => import('./components/ConfirmApiKeyRotationView').then(m => ({ default: m.ConfirmApiKeyRotationView })));
 
-// Expose diagnostic and integration tests to window
+const AgentProfileModal = React.lazy(() => import('./components/AgentProfileModal').then(m => ({ default: m.AgentProfileModal })));
+const ResetPasswordModal = React.lazy(() => import('./components/ResetPasswordModal').then(m => ({ default: m.ResetPasswordModal })));
+const ClusterMembersModal = React.lazy(() => import('./components/ClusterMembersModal').then(m => ({ default: m.ClusterMembersModal })));
+const ChatModal = React.lazy(() => import('./components/ChatModal').then(m => ({ default: m.ChatModal })));
+const ClusterChatModal = React.lazy(() => import('./components/ClusterChatModal').then(m => ({ default: m.ClusterChatModal })));
+const DedicatedPostModal = React.lazy(() => import('./components/DedicatedPostModal').then(m => ({ default: m.DedicatedPostModal })));
+const FloorRegistrationModal = React.lazy(() => import('./components/FloorRegistrationModal.tsx').then(m => ({ default: m.FloorRegistrationModal })));
+const ApiKeyDisplayModal = React.lazy(() => import('./components/ApiKeyDisplayModal.tsx').then(m => ({ default: m.ApiKeyDisplayModal })));
+const ThreadModal = React.lazy(() => import('./components/ThreadModal').then(m => ({ default: m.ThreadModal })));
+const ConnectionsModal = React.lazy(() => import('./components/ConnectionsModal').then(m => ({ default: m.ConnectionsModal })));
+
+// Expose diagnostic and integration tests to window on-demand to avoid bundling test runners in main chunk
 if (typeof window !== 'undefined') {
-  (window as any).runE2EEUnitTest = runE2EEUnitTest;
-  (window as any).runE2EUnitTest = runE2EUnitTest;
-  (window as any).runIntegrationTest = runIntegrationTest;
-  (window as any).testIntegration = testIntegration;
+  (window as any).runE2EEUnitTest = async (a?: any, b?: any, c?: any) => {
+    const { runE2EEUnitTest } = await import('./lib/test-e2ee.ts');
+    return (runE2EEUnitTest as any)(a, b, c);
+  };
+  (window as any).runE2EUnitTest = async (a?: any, b?: any, c?: any) => {
+    const { runE2EUnitTest } = await import('./lib/test-e2ee.ts');
+    return (runE2EUnitTest as any)(a, b, c);
+  };
+  (window as any).runIntegrationTest = async (a?: any, b?: any, c?: any) => {
+    const { runIntegrationTest } = await import('./test-integration.ts');
+    return (runIntegrationTest as any)(a, b, c);
+  };
+  (window as any).testIntegration = async (a?: any, b?: any, c?: any) => {
+    const { testIntegration } = await import('./test-integration.ts');
+    return (testIntegration as any)(a, b, c);
+  };
 }
 
 export default function App() {
@@ -307,8 +317,7 @@ export default function App() {
       } else if (!hasInitialLoadedRef.current) {
         setIsInitialLoading(true);
       }
-      const res = await apiFetch(`/api/tickets?page=${pageNum}&limit=20`, { authType: 'none' })
-        .catch(() => apiFetch(`/api/posts?page=${pageNum}&limit=20`, { authType: 'none' }));
+      const res = await apiFetch(`/api/tickets?page=${pageNum}&limit=20`, { authType: 'none' });
       const rawList = Array.isArray(res?.data?.tickets)
         ? res.data.tickets
         : (Array.isArray(res?.data?.posts) ? res.data.posts : null);
@@ -860,6 +869,7 @@ export default function App() {
             </button>
           </aside>
         )}
+        <React.Suspense fallback={<div className="p-12 flex justify-center"><BrutalistLoader text="LOADING..." /></div>}>
         {emailVerificationToken ? (
           <EmailChangeVerificationView 
             token={emailVerificationToken}
@@ -1166,6 +1176,7 @@ export default function App() {
             </div>
           </>
         )}
+        </React.Suspense>
       </main>
 
       {/* Modals */}
@@ -1184,6 +1195,7 @@ export default function App() {
         isSlaveAccount={isSlaveAccount}
       />
 
+      <React.Suspense fallback={null}>
       <AgentProfileModal
         agentName={activeAgentProfile?.name || activeAgentProfile?.agentId || null}
         agentId={activeAgentProfile?.agentId}
@@ -1320,6 +1332,7 @@ export default function App() {
         agentId={registeredCredentials?.agentId || ''}
         apiKey={registeredCredentials?.apiKey || ''}
       />
+      </React.Suspense>
 
       {/* Mobile Bottom Navigation Bar for quick tab switching on smartphones */}
       {deviceSize === 'mobile' && !isSearchModalOpen && (

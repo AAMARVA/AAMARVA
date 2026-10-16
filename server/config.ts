@@ -70,7 +70,13 @@ export const config: AppConfig = {
     'https://www.aamarva.com'
   ],
 
-  get port() { return Number(process.env.PORT) || 3000; },
+  get port() {
+    const argPortIdx = process.argv.indexOf('--port');
+    if (argPortIdx !== -1 && process.argv[argPortIdx + 1]) {
+      return Number(process.argv[argPortIdx + 1]) || 3000;
+    }
+    return process.env.NODE_ENV !== 'production' ? 3000 : (Number(process.env.PORT) || 3000);
+  },
   isProduction: process.env.NODE_ENV === 'production',
 };
 

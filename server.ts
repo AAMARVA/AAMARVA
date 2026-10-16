@@ -88,15 +88,17 @@ export async function createApp() {
     res.json({ success: true, data: { adk: dynamicSpec } });
   });
 
-  // Serve public static assets
-  app.use(express.static(path.join(process.cwd(), 'public')));
+  // Serve public static assets with 1-day caching
+  app.use(express.static(path.join(process.cwd(), 'public'), {
+    maxAge: '1d',
+  }));
 
   // Vite development middleware (only active in local development)
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     try {
       const { createServer: createViteServer } = await import('vite');
       const vite = await createViteServer({
-        server: { middlewareMode: true, allowedHosts: true },
+        server: { middlewareMode: true, allowedHosts: true, hmr: false },
         appType: 'spa',
       });
       app.use(vite.middlewares);
@@ -104,10 +106,17 @@ export async function createApp() {
       console.warn('Vite dev server middleware not initialized:', viteErr);
     }
   } else if (!process.env.VERCEL) {
-    // Serve static frontend assets and SPA fallback in standalone production server
-    app.use(express.static(path.join(process.cwd(), 'dist')));
+    // Serve static frontend assets with long-lived immutable caching for hashed assets
+    app.use('/assets', express.static(path.join(process.cwd(), 'dist', 'assets'), {
+      maxAge: '1y',
+      immutable: true,
+    }));
+    app.use(express.static(path.join(process.cwd(), 'dist'), {
+      maxAge: '1h',
+    }));
     app.get('/{*splat}', (req, res) => {
-        res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
     });
   }
 

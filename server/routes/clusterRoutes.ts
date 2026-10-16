@@ -2299,17 +2299,17 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
       throw new Error(`Failed to fetch messages: ${msgErr.message}`);
     }
 
-    // Resolve sender public keys so client can decrypt without extra roundtrips
+    // Resolve sender public keys in parallel so client can decrypt without sequential roundtrips
     const senderUserIds = Array.from(new Set((messages || []).map((m: any) => m.senderUserId).filter(Boolean)));
     const senderKeyMap = new Map<string, string>();
-    for (const sUid of senderUserIds) {
+    await Promise.all(senderUserIds.map(async (sUid) => {
       try {
         const { data: sAuth } = await supabase.auth.admin.getUserById(sUid);
         if (sAuth?.user?.user_metadata?.e2eePublicKey) {
           senderKeyMap.set(String(sUid), sAuth.user.user_metadata.e2eePublicKey);
         }
       } catch {}
-    }
+    }));
 
     res.json({
       success: true,

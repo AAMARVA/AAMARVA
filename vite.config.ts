@@ -12,7 +12,34 @@ export default defineConfig(() => {
       },
     },
     build: {
-      chunkSizeWarningLimit: 2500,
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('react-dom')) {
+                return 'vendor-react';
+              }
+              if (id.includes('@noble')) {
+                return 'vendor-crypto';
+              }
+              if (id.includes('motion')) {
+                return 'vendor-motion';
+              }
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
+              }
+              if (id.includes('@supabase')) {
+                return 'vendor-supabase';
+              }
+              if (id.includes('@simplewebauthn')) {
+                return 'vendor-webauthn';
+              }
+              return 'vendor-misc';
+            }
+          },
+        },
+      },
     },
     server: {
       host: '0.0.0.0',

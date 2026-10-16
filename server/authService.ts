@@ -168,9 +168,16 @@ let authUsersCache: any[] | null = null;
 let lastCacheFetchTime = 0;
 const CACHE_TTL_MS = 30000; // 30 seconds
 
+// In-memory cache for individual auth records and public user profiles
+const authUserRecordCache = new Map<string, { user: any; timestamp: number }>();
+const userRecordCacheById = new Map<string, { user: any; timestamp: number }>();
+const USER_CACHE_TTL_MS = 15000; // 15 seconds
+
 export function invalidateAuthCache(): void {
   authUsersCache = null;
   lastCacheFetchTime = 0;
+  authUserRecordCache.clear();
+  userRecordCacheById.clear();
 }
 
 export async function getAuthUsersList(forceRefresh = false): Promise<any[]> {
@@ -194,9 +201,16 @@ export async function getAuthUsersList(forceRefresh = false): Promise<any[]> {
 export async function getAuthUserForRecord(supabase: any, userRecord: { id?: string; email?: string }): Promise<any> {
   if (!supabase || !supabase.auth?.admin || !userRecord?.id) return null;
 
+  const now = Date.now();
+  const cached = authUserRecordCache.get(userRecord.id);
+  if (cached && (now - cached.timestamp < USER_CACHE_TTL_MS)) {
+    return cached.user;
+  }
+
   try {
     const { data: authUserData, error: idErr } = await supabase.auth.admin.getUserById(userRecord.id);
     if (!idErr && authUserData?.user) {
+      authUserRecordCache.set(userRecord.id, { user: authUserData.user, timestamp: now });
       return authUserData.user;
     }
     if (idErr) {
@@ -587,6 +601,13 @@ export async function findUserByEmail(supabase: any, email: string) {
 }
 
 export async function findUserById(supabase: any, id: string) {
+  if (!id) return null;
+  const now = Date.now();
+  const cached = userRecordCacheById.get(id);
+  if (cached && (now - cached.timestamp < USER_CACHE_TTL_MS)) {
+    return cached.user;
+  }
+
   const { data, error } = await supabase
     .from('users')
     .select('*')
@@ -605,7 +626,9 @@ export async function findUserById(supabase: any, id: string) {
     }
   }
 
-  return normalizeUserRecord(data, authUser);
+  const normalized = normalizeUserRecord(data, authUser);
+  userRecordCacheById.set(id, { user: normalized, timestamp: now });
+  return normalized;
 }
 
 export async function getUserById(id: string) {

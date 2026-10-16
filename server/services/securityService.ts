@@ -4,6 +4,9 @@ import { getSupabaseClient } from '../supabase';
 import { logAccountAudit } from './auditService';
 import { redactSensitiveData } from '../utils/redact';
 import { getClientIp } from '../utils/networkWhitelist';
+import { MasterAccountService } from './masterAccountService.js';
+import { CapabilityService } from './capabilityService.js';
+import { verifyHumanSession, verifyAgentAccessToken, HUMAN_SESSION_COOKIE_NAME } from '../authService.js';
 
 /**
  * AAMARVA SECURITY POLICY LEVELS
@@ -624,7 +627,6 @@ export class SecurityService {
     if (!userId) return false;
     
     try {
-      const { MasterAccountService } = await import('./masterAccountService.js');
       const masterService = MasterAccountService.getInstance();
       
       // Determine if requesting account is a Master primary or a Slave
@@ -640,7 +642,6 @@ export class SecurityService {
       }
 
       // Query isolated per-slave capability entitlement (tied strictly to agent_id / user_id)
-      const { CapabilityService } = await import('./capabilityService.js');
       const capService = CapabilityService.getInstance();
       const isActive = await capService.isAgentCapabilityActive(userId);
       if (isActive) return true;
@@ -672,7 +673,6 @@ export class SecurityService {
     let effectiveUserId = userId;
     if (!effectiveUserId) {
         try {
-            const { verifyHumanSession, verifyAgentAccessToken, HUMAN_SESSION_COOKIE_NAME } = await import('../authService.js');
             const authHeader = req.headers.authorization;
             const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
             const apiKey = req.headers['x-api-key'] as string;
