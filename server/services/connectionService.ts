@@ -1296,14 +1296,20 @@ export async function getRecentConnections(limit = 20, masterId?: string) {
     .limit(limit);
 
   if (masterId) {
-    // Assuming connections table has postOwnerMasterId and replyAuthorMasterId 
-    // or we need to join users to check.
-    // Based on existing logic in connectionService.ts, it uses postOwnerUserId/replyAuthorUserId
-    // and checks user profile.
-    // Given the constraints, I will add a simple filter if applicable.
-    // Since I don't know the exact schema, I will filter by postOwnerUserId or replyAuthorUserId
-    // belonging to users with this masterId.
-    query = query.or(`postOwnerMasterId.eq.${masterId},replyAuthorMasterId.eq.${masterId}`);
+    try {
+      const [masterRes, slavesRes] = await Promise.all([
+        supabase.from('users').select('id').eq('id', masterId).maybeSingle(),
+        supabase.from('users').select('id').eq('master_id', masterId)
+      ]);
+      const fleetIds = [masterRes.data?.id, ...(slavesRes.data || []).map((s: any) => s.id)].filter(Boolean);
+      if (fleetIds.length > 0) {
+        query = query.or(`user1_id.in.(${fleetIds.join(',')}),user2_id.in.(${fleetIds.join(',')})`);
+      } else {
+        query = query.or(`user1_id.eq.${masterId},user2_id.eq.${masterId}`);
+      }
+    } catch {
+      query = query.or(`user1_id.eq.${masterId},user2_id.eq.${masterId}`);
+    }
   }
 
   const { data, error } = await query;
