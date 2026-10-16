@@ -106,6 +106,26 @@ export default function App() {
     return false;
   })();
   const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>('floor');
+  const [visitedTabs, setVisitedTabs] = useState<{
+    floor?: boolean;
+    'command-pit'?: boolean;
+    telemetry?: boolean;
+    hub?: boolean;
+    dashboard?: boolean;
+    terms?: boolean;
+  }>({
+    floor: true,
+  });
+
+  useEffect(() => {
+    const tabKey = activeTab === 'live' ? 'floor' : activeTab === 'explore' ? 'hub' : activeTab;
+    setVisitedTabs(prev => (prev as any)[tabKey] ? prev : { ...prev, [tabKey]: true });
+  }, [activeTab]);
+
+  useEffect(() => {
+    const tabKey = activeTab === 'live' ? 'floor' : activeTab === 'explore' ? 'hub' : activeTab;
+    setVisitedTabs({ [tabKey]: true });
+  }, [user?.id, activeAccount?.id]);
 
   useEffect(() => {
     if (isSlaveAccount && activeTab === 'command-pit') {
@@ -980,199 +1000,219 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {(activeTab === 'floor' || activeTab === 'live') && (
-                deviceSize === 'desktop' ? (
-                  <FloorViewDesktop
-                    posts={sortedPosts}
-                    tickets={sortedPosts}
-                    isInitialLoading={isInitialLoading}
-                    isLoadingMore={isLoadingMore}
-                    lastPostElementRef={lastPostElementRef}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onRaiseTicket={() => setIsNewPostOpen(true)}
-                  />
-                ) : deviceSize === 'tablet' ? (
-                  <FloorViewTablet
-                    posts={sortedPosts}
-                    tickets={sortedPosts}
-                    isInitialLoading={isInitialLoading}
-                    isLoadingMore={isLoadingMore}
-                    lastPostElementRef={lastPostElementRef}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onRaiseTicket={() => setIsNewPostOpen(true)}
-                  />
-                ) : (
-                  <FloorViewMobile
-                    posts={sortedPosts}
-                    tickets={sortedPosts}
-                    isInitialLoading={isInitialLoading}
-                    isLoadingMore={isLoadingMore}
-                    lastPostElementRef={lastPostElementRef}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onRaiseTicket={() => setIsNewPostOpen(true)}
-                  />
-                )
-              )}
-
-              {activeTab === 'command-pit' && !isSlaveAccount && (
-                <CommandPitView
-                  onOpenAgentProfile={handleOpenAgentProfile}
-                  onOpenChat={handleOpenChat}
-                  onOpenClusterChat={handleOpenClusterChat}
-                  onOpenClusterMembers={handleOpenClusterMembers}
-                />
-              )}
-
-              {activeTab === 'telemetry' && (
-                <>
-                  {deviceSize === 'mobile' && (
-                    <div className="mb-3 flex justify-center items-center">
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('terms')}
-                        className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414] underline underline-offset-4 hover:opacity-80 transition-opacity cursor-pointer"
-                      >
-                        Terms & Conditions
-                      </button>
-                    </div>
-                  )}
-                  {deviceSize === 'desktop' ? (
-                    <TelemetryViewDesktop
-                      posts={posts}
-                      connectionRequests={connectionRequests}
-                      recentConnections={recentConnections}
-                      isAuthenticated={isAuthenticated}
-                      currentUser={user || activeAccount}
-                      onOpenLogin={() => setActiveTab('hub')}
-                      onOpenAgentProfile={handleOpenAgentProfile}
-                      onOpenClusterMembers={handleOpenClusterMembers}
+              {/* Floor / Live */}
+              <div className={activeTab === 'floor' || activeTab === 'live' ? '' : 'hidden'}>
+                {(visitedTabs.floor || activeTab === 'floor' || activeTab === 'live') && (
+                  deviceSize === 'desktop' ? (
+                    <FloorViewDesktop
+                      posts={sortedPosts}
+                      tickets={sortedPosts}
+                      isInitialLoading={isInitialLoading}
+                      isLoadingMore={isLoadingMore}
+                      lastPostElementRef={lastPostElementRef}
                       onOpenThread={handleOpenThread}
                       onOpenConnections={handleOpenConnections}
-                      onOpenPostCard={handleOpenDedicatedPost}
+                      onAddBid={handleAddReply}
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                      onRaiseTicket={() => setIsNewPostOpen(true)}
                     />
                   ) : deviceSize === 'tablet' ? (
-                    <TelemetryViewTablet
-                      posts={posts}
-                      connectionRequests={connectionRequests}
-                      recentConnections={recentConnections}
-                      isAuthenticated={isAuthenticated}
-                      currentUser={user || activeAccount}
-                      onOpenLogin={() => setActiveTab('hub')}
-                      onOpenAgentProfile={handleOpenAgentProfile}
-                      onOpenClusterMembers={handleOpenClusterMembers}
+                    <FloorViewTablet
+                      posts={sortedPosts}
+                      tickets={sortedPosts}
+                      isInitialLoading={isInitialLoading}
+                      isLoadingMore={isLoadingMore}
+                      lastPostElementRef={lastPostElementRef}
                       onOpenThread={handleOpenThread}
                       onOpenConnections={handleOpenConnections}
-                      onOpenPostCard={handleOpenDedicatedPost}
+                      onAddBid={handleAddReply}
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                      onRaiseTicket={() => setIsNewPostOpen(true)}
                     />
                   ) : (
-                    <TelemetryViewMobile
-                      posts={posts}
-                      connectionRequests={connectionRequests}
-                      recentConnections={recentConnections}
-                      isAuthenticated={isAuthenticated}
-                      currentUser={user || activeAccount}
-                      onOpenLogin={() => setActiveTab('hub')}
-                      onOpenAgentProfile={handleOpenAgentProfile}
-                      onOpenClusterMembers={handleOpenClusterMembers}
+                    <FloorViewMobile
+                      posts={sortedPosts}
+                      tickets={sortedPosts}
+                      isInitialLoading={isInitialLoading}
+                      isLoadingMore={isLoadingMore}
+                      lastPostElementRef={lastPostElementRef}
                       onOpenThread={handleOpenThread}
                       onOpenConnections={handleOpenConnections}
-                      onOpenPostCard={handleOpenDedicatedPost}
+                      onAddBid={handleAddReply}
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                      onRaiseTicket={() => setIsNewPostOpen(true)}
+                    />
+                  )
+                )}
+              </div>
+
+              {/* Command Pit */}
+              {!isSlaveAccount && (
+                <div className={activeTab === 'command-pit' ? '' : 'hidden'}>
+                  {(visitedTabs['command-pit'] || activeTab === 'command-pit') && (
+                    <CommandPitView
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                      onOpenChat={handleOpenChat}
+                      onOpenClusterChat={handleOpenClusterChat}
+                      onOpenClusterMembers={handleOpenClusterMembers}
                     />
                   )}
-                </>
+                </div>
               )}
 
-              {(activeTab === 'explore' || activeTab === 'hub') && (
-                <>
-                  {deviceSize === 'mobile' && (
-                    <div className="mb-3 flex justify-center items-center">
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('terms')}
-                        className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414] underline underline-offset-4 hover:opacity-80 transition-opacity cursor-pointer"
-                      >
-                        Terms & Conditions
-                      </button>
-                    </div>
-                  )}
-                  {deviceSize === 'desktop' ? (
-                  <ExploreViewDesktop
-                    posts={posts}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onOpenClusterMembers={handleOpenClusterMembers}
-                    onOpenChat={handleOpenChat}
-                    onOpenClusterChat={handleOpenClusterChat}
-                  />
-                ) : deviceSize === 'tablet' ? (
-                  <ExploreViewTablet
-                    posts={posts}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onOpenClusterMembers={handleOpenClusterMembers}
-                    onOpenChat={handleOpenChat}
-                    onOpenClusterChat={handleOpenClusterChat}
-                  />
-                ) : (
-                  <ExploreViewMobile
-                    posts={posts}
-                    onOpenThread={handleOpenThread}
-                    onOpenConnections={handleOpenConnections}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onOpenChat={handleOpenChat}
-                    onOpenClusterChat={handleOpenClusterChat}
-                  />
+              {/* Telemetry */}
+              <div className={activeTab === 'telemetry' ? '' : 'hidden'}>
+                {(visitedTabs.telemetry || activeTab === 'telemetry') && (
+                  <>
+                    {deviceSize === 'mobile' && (
+                      <div className="mb-3 flex justify-center items-center">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('terms')}
+                          className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414] underline underline-offset-4 hover:opacity-80 transition-opacity cursor-pointer"
+                        >
+                          Terms & Conditions
+                        </button>
+                      </div>
+                    )}
+                    {deviceSize === 'desktop' ? (
+                      <TelemetryViewDesktop
+                        posts={posts}
+                        connectionRequests={connectionRequests}
+                        recentConnections={recentConnections}
+                        isAuthenticated={isAuthenticated}
+                        currentUser={user || activeAccount}
+                        onOpenLogin={() => setActiveTab('hub')}
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                        onOpenClusterMembers={handleOpenClusterMembers}
+                        onOpenThread={handleOpenThread}
+                        onOpenConnections={handleOpenConnections}
+                        onOpenPostCard={handleOpenDedicatedPost}
+                      />
+                    ) : deviceSize === 'tablet' ? (
+                      <TelemetryViewTablet
+                        posts={posts}
+                        connectionRequests={connectionRequests}
+                        recentConnections={recentConnections}
+                        isAuthenticated={isAuthenticated}
+                        currentUser={user || activeAccount}
+                        onOpenLogin={() => setActiveTab('hub')}
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                        onOpenClusterMembers={handleOpenClusterMembers}
+                        onOpenThread={handleOpenThread}
+                        onOpenConnections={handleOpenConnections}
+                        onOpenPostCard={handleOpenDedicatedPost}
+                      />
+                    ) : (
+                      <TelemetryViewMobile
+                        posts={posts}
+                        connectionRequests={connectionRequests}
+                        recentConnections={recentConnections}
+                        isAuthenticated={isAuthenticated}
+                        currentUser={user || activeAccount}
+                        onOpenLogin={() => setActiveTab('hub')}
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                        onOpenClusterMembers={handleOpenClusterMembers}
+                        onOpenThread={handleOpenThread}
+                        onOpenConnections={handleOpenConnections}
+                        onOpenPostCard={handleOpenDedicatedPost}
+                      />
+                    )}
+                  </>
                 )}
-                </>
-              )}
+              </div>
 
-              {activeTab === 'dashboard' && (
-                deviceSize === 'tablet' ? (
-                  <UserDashboardViewTablet
-                    userPosts={posts}
-                    onOpenThread={handleOpenThread}
-                    onNavigateToPost={handleNavigateToPost}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onOpenClusterMembers={handleOpenClusterMembers}
-                    onOpenChat={handleOpenChat}
-                    onOpenClusterChat={handleOpenClusterChat}
-                  />
-                ) : (
-                  <UserDashboardView
-                    userPosts={posts}
-                    onOpenThread={handleOpenThread}
-                    onNavigateToPost={handleNavigateToPost}
-                    onAddBid={handleAddReply}
-                    onOpenAgentProfile={handleOpenAgentProfile}
-                    onOpenClusterMembers={handleOpenClusterMembers}
-                    onOpenChat={handleOpenChat}
-                    onOpenClusterChat={handleOpenClusterChat}
-                  />
-                )
-              )}
+              {/* Hub / Explore */}
+              <div className={activeTab === 'explore' || activeTab === 'hub' ? '' : 'hidden'}>
+                {(visitedTabs.hub || activeTab === 'explore' || activeTab === 'hub') && (
+                  <>
+                    {deviceSize === 'mobile' && (
+                      <div className="mb-3 flex justify-center items-center">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('terms')}
+                          className="font-mono text-xs font-bold uppercase tracking-wider text-[#141414] underline underline-offset-4 hover:opacity-80 transition-opacity cursor-pointer"
+                        >
+                          Terms & Conditions
+                        </button>
+                      </div>
+                    )}
+                    {deviceSize === 'desktop' ? (
+                      <ExploreViewDesktop
+                        posts={posts}
+                        onOpenThread={handleOpenThread}
+                        onOpenConnections={handleOpenConnections}
+                        onAddBid={handleAddReply}
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                        onOpenClusterMembers={handleOpenClusterMembers}
+                        onOpenChat={handleOpenChat}
+                        onOpenClusterChat={handleOpenClusterChat}
+                      />
+                    ) : deviceSize === 'tablet' ? (
+                      <ExploreViewTablet
+                        posts={posts}
+                        onOpenThread={handleOpenThread}
+                        onOpenConnections={handleOpenConnections}
+                        onAddBid={handleAddReply}
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                        onOpenClusterMembers={handleOpenClusterMembers}
+                        onOpenChat={handleOpenChat}
+                        onOpenClusterChat={handleOpenClusterChat}
+                      />
+                    ) : (
+                      <ExploreViewMobile
+                        posts={posts}
+                        onOpenThread={handleOpenThread}
+                        onOpenConnections={handleOpenConnections}
+                        onAddBid={handleAddReply}
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                        onOpenChat={handleOpenChat}
+                        onOpenClusterChat={handleOpenClusterChat}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
 
-              {activeTab === 'terms' && (
-                deviceSize === 'tablet' ? (
-                  <TermsViewTablet />
-                ) : (
-                  <TermsView />
-                )
-              )}
+              {/* Dashboard */}
+              <div className={activeTab === 'dashboard' ? '' : 'hidden'}>
+                {(visitedTabs.dashboard || activeTab === 'dashboard') && (
+                  deviceSize === 'tablet' ? (
+                    <UserDashboardViewTablet
+                      userPosts={posts}
+                      onOpenThread={handleOpenThread}
+                      onNavigateToPost={handleNavigateToPost}
+                      onAddBid={handleAddReply}
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                      onOpenClusterMembers={handleOpenClusterMembers}
+                      onOpenChat={handleOpenChat}
+                      onOpenClusterChat={handleOpenClusterChat}
+                    />
+                  ) : (
+                    <UserDashboardView
+                      userPosts={posts}
+                      onOpenThread={handleOpenThread}
+                      onNavigateToPost={handleNavigateToPost}
+                      onAddBid={handleAddReply}
+                      onOpenAgentProfile={handleOpenAgentProfile}
+                      onOpenClusterMembers={handleOpenClusterMembers}
+                      onOpenChat={handleOpenChat}
+                      onOpenClusterChat={handleOpenClusterChat}
+                    />
+                  )
+                )}
+              </div>
+
+              {/* Terms */}
+              <div className={activeTab === 'terms' ? '' : 'hidden'}>
+                {(visitedTabs.terms || activeTab === 'terms') && (
+                  deviceSize === 'tablet' ? (
+                    <TermsViewTablet />
+                  ) : (
+                    <TermsView />
+                  )
+                )}
+              </div>
             </div>
           </>
         )}
