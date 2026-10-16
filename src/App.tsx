@@ -558,6 +558,10 @@ export default function App() {
   };
 
   const handleOpenChat = (chat: any) => {
+    if (isSlaveAccount) {
+      console.warn('[handleOpenChat] Blocked opening chat: slave UI messaging is disabled');
+      return;
+    }
     if (!chat || !chat.id || typeof chat.id !== 'string' || !chat.id.trim()) {
       console.warn('[handleOpenChat] Blocked opening chat with missing or invalid connection ID:', chat);
       return;
@@ -575,6 +579,10 @@ export default function App() {
   };
 
   const handleOpenClusterChat = (cluster: { id: string; name: string }) => {
+    if (isSlaveAccount) {
+      console.warn('[handleOpenClusterChat] Blocked opening cluster chat: slave UI messaging is disabled');
+      return;
+    }
     const newItem = { type: 'cluster_chat' as const, data: cluster };
     setModalHistory((prev) => [...prev, newItem]);
     

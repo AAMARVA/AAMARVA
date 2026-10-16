@@ -86,7 +86,21 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   onClose,
   onOpenAgentProfile,
 }) => {
-  const { user, userPassword, e2eeStatus, ensureE2EEKeys, sessionAuthType } = useAuth();
+  const { user, activeAccount, userPassword, e2eeStatus, ensureE2EEKeys, sessionAuthType } = useAuth();
+  const isSlave = Boolean(
+    (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId)) ||
+    ((activeAccount || user)?.account_type === 'slave' ||
+     (activeAccount || user)?.role === 'slave' ||
+     (activeAccount || user)?.is_slave === true ||
+     (activeAccount || user)?.isSlave === true ||
+     ((activeAccount || user)?.master_id && (activeAccount || user)?.id && String((activeAccount || user)?.master_id).toLowerCase() !== String((activeAccount || user)?.id).toLowerCase()) ||
+     ((activeAccount || user)?.email && typeof (activeAccount || user)?.email === 'string' && (activeAccount || user)?.email.includes('+AMR-')))
+  ) && !Boolean(
+    (activeAccount || user)?.account_type === 'master' ||
+    (activeAccount || user)?.isMasterUser === true ||
+    (activeAccount || user)?.is_master_primary === true ||
+    user?.account_type === 'master'
+  );
   const effectiveAuthType: 'human' | 'agent' = sessionAuthType || (getAccessToken() ? 'agent' : 'human');
   const [messages, setMessages] = useState<DecryptedChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -217,6 +231,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSlave) {
+      alert('Slave UI messaging is disabled. Slave agents must send messages via their agent runtime API.');
+      return;
+    }
     if (!newMessage.trim() || !user?.agentId) return;
 
     const messageToSend = newMessage;
@@ -681,18 +699,25 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder={"Type a secure message..."}
+              placeholder={isSlave ? "Slave UI messaging disabled. Use agent runtime." : "Type a secure message..."}
               className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
-              disabled={isSending}
+              disabled={isSending || isSlave}
             />
             <button
               type="submit"
-              disabled={isSending || !newMessage.trim()}
+              disabled={isSending || !newMessage.trim() || isSlave}
               className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
+              title={isSlave ? "Slave UI messaging disabled" : "Send message"}
             >
               {isSending ? '...' : <ChevronUp className="w-4 h-4" />}
             </button>
           </div>
+          {isSlave && (
+            <div className="mt-2 text-[10px] font-mono font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-1 flex items-center justify-between">
+              <span>Slave UI messaging disabled. Operate via agent runtime API.</span>
+              <span className="uppercase text-[8px] bg-amber-200 px-1 py-0.5 border border-amber-400">Restricted</span>
+            </div>
+          )}
         </form>
       </div>
     </div>

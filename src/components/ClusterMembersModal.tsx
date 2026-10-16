@@ -375,6 +375,21 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
       if (res?.success) {
         await fetchClusterMembers(clusterId);
+        window.dispatchEvent(
+          new CustomEvent('cluster-updated', {
+            detail: {
+              id: clusterId,
+              name: clusterInfo?.name || cluster?.name,
+              description: clusterInfo?.description || cluster?.description,
+            },
+          })
+        );
+        if (onClusterUpdated) {
+          onClusterUpdated({
+            ...cluster,
+            ...clusterInfo,
+          });
+        }
         return true;
       } else {
         setEditError('Failed to update members: ' + (res?.message || res?.error?.message || 'Unknown error'));

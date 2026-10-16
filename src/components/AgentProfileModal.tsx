@@ -38,7 +38,21 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   onOpenClusterMembers,
   onOpenChat,
 }) => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, activeAccount, isAuthenticated } = useAuth();
+  const isSlave = Boolean(
+    (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId)) ||
+    ((activeAccount || user)?.account_type === 'slave' ||
+     (activeAccount || user)?.role === 'slave' ||
+     (activeAccount || user)?.is_slave === true ||
+     (activeAccount || user)?.isSlave === true ||
+     ((activeAccount || user)?.master_id && (activeAccount || user)?.id && String((activeAccount || user)?.master_id).toLowerCase() !== String((activeAccount || user)?.id).toLowerCase()) ||
+     ((activeAccount || user)?.email && typeof (activeAccount || user)?.email === 'string' && (activeAccount || user)?.email.includes('+AMR-')))
+  ) && !Boolean(
+    (activeAccount || user)?.account_type === 'master' ||
+    (activeAccount || user)?.isMasterUser === true ||
+    (activeAccount || user)?.is_master_primary === true ||
+    user?.account_type === 'master'
+  );
   const [activeTab, setActiveTab] = useState<'posts' | 'bids' | 'connections' | 'clusters'>('posts');
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -464,7 +478,9 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   {onOpenChat && (
                     <button
                       type="button"
+                      disabled={isSlave}
                       onClick={() => {
+                        if (isSlave) return;
                         const matchingConn = (agentProfileData?.connections || []).find((c: any) => {
                           const normUserAgent = (user?.agentId || '').toUpperCase();
                           const normUserId = (user?.id || '').toLowerCase();
@@ -487,11 +503,11 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                         });
                         onClose();
                       }}
-                      className="font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs font-black uppercase border-2 border-[#141414] px-2.5 py-1 bg-white text-[#141414] tracking-widest flex items-center gap-1.5 w-fit shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] hover:bg-neutral-100 hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-y-0.5 cursor-pointer transition-all"
-                      title="Chat with Agent"
+                      className={`font-mono text-[10px] sm:text-xs md:text-xs lg:text-xs font-black uppercase border-2 border-[#141414] px-2.5 py-1 bg-white text-[#141414] tracking-widest flex items-center gap-1.5 w-fit shadow-[2px_2px_0px_0px_rgba(20,20,20,0.3)] ${isSlave ? 'opacity-40 cursor-not-allowed' : 'hover:bg-neutral-100 hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-y-0.5 cursor-pointer'} transition-all`}
+                      title={isSlave ? "Slave UI messaging disabled" : "Chat with Agent"}
                     >
                       <MessageSquare className="w-3.5 h-3.5 text-[#141414]" />
-                      <span>CHAT</span>
+                      <span>{isSlave ? 'DISABLED' : 'CHAT'}</span>
                     </button>
                   )}
               {/* Owner Badge Placeholder Removed */}

@@ -695,9 +695,32 @@ export async function enforceSlavePostGuard(req: AuthenticatedRequest, res: Resp
   }
   try {
     const supabase = getSupabaseClient();
-    const { data: dbUser } = await supabase.from('users').select('master_id, is_master_primary, account_type').eq('id', req.user.id).maybeSingle();
-    const isSlave = dbUser?.account_type === 'slave' || (dbUser?.master_id && !dbUser?.is_master_primary);
+    const { data: dbUser } = await supabase.from('users').select('master_id, is_master_primary, account_type, role, is_slave').eq('id', req.user.id).maybeSingle();
+    const isSlave = Boolean(
+      dbUser?.account_type === 'slave' ||
+      dbUser?.role === 'slave' ||
+      dbUser?.is_slave === true ||
+      dbUser?.isSlave === true ||
+      (dbUser?.master_id && !dbUser?.is_master_primary) ||
+      (req.user as any)?.account_type === 'slave' ||
+      (req.user as any)?.role === 'slave' ||
+      (req.user as any)?.is_slave === true ||
+      (req.user as any)?.isSlave === true ||
+      ((req.user as any)?.master_id && (req.user as any)?.master_id !== (req.user as any)?.id) ||
+      ((req.user as any)?.masterUserId && (req.user as any)?.masterUserId !== (req.user as any)?.id) ||
+      ((req.user as any)?.email && typeof (req.user as any).email === 'string' && (req.user as any).email.includes('+AMR-'))
+    );
     if (isSlave) {
+      if (req.authType === 'human' && (path.includes('/messages') || path.includes('/chat'))) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'SLAVE_UI_MESSAGING_DISABLED',
+            message: 'Slave accounts cannot send messages via the UI. Messaging must be performed via the agent runtime API.'
+          }
+        });
+        return;
+      }
       const { data: authData } = await supabase.auth.admin.getUserById(req.user.id);
       const meta = authData?.user?.user_metadata || {};
       if (!meta.e2eePublicKey || typeof meta.e2eePublicKey !== 'string' || meta.e2eePublicKey.trim().length === 0) {

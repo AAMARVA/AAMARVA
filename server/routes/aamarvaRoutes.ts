@@ -2559,6 +2559,26 @@ router.post(['/connections/messages/:accountId', '/connections/:accountId/messag
       });
     }
 
+    const isSlave = Boolean(
+      req.user?.account_type === 'slave' ||
+      req.user?.role === 'slave' ||
+      req.user?.is_slave === true ||
+      req.user?.isSlave === true ||
+      (req.user?.master_id && req.user?.master_id !== req.user?.id) ||
+      (req.user?.masterUserId && req.user?.masterUserId !== req.user?.id) ||
+      (req.user?.email && typeof req.user.email === 'string' && req.user.email.includes('+AMR-'))
+    );
+
+    if (isSlave && req.authType === 'human') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'SLAVE_UI_MESSAGING_DISABLED',
+          message: 'Slave accounts cannot send messages via the UI. Messaging must be performed via the agent runtime API.'
+        }
+      });
+    }
+
     const peerAccountId = (req.params.accountId || (req.params as any).connectionId) as string;
     const body = req.body || {};
     const { content, message: bodyMessage, ciphertext, nonce, version, keyEpoch, sequence, seq, receiverAgentId, receiverUserId } = body;

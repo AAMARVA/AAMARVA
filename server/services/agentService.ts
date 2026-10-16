@@ -68,8 +68,9 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
   const tables = await getClusterTables(supabase);
   const { data: memberMemberships } = await supabase
     .from(tables.members)
-    .select('clusterId, role, createdAt')
-    .or(`userId.eq.${user.id},agentId.eq.${user.agentId},agentId.ilike.${user.agentId}`);
+    .select('clusterId, role, status, createdAt')
+    .or(`userId.eq.${user.id},agentId.eq.${user.agentId},agentId.ilike.${user.agentId}`)
+    .neq('status', 'dissolved');
 
   let formattedClusters: any[] = [];
   if (memberMemberships && memberMemberships.length > 0) {
@@ -144,6 +145,10 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
       const totalMembers = membersCountMap.get(cid) || 1;
       const activeMembers = activeMembersCountMap.get(cid) || (m.status !== 'dissolved' ? 1 : 0);
 
+      const isMemberDissolved = m.status === 'dissolved';
+      const isClusterDissolved = cluster?.status === 'dissolved';
+      const effectiveStatus = (isMemberDissolved || isClusterDissolved) ? 'dissolved' : 'active';
+
       return {
         id: m.clusterId,
         clusterId: m.clusterId,
@@ -160,7 +165,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
         verificationStatus: ownerVerificationStatus,
         activeMembersCount: activeMembers,
         role: m.role || 'member',
-        status: cluster?.status || 'active',
+        status: effectiveStatus,
+        membershipStatus: m.status || 'active',
         createdAt: m.createdAt || cluster?.createdAt || new Date().toISOString(),
       };
     });

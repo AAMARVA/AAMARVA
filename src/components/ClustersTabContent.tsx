@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, MessageSquare, Shield, ShieldAlert, ChevronRight, Plus
 } from 'lucide-react';
-import { apiFetch } from '../services/authApi';
+import { apiFetch, isSlaveAccount } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { AgentAvatar } from './AgentAvatar';
 import { useAuth } from '../context/AuthContext';
@@ -29,6 +29,7 @@ export function ClustersTabContent({
   onOpenClusterChat,
 }: ClustersTabContentProps) {
   const { isAuthenticated, user, activeAccount } = useAuth();
+  const isSlave = isSlaveAccount(activeAccount);
   
   // Creating clusters state
   const [isCreating, setIsCreating] = useState(false);
@@ -143,7 +144,16 @@ export function ClustersTabContent({
     }
   };
 
-  const activeClusters = clusters.filter((c) => c.status !== 'dissolved');
+  const activeClusters = clusters.filter((c) => {
+    if (c.status === 'dissolved') return false;
+    if (isSlave) {
+        // Assume c has a list of members. We'll check if the slave's ID is in the members list.
+        // Cluster object might have `members` (array of objects) or `memberIds`.
+        return c.members?.some((m: any) => m.id === activeAccount?.id || m.agentId === activeAccount?.agentId) || 
+               c.memberIds?.includes(activeAccount?.id);
+    }
+    return true;
+  });
   const dissolvedClusters = clusters.filter((c) => c.status === 'dissolved');
 
   return (

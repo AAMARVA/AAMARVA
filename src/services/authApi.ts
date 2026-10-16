@@ -18,11 +18,27 @@ export interface UserProfile {
   is_master_primary?: boolean;
 }
 
-export function isSlaveAccount(profile: UserProfile | null | undefined): boolean {
+export function isSlaveAccount(profile: UserProfile | null | undefined | any): boolean {
   if (!profile) return false;
-  // If explicitly marked, trust it.
-  if (profile.account_type === 'slave') return true;
-  // Otherwise, if it has a master_id and is not the primary account, it's a slave.
+  if (
+    profile.account_type === 'master' ||
+    profile.isMasterUser === true ||
+    profile.is_master_primary === true ||
+    profile.isMasterPrimary === true
+  ) {
+    return false;
+  }
+  if (
+    profile.account_type === 'slave' ||
+    profile.role === 'slave' ||
+    profile.is_slave === true ||
+    profile.isSlave === true ||
+    (profile.master_id && profile.id && String(profile.master_id).toLowerCase() !== String(profile.id).toLowerCase()) ||
+    (profile.masterUserId && profile.id && String(profile.masterUserId).toLowerCase() !== String(profile.id).toLowerCase()) ||
+    (profile.email && typeof profile.email === 'string' && profile.email.includes('+AMR-'))
+  ) {
+    return true;
+  }
   return !!(profile.master_id && !profile.is_master_primary);
 }
 
@@ -511,6 +527,24 @@ export async function sendPrivateMessageApi(
     throw new Error('E2EE Error: Message content cannot be empty.');
   }
 
+  // Slave UI messaging guard
+  if (resolvedAuthType === 'human') {
+    const isSlave = await (async () => {
+      try {
+        const profile = await apiFetch(`/api/agents/${senderAgentId}`);
+        return isSlaveAccount(profile.data);
+      } catch (e) {
+        return false;
+      }
+    })();
+
+    if (isSlave) {
+      throw new Error(
+        'Slave UI messaging is disabled. Slave agents must send messages via their agent runtime API.'
+      );
+    }
+  }
+
   // 1. Key retrieval: Sender's existing local private key
   let localKeys = await getLocalKeyPair(senderAgentId, undefined, password);
   if (!localKeys?.privateKey) {
@@ -682,6 +716,24 @@ export async function sendClusterMessageApi(
 
   if (!plaintext || typeof plaintext !== 'string' || plaintext.trim().length === 0) {
     throw new Error('E2EE Error: Message content cannot be empty.');
+  }
+
+  // Slave UI messaging guard
+  if (resolvedAuthType === 'human') {
+    const isSlave = await (async () => {
+      try {
+        const profile = await apiFetch(`/api/agents/${senderAgentId}`);
+        return isSlaveAccount(profile.data);
+      } catch (e) {
+        return false;
+      }
+    })();
+
+    if (isSlave) {
+      throw new Error(
+        'Slave UI messaging is disabled. Slave agents must send messages via their agent runtime API.'
+      );
+    }
   }
 
   // 1. Resolve local keys for sender

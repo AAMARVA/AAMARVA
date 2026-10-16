@@ -80,29 +80,28 @@ async function isClusterMember(supabase: any, clusterId: string, userId: string,
 
   if (cluster && cluster.status !== 'dissolved') {
     if (cluster.ownerUserId && cluster.ownerUserId === userId) return true;
-    if (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase() === agentId.toLowerCase()) return true;
+    if (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase().replace(/^@+/, '') === agentId.toLowerCase().replace(/^@+/, '')) return true;
   }
 
-  // 2. Check by userId
-  if (userId) {
-    const { data: byUser } = await supabase
-      .from(tables.members)
-      .select('id, status')
-      .eq('clusterId', clusterId)
-      .eq('userId', userId)
-      .maybeSingle();
-    if (byUser && byUser.status !== 'dissolved') return true;
-  }
-
-  // 3. Check by agentId
+  // 2. Check by userId and agentId in members table
+  const conditions: string[] = [];
+  if (userId) conditions.push(`userId.eq.${userId}`);
   if (agentId) {
-    const { data: byAgent } = await supabase
+    const cleanAid = agentId.replace(/^@+/, '');
+    conditions.push(`agentId.eq.${agentId}`, `agentId.ilike.${cleanAid}`);
+  }
+
+  if (conditions.length > 0) {
+    const { data: memberRows } = await supabase
       .from(tables.members)
       .select('id, status')
       .eq('clusterId', clusterId)
-      .eq('agentId', agentId)
-      .maybeSingle();
-    if (byAgent && byAgent.status !== 'dissolved') return true;
+      .or(conditions.join(','));
+
+    if (memberRows && memberRows.length > 0) {
+      const hasActive = memberRows.some((m: any) => m.status && m.status !== 'dissolved');
+      if (hasActive) return true;
+    }
   }
 
   return false;
@@ -125,35 +124,29 @@ async function isClusterAdmin(supabase: any, clusterId: string, userId: string, 
 
   if (cluster && (
     (cluster.ownerUserId && cluster.ownerUserId === userId) ||
-    (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase() === agentId.toLowerCase())
+    (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase().replace(/^@+/, '') === agentId.toLowerCase().replace(/^@+/, ''))
   )) {
     return true;
   }
 
   // Check if admin role and active status
-  if (userId) {
-    const { data: memberByUser } = await supabase
-      .from(tables.members)
-      .select('role, status')
-      .eq('clusterId', clusterId)
-      .eq('userId', userId)
-      .maybeSingle();
-
-    if (memberByUser && (memberByUser.role === 'admin' || memberByUser.role === 'owner') && memberByUser.status === 'active') {
-      return true;
-    }
+  const conditions: string[] = [];
+  if (userId) conditions.push(`userId.eq.${userId}`);
+  if (agentId) {
+    const cleanAid = agentId.replace(/^@+/, '');
+    conditions.push(`agentId.eq.${agentId}`, `agentId.ilike.${cleanAid}`);
   }
 
-  if (agentId) {
-    const { data: memberByAgent } = await supabase
+  if (conditions.length > 0) {
+    const { data: memberRows } = await supabase
       .from(tables.members)
       .select('role, status')
       .eq('clusterId', clusterId)
-      .eq('agentId', agentId)
-      .maybeSingle();
+      .or(conditions.join(','));
 
-    if (memberByAgent && (memberByAgent.role === 'admin' || memberByAgent.role === 'owner') && memberByAgent.status === 'active') {
-      return true;
+    if (memberRows && memberRows.length > 0) {
+      const hasAdmin = memberRows.some((m: any) => (m.role === 'admin' || m.role === 'owner') && m.status !== 'dissolved');
+      if (hasAdmin) return true;
     }
   }
 
@@ -615,22 +608,48 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
     const userId = req.user!.id;
     const q = req.query.q ? String(req.query.q).trim() : '';
 
-    // Get clusters where the user is a member
+    // Get clusters where the user is an active member (by userId or agentId)
+    const userAgentId = req.user?.agentId;
+    const cleanUserAid = userAgentId ? userAgentId.replace(/^@+/, '') : null;
+    const memberOrConditions = [
+      userId ? `userId.eq.${userId}` : null,
+      userAgentId ? `agentId.eq.${userAgentId}` : null,
+      cleanUserAid ? `agentId.ilike.${cleanUserAid}` : null,
+    ].filter(Boolean).join(',');
+
     const { data: memberships, error: memError } = await supabase
       .from(tables.members)
       .select('clusterId, status')
-      .eq('userId', userId);
+      .or(memberOrConditions)
+      .neq('status', 'dissolved');
 
     if (memError) {
       throw new Error(`Failed to query cluster memberships: ${memError.message}`);
     }
 
-    const membershipStatusMap = new Map<string, string>();
+    const { data: ownedClusters } = await supabase
+      .from(tables.clusters)
+      .select('id, status')
+      .or([
+        userId ? `ownerUserId.eq.${userId}` : null,
+        userAgentId ? `ownerAgentId.eq.${userAgentId}` : null,
+        cleanUserAid ? `ownerAgentId.ilike.${cleanUserAid}` : null
+      ].filter(Boolean).join(','))
+      .neq('status', 'dissolved');
+
+    const activeClusterIdSet = new Set<string>();
     (memberships || []).forEach((m: any) => {
-      membershipStatusMap.set(m.clusterId, m.status || 'active');
+      if (m.clusterId && m.status !== 'dissolved') {
+        activeClusterIdSet.add(m.clusterId);
+      }
+    });
+    (ownedClusters || []).forEach((c: any) => {
+      if (c.id && c.status !== 'dissolved') {
+        activeClusterIdSet.add(c.id);
+      }
     });
 
-    const clusterIds = (memberships || []).map((m: any) => m.clusterId);
+    const clusterIds = Array.from(activeClusterIdSet);
     if (clusterIds.length === 0) {
       return res.json({ success: true, data: [] });
     }
@@ -638,7 +657,8 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
     let queryBuilder = supabase
       .from(tables.clusters)
       .select('*')
-      .in('id', clusterIds);
+      .in('id', clusterIds)
+      .neq('status', 'dissolved');
 
     if (q) {
       queryBuilder = queryBuilder.ilike('name', `%${q}%`);
@@ -666,20 +686,23 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
       : (req.user!.masterId || userId);
 
     const mappedClusters = (clusters || []).filter((c: any) => {
+      if (c.status === 'dissolved') return false;
+      if (!activeClusterIdSet.has(c.id)) return false;
+
       const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
-      if (!ownerInfo) return false; 
+      if (!ownerInfo) return true;
       const ownerMasterId = (ownerInfo.master_id && !ownerInfo.is_master_primary)
         ? ownerInfo.master_id
         : ownerInfo.id;
-      return ownerMasterId === callerMasterId;
+      if (req.user?.account_type === 'slave' || req.user?.is_slave) {
+        return ownerMasterId === callerMasterId;
+      }
+      return true;
     }).map((c: any) => {
       const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
-      const memberStatus = membershipStatusMap.get(c.id) || 'active';
-      const clusterStatus = c.status || 'active';
-      const effectiveStatus = (memberStatus === 'dissolved' || clusterStatus === 'dissolved') ? 'dissolved' : 'active';
       return {
         ...c,
-        status: effectiveStatus,
+        status: 'active',
         ownerAgentName: ownerInfo?.name || c.ownerAgentId || 'Unknown Agent',
         ownerAgentAvatar: ownerInfo?.avatar || '',
         symbol: getClusterSymbol(c.id)
@@ -788,7 +811,7 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
     }
 
     // Check membership
-    const isMember = await isClusterMember(supabase, clusterId, userId);
+    const isMember = await isClusterMember(supabase, clusterId, userId, req.user?.agentId);
     if (!isMember) {
       return res.status(403).json({ success: false, error: { message: 'Forbidden: Not a member of this cluster.' } });
     }
@@ -835,13 +858,13 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
 // 3.1 GET /clusters/:clusterId/epoch (Get authoritative cluster epoch)
 router.get('/clusters/:clusterId/epoch', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    await SecurityService.getInstance().evaluateRequest(req, 'cluster_get_epoch');
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_get');
     const clusterId = req.params.clusterId as string;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
     const userId = req.user!.id;
 
-    const isMember = await isClusterMember(supabase, clusterId, userId);
+    const isMember = await isClusterMember(supabase, clusterId, userId, req.user?.agentId);
     if (!isMember) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Not a member of this cluster.' } });
     }
@@ -875,7 +898,7 @@ router.get('/clusters/:clusterId/epoch', requireUserOrAgentAuth, async (req: Aut
 // 3.2 GET /clusters/:clusterId/members/crypto (Get cluster member directory with cryptographic identities & public keys)
 router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    await SecurityService.getInstance().evaluateRequest(req, 'cluster_get_crypto_members');
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_get');
     const clusterId = req.params.clusterId as string;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
@@ -1709,15 +1732,30 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       });
     }
 
-    // 2. Active membership check
-    const { data: memberRecord, error: memErr } = await supabase
-      .from(tables.members)
-      .select('id, status')
-      .eq('clusterId', clusterId)
-      .eq('userId', userId)
-      .maybeSingle();
+    // Slave UI messaging guard: Slave accounts cannot send messages via UI / human session
+    const isSlave = Boolean(
+      req.user?.account_type === 'slave' ||
+      req.user?.role === 'slave' ||
+      req.user?.is_slave === true ||
+      req.user?.isSlave === true ||
+      (req.user?.master_id && req.user?.master_id !== req.user?.id) ||
+      (req.user?.masterUserId && req.user?.masterUserId !== req.user?.id) ||
+      (req.user?.email && typeof req.user.email === 'string' && req.user.email.includes('+AMR-'))
+    );
 
-    if (memErr || !memberRecord || memberRecord.status !== 'active') {
+    if (isSlave && req.authType === 'human') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'SLAVE_UI_MESSAGING_DISABLED',
+          message: 'Slave accounts cannot send messages via the UI. Messaging must be performed via the agent runtime API.'
+        }
+      });
+    }
+
+    // 2. Active membership check
+    const isMember = await isClusterMember(supabase, clusterId, userId, req.user?.agentId);
+    if (!isMember) {
       return res.status(403).json({
         success: false,
         error: {
@@ -2226,7 +2264,7 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
     }
 
     // Verify membership
-    const isMember = await isClusterMember(supabase, clusterId, userId);
+    const isMember = await isClusterMember(supabase, clusterId, userId, req.user?.agentId);
     if (!isMember) {
       return res.status(403).json({
         success: false,
@@ -2339,6 +2377,20 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireHumanSession
 
     if (memberErr || !member) {
       return res.status(404).json({ success: false, error: { message: 'Member not found in this cluster.' } });
+    }
+
+    // Verify target is not cluster owner or admin
+    const { data: clusterData } = await supabase
+      .from(tables.clusters)
+      .select('ownerUserId, ownerAgentId')
+      .eq('id', clusterId)
+      .maybeSingle();
+
+    const isTargetOwner = (clusterData?.ownerUserId && (clusterData.ownerUserId === member.userId || clusterData.ownerUserId === member.id)) ||
+      (clusterData?.ownerAgentId && (clusterData.ownerAgentId.toLowerCase() === (member.agentId || '').toLowerCase() || clusterData.ownerAgentId.toLowerCase() === cleanMemberAgentId.toLowerCase()));
+
+    if (isTargetOwner || member.role === 'owner') {
+      return res.status(400).json({ success: false, error: { message: 'Cannot remove the cluster owner/admin.' } });
     }
 
     // Update membership status to dissolved for specific agent
@@ -2503,14 +2555,8 @@ router.get('/clusters/:clusterId/keys/:epoch', requireUserOrAgentAuth, async (re
     const agentId = req.user!.agentId;
 
     // Verify requester active membership status (reject non-members and dissolved members)
-    const { data: member } = await supabase
-      .from(tables.members)
-      .select('id, status, agentId, userId')
-      .eq('clusterId', clusterId)
-      .eq('userId', userId)
-      .maybeSingle();
-
-    if (!member || member.status !== 'active') {
+    const isMember = await isClusterMember(supabase, clusterId, userId, req.user?.agentId);
+    if (!isMember) {
       return res.status(403).json({
         success: false,
         error: { code: 'FORBIDDEN', message: 'Forbidden: You must be an active member of this cluster to access cluster keys.' }

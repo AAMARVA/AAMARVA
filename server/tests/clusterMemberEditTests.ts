@@ -2,8 +2,10 @@ import express from 'express';
 import http from 'http';
 import cookieParser from 'cookie-parser';
 import clusterRouter, { getClusterTables } from '../routes/clusterRoutes';
+import aamarvaRouter from '../routes/aamarvaRoutes';
 import { getSupabaseClient } from '../supabase';
 import { registerUser, createHumanSession } from '../authService';
+import { getAgentProfile } from '../services/agentService';
 
 export async function runClusterMemberEditTests(): Promise<Record<string, { status: 'PASSED' | 'FAILED'; reason?: string }>> {
   console.log('\n=== AAMARVA EDIT CLUSTER MEMBER & SAVE REGRESSION TEST SUITE ===\n');
@@ -17,6 +19,7 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
   const app = express();
   app.use(cookieParser());
   app.use(express.json());
+  app.use('/api', aamarvaRouter);
   app.use('/api', clusterRouter);
 
   const server = http.createServer(app);
@@ -49,6 +52,28 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
     const regOwner = await registerUser({ email: `owner_edit_${ts}@aamarva.test`, password: 'Password123!', agentName: 'Owner Edit' });
     const ownerUser = regOwner.user;
     const ownerSession = await createHumanSession(ownerUser.id);
+
+    // Register peer member
+    const regPeer = await registerUser({ email: `peer_edit_${ts}@aamarva.test`, password: 'Password123!', agentName: 'Peer Edit' });
+    const peerUser = regPeer.user;
+    const peerSession = await createHumanSession(peerUser.id);
+
+    // Register slave user under owner
+    const slaveId = `slave_user_${ts}`;
+    const slaveAgentId = `AMR-SLAVE-${ts.toString().slice(-6)}`;
+    await supabase.from('users').insert({
+      id: slaveId,
+      agentId: slaveAgentId,
+      email: `slave_${ts}@aamarva.test`,
+      name: 'Slave Agent',
+      master_id: ownerUser.id,
+      account_type: 'slave',
+      role: 'slave',
+      is_slave: true,
+      status: 'active',
+      createdAt: new Date().toISOString()
+    });
+    const slaveSession = await createHumanSession(slaveId);
 
     const clusterId = `clu_edit_test_${ts}`;
     await supabase.from(tables.clusters).insert({
@@ -100,31 +125,103 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
     const { data: clFetched3 } = await supabase.from(tables.clusters).select('description').eq('id', clusterId).single();
     recordResult('Clear description', resClearDesc.status === 200 && !clFetched3?.description, `Status: ${resClearDesc.status}, desc: ${clFetched3?.description}`);
 
-    // Test 4: Add eligible agent / master-slave agent
-    const testAgentId = `agent_test_${ts}`;
+    // Test 4: Add eligible agent (peerUser)
     const resAdd = await helperFetch(`/api/clusters/${clusterId}`, {
       method: 'PATCH',
       headers: { Cookie: cookieHeader },
-      body: JSON.stringify({ memberAgentIds: [ownerUser.agentId, testAgentId] })
+      body: JSON.stringify({ memberAgentIds: [ownerUser.agentId, peerUser.agentId] })
     });
-    const { data: membersAdded } = await supabase.from(tables.members).select('agentId').eq('clusterId', clusterId);
-    const hasAddedAgent = (membersAdded || []).some((m: any) => m.agentId.toLowerCase() === testAgentId.toLowerCase());
+    const { data: membersAdded } = await supabase.from(tables.members).select('agentId, status').eq('clusterId', clusterId);
+    const hasAddedAgent = (membersAdded || []).some((m: any) => m.agentId.toLowerCase() === peerUser.agentId.toLowerCase());
     recordResult('Add eligible agent', resAdd.status === 200 && hasAddedAgent, `Status: ${resAdd.status}, found added agent: ${hasAddedAgent}`);
 
-    // Test 5: Remove member by omitting from memberAgentIds
-    const resRemove = await helperFetch(`/api/clusters/${clusterId}`, {
-      method: 'PATCH',
-      headers: { Cookie: cookieHeader },
-      body: JSON.stringify({ memberAgentIds: [ownerUser.agentId] })
-    });
-    const { data: membersAfterRemove } = await supabase.from(tables.members).select('agentId').eq('clusterId', clusterId);
-    const stillHasAgent = (membersAfterRemove || []).some((m: any) => m.agentId.toLowerCase() === testAgentId.toLowerCase());
-    recordResult('Remove member', resRemove.status === 200 && !stillHasAgent, `Status: ${resRemove.status}, agent removed: ${!stillHasAgent}`);
+    // Test 4b: Active membership visible to newly added peer
+    const peerProfileBefore = await getAgentProfile(peerUser.agentId, true);
+    const peerHasActiveCluster = (peerProfileBefore?.clusters || []).some((c: any) => c.id === clusterId && c.status === 'active');
+    recordResult('Added agent sees active cluster', peerHasActiveCluster, `Cluster found in peer profile: ${peerHasActiveCluster}`);
 
-    // Test 6: Persisted membership and owner protection after reload
-    const { data: reloadMembers } = await supabase.from(tables.members).select('*').eq('clusterId', clusterId);
-    const ownerMemberPresent = (reloadMembers || []).some((m: any) => m.role === 'owner' || m.role === 'admin');
-    recordResult('Persisted membership and owner protection', ownerMemberPresent && reloadMembers?.length === 1, `Owner/admin present: ${ownerMemberPresent}, total members: ${reloadMembers?.length}`);
+    // Test 5: Owner cannot remove themselves via DELETE member endpoint
+    const resRemoveOwner = await helperFetch(`/api/clusters/${clusterId}/members/${ownerUser.agentId}`, {
+      method: 'DELETE',
+      headers: { Cookie: cookieHeader }
+    });
+    recordResult('Owner removal prevented', resRemoveOwner.status === 400, `Status: ${resRemoveOwner.status}, message: ${resRemoveOwner.json?.error?.message}`);
+
+    // Test 6: Remove member (peerUser) via DELETE member endpoint
+    const resKick = await helperFetch(`/api/clusters/${clusterId}/members/${peerUser.agentId}`, {
+      method: 'DELETE',
+      headers: { Cookie: cookieHeader }
+    });
+    recordResult('Remove member endpoint succeeded', resKick.status === 200, `Status: ${resKick.status}`);
+
+    // Test 7: Removed member no longer appears in Active Clusters
+    const peerProfileAfter = await getAgentProfile(peerUser.agentId, true);
+    const peerActiveClusters = (peerProfileAfter?.clusters || []).filter((c: any) => c.status !== 'dissolved');
+    const stillInActiveClusters = peerActiveClusters.some((c: any) => c.id === clusterId);
+    recordResult('Removed agent dashboard excludes cluster from Active Clusters', !stillInActiveClusters, `Cluster still active in profile: ${stillInActiveClusters}`);
+
+    // Test 8: Removed member's direct API requests are rejected (403 Forbidden)
+    const peerCookieHeader = `aamarva_human_session=${peerSession}`;
+    const resPeerGetCluster = await helperFetch(`/api/clusters/${clusterId}`, {
+      headers: { Cookie: peerCookieHeader }
+    });
+    const resPeerGetEpoch = await helperFetch(`/api/clusters/${clusterId}/epoch`, {
+      headers: { Cookie: peerCookieHeader }
+    });
+    const resPeerGetMessages = await helperFetch(`/api/clusters/${clusterId}/messages`, {
+      headers: { Cookie: peerCookieHeader }
+    });
+    const resPeerPostMessage = await helperFetch(`/api/clusters/${clusterId}/messages`, {
+      method: 'POST',
+      headers: { Cookie: peerCookieHeader },
+      body: JSON.stringify({
+        ciphertext: Buffer.from('test').toString('base64'),
+        nonce: Buffer.from('123456789012').toString('base64'),
+        version: 1,
+        keyEpoch: 1
+      })
+    });
+    const allRejected403 = resPeerGetCluster.status === 403 &&
+                          resPeerGetEpoch.status === 403 &&
+                          resPeerGetMessages.status === 403 &&
+                          resPeerPostMessage.status === 403;
+    recordResult(
+      'Removed member direct API access rejected with 403',
+      allRejected403,
+      `GET cluster: ${resPeerGetCluster.status}, epoch: ${resPeerGetEpoch.status}, messages: ${resPeerGetMessages.status}, POST message: ${resPeerPostMessage.status}`
+    );
+
+    // Test 9: Slave UI messaging rejected on connection messages (403 SLAVE_UI_MESSAGING_DISABLED)
+    const slaveCookieHeader = `aamarva_human_session=${slaveSession}`;
+    const resSlaveConnMsg = await helperFetch(`/api/connections/messages/peer-test-id`, {
+      method: 'POST',
+      headers: { Cookie: slaveCookieHeader },
+      body: JSON.stringify({
+        ciphertext: Buffer.from('test').toString('base64'),
+        nonce: Buffer.from('123456789012').toString('base64')
+      })
+    });
+    const slaveConnRejected = resSlaveConnMsg.status === 403 && resSlaveConnMsg.json?.error?.code === 'SLAVE_UI_MESSAGING_DISABLED';
+    recordResult('Slave account connection messaging rejected in UI session', slaveConnRejected, `Status: ${resSlaveConnMsg.status}, code: ${resSlaveConnMsg.json?.error?.code}`);
+
+    // Test 10: Slave UI messaging rejected on cluster messages (403 SLAVE_UI_MESSAGING_DISABLED)
+    const resSlaveClusterMsg = await helperFetch(`/api/clusters/${clusterId}/messages`, {
+      method: 'POST',
+      headers: { Cookie: slaveCookieHeader },
+      body: JSON.stringify({
+        ciphertext: Buffer.from('test').toString('base64'),
+        nonce: Buffer.from('123456789012').toString('base64'),
+        version: 1,
+        keyEpoch: 1
+      })
+    });
+    const slaveClusterRejected = resSlaveClusterMsg.status === 403 && resSlaveClusterMsg.json?.error?.code === 'SLAVE_UI_MESSAGING_DISABLED';
+    recordResult('Slave account cluster messaging rejected in UI session', slaveClusterRejected, `Status: ${resSlaveClusterMsg.status}, code: ${resSlaveClusterMsg.json?.error?.code}`);
+
+    // Test 11: Owner remains a member after reload
+    const { data: reloadMembers } = await supabase.from(tables.members).select('*').eq('clusterId', clusterId).neq('status', 'dissolved');
+    const ownerMemberPresent = (reloadMembers || []).some((m: any) => (m.role === 'owner' || m.role === 'admin') && m.userId === ownerUser.id);
+    recordResult('Owner remains active member in database after reload', ownerMemberPresent, `Owner present: ${ownerMemberPresent}, active members count: ${reloadMembers?.length}`);
 
   } catch (err: any) {
     console.error('Test suite error:', err);

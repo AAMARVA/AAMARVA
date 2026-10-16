@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, MessageSquare, Shield } from 'lucide-react';
-import { apiFetch, getAccessToken, getRefreshToken, sendClusterMessageApi } from '../services/authApi';
+import { apiFetch, getAccessToken, getRefreshToken, sendClusterMessageApi, isSlaveAccount } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
@@ -185,6 +185,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   onOpenClusterMembers,
 }) => {
   const { user, activeAccount, userPassword } = useAuth();
+  const isSlave = isSlaveAccount(activeAccount);
   const [messages, setMessages] = useState<DecryptedClusterMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -529,76 +530,78 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
         </div>
 
         {/* Message Input */}
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!newMessage.trim() || !user?.agentId) return;
-            const messageToSend = newMessage;
-            setIsSending(true);
-            try {
-              const res = await sendClusterMessageApi(
-                clusterId,
-                messageToSend,
-                user.agentId,
-                { 
-                  password: userPassword || undefined, 
-                  authType: 'human',
-                  selectedRecipientAgentIds: (selectedRecipientIds.size > 0 && !selectedRecipientIds.has('__NONE__'))
-                    ? (Array.from(selectedRecipientIds).filter((id) => Boolean(id && id !== user.agentId && id !== '__NONE__')) as string[])
-                    : undefined
+        {!isSlaveAccount(activeAccount) && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newMessage.trim() || !user?.agentId) return;
+              const messageToSend = newMessage;
+              setIsSending(true);
+              try {
+                const res = await sendClusterMessageApi(
+                  clusterId,
+                  messageToSend,
+                  user.agentId,
+                  { 
+                    password: userPassword || undefined, 
+                    authType: 'human',
+                    selectedRecipientAgentIds: (selectedRecipientIds.size > 0 && !selectedRecipientIds.has('__NONE__'))
+                      ? (Array.from(selectedRecipientIds).filter((id) => Boolean(id && id !== user.agentId && id !== '__NONE__')) as string[])
+                      : undefined
+                  }
+                );
+                if (res?.success || res?.id || res?.messageId) {
+                  setNewMessage('');
+                  fetchDetails(true);
+                } else {
+                  alert(`Failed to send cluster message: ${res?.error?.message || 'Transmission error'}`);
                 }
-              );
-              if (res?.success || res?.id || res?.messageId) {
-                setNewMessage('');
-                fetchDetails(true);
-              } else {
-                alert(`Failed to send cluster message: ${res?.error?.message || 'Transmission error'}`);
+              } catch (err: any) {
+                console.error('Error sending cluster message:', err);
+                alert(`Failed to send cluster message: ${err?.message || 'Transmission error'}`);
+              } finally {
+                setIsSending(false);
               }
-            } catch (err: any) {
-              console.error('Error sending cluster message:', err);
-              alert(`Failed to send cluster message: ${err?.message || 'Transmission error'}`);
-            } finally {
-              setIsSending(false);
-            }
-          }}
-          className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0"
-        >
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
-              disabled={isSending}
-            />
-            <button
-              type="submit"
-              disabled={isSending || !newMessage.trim()}
-              className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
-            >
-              {isSending ? '...' : 'Send'}
-            </button>
-          </div>
-          {/* SPOG Button */}
-          <div className="mt-2 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setIsSpogModalOpen(true)}
-              className="text-[10px] font-mono font-black uppercase tracking-wider bg-[#141414] text-white border-2 border-[#141414] px-2.5 py-1 hover:bg-black transition-colors cursor-pointer flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
-            >
-              <span className="bg-white text-[#141414] px-1 text-[8px] font-black">SPOG</span>
-              <span>
-                {selectedRecipientIds.size > 0 && !selectedRecipientIds.has('__NONE__') && selectedRecipientIds.size < recipientCandidates.length
-                  ? `Recipients: ${selectedRecipientIds.size} of ${recipientCandidates.length} Selected`
-                  : `Recipients: All (${recipientCandidates.length})`}
+            }}
+            className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0"
+          >
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Type a message..."
+                className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
+                disabled={isSending}
+              />
+              <button
+                type="submit"
+                disabled={isSending || !newMessage.trim()}
+                className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
+              >
+                {isSending ? '...' : 'Send'}
+              </button>
+            </div>
+            {/* SPOG Button */}
+            <div className="mt-2 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setIsSpogModalOpen(true)}
+                className="text-[10px] font-mono font-black uppercase tracking-wider bg-[#141414] text-white border-2 border-[#141414] px-2.5 py-1 hover:bg-black transition-colors cursor-pointer flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
+              >
+                <span className="bg-white text-[#141414] px-1 text-[8px] font-black">SPOG</span>
+                <span>
+                  {selectedRecipientIds.size > 0 && !selectedRecipientIds.has('__NONE__') && selectedRecipientIds.size < recipientCandidates.length
+                    ? `Recipients: ${selectedRecipientIds.size} of ${recipientCandidates.length} Selected`
+                    : `Recipients: All (${recipientCandidates.length})`}
+                </span>
+              </button>
+              <span className="text-[9px] font-mono text-[#141414]/70 uppercase font-bold">
+                Slave Selection Protocol • E2EE
               </span>
-            </button>
-            <span className="text-[9px] font-mono text-[#141414]/70 uppercase font-bold">
-              Slave Selection Protocol • E2EE
-            </span>
-          </div>
-        </form>
+            </div>
+          </form>
+        )}
 
         {/* SPOG - Slave Selection Protocol Modal */}
         {isSpogModalOpen && (

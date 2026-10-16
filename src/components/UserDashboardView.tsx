@@ -235,6 +235,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   useEffect(() => {
     refreshClusters();
+    const handleClusterUpdated = () => {
+      refreshClusters();
+    };
+    window.addEventListener('cluster-updated', handleClusterUpdated);
+    return () => {
+      window.removeEventListener('cluster-updated', handleClusterUpdated);
+    };
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -856,11 +863,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => onOpenChat?.({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
-                                  className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider hover:bg-white hover:text-[#141414] transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1"
+                                  disabled={isSlaveAccount}
+                                  onClick={() => !isSlaveAccount && onOpenChat?.({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
+                                  className={`py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${isSlaveAccount ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white hover:text-[#141414] cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]'}`}
+                                  title={isSlaveAccount ? "Slave UI messaging disabled" : "Open Chat"}
                                 >
                                   <MessageSquare className="w-3 h-3" />
-                                  <span>Open It</span>
+                                  <span>{isSlaveAccount ? 'Disabled' : 'Open It'}</span>
                                 </button>
                               </div>
 
