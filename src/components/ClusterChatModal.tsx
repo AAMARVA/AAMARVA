@@ -5,13 +5,10 @@ import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
 import { 
-  decryptClusterGroupMessage, 
   getLocalKeyPair, 
-  resolveSenderPublicKey,
-  StoredAgentKeyEntry,
-  getClusterGroupKey
+  StoredAgentKeyEntry
 } from '../lib/e2ee';
-import { retrieveAndUnwrapClusterGroupKey } from '../lib/clusterCrypto';
+import { decryptMessageForRecipient } from '../lib/clusterCrypto';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 
 interface ClusterChatModalProps {
@@ -80,10 +77,10 @@ async function decryptClusterMessageEnvelope(
   msg: any,
   currentLocalKeys: StoredAgentKeyEntry | null,
   userAgentId?: string,
-  userPassword?: string | null,
+  _userPassword?: string | null,
   _activeCredentials?: string[],
-  members?: any[],
-  activeCluster?: any
+  _members?: any[],
+  _activeCluster?: any
 ): Promise<{ 
   text: string; 
   isDecrypted: boolean; 
@@ -105,44 +102,17 @@ async function decryptClusterMessageEnvelope(
 
   if (ciphertext && nonce && currentLocalKeys && userAgentId) {
     try {
-      const msgEpoch = msg.keyEpoch || 1;
       const decKey = currentLocalKeys.privateKey;
-
       const senderPubKey = msg.senderPublicKey || msg.e2eePublicKey;
+
       if (senderPubKey && decKey) {
-        let existingKey = await getClusterGroupKey(clusterId, msgEpoch);
-        if (!existingKey) {
-          try {
-            const adminMember = (members || []).find((m: any) => m.role === 'admin' || m.role === 'owner') ||
-                                (members || []).find((m: any) => m.agentId === activeCluster?.createdBy) ||
-                                (members || [])[0];
-            const distributorPubKey = adminMember?.e2eePublicKey || adminMember?.publicKey;
-            const distributorAgentId = adminMember?.agentId;
-
-            if (!distributorPubKey) {
-              throw new Error(`SECURITY_ERROR: Cannot establish trusted distributor identity for cluster ${clusterId} from trusted metadata (fail closed).`);
-            }
-
-            await retrieveAndUnwrapClusterGroupKey({
-              clusterId,
-              epoch: msgEpoch,
-              receiverPrivateKey: decKey,
-              receiverAgentId: userAgentId,
-              distributorAgentId,
-              distributorPublicKeyJwk: distributorPubKey,
-              members: members || [],
-              apiFetchFn: async (url, opts) => apiFetch(url, { ...opts, authType: 'human' })
-            });
-          } catch (unwrapErr) {
-            console.warn('[ClusterChat] Failed to retrieve key package from server:', unwrapErr);
-          }
-        }
-
-        const resolvedPlaintext = await decryptClusterGroupMessage(
-          { ciphertext, nonce, version: msg.version || 1, keyEpoch: msgEpoch },
+        const resolvedPlaintext = await decryptMessageForRecipient(
+          ciphertext,
+          nonce,
           decKey,
-          userAgentId,
+          msg.keys || ciphertext,
           senderPubKey,
+          userAgentId,
           clusterId,
           senderAgentId
         );
@@ -160,7 +130,7 @@ async function decryptClusterMessageEnvelope(
         decryptionStatus: {
           title: '🔒 Cannot be decrypted because cryptographic verification failed',
           detail: e?.message || 'Authentication tag or key mismatch',
-          explanation: 'Only authorized active cluster members possessing the corresponding private key material can decrypt.'
+          explanation: 'Only authorized active cluster members possessing the corresponding recipient envelope can decrypt.'
         }
       };
     }

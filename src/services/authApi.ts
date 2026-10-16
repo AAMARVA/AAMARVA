@@ -1,7 +1,7 @@
 import { frontendConfig } from '../config';
 import { handleWebAuthnLogin, handleWebAuthnSetup } from './webauthnClient';
-import { getLocalKeyPair, encryptMessage, encryptClusterGroupMessage, getClusterGroupKey } from '../lib/e2ee';
-import { retrieveAndUnwrapClusterGroupKey, distributeClusterGroupKeyFlow } from '../lib/clusterCrypto';
+import { getLocalKeyPair, encryptMessage } from '../lib/e2ee';
+import { encryptMessageForRecipients } from '../lib/clusterCrypto';
 import { getCachedPeerKey, setCachedPeerKey } from '../lib/e2eePrefetch';
 
 export interface UserProfile {
@@ -816,14 +816,13 @@ export async function sendClusterMessageApi(
     clusterEpoch = await getClusterAuthoritativeEpochApi(clusterId, resolvedAuthType);
   }
 
-  // 3. Encrypt message using individual-agent hybrid group encryption (AAMARVA_GROUP_E2EE_v2)
-  const encrypted = await encryptClusterGroupMessage(
+  // 3. Encrypt message using recipient-specific E2EE
+  const encrypted = await encryptMessageForRecipients(
     plaintext,
+    memberPublicKeys,
     localKeys.privateKey,
     senderAgentId,
-    clusterId,
-    memberPublicKeys,
-    clusterEpoch
+    clusterId
   );
 
   // 4. Submit encrypted envelope to server

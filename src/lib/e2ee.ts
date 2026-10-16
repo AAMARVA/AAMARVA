@@ -16,7 +16,7 @@ const DB_VERSION = 4; // Incremented for cluster cryptographic state initializat
 const KEY_STORE_NAME = 'agent_keys';
 const EPOCH_STORE_NAME = 'agent_epoch_keys';
 const PINNED_STORE_NAME = 'pinned_peer_keys';
-const CLUSTER_KEY_STORE_NAME = 'cluster_group_keys';
+
 
 const KEY_ALGO = { name: 'ECDH', namedCurve: 'P-256' };
 const SIGN_ALGO = { name: 'ECDSA', namedCurve: 'P-256' };
@@ -118,7 +118,7 @@ const memoryKeyCache = new Map<string, StoredAgentKeyEntry>();
 const memoryEpochCache = new Map<string, StoredAgentKeyEntry>();
 const memoryPinnedCache = new Map<string, PinnedPeerEntry>();
 const memoryPeerEpochCache = new Map<string, PinnedPeerEpochEntry>();
-const memoryClusterKeyCache = new Map<string, string>();
+
 
 /**
  * Open IndexedDB connection with schema migration
@@ -142,9 +142,7 @@ function openKeyDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(PINNED_STORE_NAME)) {
         db.createObjectStore(PINNED_STORE_NAME, { keyPath: 'peerAgentId' });
       }
-      if (!db.objectStoreNames.contains(CLUSTER_KEY_STORE_NAME)) {
-        db.createObjectStore(CLUSTER_KEY_STORE_NAME, { keyPath: 'clusterEpochId' });
-      }
+
     };
 
     request.onsuccess = () => resolve(request.result);
