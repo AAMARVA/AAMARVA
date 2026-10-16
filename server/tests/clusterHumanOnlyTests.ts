@@ -164,7 +164,7 @@ export async function runClusterHumanOnlyTests(): Promise<Record<string, { statu
     const { data: nonUpdatedClu1 } = await supabase.from(tables.clusters).select('name').eq('id', cluster1Id).maybeSingle();
     recordResult(
       'valid_human_patch_without_permission_rejected',
-      test4.status === 403 && test4.json?.error?.message?.includes('Only the owner can update this cluster') && nonUpdatedClu1?.name === 'Updated Human Cluster',
+      test4.status === 403 && test4.json?.error?.message?.includes('Only an admin or master can update this cluster') && nonUpdatedClu1?.name === 'Updated Human Cluster',
       `HTTP ${test4.status}, message: ${test4.json?.error?.message}`
     );
 

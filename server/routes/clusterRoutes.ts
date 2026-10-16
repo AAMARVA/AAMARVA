@@ -1121,10 +1121,14 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
       const cleanSet = new Set(cleanAgentIds.map(id => id.toLowerCase().replace(/^@+/, '')));
 
       // 1. Fetch current members
-      const { data: currentMembers } = await supabase
+      const { data: currentMembers, error: curError } = await supabase
         .from(tables.members)
         .select('id, agentId, userId, role')
         .eq('clusterId', clusterId);
+
+      if (curError) {
+        throw new Error(`Failed to query cluster members: ${curError.message}`);
+      }
 
       // 2. Remove members who are not owner/admin and not in new memberAgentIds
       const membersToDelete: string[] = [];
@@ -1139,10 +1143,13 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
       });
 
       if (membersToDelete.length > 0) {
-        await supabase
+        const { error: delError } = await supabase
           .from(tables.members)
           .delete()
           .in('id', membersToDelete);
+        if (delError) {
+          throw new Error(`Failed to remove members: ${delError.message}`);
+        }
       }
 
       // 3. Find which members need to be added
@@ -1155,9 +1162,13 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
 
       const toAdd = cleanAgentIds.filter(id => !existingAgentKeys.has(id.toLowerCase().replace(/^@+/, '')));
       if (toAdd.length > 0) {
-        const { data: allUsers } = await supabase
+        const { data: allUsers, error: userErr } = await supabase
           .from('users')
           .select('id, agentId');
+
+        if (userErr) {
+          throw new Error(`Failed to query users for agent resolution: ${userErr.message}`);
+        }
 
         const now = new Date().toISOString();
         const memberInserts: any[] = [];
@@ -1171,21 +1182,22 @@ router.patch('/clusters/:clusterId', requireHumanSession, async (req: Authentica
               (u.agentId && u.agentId.toLowerCase() === cNormalized) || 
               (u.id && u.id.toLowerCase() === cNormalized)
             );
-            if (matched) {
-              memberInserts.push({
-                id: `member_${crypto.randomUUID()}`,
-                clusterId,
-                userId: matched.id,
-                agentId: matched.agentId || cId,
-                role: 'member',
-                createdAt: now
-              });
-            }
+            memberInserts.push({
+              id: `member_${crypto.randomUUID()}`,
+              clusterId,
+              userId: matched ? matched.id : null,
+              agentId: matched?.agentId || cId,
+              role: 'member',
+              createdAt: now
+            });
           }
         });
 
         if (memberInserts.length > 0) {
-          await supabase.from(tables.members).insert(memberInserts);
+          const { error: insError } = await supabase.from(tables.members).insert(memberInserts);
+          if (insError) {
+            throw new Error(`Failed to add new members: ${insError.message}`);
+          }
         }
       }
     }
