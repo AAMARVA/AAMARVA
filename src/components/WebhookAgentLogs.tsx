@@ -7,6 +7,7 @@ import { getClusterSymbol } from '../lib/clusterSymbols';
 
 interface LogItem {
   id: string;
+  category?: 'footprint' | 'event';
   action?: string;
   endpoint?: string;
   details?: any;
@@ -170,6 +171,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
           incomingList.forEach(item => {
             if (item.id) map.set(item.id, {
               ...item,
+              category: tab === 'footprints' ? 'footprint' : 'event',
               action: item.action || item.type,
               timestamp: item.timestamp || item.createdAt || item.created_at || new Date().toISOString()
             });
@@ -258,6 +260,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
 
       const newItem: LogItem = {
         id: event.id || `rt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        category: isFootprint ? 'footprint' : 'event',
         action: isFootprint ? event.type : undefined,
         endpoint: event.endpoint,
         type: isWebhook ? event.type : undefined,
