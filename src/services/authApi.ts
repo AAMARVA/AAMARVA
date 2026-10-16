@@ -709,16 +709,6 @@ export async function getClusterAuthoritativeEpochApi(
   authType: 'human' | 'agent' = 'agent'
 ): Promise<number> {
   try {
-    const res = await apiFetch(`/api/clusters/${clusterId}/epoch`, {
-      authType,
-      method: 'GET'
-    });
-    if (res?.success && typeof res.data?.epoch === 'number' && res.data.epoch > 0) {
-      return res.data.epoch;
-    }
-  } catch {}
-
-  try {
     const res = await apiFetch(`/api/clusters/${clusterId}`, {
       authType,
       method: 'GET'

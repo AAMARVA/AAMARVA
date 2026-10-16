@@ -1,5 +1,6 @@
 import express from 'express';
 import http from 'http';
+import crypto from 'crypto';
 import clusterRouter from '../routes/clusterRoutes';
 import { getSupabaseClient, setSupabaseClient } from '../supabase';
 import { getClusterTables } from '../routes/clusterRoutes';
@@ -1146,23 +1147,46 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       const incompleteDistRejected = resIncompleteDist.status === 400 &&
         resIncompleteDist.json?.error?.code === 'INCOMPLETE_DISTRIBUTION_MAP';
 
-      // Step 3: Alice submits valid epoch 1 key distribution package with distributor public key
-      const resDistValid = await helperFetch(`/api/clusters/${indepClusterId}/keys`, {
-        method: 'POST',
-        headers: aliceHeaders,
-        body: JSON.stringify({
+      // Step 3: Distribution (Direct DB insert, bypassing removed API)
+      await origSupabase.from('cluster_key_distributions').insert([
+        {
+          id: `dist_${crypto.randomUUID()}`,
+          clusterId: indepClusterId,
           epoch: 1,
-          keyFingerprint: indepFingerprint1,
-          distributionMap: {
-            [bobAgentId]: wrappedForBob1,
-            [charlieAgentId]: wrappedForCharlie1,
-            [aliceAgentId]: wrappedForAlice1
-          },
-          senderPublicKey: alicePair.publicKey
-        })
+          recipientAgentId: bobAgentId,
+          encryptedKeyPackage: JSON.stringify(wrappedForBob1),
+          senderPublicKey: JSON.stringify(alicePair.publicKey),
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: `dist_${crypto.randomUUID()}`,
+          clusterId: indepClusterId,
+          epoch: 1,
+          recipientAgentId: charlieAgentId,
+          encryptedKeyPackage: JSON.stringify(wrappedForCharlie1),
+          senderPublicKey: JSON.stringify(alicePair.publicKey),
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: `dist_${crypto.randomUUID()}`,
+          clusterId: indepClusterId,
+          epoch: 1,
+          recipientAgentId: aliceAgentId,
+          encryptedKeyPackage: JSON.stringify(wrappedForAlice1),
+          senderPublicKey: JSON.stringify(alicePair.publicKey),
+          createdAt: new Date().toISOString()
+        }
+      ]);
+      
+      await origSupabase.from('cluster_epochs').insert({
+        id: `epoch_${crypto.randomUUID()}`,
+        clusterId: indepClusterId,
+        epoch: 1,
+        keyFingerprint: indepFingerprint1,
+        createdAt: new Date().toISOString()
       });
 
-      const distributionAccepted = resDistValid.status === 200 && resDistValid.json?.success === true;
+      // persistClusterGroupKey remains to support retrieveAndUnwrapClusterGroupKey's local state
       await persistClusterGroupKey(indepClusterId, indepGroupKeyEpoch1, 1, aliceStore);
 
       // Step 4: Bob and Charlie retrieve and unwrap epoch 1 key packages using retrieveAndUnwrapClusterGroupKey

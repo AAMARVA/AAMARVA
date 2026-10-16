@@ -238,24 +238,23 @@ export async function retrieveAndUnwrapClusterGroupKey(params: {
   const retrievePromise = (async (): Promise<string> => {
     try {
       // 3. Fetch assigned package from server
-      const res = await apiFetchFn(`/api/clusters/${clusterId}/keys/${epoch}`, {
+      const res = await apiFetchFn(`/api/clusters/${clusterId}/members/crypto`, {
         method: 'GET'
       });
 
-      const packageData = res?.json?.data || res?.data || (res?.json ? res.json : res);
-      if (!packageData || !packageData.iv || !packageData.key) {
+      console.log('DEBUG: res from members/crypto:', JSON.stringify(res, null, 2));
+
+      const packageData = res?.data?.keyPackage;
+      if (!packageData || !packageData.encryptedKeyPackage) {
         throw new Error(`Failed to retrieve valid key package for cluster ${clusterId} epoch ${epoch}`);
       }
+      const distributorPublicKey = packageData.senderPublicKey;
 
-      // 4. Extract distributor public key from the server's key package
-      const distributorPublicKey = packageData.distributorPublicKey || packageData.senderPublicKey;
       if (!distributorPublicKey) {
         throw new Error(
           `SECURITY_ERROR: Server key package for cluster ${clusterId} epoch ${epoch} does not contain distributor public key.`
         );
       }
-
-      // Validate distributor public key structure
       const parsedDistKey = typeof distributorPublicKey === 'string' ? JSON.parse(distributorPublicKey) : distributorPublicKey;
       if (!parsedDistKey || parsedDistKey.kty !== 'EC' || parsedDistKey.crv !== 'P-256' || !parsedDistKey.x || !parsedDistKey.y) {
         throw new Error('SECURITY_ERROR: Distributor public key from server package is malformed or invalid EC P-256 key.');
@@ -294,7 +293,7 @@ export async function retrieveAndUnwrapClusterGroupKey(params: {
 
       // 6. Unwrap group key using the validated distributor public key from server package
       const unwrappedGroupKey = await unwrapGroupKeyForMember(
-        { iv: packageData.iv, key: packageData.key },
+        { iv: packageData.encryptedKeyPackage.iv, key: packageData.encryptedKeyPackage.key },
         receiverPrivateKey,
         distributorPublicKey,
         clusterId,
