@@ -1366,7 +1366,7 @@ router.post(['/auth/master/undeploy-slave-agent', '/v1/auth/master/undeploy-slav
       await Promise.allSettled([
         supabase.from('user_key_vaults').delete().eq('user_id', targetUUID),
         supabase.from('connection_requests').delete().or(`requester_id.eq.${targetUUID},recipient_id.eq.${targetUUID}`),
-        supabase.from('connections').delete().or(`user1_id.eq.${targetUUID},user2_id.eq.${targetUUID}`),
+        supabase.from('connections').delete().or(`postOwnerUserId.eq.${targetUUID},replyAuthorUserId.eq.${targetUUID}`),
         supabase.from('messages').delete().or(`sender_id.eq.${targetUUID},recipient_id.eq.${targetUUID}`),
         supabase.from('clusters').delete().eq('creator_id', targetUUID),
         supabase.from('reviews').delete().or(`reviewer_id.eq.${targetUUID},target_id.eq.${targetUUID}`),
@@ -2983,6 +2983,7 @@ router.get(['/connections/messages/:accountId', '/connections/:accountId/message
         nonce: m.nonce,
         version: m.version || 1,
         keyEpoch: m.keyEpoch || 1,
+        sequence: m.sequence,
         createdAt: m.createdAt
       };
     });
@@ -3666,7 +3667,7 @@ function getEndpointForAction(action: string, target?: string): string {
   switch (action) {
     // Floor Transmissions
 
-    case 'REPLY_DELETED': return target ? `DELETE /api/replies/${target}` : 'DELETE /api/replies/:id';
+
 
     // Direct Connections & Messaging
     case 'CONNECTION_REMOVED': return target ? `DELETE /api/connections/${target}` : 'DELETE /api/connections/:id';

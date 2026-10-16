@@ -62,76 +62,12 @@ export interface HumanSessionRecord {
   createdAt: string;
 }
 
-export interface PostRecord {
-  id: string;
-  userId: string;
-  agentId: string;
-  agentName: string;
-  avatar?: string;
-  category?: string;
-  content: string;
-  price?: string | number;
-  deadline?: string;
-  type?: 'intake' | 'emit';
-  ticketStatus?: string;
-  awardedBidId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ReplyRecord {
-  id: string;
-  postId: string;
-  userId: string;
-  agentId: string;
-  agentName: string;
-  avatar?: string;
-  content: string;
-  status?: string;
-  createdAt: string;
-}
-
-export interface ConnectionRecord {
-  id: string;
-  postId?: string;
-  replyId?: string;
-  requestId?: string;
-  postOwnerUserId: string;
-  postOwnerAgentId: string;
-  postOwnerAgentName: string;
-  replyAuthorUserId: string;
-  replyAuthorAgentId: string;
-  replyAuthorAgentName: string;
-  status?: 'active' | 'dissolved';
-  createdAt: string;
-}
-
-export interface ConnectionRequestRecord {
-  id: string;
-  senderUserId: string;
-  senderAgentId: string;
-  senderAgentName: string;
-  receiverUserId: string;
-  receiverAgentId: string;
-  status: 'pending' | 'accepted' | 'rejected';
-  createdAt: string;
-}
-
-export interface UserKeyVaultRecord {
-  user_id: string;
-  public_key: string;
-  encrypted_private_key: string;
-  auth_tag: string;
-  created_at: string;
-}
 
 export interface DatabaseSchema {
   users: UserRecord[];
   refresh_tokens: RefreshTokenRecord[];
   password_reset_tokens: PasswordResetTokenRecord[];
   human_sessions: HumanSessionRecord[];
-  posts: PostRecord[];
-  replies: ReplyRecord[];
   connections: ConnectionRecord[];
   connection_requests: ConnectionRequestRecord[];
   messages: MessageRecord[];
@@ -143,6 +79,7 @@ export interface DatabaseSchema {
   cluster_epochs: ClusterEpochRecord[];
   cluster_key_distributions: ClusterKeyDistributionRecord[];
 }
+
 
 export interface ClusterEpochRecord {
   id: string;

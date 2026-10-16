@@ -170,136 +170,38 @@ export async function ensureConnectionRecord(
   return null;
 }
 
-export async function createConnection(userId: string, replyId: string) {
+export async function createConnection(userId1: string, userId2: string) {
   const supabase = getSupabaseClient();
+  
+  // Check for existing connection between these users
+  const { data: existingConnection } = await supabase
+    .from('connections')
+    .select('*')
+    .or(`postOwnerUserId.eq.${userId1},replyAuthorUserId.eq.${userId1}`)
+    .or(`postOwnerUserId.eq.${userId2},replyAuthorUserId.eq.${userId2}`)
+    .maybeSingle();
 
-  // Try to resolve reply and post owner to find participant IDs to check for dissolved connections
-  try {
-    const { data: reply } = await supabase
-      .from('replies')
-      .select('userId, postId')
-      .eq('id', replyId)
-      .maybeSingle();
+  if (existingConnection) return existingConnection;
 
-    if (reply) {
-      const { data: post } = await supabase
-        .from('posts')
-        .select('userId')
-        .eq('id', reply.postId)
-        .maybeSingle();
+  // Create new connection
+  const { data: newConnection, error } = await supabase
+    .from('connections')
+    .insert({
+      id: 'conn_' + crypto.randomUUID(),
+      postOwnerUserId: userId1,
+      replyAuthorUserId: userId2,
+      status: 'active'
+    })
+    .select()
+    .single();
 
-      if (post) {
-        // Check if a dissolved connection already exists between these two users
-        const [dissolvedFwd, dissolvedRev] = await Promise.all([
-          supabase.from('connections').select('*').eq('status', 'dissolved').eq('postOwnerUserId', post.userId).eq('replyAuthorUserId', reply.userId).maybeSingle(),
-          supabase.from('connections').select('*').eq('status', 'dissolved').eq('postOwnerUserId', reply.userId).eq('replyAuthorUserId', post.userId).maybeSingle()
-        ]);
-        const existingDissolved = dissolvedFwd.data || dissolvedRev.data;
-
-        if (existingDissolved) {
-          // Recycle the dissolved connection in-place back to 'active'!
-          const { data: recycled, error: updateError } = await supabase
-            .from('connections')
-            .update({
-              status: 'active',
-              postId: reply.postId,
-              replyId: replyId,
-              createdAt: new Date().toISOString()
-            })
-            .eq('id', existingDissolved.id)
-            .select()
-            .maybeSingle();
-
-          if (updateError) {
-            console.error('[createConnection] Error recycling dissolved connection:', updateError);
-            throw new ConnectionError(`Failed to establish connection: ${updateError.message}`, 500, 'DATABASE_ERROR');
-          }
-
-          // Clean slate: Delete any old counterparty reviews/scores associated with this recycled connection
-          try {
-            await Promise.all([
-              supabase
-                .from('counter_party_scores')
-                .delete()
-                .eq('connectionId', existingDissolved.id),
-              supabase
-                .from('reviews')
-                .delete()
-                .eq('connectionId', existingDissolved.id)
-            ]);
-          } catch (reviewErr) {
-            console.error('[createConnection] Warning clearing old counterparty scores during recycling:', reviewErr);
-          }
-
-          return recycled as ConnectionRecord;
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[createConnection] Warning checking dissolved connection recycling:', err);
-  }
-
-  // Transactional RPC is the only connection creation path
-  const { data: rpcData, error: rpcError } = await supabase.rpc('create_connection_from_reply', {
-    p_user_id: userId,
-    p_reply_id: replyId,
-  });
-
-  if (rpcError) {
-    const msg = rpcError.message || '';
-    const code = rpcError.code || '';
-
-    // Specific domain errors
-    if (msg.includes('DUPLICATE_CONNECTION') || code === '23505') {
-      throw new ConnectionConflictError('Duplicate connection detected.', 'DUPLICATE_CONNECTION');
-    }
-    if (msg.includes('Reply not found')) {
-      throw new ConnectionNotFoundError('Reply not found.', 'REPLY_NOT_FOUND');
-    }
-    if (msg.includes('Associated post not found')) {
-      throw new ConnectionNotFoundError('Associated post not found.', 'POST_NOT_FOUND');
-    }
-    if (msg.includes('User profile not found')) {
-      throw new ConnectionNotFoundError('User profile not found.', 'USER_NOT_FOUND');
-    }
-    if (msg.includes('Forbidden: Only the owner')) {
-      throw new ConnectionForbiddenError('Forbidden: Only the owner of the original post can establish a connection.', 'FORBIDDEN');
-    }
-    if (msg.includes('Forbidden: Post owner cannot establish')) {
-      throw new ConnectionForbiddenError('Forbidden: Post owner cannot establish a connection with their own reply.', 'FORBIDDEN');
-    }
-
-    // Missing function or capability error (PGRST202 / 42883 / "Could not find the function")
-    const isMissingFunction = code === 'PGRST202' || code === '42883' || msg.includes('Could not find the function') || msg.includes('operator does not exist');
-    if (isMissingFunction) {
-      console.error('[createConnection] Required database function create_connection_from_reply is missing or not deployed:', rpcError.message || rpcError);
-      throw new ConnectionCapabilityError('Failed to establish connection: Required database function is not available.');
-    }
-
-    console.error('[createConnection] Transaction error:', rpcError.message || rpcError);
-    throw new ConnectionError('Failed to establish connection.', 500, 'DATABASE_ERROR');
-  }
-
-  if (!rpcData) {
-    throw new ConnectionError('Failed to establish connection: No data returned.', 500, 'DATABASE_ERROR');
-  }
-
-  try {
-    const { count: recentCount } = await supabase
-      .from('connections')
-      .select('*', { count: 'exact', head: true })
-      .or(`postOwnerUserId.eq.${userId},replyAuthorUserId.eq.${userId}`)
-      .gt('createdAt', new Date(Date.now() - 2 * 60 * 1000).toISOString());
-
-    if (recentCount && recentCount >= 5) {
-      await SecurityService.getInstance().trackBehavioralSignal(userId, 'RAPID_CONNECTIONS', { count: recentCount });
-    }
-  } catch (err) {
-    console.error('Error tracking rapid connections behavioral signal:', err);
-  }
-
-  return rpcData as ConnectionRecord;
+  if (error) throw error;
+  return newConnection;
 }
+
+
+
+
 
 export async function getUserConnections(userId: string, page: number, limit: number) {
   const supabase = getSupabaseClient();
@@ -1303,12 +1205,13 @@ export async function getRecentConnections(limit = 20, masterId?: string) {
       ]);
       const fleetIds = [masterRes.data?.id, ...(slavesRes.data || []).map((s: any) => s.id)].filter(Boolean);
       if (fleetIds.length > 0) {
-        query = query.or(`user1_id.in.(${fleetIds.join(',')}),user2_id.in.(${fleetIds.join(',')})`);
+        const orClauses = fleetIds.flatMap((id: string) => [`postOwnerUserId.eq.${id}`, `replyAuthorUserId.eq.${id}`]).join(',');
+        query = query.or(orClauses);
       } else {
-        query = query.or(`user1_id.eq.${masterId},user2_id.eq.${masterId}`);
+        query = query.or(`postOwnerUserId.eq.${masterId},replyAuthorUserId.eq.${masterId}`);
       }
     } catch {
-      query = query.or(`user1_id.eq.${masterId},user2_id.eq.${masterId}`);
+      query = query.or(`postOwnerUserId.eq.${masterId},replyAuthorUserId.eq.${masterId}`);
     }
   }
 
