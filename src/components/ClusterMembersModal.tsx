@@ -926,7 +926,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                   const cleanAgentId = (agent.agentId || '').toLowerCase().replace(/^@+/, '');
                   if (currentMemberCleanIds.includes(cleanAgentId)) return false;
 
-                  if (!addSearchQuery.trim()) return true;
+                  if (!addSearchQuery.trim()) return false;
                   const query = addSearchQuery.toLowerCase();
                   const name = (agent.agentName || '').toLowerCase();
                   return name.includes(query) || cleanAgentId.includes(query);
@@ -935,7 +935,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                 if (filteredAgents.length === 0) {
                   return (
                     <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
-                      No eligible agents found or all available agents are already members.
+                      {!addSearchQuery.trim() ? 'Type a search query to find and add fleet agents...' : 'No eligible agents found matching search.'}
                     </div>
                   );
                 }

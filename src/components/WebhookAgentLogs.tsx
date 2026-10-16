@@ -19,6 +19,8 @@ interface LogItem {
   targetAvatar?: string;
   requestId?: string;
   timestamp: string;
+  createdAt?: string;
+  created_at?: string;
 }
 
 interface WebhookAgentLogsProps {
@@ -96,7 +98,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
   onOpenCluster,
   onOpenRequestsTab
 }) => {
-  const [activeTab, setActiveTab] = useState<'footprints' | 'floor'>('footprints');
+  const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>('footprints');
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
@@ -147,10 +149,10 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
   }, [onOpenChat, connections]);
 
   // Authoritative REST fetch with deduplication
-  const fetchLogs = useCallback(async (tab: 'footprints' | 'floor', showLoader = false) => {
+  const fetchLogs = useCallback(async (tab: 'footprints' | 'webhooks', showLoader = false) => {
     if (showLoader) setIsLoading(true);
     try {
-      const endpoint = tab === 'footprints' ? '/api/agent/footprints' : '/api/floor/activity';
+      const endpoint = tab === 'footprints' ? '/api/agent/footprints' : '/api/webhooks/events';
       let res: any = null;
       try {
         res = await apiFetch(endpoint, { authType: 'human' });
@@ -162,11 +164,15 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         }
       }
       if (res && res.data) {
-        const incomingList: LogItem[] = Array.isArray(res.data) ? res.data : [];
+        const incomingList: LogItem[] = Array.isArray(res.data) ? res.data : (res.data.events || res.data.footprints || []);
         setLogs((prev) => {
           const map = new Map<string, LogItem>();
           incomingList.forEach(item => {
-            if (item.id) map.set(item.id, item);
+            if (item.id) map.set(item.id, {
+              ...item,
+              action: item.action || item.type,
+              timestamp: item.timestamp || item.createdAt || item.created_at || new Date().toISOString()
+            });
           });
           prev.forEach(item => {
             const matchesCurrentTab = tab === 'footprints' ? !!item.action : !item.action;
@@ -175,7 +181,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
             }
           });
           const merged = Array.from(map.values());
-          merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          merged.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
           return merged.slice(0, 50);
         });
       }
@@ -599,14 +605,14 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
           Footprints
         </button>
         <button
-          onClick={() => setActiveTab('floor')}
+          onClick={() => setActiveTab('webhooks')}
           className={`text-[10px] uppercase font-black px-3 py-1.5 transition-all ${
-            activeTab === 'floor'
+            activeTab === 'webhooks'
               ? 'bg-white text-[#141414]'
               : 'bg-white/5 text-white/50 hover:bg-white/10'
           }`}
         >
-          Floor Activity
+          Webhooks
         </button>
       </div>
 
@@ -616,8 +622,8 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
           <div className="flex justify-center items-center py-12 bg-white/5 border-2 border-dashed border-white/20">
             <BrutalistLoader text="Synchronizing" size="sm" theme="dark" className="py-4" />
           </div>
-        ) : logs.filter(l => activeTab === 'footprints' ? !!l.action : !l.action).length > 0 ? (
-          logs.filter(l => activeTab === 'footprints' ? !!l.action : !l.action).map((log) => {
+        ) : logs.filter(l => activeTab === 'footprints' ? (l.category === 'footprint' || !!l.action) : (l.category !== 'footprint' && !l.action)).length > 0 ? (
+          logs.filter(l => activeTab === 'footprints' ? (l.category === 'footprint' || !!l.action) : (l.category !== 'footprint' && !l.action)).map((log) => {
             const title = formatActionTitle(log.action || log.type);
             const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
             const actionKey = (log.action || log.type || '').toUpperCase();
