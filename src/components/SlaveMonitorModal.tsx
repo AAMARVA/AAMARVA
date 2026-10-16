@@ -14,6 +14,7 @@ interface SlaveMonitorModalProps {
 
 interface LogItem {
   id: string;
+  uniqueKey: string;
   action?: string;
   endpoint?: string;
   details?: any;
@@ -143,8 +144,10 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
         if (res && res.data && Array.isArray(res.data)) {
           res.data.forEach((item: any) => {
             if (item.id) {
-              allLogsMap.set(item.id, {
+              const uniqueKey = `primary_${item.id || item.timestamp}`;
+              allLogsMap.set(uniqueKey, {
                 ...item,
+                uniqueKey,
                 slaveAgentName: 'Primary Node',
                 slaveAgentId: 'primary'
               });
@@ -169,6 +172,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
                   if (!allLogsMap.has(uniqueKey)) {
                     allLogsMap.set(uniqueKey, {
                       ...item,
+                      uniqueKey,
                       slaveAgentName: sub.name || 'Slave Agent',
                       slaveAgentId: sub.agentId || sub.id,
                       slaveAvatar: sub.avatar
@@ -181,7 +185,15 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
         );
       }
 
-      const merged = Array.from(allLogsMap.values());
+      let merged = Array.from(allLogsMap.values());
+
+      // Explicit Filtering based on tab
+      if (tab === 'footprints') {
+        merged = merged.filter(item => item.action && !item.type);
+      } else {
+        merged = merged.filter(item => item.type || !item.action);
+      }
+
       merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       const sliced = merged.slice(0, 100);
 
@@ -364,7 +376,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
 
               return (
                 <div
-                  key={log.id}
+                  key={log.uniqueKey}
                   className="p-3 bg-[#1e1e1e] border border-white/10 text-xs space-y-2 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/20 transition-all duration-150"
                 >
                   {/* Row 1: Action Title, Source Slave Account Badge, Time */}
@@ -417,7 +429,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
 
             return (
               <div
-                key={log.id}
+                key={log.uniqueKey}
                 className="p-3 bg-[#1e1e1e] border border-white/10 text-xs space-y-2 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/20 transition-all duration-150"
               >
                 {/* Row 1: Event Title, Source Slave Account Badge, Time */}

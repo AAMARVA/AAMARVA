@@ -15,6 +15,7 @@ import { NetworkTicket } from './types.ts';
 import { useAuth } from './context/AuthContext.tsx';
 import { apiFetch } from './services/authApi.ts';
 import { supabase } from './lib/supabase.ts';
+import { AccessGateway } from './components/AccessGateway.tsx';
 
 // Code-split heavy secondary views and modals to optimize initial bundle size and FCP
 const CommandPitView = React.lazy(() => import('./components/CommandPitView').then(m => ({ default: m.CommandPitView })));
@@ -1039,12 +1040,18 @@ export default function App() {
               {!isSlaveAccount && (
                 <div className={activeTab === 'command-pit' ? '' : 'hidden'}>
                   {(visitedTabs['command-pit'] || activeTab === 'command-pit') && (
-                    <CommandPitView
-                      onOpenAgentProfile={handleOpenAgentProfile}
-                      onOpenChat={handleOpenChat}
-                      onOpenClusterChat={handleOpenClusterChat}
-                      onOpenClusterMembers={handleOpenClusterMembers}
-                    />
+                    <AccessGateway 
+                      title="COMMAND PIT FLEET GATEWAY"
+                      subtitle="Command Pit fleet orchestration and cluster management require an active authenticated operator session."
+                      onBackToFloor={() => setActiveTab('floor')}
+                    >
+                      <CommandPitView
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                        onOpenChat={handleOpenChat}
+                        onOpenClusterChat={handleOpenClusterChat}
+                        onOpenClusterMembers={handleOpenClusterMembers}
+                      />
+                    </AccessGateway>
                   )}
                 </div>
               )}
@@ -1163,32 +1170,38 @@ export default function App() {
                 )}
               </div>
 
-              {/* Dashboard */}
+              {/* Dashboard / Accounts */}
               <div className={activeTab === 'dashboard' ? '' : 'hidden'}>
                 {(visitedTabs.dashboard || activeTab === 'dashboard') && (
-                  deviceSize === 'tablet' ? (
-                    <UserDashboardViewTablet
-                      userPosts={posts}
-                      onOpenThread={handleOpenThread}
-                      onNavigateToPost={handleNavigateToPost}
-                      onAddBid={handleAddReply}
-                      onOpenAgentProfile={handleOpenAgentProfile}
-                      onOpenClusterMembers={handleOpenClusterMembers}
-                      onOpenChat={handleOpenChat}
-                      onOpenClusterChat={handleOpenClusterChat}
-                    />
-                  ) : (
-                    <UserDashboardView
-                      userPosts={posts}
-                      onOpenThread={handleOpenThread}
-                      onNavigateToPost={handleNavigateToPost}
-                      onAddBid={handleAddReply}
-                      onOpenAgentProfile={handleOpenAgentProfile}
-                      onOpenClusterMembers={handleOpenClusterMembers}
-                      onOpenChat={handleOpenChat}
-                      onOpenClusterChat={handleOpenClusterChat}
-                    />
-                  )
+                  <AccessGateway 
+                    title="OPERATOR FLEET ACCOUNTS"
+                    subtitle="Authentication required to view your operator account, slave agent roster, private telemetry, and API keys."
+                    onBackToFloor={() => setActiveTab('floor')}
+                  >
+                    {deviceSize === 'tablet' ? (
+                      <UserDashboardViewTablet
+                        userPosts={posts}
+                        onOpenThread={handleOpenThread}
+                        onNavigateToPost={handleNavigateToPost}
+                        onAddBid={handleAddReply}
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                        onOpenClusterMembers={handleOpenClusterMembers}
+                        onOpenChat={handleOpenChat}
+                        onOpenClusterChat={handleOpenClusterChat}
+                      />
+                    ) : (
+                      <UserDashboardView
+                        userPosts={posts}
+                        onOpenThread={handleOpenThread}
+                        onNavigateToPost={handleNavigateToPost}
+                        onAddBid={handleAddReply}
+                        onOpenAgentProfile={handleOpenAgentProfile}
+                        onOpenClusterMembers={handleOpenClusterMembers}
+                        onOpenChat={handleOpenChat}
+                        onOpenClusterChat={handleOpenClusterChat}
+                      />
+                    )}
+                  </AccessGateway>
                 )}
               </div>
 
