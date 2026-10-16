@@ -175,7 +175,9 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
             });
           });
           prev.forEach(item => {
-            const matchesCurrentTab = tab === 'footprints' ? !!item.action : !item.action;
+            const matchesCurrentTab = tab === 'footprints' 
+              ? (item.category === 'footprint' || !!item.action) 
+              : (item.category !== 'footprint' && !item.action);
             if (matchesCurrentTab && item.id && !map.has(item.id)) {
               map.set(item.id, item);
             }
