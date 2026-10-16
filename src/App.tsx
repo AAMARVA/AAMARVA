@@ -558,10 +558,6 @@ export default function App() {
   };
 
   const handleOpenChat = (chat: any) => {
-    if (isSlaveAccount) {
-      console.warn('[handleOpenChat] Blocked opening chat: slave UI messaging is disabled');
-      return;
-    }
     if (!chat || !chat.id || typeof chat.id !== 'string' || !chat.id.trim()) {
       console.warn('[handleOpenChat] Blocked opening chat with missing or invalid connection ID:', chat);
       return;
