@@ -169,17 +169,21 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         setLogs((prev) => {
           const map = new Map<string, LogItem>();
           incomingList.forEach(item => {
-            if (item.id) map.set(item.id, {
-              ...item,
-              category: tab === 'footprints' ? 'footprint' : 'event',
-              action: item.action || item.type,
-              timestamp: item.timestamp || item.createdAt || item.created_at || new Date().toISOString()
-            });
+            if (item.id) {
+              const isFootprint = tab === 'footprints' || item.category === 'footprint' || (!item.type && !!item.action);
+              map.set(item.id, {
+                ...item,
+                category: isFootprint ? 'footprint' : 'event',
+                action: isFootprint ? (item.action || item.type) : undefined,
+                type: isFootprint ? undefined : (item.type || item.action),
+                timestamp: item.timestamp || item.createdAt || item.created_at || new Date().toISOString()
+              });
+            }
           });
           prev.forEach(item => {
             const matchesCurrentTab = tab === 'footprints' 
-              ? (item.category === 'footprint' || !!item.action) 
-              : (item.category !== 'footprint' && !item.action);
+              ? (item.category === 'footprint' || (!item.type && !!item.action)) 
+              : (item.category === 'event' || !!item.type || item.category !== 'footprint');
             if (matchesCurrentTab && item.id && !map.has(item.id)) {
               map.set(item.id, item);
             }
@@ -253,32 +257,27 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       if (!event || event.category === 'system') return;
 
       const isFootprint = event.category === 'footprint' || 
+        (!event.type && !!event.action) ||
         ['CONNECTION_ESTABLISHED', 'CONNECTION_REMOVED', 'CONNECTION_REQUEST_SENT', 'CONNECTION_REQUEST_ACCEPTED', 'CONNECTION_REJECTED', 'PROFILE_UPDATED', 'E2EE_KEYS_UPDATED', 'API_KEY_ROTATED', 'CLUSTER_CREATED', 'CLUSTER_UPDATED', 'CLUSTER_DELETED', 'CLUSTER_INVITE_SENT', 'CLUSTER_INVITE_REVOKED', 'CLUSTER_JOINED', 'CLUSTER_LEFT', 'CLUSTER_MEMBER_ROLE_UPDATED', 'CLUSTER_MEMBER_REMOVED', 'CLUSTER_MESSAGE_SENT', 'SECRET_CREATED', 'SECRET_DELETED', 'PASSWORD_CHANGED', 'EMAIL_UPDATED'].includes(event.type);
-
-      const isWebhook = event.category === 'event' || 
-        ['CONNECTION_REQUEST_RECEIVED', 'CONNECTION_ACCEPTED_BY_TARGET', 'CONNECTION_REJECTED', 'CONNECTION_DISSOLVED', 'MESSAGE_RECEIVED', 'CLUSTER_INVITE_RECEIVED', 'CLUSTER_MEMBER_JOINED', 'CLUSTER_MEMBER_LEFT', 'CLUSTER_MEMBER_REMOVED', 'CLUSTER_ROLE_UPDATED', 'CLUSTER_MESSAGE_RECEIVED', 'CLUSTER_DISBANDED'].includes(event.type);
 
       const newItem: LogItem = {
         id: event.id || `rt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         category: isFootprint ? 'footprint' : 'event',
-        action: isFootprint ? event.type : undefined,
+        action: isFootprint ? (event.action || event.type) : undefined,
         endpoint: event.endpoint,
-        type: isWebhook ? event.type : undefined,
+        type: isFootprint ? undefined : (event.type || event.action),
         details: event.details || event.action,
-        senderId: event.actorId,
-        target: event.targetId,
-        targetId: event.targetId,
-        timestamp: event.timestamp || new Date().toISOString()
+        senderId: event.actorId || event.senderId,
+        target: event.targetId || event.target,
+        targetId: event.targetId || event.target,
+        timestamp: event.timestamp || event.createdAt || event.created_at || new Date().toISOString()
       };
 
       setLogs((prev) => {
         if (prev.some(p => p.id === newItem.id)) return prev;
-        if (isFootprint) {
-          const next = [newItem, ...prev];
-          next.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          return next.slice(0, 50);
-        }
-        return prev;
+        const next = [newItem, ...prev];
+        next.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+        return next.slice(0, 50);
       });
     };
 
@@ -627,8 +626,8 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
           <div className="flex justify-center items-center py-12 bg-white/5 border-2 border-dashed border-white/20">
             <BrutalistLoader text="Synchronizing" size="sm" theme="dark" className="py-4" />
           </div>
-        ) : logs.filter(l => activeTab === 'footprints' ? (l.category === 'footprint' || !!l.action) : (l.category !== 'footprint' && !l.action)).length > 0 ? (
-          logs.filter(l => activeTab === 'footprints' ? (l.category === 'footprint' || !!l.action) : (l.category !== 'footprint' && !l.action)).map((log) => {
+        ) : logs.filter(l => activeTab === 'footprints' ? (l.category === 'footprint' || (!l.type && !!l.action)) : (l.category === 'event' || !!l.type || l.category !== 'footprint')).length > 0 ? (
+          logs.filter(l => activeTab === 'footprints' ? (l.category === 'footprint' || (!l.type && !!l.action)) : (l.category === 'event' || !!l.type || l.category !== 'footprint')).map((log) => {
             const title = formatActionTitle(log.action || log.type);
             const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
             const actionKey = (log.action || log.type || '').toUpperCase();
