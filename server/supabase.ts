@@ -473,6 +473,119 @@ export function createMockSupabaseClient() {
           error: null
         };
       }
+      if (fnName === 'check_rate_limit_atomic') {
+        const { p_identifier, p_endpoint, p_window_start, p_max_requests } = args || {};
+        const buckets = globalMemoryStore.get('security_rate_limit_buckets') || [];
+        const windowStartTime = new Date(p_window_start).getTime();
+        let bucket = buckets.find((b: any) => 
+          b.identifier === p_identifier && 
+          b.endpoint === p_endpoint && 
+          new Date(b.windowStart).getTime() === windowStartTime
+        );
+
+        if (!bucket) {
+          bucket = {
+            id: 'bucket_' + Math.random().toString(36).substring(2, 9),
+            identifier: p_identifier,
+            endpoint: p_endpoint,
+            windowStart: p_window_start,
+            requestCount: 1,
+            updatedAt: new Date().toISOString()
+          };
+          buckets.push(bucket);
+        } else {
+          bucket.requestCount = (bucket.requestCount || 0) + 1;
+          bucket.updatedAt = new Date().toISOString();
+        }
+        globalMemoryStore.set('security_rate_limit_buckets', buckets);
+
+        const count = bucket.requestCount;
+        const maxReq = typeof p_max_requests === 'number' ? p_max_requests : 100;
+        return {
+          data: {
+            id: bucket.id,
+            requestCount: count,
+            exceeded: count > maxReq
+          },
+          error: null
+        };
+      }
+      if (fnName === 'record_violation_atomic') {
+        const { p_identifier, p_endpoint, p_severity, p_ip } = args || {};
+        const violations = globalMemoryStore.get('security_violations') || [];
+        let violation = violations.find((v: any) => v.identifier === p_identifier && v.endpoint === p_endpoint);
+        if (!violation) {
+          violation = {
+            id: 'viol_' + Math.random().toString(36).substring(2, 9),
+            identifier: p_identifier,
+            endpoint: p_endpoint,
+            severity: p_severity || 'S1',
+            violationCount: 1,
+            lastViolationAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            ip: p_ip || null
+          };
+          violations.push(violation);
+        } else {
+          violation.violationCount = (violation.violationCount || 0) + 1;
+          violation.lastViolationAt = new Date().toISOString();
+          violation.updatedAt = new Date().toISOString();
+          if (p_ip) violation.ip = p_ip;
+        }
+        globalMemoryStore.set('security_violations', violations);
+        return { data: violation, error: null };
+      }
+      if (fnName === 'record_critical_violation_atomic') {
+        const { p_identifier, p_endpoint, p_reason, p_ip } = args || {};
+        const violations = globalMemoryStore.get('security_violations') || [];
+        let violation = violations.find((v: any) => v.identifier === p_identifier && v.endpoint === p_endpoint);
+        if (!violation) {
+          violation = {
+            id: 'viol_' + Math.random().toString(36).substring(2, 9),
+            identifier: p_identifier,
+            endpoint: p_endpoint,
+            severity: 'S3',
+            violationCount: 100,
+            lastViolationAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            ip: p_ip || null,
+            isPermanentlyBanned: true
+          };
+          violations.push(violation);
+        } else {
+          violation.violationCount = Math.max(violation.violationCount || 0, 100);
+          violation.lastViolationAt = new Date().toISOString();
+          violation.updatedAt = new Date().toISOString();
+          violation.isPermanentlyBanned = true;
+          if (p_ip) violation.ip = p_ip;
+        }
+        globalMemoryStore.set('security_violations', violations);
+        return { data: violation, error: null };
+      }
+      if (fnName === 'record_ip_penalty_atomic') {
+        const { p_ip, p_penalty } = args || {};
+        const reputations = globalMemoryStore.get('ip_reputations') || [];
+        let rep = reputations.find((r: any) => r.ip === p_ip);
+        if (!rep) {
+          rep = {
+            id: 'ip_' + Math.random().toString(36).substring(2, 9),
+            ip: p_ip,
+            score: Math.max(0, 100 - (p_penalty || 0)),
+            violationCount: 1,
+            lastViolationAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            isBlacklisted: false
+          };
+          reputations.push(rep);
+        } else {
+          rep.score = Math.max(0, (rep.score ?? 100) - (p_penalty || 0));
+          rep.violationCount = (rep.violationCount || 0) + 1;
+          rep.lastViolationAt = new Date().toISOString();
+          rep.updatedAt = new Date().toISOString();
+        }
+        globalMemoryStore.set('ip_reputations', reputations);
+        return { data: rep, error: null };
+      }
       return { data: null, error: { message: `Unknown RPC function ${fnName}` } };
     },
     auth: {

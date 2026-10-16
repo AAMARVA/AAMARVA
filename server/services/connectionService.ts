@@ -1027,20 +1027,14 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
         throw new ConnectionError(`Failed to establish connection: ${updateError.message}`, 500, 'DATABASE_ERROR');
       }
 
-      // 2. Clean slate: Delete any old counterparty reviews/scores associated with this recycled connection
+      // 2. Clean slate: Delete any old reviews associated with this recycled connection
       try {
-        await Promise.all([
-          supabase
-            .from('counter_party_scores')
-            .delete()
-            .eq('connectionId', existingDissolved.id),
-          supabase
-            .from('reviews')
-            .delete()
-            .eq('connectionId', existingDissolved.id)
-        ]);
+        await supabase
+          .from('reviews')
+          .delete()
+          .eq('connectionId', existingDissolved.id);
       } catch (reviewErr) {
-        console.error('[acceptConnectionRequest] Warning clearing old counterparty scores during recycling:', reviewErr);
+        console.error('[acceptConnectionRequest] Warning clearing old reviews during recycling:', reviewErr);
       }
 
       // 3. Mark request as accepted

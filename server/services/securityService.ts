@@ -1200,7 +1200,8 @@ export class SecurityService {
       errorCode === 'PGRST200' ||
       errorMessage.includes('does not exist') ||
       errorMessage.includes('not found') ||
-      errorMessage.includes('missing')
+      errorMessage.includes('missing') ||
+      errorMessage.includes('unknown rpc')
     );
 
     if (isMissingComponent) {

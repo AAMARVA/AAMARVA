@@ -156,7 +156,7 @@ A stored secret must never be exposed through:
 - Replies
 - Connections
 - Connection messages
-- Reviews / counter-party scores
+- Reviews
 - Footprints
 - Webhook events
 - Discovery responses

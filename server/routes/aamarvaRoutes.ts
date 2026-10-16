@@ -3724,7 +3724,8 @@ function getEndpointForAction(action: string, target?: string): string {
     case 'MESSAGE_SENT': return target ? `POST /api/connections/${target}/messages` : 'POST /api/connections/:id/messages';
 
     // Reputation & Reviews
-    case 'COUNTER_PARTY_REVIEW': return 'POST /api/reviews';
+    case 'PEER_REVIEW': return 'POST /api/reviews';
+    case 'PEER_REVIEW_DELETED':
     case 'REVIEW_DELETED': return target ? `DELETE /api/reviews/${target}` : 'DELETE /api/reviews/:id';
 
     // Agent Identity & Keys
@@ -3999,7 +4000,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
       }
     } catch (e) {}
 
-    // 6. Fetch user's submitted counterparty reviews
+    // 6. Fetch user's submitted reviews
     try {
       const { data: submittedReviews } = await sb
         .from('reviews')
@@ -4009,12 +4010,12 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
         .limit(30);
       if (submittedReviews && submittedReviews.length > 0) {
         submittedReviews.forEach((rev: any) => {
-          const key = `COUNTER_PARTY_REVIEW:${rev.id}`;
+          const key = `PEER_REVIEW:${rev.id}`;
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
             dynamicFootprints.push({
               id: `fp_rev_${rev.id}`,
-              action: 'COUNTER_PARTY_REVIEW',
+              action: 'PEER_REVIEW',
               endpoint: 'POST /api/reviews',
               target: rev.connectionId,
               details: `Submitted review for agent ${rev.targetAgentId}`,
@@ -4130,7 +4131,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
           const footprintActions = [
           'POST_DELETED', 'REPLY_DELETED',
           'CONNECTION_ESTABLISHED', 'CONNECTION_REMOVED', 'CONNECTION_REQUEST_SENT',
-          'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED', 'COUNTER_PARTY_REVIEW'
+          'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED', 'COUNTER_PARTY_REVIEW', 'PEER_REVIEW'
         ];
         
         events = data
@@ -4270,7 +4271,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
       }
     } catch (e) {}
 
-    // 5. Incoming counterparty reviews received by this agent
+    // 5. Incoming peer reviews received by this agent
     try {
       const { data: incomingReviews } = await sb
         .from('reviews')
@@ -4281,15 +4282,15 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
         .limit(30);
       if (incomingReviews && incomingReviews.length > 0) {
         incomingReviews.forEach((rev: any) => {
-          const key = `COUNTERPARTY_REVIEW_RECEIVED:${rev.id}`;
+          const key = `PEER_REVIEW_RECEIVED:${rev.id}`;
           if (!seenEventKeys.has(key)) {
             seenEventKeys.add(key);
             dynamicEvents.push({
               id: `evt_rev_${rev.id}`,
-              type: 'COUNTERPARTY_REVIEW_RECEIVED',
+              type: 'PEER_REVIEW_RECEIVED',
               senderId: rev.reviewerAgentId,
               targetId: rev.connectionId,
-              details: rev.comment ? (rev.comment.length > 60 ? rev.comment.slice(0, 60) + '...' : rev.comment) : 'Counterparty review received',
+              details: rev.comment ? (rev.comment.length > 60 ? rev.comment.slice(0, 60) + '...' : rev.comment) : 'Peer review received',
               timestamp: rev.createdAt
             });
           }

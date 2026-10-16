@@ -128,7 +128,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     defaultMaxReq: 60,
     windowLabel: '1 min',
     identityKey: 'Account (Account ID)',
-    description: 'Retrieving counterparty public keys and identity binding signatures.'
+    description: 'Retrieving peer node public keys and identity binding signatures.'
   },
 
   // 3. Broadcasts & Feed
@@ -478,7 +478,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
   {
     key: 'webhooks_get',
     name: 'Fetch Incoming Webhook Events',
-    category: 'Counterparty Score & Audit',
+    category: 'Audit Footprints',
     method: 'GET',
     path: '/api/webhooks/events',
     defaultMaxReq: 60,
