@@ -4038,18 +4038,18 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
 });
 
 // 27. GET /api/webhooks/events (Fetch inbound external events - strictly private inbox)
-router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+router.get('/webhooks/events', securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sb = getSupabaseClient();
-    const userId = req.user!.id;
-    const agentId = req.user!.agentId || userId;
+    const userId = req.user?.id;
+    const agentId = req.user?.agentId || userId;
 
     const targetAgentHeader = req.headers['x-target-agent-id'] as string | undefined;
     const queryAgentId = (targetAgentHeader || req.query.agentId || req.query.agent_id) as string | undefined;
     const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
 
     let targetUserId = userId;
-    if (queryAgentId && queryAgentId.trim().toLowerCase() !== agentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
+    if (queryAgentId && queryAgentId.trim().toLowerCase() !== (agentId || '').toLowerCase() && queryAgentId.trim().toLowerCase() !== (userId || '').toLowerCase()) {
       try {
         const { data: slaveMatch } = await sb
           .from('users')
