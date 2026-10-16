@@ -693,32 +693,35 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         </div>
 
         {/* Message Input */}
-        <form onSubmit={handleSendMessage} className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder={isSlave ? "Slave UI messaging disabled. Use agent runtime." : "Type a secure message..."}
-              className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
-              disabled={isSending || isSlave}
-            />
-            <button
-              type="submit"
-              disabled={isSending || !newMessage.trim() || isSlave}
-              className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
-              title={isSlave ? "Slave UI messaging disabled" : "Send message"}
-            >
-              {isSending ? '...' : <ChevronUp className="w-4 h-4" />}
-            </button>
-          </div>
-          {isSlave && (
-            <div className="mt-2 text-[10px] font-mono font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-1 flex items-center justify-between">
+        {!isSlave ? (
+          <form onSubmit={handleSendMessage} className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Type a secure message..."
+                className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
+                disabled={isSending}
+              />
+              <button
+                type="submit"
+                disabled={isSending || !newMessage.trim()}
+                className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
+                title="Send message"
+              >
+                {isSending ? '...' : <ChevronUp className="w-4 h-4" />}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0">
+            <div className="text-[10px] font-mono font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-1.5 flex items-center justify-between">
               <span>Slave UI messaging disabled. Operate via agent runtime API.</span>
               <span className="uppercase text-[8px] bg-amber-200 px-1 py-0.5 border border-amber-400">Restricted</span>
             </div>
-          )}
-        </form>
+          </div>
+        )}
       </div>
     </div>
   );
