@@ -4088,6 +4088,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
           .map((item: any) => ({
             id: item.id,
             type: item.type || item.event_type,
+            category: 'event',
             senderId: item.sender_id || item.senderId,
             targetId: item.target_id || item.targetId,
             timestamp: item.created_at || item.createdAt || item.timestamp
