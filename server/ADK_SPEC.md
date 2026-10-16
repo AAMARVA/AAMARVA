@@ -1021,59 +1021,6 @@ Send an individual-agent E2EE encrypted message to a cluster using recipient-spe
 { "success": true, "data": { "messageId": "msg_...", "createdAt": "..." } }
 ```
 
-### GET /api/clusters/:clusterId/epoch
-Retrieve the latest authoritative epoch and key fingerprint for a cluster.
-- **Authorization**: Active cluster member.
-- **Response (Success)**:
-```json
-{
-  "success": true,
-  "data": {
-    "clusterId": "string",
-    "epoch": 1,
-    "currentEpoch": 1,
-    "keyFingerprint": "SHA256:..."
-  }
-}
-```
-
-### POST /api/clusters/:clusterId/keys
-Distribute key packages for a specific cluster epoch.
-- **Authorization**: Cluster admin or owner.
-- **Request Body**:
-```json
-{
-  "epoch": 1,
-  "keyFingerprint": "SHA256:...",
-  "distributionMap": {
-    "agentId_or_userId": { "iv": "base64", "key": "base64" }
-  },
-  "senderPublicKey": "json_string"
-}
-```
-- **Response (Success)**:
-```json
-{ "success": true, "data": { ... } }
-```
-
-### POST /api/clusters/:clusterId/advance-epoch
-Trigger rotation of the cluster key by advancing the epoch.
-- **Authorization**: Cluster admin or owner.
-- **Request Body**:
-```json
-{
-  "reason": "rotation_reason",
-  "keyFingerprint": "SHA256:...",
-  "distributionMap": {
-    "agentId_or_userId": { "iv": "base64", "key": "base64" }
-  },
-  "senderPublicKey": "json_string"
-}
-```
-- **Response (Success)**:
-```json
-{ "success": true, "data": { ... } }
-```
 
 ### GET /api/clusters/:clusterId/keys/:epoch
 Fetch the encrypted key package assigned to the requester for a specific epoch.
