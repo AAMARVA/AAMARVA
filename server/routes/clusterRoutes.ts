@@ -79,7 +79,7 @@ async function isClusterMember(supabase: any, clusterId: string, userId: string,
     .maybeSingle();
 
   if (cluster && cluster.status !== 'dissolved') {
-    if (cluster.ownerUserId && cluster.ownerUserId === userId) return true;
+    if (userId && cluster.ownerUserId && cluster.ownerUserId === userId) return true;
     if (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase().replace(/^@+/, '') === agentId.toLowerCase().replace(/^@+/, '')) return true;
   }
 
@@ -94,12 +94,19 @@ async function isClusterMember(supabase: any, clusterId: string, userId: string,
   if (conditions.length > 0) {
     const { data: memberRows } = await supabase
       .from(tables.members)
-      .select('id, status')
+      .select('id, userId, agentId, status')
       .eq('clusterId', clusterId)
       .or(conditions.join(','));
 
     if (memberRows && memberRows.length > 0) {
-      const hasActive = memberRows.some((m: any) => m.status && m.status !== 'dissolved');
+      const cleanReqAid = agentId ? agentId.toLowerCase().replace(/^@+/, '') : '';
+      const hasActive = memberRows.some((m: any) => {
+        if (!m.status || m.status === 'dissolved') return false;
+        const matchesUser = userId && m.userId === userId;
+        const cleanMemAid = m.agentId ? String(m.agentId).toLowerCase().replace(/^@+/, '') : '';
+        const matchesAgent = cleanReqAid && cleanMemAid && cleanReqAid === cleanMemAid;
+        return Boolean(matchesUser || matchesAgent);
+      });
       if (hasActive) return true;
     }
   }
@@ -123,7 +130,7 @@ async function isClusterAdmin(supabase: any, clusterId: string, userId: string, 
   }
 
   if (cluster && (
-    (cluster.ownerUserId && cluster.ownerUserId === userId) ||
+    (userId && cluster.ownerUserId && cluster.ownerUserId === userId) ||
     (agentId && cluster.ownerAgentId && cluster.ownerAgentId.toLowerCase().replace(/^@+/, '') === agentId.toLowerCase().replace(/^@+/, ''))
   )) {
     return true;
@@ -140,12 +147,19 @@ async function isClusterAdmin(supabase: any, clusterId: string, userId: string, 
   if (conditions.length > 0) {
     const { data: memberRows } = await supabase
       .from(tables.members)
-      .select('role, status')
+      .select('role, userId, agentId, status')
       .eq('clusterId', clusterId)
       .or(conditions.join(','));
 
     if (memberRows && memberRows.length > 0) {
-      const hasAdmin = memberRows.some((m: any) => (m.role === 'admin' || m.role === 'owner') && m.status !== 'dissolved');
+      const cleanReqAid = agentId ? agentId.toLowerCase().replace(/^@+/, '') : '';
+      const hasAdmin = memberRows.some((m: any) => {
+        if ((m.role !== 'admin' && m.role !== 'owner') || m.status === 'dissolved') return false;
+        const matchesUser = userId && m.userId === userId;
+        const cleanMemAid = m.agentId ? String(m.agentId).toLowerCase().replace(/^@+/, '') : '';
+        const matchesAgent = cleanReqAid && cleanMemAid && cleanReqAid === cleanMemAid;
+        return Boolean(matchesUser || matchesAgent);
+      });
       if (hasAdmin) return true;
     }
   }
@@ -2548,7 +2562,8 @@ router.delete('/clusters/:clusterId/leave', requireHumanSession, async (req: Aut
 router.get('/clusters/:clusterId/keys/:epoch', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_key_get');
-    const { clusterId, epoch } = req.params;
+    const clusterId = req.params.clusterId as string;
+    const epoch = req.params.epoch as string;
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
     const userId = req.user!.id;
@@ -2579,7 +2594,16 @@ router.get('/clusters/:clusterId/keys/:epoch', requireUserOrAgentAuth, async (re
       });
     }
 
-    const targetAgentId = member.agentId || agentId;
+    let targetAgentId = agentId;
+    if (!targetAgentId) {
+      const { data: member } = await supabase
+        .from(tables.members)
+        .select('agentId')
+        .eq('clusterId', clusterId)
+        .eq('userId', userId)
+        .maybeSingle();
+      targetAgentId = member?.agentId || agentId;
+    }
     const { data: packageData } = await supabase
       .from('cluster_key_distributions')
       .select('encryptedKeyPackage, senderPublicKey')

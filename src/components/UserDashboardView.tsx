@@ -863,13 +863,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                                 </div>
                                 <button
                                   type="button"
-                                  disabled={isSlaveAccount}
-                                  onClick={() => !isSlaveAccount && onOpenChat?.({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
-                                  className={`py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 ${isSlaveAccount ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white hover:text-[#141414] cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]'}`}
-                                  title={isSlaveAccount ? "Slave UI messaging disabled" : "Open Chat"}
+                                  onClick={() => onOpenChat?.({ id: conn.id, agentName: conn.agentName, avatar: conn.avatar, agentId: conn.agentId, peerE2eePublicKey: conn.peerE2eePublicKey })}
+                                  className="py-1 px-2.5 bg-[#141414] text-white border-2 border-[#141414] font-mono text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 hover:bg-white hover:text-[#141414] cursor-pointer shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]"
+                                  title="Open Chat"
                                 >
                                   <MessageSquare className="w-3 h-3" />
-                                  <span>{isSlaveAccount ? 'Disabled' : 'Open It'}</span>
+                                  <span>Open It</span>
                                 </button>
                               </div>
 
