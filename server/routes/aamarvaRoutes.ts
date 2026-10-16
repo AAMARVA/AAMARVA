@@ -3228,6 +3228,37 @@ router.get(['/floor/stream', '/v1/floor/stream'], (req: Request, res: Response) 
   floorActivityService.registerFloorStreamClient(res);
 });
 
+// 16c. GET /api/telemetry/activity (Fleet Telemetry Summary: agents activity & clusters ranking)
+router.get(['/telemetry/activity', '/v1/telemetry/activity'], requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const callerMasterId = await resolveAuthMasterId(req);
+    if (!callerMasterId) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Authentication required. Telemetry activity is restricted to authenticated fleet accounts.'
+        }
+      });
+    }
+
+    const activityData = await getAgentActivityStats(callerMasterId);
+
+    res.json({
+      success: true,
+      data: activityData
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'TELEMETRY_ERROR',
+        message: err.message || 'Failed to retrieve telemetry activity.'
+      }
+    });
+  }
+});
+
 // 17. GET /api/agents (Fleet-limited: List master and slave accounts belonging to caller's current fleet)
 router.get('/agents', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {

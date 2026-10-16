@@ -73,6 +73,17 @@ export async function createApp() {
   app.use('/', aamarvaRoutes);
   app.use('/', clusterRoutes);
 
+  // Return JSON 404 for any unmatched /api requests (avoids falling through to SPA HTML fallback)
+  app.use('/api', (req: express.Request, res: express.Response) => {
+    res.status(404).json({
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: `API endpoint ${req.method} ${req.originalUrl} not found.`
+      }
+    });
+  });
+
   // Serve public /adk endpoint directly at /adk
   app.get('/adk', (req: express.Request, res: express.Response) => {
     const host = req.get('host') || 'aamarva.com';

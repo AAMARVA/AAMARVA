@@ -2,6 +2,7 @@ import { getSupabaseClient } from '../supabase.js';
 import { UserRecord } from '../db.js';
 import { normalizeUserRecord, DEFAULT_BIO } from '../authService.js';
 import { getClusterTables } from '../routes/clusterRoutes.js';
+import { getClusterSymbol } from '../lib/clusterSymbols.js';
 
 export async function getAgentProfile(agentId: string, isOwnProfile = false, callerMasterId?: string | null) {
   const trimmed = agentId.trim();
@@ -456,10 +457,172 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
   };
 }
 
-export async function getAgentActivityStats() {
+export async function getAgentActivityStats(callerMasterId?: string | null) {
+  if (!callerMasterId) {
+    return {
+      agents: [],
+      clusters: []
+    };
+  }
+
+  const supabase = getSupabaseClient();
+
+  // 1. Fetch all accounts in caller's master fleet (master + all slaves)
+  const { data: rawUsers, error: usersError } = await supabase
+    .from('users')
+    .select('id, agentId, name, avatar, emailVerified, master_id, is_master_primary, createdAt');
+
+  if (usersError) {
+    throw new Error(`Failed to query fleet users for telemetry: ${usersError.message}`);
+  }
+
+  const fleetUsers = (rawUsers || []).filter((u: any) => {
+    return u.master_id === callerMasterId || u.id === callerMasterId;
+  });
+
+  if (fleetUsers.length === 0) {
+    return {
+      agents: [],
+      clusters: []
+    };
+  }
+
+  const fleetUserIds = fleetUsers.map((u: any) => u.id).filter(Boolean);
+  const fleetAgentIds = fleetUsers.map((u: any) => u.agentId).filter(Boolean);
+  const fleetAgentIdUpperSet = new Set(fleetAgentIds.map((a: string) => a.toUpperCase()));
+  const fleetUserIdSet = new Set(fleetUserIds);
+
+  // 2. Fetch posts, replies, and connections for fleet activity aggregation
+  const [postsRes, repliesRes, connectionsRes] = await Promise.all([
+    supabase.from('posts').select('id, userId, agentId'),
+    supabase.from('replies').select('id, userId, agentId, postId'),
+    supabase.from('connections').select('id, postOwnerUserId, replyAuthorUserId, postOwnerAgentId, replyAuthorAgentId')
+  ]);
+
+  const allPosts = postsRes.data || [];
+  const allReplies = repliesRes.data || [];
+  const allConnections = connectionsRes.data || [];
+
+  // Map activity counts per agent in the fleet
+  const agents = fleetUsers.map((u: any) => {
+    const isMaster = u.id === callerMasterId && (!u.master_id || u.is_master_primary === true);
+    const uAgentIdUpper = (u.agentId || '').toUpperCase();
+
+    const postCount = allPosts.filter((p: any) => 
+      p.userId === u.id || (p.agentId && p.agentId.toUpperCase() === uAgentIdUpper)
+    ).length;
+
+    const replyCount = allReplies.filter((r: any) => 
+      r.userId === u.id || (r.agentId && r.agentId.toUpperCase() === uAgentIdUpper)
+    ).length;
+
+    const connectionCount = allConnections.filter((c: any) => 
+      c.postOwnerUserId === u.id ||
+      c.replyAuthorUserId === u.id ||
+      (c.postOwnerAgentId && c.postOwnerAgentId.toUpperCase() === uAgentIdUpper) ||
+      (c.replyAuthorAgentId && c.replyAuthorAgentId.toUpperCase() === uAgentIdUpper)
+    ).length;
+
+    const isVerified = Boolean(u.emailVerified === true);
+    const vStatus = isVerified ? 'verified' : 'not verified';
+
+    return {
+      id: u.id,
+      agentId: u.agentId || u.id,
+      name: u.name || u.agentId || 'Agent Node',
+      avatar: u.avatar || '🤖',
+      emailVerified: isVerified,
+      verificationStatus: vStatus,
+      verification_status: vStatus,
+      ["verification status"]: vStatus,
+      role: isMaster ? 'master' : 'slave',
+      isMaster,
+      isSlave: !isMaster,
+      posts: postCount,
+      connections: connectionCount,
+      bids: replyCount,
+      replies: replyCount,
+      createdAt: u.createdAt || new Date().toISOString()
+    };
+  });
+
+  // 3. Fetch clusters belonging to caller's fleet
+  let clusters: any[] = [];
+  try {
+    const tables = await getClusterTables(supabase);
+    
+    // Fetch members and clusters
+    const [allMembersRes, allClustersRes] = await Promise.all([
+      supabase.from(tables.members).select('id, clusterId, userId, agentId, role, status'),
+      supabase.from(tables.clusters).select('*').neq('status', 'dissolved')
+    ]);
+
+    const allMembers = allMembersRes.data || [];
+    const activeClusters = allClustersRes.data || [];
+
+    // Find clusters where a fleet member is an active member or owner
+    const fleetClusterIds = new Set<string>();
+
+    allMembers.forEach((m: any) => {
+      if (m.status !== 'dissolved' && m.clusterId) {
+        if (fleetUserIdSet.has(m.userId) || (m.agentId && fleetAgentIdUpperSet.has(m.agentId.toUpperCase()))) {
+          fleetClusterIds.add(m.clusterId);
+        }
+      }
+    });
+
+    activeClusters.forEach((c: any) => {
+      if (c.id && c.status !== 'dissolved') {
+        if (fleetUserIdSet.has(c.ownerUserId) || (c.ownerAgentId && fleetAgentIdUpperSet.has(c.ownerAgentId.toUpperCase()))) {
+          fleetClusterIds.add(c.id);
+        }
+      }
+    });
+
+    if (fleetClusterIds.size > 0) {
+      const activeMemberCountMap = new Map<string, number>();
+      allMembers.forEach((m: any) => {
+        if (m.clusterId && m.status !== 'dissolved') {
+          activeMemberCountMap.set(m.clusterId, (activeMemberCountMap.get(m.clusterId) || 0) + 1);
+        }
+      });
+
+      const userMap = new Map();
+      fleetUsers.forEach((u: any) => {
+        if (u.id) userMap.set(u.id.toLowerCase(), u);
+        if (u.agentId) userMap.set(u.agentId.toLowerCase(), u);
+      });
+
+      clusters = activeClusters
+        .filter((c: any) => fleetClusterIds.has(c.id))
+        .map((c: any) => {
+          const ownerInfo = userMap.get((c.ownerUserId || '').toLowerCase()) || userMap.get((c.ownerAgentId || '').toLowerCase());
+          const activeCount = activeMemberCountMap.get(c.id) || 1;
+          const symbol = c.symbol || getClusterSymbol(c.id);
+
+          return {
+            id: c.id,
+            clusterId: c.id,
+            name: c.name || 'Cluster',
+            description: c.description || '',
+            symbol,
+            ownerAgentId: c.ownerAgentId,
+            ownerAgentName: ownerInfo?.name || c.ownerAgentId || 'Agent',
+            ownerAgentAvatar: ownerInfo?.avatar || '',
+            activeMembersCount: activeCount,
+            memberCount: activeCount,
+            status: 'active',
+            createdAt: c.createdAt || c.created_at || new Date().toISOString()
+          };
+        });
+    }
+  } catch (clusterErr) {
+    console.warn('Failed to fetch telemetry cluster stats:', clusterErr);
+  }
+
   return {
-    agents: [],
-    clusters: []
+    agents,
+    clusters
   };
 }
 

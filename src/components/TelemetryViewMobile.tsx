@@ -7,7 +7,7 @@ import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
 import { FloorActivityContent } from './FloorActivityComponent';
 import { SlaveMonitorCard } from './SlaveMonitorModal';
-import { apiFetch } from '../services/authApi';
+import { apiFetch, buildApiUrl, getAccessToken } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
 
 interface TelemetryViewProps {
@@ -136,9 +136,13 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
   }, [recentConnections]);
 
   useEffect(() => {
+    let isCancelled = false;
+    let isFetchingActivity = false;
+
     const fetchTelemetryData = () => {
       apiFetch('/api/stats', { authType: 'none' })
         .then(res => {
+          if (isCancelled) return;
           const data = res?.data || res;
           if (data) {
             setDbStats(data);
@@ -148,6 +152,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
         
       apiFetch('/api/agents', { authType: 'none' })
         .then(res => {
+          if (isCancelled) return;
           if (res?.success && res.data) {
             const list = Array.isArray(res.data) ? res.data : (res.data.agents || []);
             setSystemAgents(list);
@@ -157,6 +162,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
 
       apiFetch('/api/posts?limit=50', { authType: 'none' })
         .then(res => {
+          if (isCancelled) return;
           if (res?.success && Array.isArray(res.data?.posts)) {
             const mappedPosts: NetworkTicket[] = res.data.posts.map((p: any) => ({
               id: p.id,
@@ -185,6 +191,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
 
       apiFetch('/api/connections/recent', { authType: 'none' })
         .then(res => {
+          if (isCancelled) return;
           if (res?.success && Array.isArray(res.data)) {
             setLocalRecentConnections(res.data);
           }
@@ -193,6 +200,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
 
       apiFetch('/api/connection-requests/recent', { authType: 'none' })
         .then(res => {
+          if (isCancelled) return;
           if (res?.success && Array.isArray(res.data)) {
             setLocalConnectionRequests(res.data);
           }
@@ -201,6 +209,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
 
       apiFetch('/api/clusters/public/recent', { authType: 'none' })
         .then(res => {
+          if (isCancelled) return;
           if (res?.success && Array.isArray(res.data)) {
             setLocalClusters(res.data);
           }
@@ -209,32 +218,80 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
 
       apiFetch('/api/floor/activity', { authType: 'none' })
         .then(res => {
+          if (isCancelled) return;
           if (res?.success && Array.isArray(res.data)) {
             setServerFloorLogs((prev) => deduplicateAndMergeFloorActivities([...res.data, ...prev]));
           }
         })
         .catch(err => console.warn('Failed to fetch floor activity:', err));
 
-      fetch('/api/telemetry/activity')
-        .then(res => res.json())
-        .then(result => {
-          if (result.success) {
-            if (result.data && result.data.agents) {
-              setAgentActivity(result.data.agents);
-              setClusterRanking(result.data.clusters || []);
-            } else if (Array.isArray(result.data)) {
-              setAgentActivity(result.data);
-            }
-          }
+      if (isAuthenticated) {
+        if (isFetchingActivity) return;
+        isFetchingActivity = true;
+        const telemetryUrl = buildApiUrl('/api/telemetry/activity');
+        const token = getAccessToken();
+        fetch(telemetryUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          credentials: 'include',
         })
-        .catch(err => console.warn('Failed to fetch telemetry activity:', err))
-        .finally(() => setIsLoadingActivity(false));
+          .then(async (res) => {
+            if (isCancelled) return null;
+            if (!res.ok) {
+              console.warn(`[Telemetry] Activity request returned status ${res.status}`);
+              return null;
+            }
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.toLowerCase().includes('application/json')) {
+              console.warn(`[Telemetry] Unexpected content-type: ${contentType}`);
+              return null;
+            }
+            try {
+              return await res.json();
+            } catch (jsonErr) {
+              console.warn('[Telemetry] JSON parse error:', jsonErr);
+              return null;
+            }
+          })
+          .then((result) => {
+            if (isCancelled) return;
+            if (result && result.success && result.data) {
+              if (Array.isArray(result.data.agents)) {
+                setAgentActivity(result.data.agents);
+                setClusterRanking(Array.isArray(result.data.clusters) ? result.data.clusters : []);
+              } else if (Array.isArray(result.data)) {
+                setAgentActivity(result.data);
+              }
+            }
+          })
+          .catch((err) => {
+            if (!isCancelled) {
+              console.warn('[Telemetry] Activity fetch error:', err);
+            }
+          })
+          .finally(() => {
+            isFetchingActivity = false;
+            if (!isCancelled) {
+              setIsLoadingActivity(false);
+            }
+          });
+      } else {
+        if (!isCancelled) {
+          setIsLoadingActivity(false);
+        }
+      }
     };
 
     fetchTelemetryData();
     const interval = setInterval(fetchTelemetryData, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [isAuthenticated]);
 
   const computedTotalPosts = localPosts.length;
   const computedTotalConnections = localPosts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0) + localRecentConnections.length;
