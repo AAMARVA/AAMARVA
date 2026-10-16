@@ -8,7 +8,8 @@ import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
 import { FloorActivityContent } from './FloorActivityComponent';
 import { SlaveMonitorCard } from './SlaveMonitorModal';
-import { apiFetch } from '../services/authApi';
+import { apiFetch, getAccessToken } from '../services/authApi';
+import { useAuth } from '../context/AuthContext';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
 
 interface TelemetryViewProps {
@@ -39,6 +40,9 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
   onOpenConnections,
   onOpenPostCard,
 }) => {
+  const { sessionAuthType } = useAuth();
+  const effectiveAuthType = sessionAuthType || (getAccessToken() ? 'agent' : 'human');
+
   const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'bids' | 'clusters'>('posts');
   const [agentActivity, setAgentActivity] = useState<any[]>([]);
   const [clusterRanking, setClusterRanking] = useState<any[]>([]);
@@ -147,7 +151,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         })
         .catch(err => console.warn('Failed to fetch stats:', err));
         
-      apiFetch('/api/agents', { authType: 'none' })
+      apiFetch('/api/agents', { authType: effectiveAuthType })
         .then(res => {
           if (res?.success && res.data) {
             const list = Array.isArray(res.data) ? res.data : (res.data.agents || []);
@@ -156,7 +160,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         })
         .catch(err => console.warn('Failed to fetch agents:', err));
 
-      apiFetch('/api/posts?limit=50', { authType: 'none' })
+      apiFetch('/api/posts?limit=50', { authType: effectiveAuthType })
         .then(res => {
           if (res?.success && Array.isArray(res.data?.posts)) {
             const mappedPosts: NetworkTicket[] = res.data.posts.map((p: any) => ({
@@ -184,7 +188,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         })
         .catch(err => console.warn('Failed to fetch posts for telemetry:', err));
 
-      apiFetch('/api/connections/recent', { authType: 'none' })
+      apiFetch('/api/connections/recent', { authType: effectiveAuthType })
         .then(res => {
           if (res?.success && Array.isArray(res.data)) {
             setLocalRecentConnections(res.data);
@@ -192,7 +196,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         })
         .catch(err => console.warn('Failed to fetch recent connections:', err));
 
-      apiFetch('/api/connection-requests/recent', { authType: 'none' })
+      apiFetch('/api/connection-requests/recent', { authType: effectiveAuthType })
         .then(res => {
           if (res?.success && Array.isArray(res.data)) {
             setLocalConnectionRequests(res.data);
@@ -200,7 +204,7 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         })
         .catch(err => console.warn('Failed to fetch recent connection requests:', err));
 
-      apiFetch('/api/clusters/public/recent', { authType: 'none' })
+      apiFetch('/api/clusters/public/recent', { authType: effectiveAuthType })
         .then(res => {
           if (res?.success && Array.isArray(res.data)) {
             setLocalClusters(res.data);
@@ -208,28 +212,13 @@ export const TelemetryViewDesktop: React.FC<TelemetryViewProps> = ({
         })
         .catch(err => console.warn('Failed to fetch recent clusters:', err));
 
-      apiFetch('/api/floor/activity', { authType: 'none' })
+      apiFetch('/api/floor/activity', { authType: effectiveAuthType })
         .then(res => {
           if (res?.success && Array.isArray(res.data)) {
             setServerFloorLogs((prev) => deduplicateAndMergeFloorActivities([...res.data, ...prev]));
           }
         })
         .catch(err => console.warn('Failed to fetch floor activity:', err));
-
-      fetch('/api/telemetry/activity')
-        .then(res => res.json())
-        .then(result => {
-          if (result.success) {
-            if (result.data && result.data.agents) {
-              setAgentActivity(result.data.agents);
-              setClusterRanking(result.data.clusters || []);
-            } else if (Array.isArray(result.data)) {
-              setAgentActivity(result.data);
-            }
-          }
-        })
-        .catch(err => console.warn('Failed to fetch telemetry activity:', err))
-        .finally(() => setIsLoadingActivity(false));
     };
 
     fetchTelemetryData();

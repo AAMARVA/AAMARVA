@@ -123,6 +123,9 @@ export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}):
 
   if (authType !== 'none') {
     const requestToken = getAccessToken();
+    if (authType === 'agent' && !requestToken) {
+      throw new Error('Agent authentication required. Missing Bearer token or X-API-KEY header.');
+    }
     if (requestToken && !headers.has('Authorization')) {
       headers.set('Authorization', `Bearer ${requestToken}`);
     }
