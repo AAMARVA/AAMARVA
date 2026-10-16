@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Shield, ChevronUp } from 'lucide-react';
+import { X, Shield, ChevronUp, Lock } from 'lucide-react';
 import { apiFetch, getAccessToken, getRefreshToken, sendPrivateMessageApi } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
@@ -105,6 +105,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [messages, setMessages] = useState<DecryptedChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const sentPlaintextsRef = useRef<Map<string, string>>(new Map());
   const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
   const [showHiddenMessages, setShowHiddenMessages] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -178,11 +180,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         await fetchAndDecryptMessages(pubKey);
         return true;
       } else {
-        alert('Slave agent manages its own cryptographic identity via its own runtime. Please ensure the slave agent has started and registered its public key.');
+        setSendError('Slave agent manages its own cryptographic identity via its own runtime. Please ensure the slave agent has started and registered its public key.');
         return false;
       }
     } catch (err: any) {
-      alert(`Failed to fetch agent public key: ${err?.message || err}`);
+      setSendError(`Failed to fetch agent public key: ${err?.message || err}`);
       return false;
     } finally {
       if (isMountedRef.current) {
@@ -191,82 +193,59 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
-  const [pendingMessages, setPendingMessages] = useState<string[]>([]);
-
-  // Process pending messages when peerKey becomes available
-  useEffect(() => {
-    if (peerKey && pendingMessages.length > 0) {
-      const processPending = async () => {
-        setIsSending(true);
-        const remaining: string[] = [];
-        let anyFailed = false;
-        let lastErrorMsg = '';
-
-        for (const msg of pendingMessages) {
-          try {
-            const targetReceiver = resolvedPeerAgentId || peerAgentId;
-            await sendPrivateMessageApi(connectionId, msg, user!.agentId, { 
-              password: userPassword || undefined,
-              receiverAgentId: targetReceiver,
-              authType: effectiveAuthType
-            });
-          } catch (err: any) {
-            console.error('Failed to send pending message', err);
-            remaining.push(msg);
-            anyFailed = true;
-            lastErrorMsg = err?.message || 'Transmission failed';
-          }
-        }
-        setPendingMessages(remaining);
-        setIsSending(false);
-        if (anyFailed) {
-          alert(`Failed to send queued message: ${lastErrorMsg}. Message preserved in queue.`);
-        } else {
-          await fetchAndDecryptMessages();
-        }
-      };
-      processPending();
-    }
-  }, [peerKey, pendingMessages, connectionId, user, resolvedPeerAgentId, peerAgentId, effectiveAuthType, userPassword]);
-
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSlave) {
-      alert('Slave UI messaging is disabled. Slave agents must send messages via their agent runtime API.');
+      setSendError('Slave UI messaging is disabled. Slave agents must send messages via their agent runtime API.');
       return;
     }
-    if (!newMessage.trim() || !user?.agentId) return;
+    const text = newMessage.trim();
+    if (!text || !user?.agentId || isSending) return;
 
-    const messageToSend = newMessage;
     setIsSending(true);
+    setSendError(null);
 
-    // 1. If we have the peer key, encrypt and send immediately
-    if (peerKey) {
-      try {
-        const targetReceiver = resolvedPeerAgentId || peerAgentId;
-        await sendPrivateMessageApi(connectionId, messageToSend, user.agentId, { 
-          password: userPassword || undefined,
-          receiverAgentId: targetReceiver,
-          authType: effectiveAuthType
-        });
-        setNewMessage('');
-        await fetchAndDecryptMessages();
-      } catch (err: any) {
-        console.error('Failed to send message:', err);
-        alert(`Failed to send message: ${err.message || 'Unknown error'}`);
-      } finally {
+    // Optimistic message placeholder so the message shows immediately to the sender
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const optimisticMsg: DecryptedChatMessage = {
+      id: tempId,
+      connectionId,
+      senderAgentId: user.agentId,
+      content: text,
+      isDecrypted: true,
+      keyEpoch: peerKeyEpoch || 1,
+      createdAt: new Date().toISOString(),
+    };
+
+    sentPlaintextsRef.current.set(tempId, text);
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setNewMessage('');
+
+    try {
+      const targetReceiver = resolvedPeerAgentId || peerAgentId;
+      const sentRes = await sendPrivateMessageApi(connectionId, text, user.agentId, { 
+        password: userPassword || undefined,
+        receiverAgentId: targetReceiver,
+        authType: effectiveAuthType
+      });
+
+      if (sentRes?.id) sentPlaintextsRef.current.set(sentRes.id, text);
+      if (sentRes?.nonce) sentPlaintextsRef.current.set(sentRes.nonce, text);
+      if (sentRes?.ciphertext) sentPlaintextsRef.current.set(sentRes.ciphertext, text);
+
+      // Re-fetch and decrypt canonical messages from server
+      await fetchAndDecryptMessages();
+    } catch (err: any) {
+      console.error('Failed to send message:', err);
+      // Remove optimistic message on failure and restore text to input
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      sentPlaintextsRef.current.delete(tempId);
+      setNewMessage(text);
+      setSendError(err?.message || 'Failed to send message');
+    } finally {
+      if (isMountedRef.current) {
         setIsSending(false);
       }
-    } else {
-      // 2. If no peer key, queue and trigger background initialization
-      setPendingMessages((prev) => [...prev, messageToSend]);
-      setNewMessage('');
-      
-      // Trigger background activation if master user
-      if (user?.isMasterUser) {
-        handleActivatePeerKey();
-      }
-      setIsSending(false); // UI isn't technically sending yet
     }
   };
 
@@ -418,13 +397,37 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   const isMyMessage = normalizeAgentId(m.senderAgentId) === normalizeAgentId(user.agentId);
                   const targetPeer = isMyMessage ? (currentPeerId || peerAgentId || 'peer') : m.senderAgentId;
                   
-                  const senderPubKey = await resolveSenderPublicKey(
+                  let senderPubKey = await resolveSenderPublicKey(
                     targetPeer,
                     msgEpoch,
                     currentPeerEpochKeys,
                     currentPeerKey,
                     peerKeyEpoch
                   );
+
+                  // If sender public key not yet resolved, try fetching from peer connection or direct agent endpoint
+                  if (!senderPubKey && targetPeer && targetPeer !== 'peer') {
+                    try {
+                      const peerInfo = await fetchConnectionPeerKey(connectionId, {
+                        receiverAgentId: targetPeer,
+                        authType: effectiveAuthType
+                      });
+                      if (peerInfo?.peerPublicKey) {
+                        senderPubKey = peerInfo.peerPublicKey;
+                        if (isMountedRef.current) setPeerKey(peerInfo.peerPublicKey);
+                      }
+                    } catch {}
+                    if (!senderPubKey) {
+                      try {
+                        const agentKeyRes = await apiFetch(`/api/agents/${targetPeer}/e2ee`, { authType: effectiveAuthType });
+                        const pubKey = agentKeyRes?.data?.publicKey || agentKeyRes?.publicKey;
+                        if (pubKey) {
+                          senderPubKey = pubKey;
+                          if (isMountedRef.current) setPeerKey(pubKey);
+                        }
+                      } catch {}
+                    }
+                  }
 
                   if (!senderPubKey) {
                     decryptionErrorReason = 'MISSING_SENDER_PUBLIC_KEY';
@@ -437,13 +440,22 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       console.debug(`[E2EE Decrypt Diagnostic] Failure [${decryptionErrorReason}] on msg ${m.id}`);
                     }
                   } else {
-                    resolvedPlaintext = await decryptMessage(
-                      { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
-                      decKey,
-                      senderPubKey,
-                      connectionId,
-                      m.senderAgentId || 'AGENT'
-                    );
+                    // Try candidate connection IDs: canonical m.connectionId first, then connectionId prop
+                    const candidateConnIds = Array.from(new Set([m.connectionId, connectionId].filter(Boolean)));
+                    for (const cid of candidateConnIds) {
+                      try {
+                        resolvedPlaintext = await decryptMessage(
+                          { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
+                          decKey,
+                          senderPubKey,
+                          cid,
+                          m.senderAgentId || 'AGENT'
+                        );
+                        if (resolvedPlaintext) break;
+                      } catch (decErr: any) {
+                        decryptionErrorReason = decErr?.code || 'AUTHENTICATION_TAG_FAILED';
+                      }
+                    }
                   }
                 } catch (decErr: any) {
                   // AES-GCM authentication/decryption failure: fail closed, do not expose plaintext
@@ -453,6 +465,16 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   }
                   resolvedPlaintext = null;
                 }
+              }
+            }
+
+            // Fallback for our own sent messages if plaintext was preserved in session
+            if (!resolvedPlaintext && normalizeAgentId(m.senderAgentId) === normalizeAgentId(user.agentId)) {
+              const localCached = (m.id && sentPlaintextsRef.current.get(m.id)) ||
+                                  (m.nonce && sentPlaintextsRef.current.get(m.nonce)) ||
+                                  (m.ciphertext && sentPlaintextsRef.current.get(m.ciphertext));
+              if (localCached) {
+                resolvedPlaintext = localCached;
               }
             }
 
@@ -488,21 +510,26 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           })
         );
 
-        // Sort messages deterministically by sequence first, then creation timestamp, then ID
-        processed.sort((a, b) => {
-          if (typeof a.sequence === 'number' && typeof b.sequence === 'number' && a.sequence !== b.sequence) {
-            return a.sequence - b.sequence;
-          }
-          const timeDiff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-          if (timeDiff !== 0) return timeDiff;
-          if (typeof a.sequence === 'number' && typeof b.sequence === 'number') {
-            return a.sequence - b.sequence;
-          }
-          return String(a.id).localeCompare(String(b.id));
-        });
-
         if (isMountedRef.current) {
-          setMessages(processed);
+          // Reconcile server messages with any in-flight optimistic messages
+          setMessages((prev) => {
+            const inFlightOptimistic = prev.filter(
+              (p) => p.id.startsWith('temp_') && !processed.some((m) => m.content === p.content && m.senderAgentId === p.senderAgentId)
+            );
+            const combined = [...processed, ...inFlightOptimistic];
+            combined.sort((a, b) => {
+              if (typeof a.sequence === 'number' && typeof b.sequence === 'number' && a.sequence !== b.sequence) {
+                return a.sequence - b.sequence;
+              }
+              const timeDiff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+              if (timeDiff !== 0) return timeDiff;
+              if (typeof a.sequence === 'number' && typeof b.sequence === 'number') {
+                return a.sequence - b.sequence;
+              }
+              return String(a.id).localeCompare(String(b.id));
+            });
+            return combined;
+          });
           setFetchError(null);
         }
       }
@@ -521,7 +548,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         setIsLoading(false);
       }
     }
-  }, [connectionId, user?.agentId, userPassword, e2eeStatus, ensureE2EEKeys, localKeys, peerKey, initialPeerKey, peerEpochKeys, resolvedPeerAgentId, peerAgentId, activeContextCredentials, effectiveAuthType]);
+  }, [connectionId, user?.agentId, userPassword, e2eeStatus, ensureE2EEKeys, localKeys, peerKey, initialPeerKey, peerEpochKeys, resolvedPeerAgentId, peerAgentId, activeContextCredentials, effectiveAuthType, peerKeyEpoch]);
 
   useEffect(() => {
     fetchAndDecryptMessages();
@@ -623,55 +650,60 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 </button>
               </form>
             </div>
-          ) : messages.filter((m) => Boolean(m.isDecrypted && m.content && m.content.trim().length > 0)).length > 0 ? (
+          ) : messages.length > 0 ? (
             <>
-              {messages
-                .filter((m) => Boolean(m.isDecrypted && m.content && m.content.trim().length > 0))
-                .map((m) => {
-                  const isCurrentUser = m.senderAgentId === user?.agentId;
-                  const msgAvatar = isCurrentUser ? user?.avatar : peerAvatar;
-                  const msgName = isCurrentUser ? (user?.name || m.senderAgentId) : (peerName || m.senderAgentId);
+              {messages.map((m) => {
+                const isCurrentUser = m.senderAgentId === user?.agentId;
+                const msgAvatar = isCurrentUser ? user?.avatar : peerAvatar;
+                const msgName = isCurrentUser ? (user?.name || m.senderAgentId) : (peerName || m.senderAgentId);
 
-                  return (
-                    <div key={m.id} className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
-                      <button
-                        type="button"
-                        onClick={() => onOpenAgentProfile?.(msgName, msgAvatar, m.senderAgentId)}
-                        className="shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer hover:opacity-80 transition-opacity"
-                      >
-                        <AgentAvatar
-                          name={msgName}
-                          avatar={msgAvatar}
-                          id={m.senderAgentId}
-                          className="w-8 h-8"
-                        />
-                      </button>
-                      <div
-                        className={`p-3 border-2 flex-1 max-w-[85%] ${
-                          isCurrentUser
-                            ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                            : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
-                        }`}
-                      >
-                        <div className={`flex items-center ${isCurrentUser ? 'justify-end' : 'justify-start'} gap-2 pb-1.5 mb-2 border-b ${isCurrentUser ? 'border-white/20' : 'border-[#141414]/15'}`}>
-                          <span className={`font-mono font-black uppercase text-xs px-2 py-0.5 ${isCurrentUser ? 'bg-white text-[#141414]' : 'bg-[#141414] text-white'}`}>
-                            {msgName}
-                          </span>
-                        </div>
+                return (
+                  <div key={m.id} className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenAgentProfile?.(msgName, msgAvatar, m.senderAgentId)}
+                      className="shrink-0 mt-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer hover:opacity-80 transition-opacity"
+                    >
+                      <AgentAvatar
+                        name={msgName}
+                        avatar={msgAvatar}
+                        id={m.senderAgentId}
+                        className="w-8 h-8"
+                      />
+                    </button>
+                    <div
+                      className={`p-3 border-2 flex-1 max-w-[85%] ${
+                        isCurrentUser
+                          ? 'bg-[#141414] text-white border-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                          : 'bg-white text-[#141414] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,0.15)]'
+                      }`}
+                    >
+                      <div className={`flex items-center ${isCurrentUser ? 'justify-end' : 'justify-start'} gap-2 pb-1.5 mb-2 border-b ${isCurrentUser ? 'border-white/20' : 'border-[#141414]/15'}`}>
+                        <span className={`font-mono font-black uppercase text-xs px-2 py-0.5 ${isCurrentUser ? 'bg-white text-[#141414]' : 'bg-[#141414] text-white'}`}>
+                          {msgName}
+                        </span>
+                      </div>
+                      {m.isDecrypted ? (
                         <ChatMessageContent content={m.content} isCurrentUser={isCurrentUser} />
-                        
-                        <div className={`mt-2 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-between'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-75`}>
-                          {typeof m.sequence === 'number' && (
-                            <span className={`px-1 py-0.2 border ${isCurrentUser ? 'border-white/30 bg-white/10' : 'border-[#141414]/30 bg-[#141414]/5'} font-bold`}>
-                              #{m.sequence}
-                            </span>
-                          )}
-                          <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      ) : (
+                        <div className={`flex items-center gap-1.5 text-xs font-mono italic py-1 ${isCurrentUser ? 'text-white/70' : 'text-[#141414]/70'}`}>
+                          <Lock className="w-3.5 h-3.5 shrink-0" />
+                          <span>{m.decryptionStatus?.title || '[Encrypted message - verifying keys]'}</span>
                         </div>
+                      )}
+                      
+                      <div className={`mt-2 flex items-center ${isCurrentUser ? 'justify-end' : 'justify-between'} border-t border-current/15 pt-1 text-[9px] font-mono opacity-75`}>
+                        {typeof m.sequence === 'number' && (
+                          <span className={`px-1 py-0.2 border ${isCurrentUser ? 'border-white/30 bg-white/10' : 'border-[#141414]/30 bg-[#141414]/5'} font-bold`}>
+                            #{m.sequence}
+                          </span>
+                        )}
+                        <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                );
+              })}
             </>
           ) : (
             fetchError ? (
@@ -694,26 +726,40 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
         {/* Message Input */}
         {!isSlave ? (
-          <form onSubmit={handleSendMessage} className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                placeholder="Type a secure message..."
-                className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
-                disabled={isSending}
-              />
-              <button
-                type="submit"
-                disabled={isSending || !newMessage.trim()}
-                className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
-                title="Send message"
-              >
-                {isSending ? '...' : <ChevronUp className="w-4 h-4" />}
-              </button>
-            </div>
-          </form>
+          <div className="border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0">
+            {sendError && (
+              <div className="mx-3 mt-2 p-2 bg-red-100 border border-red-400 text-red-800 text-xs font-mono flex items-center justify-between">
+                <span>⚠️ {sendError}</span>
+                <button
+                  type="button"
+                  onClick={() => setSendError(null)}
+                  className="text-red-900 font-bold ml-2 cursor-pointer hover:underline"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            <form onSubmit={handleSendMessage} className="p-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Type a secure message..."
+                  className="flex-1 border-2 border-[#141414] px-3 py-2 text-xs font-mono bg-white focus:outline-none disabled:bg-neutral-100 disabled:text-neutral-400"
+                  disabled={isSending}
+                />
+                <button
+                  type="submit"
+                  disabled={isSending || !newMessage.trim()}
+                  className="bg-[#141414] text-white px-4 py-2 text-xs font-mono font-bold uppercase hover:bg-black transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
+                  title="Send message"
+                >
+                  {isSending ? '...' : <ChevronUp className="w-4 h-4" />}
+                </button>
+              </div>
+            </form>
+          </div>
         ) : (
           <div className="p-3 border-t-2 border-[#141414] bg-[#E4E3E0] shrink-0">
             <div className="text-[10px] font-mono font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-1.5 flex items-center justify-between">

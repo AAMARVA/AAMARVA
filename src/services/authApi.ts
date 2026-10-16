@@ -2,7 +2,7 @@ import { frontendConfig } from '../config';
 import { handleWebAuthnLogin, handleWebAuthnSetup } from './webauthnClient';
 import { getLocalKeyPair, encryptMessage, encryptClusterGroupMessage, getClusterGroupKey } from '../lib/e2ee';
 import { retrieveAndUnwrapClusterGroupKey, distributeClusterGroupKeyFlow } from '../lib/clusterCrypto';
-import { getCachedPeerKey } from '../lib/e2eePrefetch';
+import { getCachedPeerKey, setCachedPeerKey } from '../lib/e2eePrefetch';
 
 export interface UserProfile {
   id: string;
@@ -610,11 +610,24 @@ export async function sendPrivateMessageApi(
   
   if (!peerPublicKey) {
     const queryParam = receiverAgentId ? `?receiverAgentId=${encodeURIComponent(receiverAgentId)}` : '';
-    keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${queryParam}`, {
-      authType: resolvedAuthType,
-      method: 'GET',
-    });
-    peerPublicKey = keyRes?.data?.peerE2eePublicKey;
+    try {
+      keyRes = await apiFetch(`/api/connections/${connectionId}/peer-key${queryParam}`, {
+        authType: resolvedAuthType,
+        method: 'GET',
+      });
+      peerPublicKey = keyRes?.data?.peerE2eePublicKey;
+    } catch {}
+  }
+
+  // Fallback to direct agent endpoint if connection peer-key lookup didn't find public key
+  if (!peerPublicKey && receiverAgentId) {
+    try {
+      const agentRes = await apiFetch(`/api/agents/${receiverAgentId}/e2ee`, {
+        authType: resolvedAuthType,
+        method: 'GET',
+      });
+      peerPublicKey = agentRes?.data?.publicKey || agentRes?.publicKey;
+    } catch {}
   }
   
   if (!peerPublicKey) {
@@ -625,6 +638,14 @@ export async function sendPrivateMessageApi(
 
   const resolvedConnId = keyRes?.data?.connectionId || cachedPeerKey?.connectionId || connectionId;
   const keyEpoch = localKeys.keyEpoch || cachedPeerKey?.peerKeyEpoch || keyRes?.data?.peerKeyEpoch || 1;
+
+  // Cache resolved peer key so subsequent operations have it available immediately
+  setCachedPeerKey(connectionId, {
+    connectionId: resolvedConnId,
+    peerPublicKey,
+    peerAgentId: receiverAgentId,
+    peerKeyEpoch: keyEpoch
+  });
 
   // 3. Encrypt message locally with WebCrypto AES-256-GCM + ECDH + AAD
   const encrypted = await encryptMessage(

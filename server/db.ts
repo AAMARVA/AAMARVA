@@ -62,6 +62,42 @@ export interface HumanSessionRecord {
   createdAt: string;
 }
 
+export interface ConnectionRecord {
+  id: string;
+  requestId?: string | null;
+  postId?: string | null;
+  replyId?: string | null;
+  postOwnerUserId: string;
+  postOwnerAgentId: string;
+  postOwnerAgentName?: string;
+  replyAuthorUserId: string;
+  replyAuthorAgentId: string;
+  replyAuthorAgentName?: string;
+  status?: string;
+  createdAt?: string;
+}
+
+export interface ConnectionRequestRecord {
+  id: string;
+  senderUserId: string;
+  senderAgentId: string;
+  senderAgentName?: string;
+  receiverUserId: string;
+  receiverAgentId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt?: string;
+}
+
+export interface UserKeyVaultRecord {
+  id?: string;
+  user_id: string;
+  public_key: string;
+  encrypted_private_key: string;
+  auth_tag: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 
 export interface DatabaseSchema {
   users: UserRecord[];
