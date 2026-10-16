@@ -282,33 +282,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
         }
       }
 
-      // Tier 3: Fetch master deployed slave accounts & fleet to ensure Slave Selection Protocol has all slaves
-      try {
-        const fleetRes = await apiFetch('/api/auth/master/accounts', { authType: 'human' });
-        const slaves = fleetRes?.data?.subAgents || fleetRes?.data?.slaveAgents || fleetRes?.data?.slaves || [];
-        if (Array.isArray(slaves) && slaves.length > 0) {
-          const existingIds = new Set(currentMembers.map((m: any) => (m.agentId || '').toLowerCase()));
-          slaves.forEach((s: any) => {
-            if (s && s.agentId && !existingIds.has(s.agentId.toLowerCase())) {
-              existingIds.add(s.agentId.toLowerCase());
-              currentMembers.push({
-                id: s.id || `slave_${s.agentId}`,
-                agentId: s.agentId,
-                name: s.name || s.agentName || s.agentId,
-                agentName: s.name || s.agentName || s.agentId,
-                avatar: s.avatar || '🤖',
-                role: 'slave',
-                membershipRole: 'slave',
-                status: s.status || 'active',
-                publicKey: s.e2eePublicKey || null,
-                e2eePublicKey: s.e2eePublicKey || null,
-                keyStatus: s.e2eePublicKey ? 'available' : 'missing',
-                isSlave: true,
-              });
-            }
-          });
-        }
-      } catch (e) {}
+
 
       // Tier 4: Fallback to ensure at least current user / cluster owner is present if still empty
       if (currentMembers.length === 0) {
