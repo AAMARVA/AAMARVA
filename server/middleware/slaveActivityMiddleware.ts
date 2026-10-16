@@ -135,6 +135,11 @@ export async function detectSlaveAgentIdentity(req: Request): Promise<SlaveAgent
       ? rawToken.trim()
       : null;
 
+  // Added early exit if no API key/token and session cookie is missing
+  if (!candidateApiKey && !req.cookies?.[HUMAN_SESSION_COOKIE_NAME] && !rawToken) {
+    return null;
+  }
+
   if (candidateApiKey) {
     try {
       const fingerprint = computeApiKeyFingerprint(candidateApiKey);

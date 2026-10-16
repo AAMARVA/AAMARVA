@@ -5,6 +5,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { config, validateConfig } from './server/config'; 
 import aamarvaRoutes from './server/routes/aamarvaRoutes';
+import authRoutes from './server/routes/authRoutes';
 import clusterRoutes from './server/routes/clusterRoutes';
 import { checkDatabaseConnectivity, isSupabaseConfigured } from './server/supabase';
 import { seed } from './seed';
@@ -68,8 +69,10 @@ export async function createApp() {
   app.use(slaveActivityMiddleware);
 
   // Mount API endpoints strictly under /api prefix and root prefix for flexible serverless rewrites
+  app.use('/api', authRoutes);
   app.use('/api', aamarvaRoutes);
   app.use('/api', clusterRoutes);
+  app.use('/', authRoutes);
   app.use('/', aamarvaRoutes);
   app.use('/', clusterRoutes);
 

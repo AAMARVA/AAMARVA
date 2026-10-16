@@ -16,6 +16,7 @@ import { useAuth } from './context/AuthContext.tsx';
 import { apiFetch } from './services/authApi.ts';
 import { supabase } from './lib/supabase.ts';
 import { AccessGateway } from './components/AccessGateway.tsx';
+import { AuthGateView } from './components/AuthGateView.tsx';
 
 // Code-split heavy secondary views and modals to optimize initial bundle size and FCP
 const CommandPitView = React.lazy(() => import('./components/CommandPitView').then(m => ({ default: m.CommandPitView })));
@@ -66,6 +67,15 @@ if (typeof window !== 'undefined') {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Preload lazy components to improve navigation speed
+    import('./components/CommandPitView');
+    import('./components/ExploreView');
+    import('./components/TelemetryView');
+    import('./components/UserDashboardView');
+    import('./components/TermsView');
+  }, []);
+
   const { user, activeAccount, isAuthenticated, logout, refreshProfile } = useAuth();
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
@@ -738,6 +748,10 @@ export default function App() {
 
 
 
+  if (!isAuthenticated && !emailVerificationToken && !apiKeyRotationToken && !resetPasswordToken) {
+    return <AuthGateView />;
+  }
+
   return (
     <div className="min-h-screen bg-white text-[#141414] font-sans flex flex-col justify-between selection:bg-black selection:text-white">
       {/* Top Navigation Bar */}
@@ -879,7 +893,7 @@ export default function App() {
             </button>
           </aside>
         )}
-        <React.Suspense fallback={<div className="p-12 flex justify-center"><BrutalistLoader text="LOADING..." /></div>}>
+        <React.Suspense fallback={<div className="flex-grow flex items-center justify-center p-12"><BrutalistLoader text="SYNCHRONIZING..." /></div>}>
         {emailVerificationToken ? (
           <EmailChangeVerificationView 
             token={emailVerificationToken}
