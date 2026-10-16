@@ -149,7 +149,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     }
   }, [onOpenChat, connections]);
 
-  // Authoritative REST fetch with deduplication
+  // Authoritative REST fetch with deduplication and tab caching
   const fetchLogs = useCallback(async (tab: 'footprints' | 'webhooks', showLoader = false) => {
     if (showLoader) setIsLoading(true);
     try {
@@ -166,8 +166,25 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       }
       if (res && res.data) {
         const incomingList: LogItem[] = Array.isArray(res.data) ? res.data : (res.data.events || res.data.footprints || []);
+        
+        // Do not clear existing records on background poll if response is empty
+        if (incomingList.length === 0 && !showLoader) {
+          return;
+        }
+
         setLogs((prev) => {
           const map = new Map<string, LogItem>();
+          
+          // Retain all items from prev that belong to the OTHER tab so switching tabs doesn't clear cache
+          prev.forEach(item => {
+            const isItemFootprint = item.category === 'footprint' || (!item.type && !!item.action);
+            const belongsToCurrentTab = tab === 'footprints' ? isItemFootprint : !isItemFootprint;
+            if (!belongsToCurrentTab) {
+              map.set(item.id, item);
+            }
+          });
+
+          // Add incoming items for current tab
           incomingList.forEach(item => {
             if (item.id) {
               const isFootprint = tab === 'footprints' || item.category === 'footprint' || (!item.type && !!item.action);
@@ -180,31 +197,29 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
               });
             }
           });
-          prev.forEach(item => {
-            const matchesCurrentTab = tab === 'footprints' 
-              ? (item.category === 'footprint' || (!item.type && !!item.action)) 
-              : (item.category === 'event' || !!item.type || item.category !== 'footprint');
-            if (matchesCurrentTab && item.id && !map.has(item.id)) {
-              map.set(item.id, item);
-            }
-          });
+
           const merged = Array.from(map.values());
           merged.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-          return merged.slice(0, 50);
+          return merged.slice(0, 100);
         });
       }
     } catch (err: any) {
       if (err?.message && !err.message.includes('Failed to fetch')) {
         console.warn(`Failed to fetch ${tab}:`, err.message);
       }
+      // Network/HTTP errors must NOT clear valid records (preserve prev)
     } finally {
       if (showLoader) setIsLoading(false);
     }
   }, []);
 
-  // Fetch logs when tab changes
+  // Fetch logs when tab changes and poll periodically for the active tab
   useEffect(() => {
     fetchLogs(activeTab, true);
+    const interval = setInterval(() => {
+      fetchLogs(activeTab, false);
+    }, 6000);
+    return () => clearInterval(interval);
   }, [activeTab, fetchLogs]);
 
   // Set up real-time SSE stream
@@ -228,7 +243,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         es.onopen = () => {
           if (!isSubscribed) return;
           setIsLiveConnected(true);
-          fetchLogs(false);
+          fetchLogs(activeTab, false);
         };
 
         es.onmessage = (e) => {
@@ -277,7 +292,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         if (prev.some(p => p.id === newItem.id)) return prev;
         const next = [newItem, ...prev];
         next.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-        return next.slice(0, 50);
+        return next.slice(0, 100);
       });
     };
 
@@ -292,15 +307,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         } catch (e) {}
       }
     };
-  }, [fetchLogs]);
-
-  useEffect(() => {
-    fetchLogs(true);
-    const interval = setInterval(() => {
-      fetchLogs(false);
-    }, 6000);
-    return () => clearInterval(interval);
-  }, [fetchLogs]);
+  }, [activeTab, fetchLogs]);
 
   const formatActionTitle = (text?: string) => {
     if (!text) return 'ACTIVITY EVENT';
