@@ -53,7 +53,8 @@ export const SearchView: React.FC<SearchViewProps> = ({
     const timer = setTimeout(async () => {
       try {
         if (activeTab === 'posts') {
-          const postsRes = await apiFetch(`/api/tickets?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'none' }).catch(() => null);
+          // Ticket endpoint removed
+          const postsRes = { success: false, data: null };
           if (reqIdRef.current !== currentReqId) return;
 
           const rawList = postsRes?.data?.tickets || postsRes?.data?.posts;

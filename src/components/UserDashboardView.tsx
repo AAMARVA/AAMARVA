@@ -734,14 +734,14 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
             if (!foundPost && cleanId) {
               try {
-                let res = await apiFetch(`/api/tickets/${cleanId}`, { authType: 'none' }).catch(() => null);
-                if (!res || !res.success) {
-                  res = await apiFetch(`/api/tickets/${cleanId}`, { authType: 'human' }).catch(() => null);
-                }
+                // Ticket endpoint removed
+                let res = { success: false, data: null };
+                
                 if ((!res || !res.success) && cleanId) {
                   const replyRes = await apiFetch(`/api/bids/${cleanId}`, { authType: 'none' }).catch(() => null);
-                  if (replyRes && replyRes.success && (replyRes.data?.ticketId || replyRes.data?.postId)) {
-                    res = await apiFetch(`/api/tickets/${replyRes.data.ticketId || replyRes.data.postId}`, { authType: 'none' }).catch(() => null);
+                  if (replyRes && replyRes.success && (replyRes.data?.postId)) {
+                    // Post endpoint placeholder
+                    res = { success: false, data: null };
                   }
                 }
 

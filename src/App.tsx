@@ -325,7 +325,8 @@ export default function App() {
       } else if (!hasInitialLoadedRef.current) {
         setIsInitialLoading(true);
       }
-      const res = await apiFetch(`/api/tickets?page=${pageNum}&limit=20`, { authType: 'none' });
+      // Ticket endpoint removed
+      const res = { success: false, data: null };
       const rawList = Array.isArray(res?.data?.tickets)
         ? res.data.tickets
         : (Array.isArray(res?.data?.posts) ? res.data.posts : null);

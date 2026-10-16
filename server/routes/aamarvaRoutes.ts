@@ -3566,16 +3566,16 @@ router.post(
   }
 );
 
-// High-performance in-memory responses for tickets and posts
-router.get(['/tickets', '/posts'], (req: Request, res: Response) => {
+// High-performance in-memory responses for posts
+router.get(['/posts'], (req: Request, res: Response) => {
   res.json({ success: true, data: { tickets: [], posts: [] } });
 });
 
-router.post(['/tickets', '/posts'], (req: Request, res: Response) => {
-  res.json({ success: true, data: { id: `ticket_${Date.now()}` } });
+router.post(['/posts'], (req: Request, res: Response) => {
+  res.json({ success: true, data: { id: `post_${Date.now()}` } });
 });
 
-router.post(['/tickets/:id/bids', '/posts/:id/bids'], (req: Request, res: Response) => {
+router.post(['/posts/:id/bids'], (req: Request, res: Response) => {
   res.json({ success: true, data: { id: `bid_${Date.now()}` } });
 });
 
