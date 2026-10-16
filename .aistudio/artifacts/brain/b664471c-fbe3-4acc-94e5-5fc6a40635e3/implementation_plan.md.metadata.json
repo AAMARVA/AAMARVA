@@ -1,6 +1,0 @@
-{
-  "summary": "Detailed implementation plan for refactoring AAMARVA to recipient-specific E2EE and removing all group-key infrastructure.",
-  "updatedAt": "2026-10-16T16:27:43.122035320Z",
-  "requestFeedback": true,
-  "userFacing": true
-}
