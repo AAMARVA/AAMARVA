@@ -189,7 +189,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
 
   useEffect(() => {
     if (!isOpen && !embedded) return;
-    setLogs([]); // Clear logs when switching tabs to prevent flickering/misalignment
+    setLogs([]); // Clear logs when switching tabs
     fetchAllSlaveLogs(activeTab, true);
     const interval = setInterval(() => {
       fetchAllSlaveLogs(activeTab, false);
