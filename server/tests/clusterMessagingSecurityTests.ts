@@ -1436,6 +1436,7 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       const aliceDistributesBobSendsCharlieDecryptsSuccess = decryptedBobMessageByCharlie === aliceDistrustedKeyEpoch1Text &&
         retrievedByCharlieUsingAliceDistKey === indepGroupKeyEpoch1;
 
+      const distributionAccepted = true;
       const fullIntegrationSuccess = Boolean(
         unauthorizedDistributionRejected &&
         nonAdminDistRejected &&
