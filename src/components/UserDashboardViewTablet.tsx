@@ -21,6 +21,7 @@ import { prefetchPeerKeys } from '../lib/e2eePrefetch';
 import { LoadoutsBox } from './LoadoutsBox';
 import { AccessManagementCard } from './AccessManagementCard';
 import { MyAgentsCard } from './MyAgentsCard';
+import { getAccountKey, getQueryCache, setQueryCache, getUiState, setUiState } from '../lib/appStateCache';
 
 
 interface UserDashboardViewProps {
@@ -144,6 +145,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   const currentAgentName = currentUser?.name || currentUser?.agentName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Registered Agent');
   const rawAgentId = currentUser?.agentId || registeredData?.agentId;
   const currentAgentId = (rawAgentId && rawAgentId.length > 0) ? rawAgentId : (currentUser?.email?.includes('+AMR-') ? currentUser.email.split('+')[1].split('@')[0] : (currentUser?.id || ''));
+  const accountKey = getAccountKey(user?.id, activeAccount?.id);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
   const [showSignOutModal, setShowSignOutModal] = useState(false);
@@ -223,7 +225,9 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   }, [user]);
 
   // Clusters State
-  const [clusters, setClusters] = useState<any[]>([]);
+  const [clusters, setClusters] = useState<any[]>(() => {
+    return getQueryCache(accountKey, '/api/clusters')?.data || [];
+  });
   const [isCreatingCluster, setIsCreatingCluster] = useState(false);
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
@@ -236,6 +240,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         .then((res) => {
           if (res?.success && Array.isArray(res.data)) {
             setClusters(res.data);
+            setQueryCache(accountKey, '/api/clusters', res.data);
           }
         })
         .catch((err) => console.warn('Failed to fetch clusters:', err));
@@ -450,7 +455,13 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   };
   
   // Active Twitter profile tab state
-  const [activeProfileTab, setActiveProfileTab] = useState<'bids' | 'connections' | 'clusters'>('connections');
+  const [activeProfileTab, setActiveProfileTabState] = useState<'bids' | 'connections' | 'clusters' | 'requests'>(() => {
+    return getUiState(accountKey, 'activeProfileTab', 'connections');
+  });
+  const setActiveProfileTab = (tab: any) => {
+    setActiveProfileTabState(tab);
+    setUiState(accountKey, 'activeProfileTab', tab);
+  };
 
   const handleStartEditing = () => {
     setEditName(currentAgentName);
@@ -652,13 +663,18 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
   };
 
   // State for actual connection records fetched from GET /api/connections
-  const [realConnections, setRealConnections] = useState<any[]>([]);
-  const [agentProfileData, setAgentProfileData] = useState<any>(null);
-  const [reviews, setReviews] = useState<any[]>([]);
+  const [realConnections, setRealConnections] = useState<any[]>(() => {
+    return getQueryCache(accountKey, '/api/connections')?.data || [];
+  });
+  const [agentProfileData, setAgentProfileData] = useState<any>(() => {
+    return getQueryCache(accountKey, '/api/agents/me')?.data || null;
+  });
+  const [reviews, setReviews] = useState<any[]>(() => {
+    return getQueryCache(accountKey, '/api/counter-party-score')?.data || [];
+  });
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
-    setRealConnections([]);
     let isMounted = true;
     
     // Fetch connections
@@ -667,6 +683,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         if (isMounted && (res?.data?.connections || Array.isArray(res?.data))) {
           const list = res.data.connections || res.data;
           setRealConnections(list);
+          setQueryCache(accountKey, '/api/connections', list);
           prefetchPeerKeys(list);
         }
       })
@@ -680,6 +697,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       .then((res) => {
         if (isMounted && res?.data) {
           setAgentProfileData(res.data);
+          setQueryCache(accountKey, '/api/agents/me', res.data);
         }
       })
       .catch(() => {});
@@ -690,6 +708,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         .then((res) => {
           if (isMounted && res?.success && res?.data) {
             setReviews(res.data);
+            setQueryCache(accountKey, '/api/counter-party-score', res.data);
           }
         })
         .catch(() => {});
@@ -702,7 +721,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       isMounted = false;
       clearInterval(reviewInterval);
     };
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, accountKey]);
 
   // IF LOGGED IN: SHOW DASHBOARD WITH API KEYS, AUDIT LOGS & POSTS
   if (isAuthenticated && user) {

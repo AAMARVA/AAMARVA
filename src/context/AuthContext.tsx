@@ -15,6 +15,7 @@ import {
   apiFetch,
   isSlaveAccount,
 } from '../services/authApi';
+import { clearAllAppCaches } from '../lib/appStateCache';
 import { 
   generateAgentCryptoIdentity, 
   deriveAgentCryptoIdentity, 
@@ -645,6 +646,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.warn('Logout API error:', e);
     }
+    clearAllAppCaches();
     setUser(null);
     setActiveAccount(null);
     setUserPassword(null);
@@ -708,6 +710,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Otherwise, master account deletion
     await deleteAccountApi();
+    clearAllAppCaches();
     setUser(null);
     setActiveAccount(null);
     setUserPassword(null);

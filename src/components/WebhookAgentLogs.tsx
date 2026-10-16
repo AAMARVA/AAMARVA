@@ -4,6 +4,8 @@ import { apiFetch, buildApiUrl } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { getClusterSymbol } from '../lib/clusterSymbols';
+import { useAuth } from '../context/AuthContext';
+import { getAccountKey, getActivityCache, setActivityCache } from '../lib/appStateCache';
 
 interface LogItem {
   id: string;
@@ -99,11 +101,25 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
   onOpenCluster,
   onOpenRequestsTab
 }) => {
-  const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>('footprints');
-  const [logs, setLogs] = useState<LogItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { user, activeAccount } = useAuth();
+  const accountKey = getAccountKey(user?.id, activeAccount?.id);
+  const initialCache = getActivityCache(accountKey);
+
+  const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>(() => initialCache.activeTab || 'footprints');
+  const [footprintsLogs, setFootprintsLogs] = useState<LogItem[]>(() => initialCache.footprints || []);
+  const [webhooksLogs, setWebhooksLogs] = useState<LogItem[]>(() => initialCache.webhooks || []);
+  const [isLoadingFootprints, setIsLoadingFootprints] = useState(false);
+  const [isLoadingWebhooks, setIsLoadingWebhooks] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Sync state if account switches
+  useEffect(() => {
+    const current = getActivityCache(accountKey);
+    setActiveTab(current.activeTab || 'footprints');
+    setFootprintsLogs(current.footprints || []);
+    setWebhooksLogs(current.webhooks || []);
+  }, [accountKey]);
 
   const handleOpenChat = useCallback((log: LogItem) => {
     if (!onOpenChat) return;
@@ -149,9 +165,19 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     }
   }, [onOpenChat, connections]);
 
-  // Authoritative REST fetch with deduplication and tab caching
+  const footprintsCountRef = useRef(footprintsLogs.length);
+  const webhooksCountRef = useRef(webhooksLogs.length);
+  footprintsCountRef.current = footprintsLogs.length;
+  webhooksCountRef.current = webhooksLogs.length;
+
+  // Authoritative REST fetch with independent state and deduplication
   const fetchLogs = useCallback(async (tab: 'footprints' | 'webhooks', showLoader = false) => {
-    if (showLoader) setIsLoading(true);
+    if (tab === 'footprints') {
+      if (showLoader && footprintsCountRef.current === 0) setIsLoadingFootprints(true);
+    } else {
+      if (showLoader && webhooksCountRef.current === 0) setIsLoadingWebhooks(true);
+    }
+
     try {
       const endpoint = tab === 'footprints' ? '/api/agent/footprints' : '/api/webhooks/events';
       let res: any = null;
@@ -172,57 +198,73 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
           return;
         }
 
-        setLogs((prev) => {
-          const map = new Map<string, LogItem>();
-          
-          // Retain all items from prev that belong to the OTHER tab so switching tabs doesn't clear cache
-          prev.forEach(item => {
-            const isItemFootprint = item.category === 'footprint' || (!item.type && !!item.action);
-            const belongsToCurrentTab = tab === 'footprints' ? isItemFootprint : !isItemFootprint;
-            if (!belongsToCurrentTab) {
-              map.set(item.id, item);
-            }
-          });
+        if (tab === 'footprints') {
+          const incomingFootprints: LogItem[] = incomingList.map(item => ({
+            ...item,
+            category: 'footprint',
+            action: item.action || item.type,
+            type: undefined,
+            timestamp: item.timestamp || item.createdAt || item.created_at || new Date().toISOString()
+          }));
 
-          // Add incoming items for current tab
-          incomingList.forEach(item => {
-            if (item.id) {
-              const isFootprint = tab === 'footprints' || item.category === 'footprint' || (!item.type && !!item.action);
-              map.set(item.id, {
-                ...item,
-                category: isFootprint ? 'footprint' : 'event',
-                action: isFootprint ? (item.action || item.type) : undefined,
-                type: isFootprint ? undefined : (item.type || item.action),
-                timestamp: item.timestamp || item.createdAt || item.created_at || new Date().toISOString()
-              });
-            }
+          setFootprintsLogs((prev) => {
+            const map = new Map<string, LogItem>();
+            incomingFootprints.forEach(item => { if (item.id) map.set(item.id, item); });
+            prev.forEach(item => { if (item.id && !map.has(item.id)) map.set(item.id, item); });
+            const merged = Array.from(map.values());
+            merged.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+            const sliced = merged.slice(0, 100);
+            setActivityCache(accountKey, { footprints: sliced, lastFetchedFootprints: Date.now() });
+            return sliced;
           });
+        } else {
+          const incomingWebhooks: LogItem[] = incomingList.map(item => ({
+            ...item,
+            category: 'event',
+            type: item.type || item.action,
+            action: undefined,
+            timestamp: item.timestamp || item.createdAt || item.created_at || new Date().toISOString()
+          }));
 
-          const merged = Array.from(map.values());
-          merged.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-          return merged.slice(0, 100);
-        });
+          setWebhooksLogs((prev) => {
+            const map = new Map<string, LogItem>();
+            incomingWebhooks.forEach(item => { if (item.id) map.set(item.id, item); });
+            prev.forEach(item => { if (item.id && !map.has(item.id)) map.set(item.id, item); });
+            const merged = Array.from(map.values());
+            merged.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+            const sliced = merged.slice(0, 100);
+            setActivityCache(accountKey, { webhooks: sliced, lastFetchedWebhooks: Date.now() });
+            return sliced;
+          });
+        }
       }
     } catch (err: any) {
       if (err?.message && !err.message.includes('Failed to fetch')) {
         console.warn(`Failed to fetch ${tab}:`, err.message);
       }
-      // Network/HTTP errors must NOT clear valid records (preserve prev)
+      // Network/HTTP errors must NOT clear valid records
     } finally {
-      if (showLoader) setIsLoading(false);
+      if (tab === 'footprints') {
+        setIsLoadingFootprints(false);
+      } else {
+        setIsLoadingWebhooks(false);
+      }
     }
-  }, []);
+  }, [accountKey]);
 
-  // Fetch logs when tab changes and poll periodically for the active tab
+  // Fetch logs when tab changes and poll periodically in the background
   useEffect(() => {
-    fetchLogs(activeTab, true);
+    // Prime both footprints and webhooks so switching is instant without any delay
+    fetchLogs('footprints', false);
+    fetchLogs('webhooks', false);
+
     const interval = setInterval(() => {
       fetchLogs(activeTab, false);
-    }, 6000);
+    }, 8000);
     return () => clearInterval(interval);
   }, [activeTab, fetchLogs]);
 
-  // Set up real-time SSE stream
+  // Set up real-time SSE stream scoped to account
   useEffect(() => {
     let reconnectTimeout: any = null;
     let isSubscribed = true;
@@ -243,7 +285,6 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         es.onopen = () => {
           if (!isSubscribed) return;
           setIsLiveConnected(true);
-          fetchLogs(activeTab, false);
         };
 
         es.onmessage = (e) => {
@@ -288,12 +329,25 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         timestamp: event.timestamp || event.createdAt || event.created_at || new Date().toISOString()
       };
 
-      setLogs((prev) => {
-        if (prev.some(p => p.id === newItem.id)) return prev;
-        const next = [newItem, ...prev];
-        next.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-        return next.slice(0, 100);
-      });
+      if (isFootprint) {
+        setFootprintsLogs((prev) => {
+          if (prev.some(p => p.id === newItem.id)) return prev;
+          const next = [newItem, ...prev];
+          next.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+          const sliced = next.slice(0, 100);
+          setActivityCache(accountKey, { footprints: sliced });
+          return sliced;
+        });
+      } else {
+        setWebhooksLogs((prev) => {
+          if (prev.some(p => p.id === newItem.id)) return prev;
+          const next = [newItem, ...prev];
+          next.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+          const sliced = next.slice(0, 100);
+          setActivityCache(accountKey, { webhooks: sliced });
+          return sliced;
+        });
+      }
     };
 
     connectSSE();
@@ -307,7 +361,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         } catch (e) {}
       }
     };
-  }, [activeTab, fetchLogs]);
+  }, [accountKey]);
 
   const formatActionTitle = (text?: string) => {
     if (!text) return 'ACTIVITY EVENT';
@@ -580,6 +634,99 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     );
   };
 
+  const isLoading = activeTab === 'footprints' ? isLoadingFootprints : isLoadingWebhooks;
+
+  const renderLogItem = (log: LogItem) => {
+    const title = formatActionTitle(log.action || log.type);
+    const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
+    const actionKey = (log.action || log.type || '').toUpperCase();
+    const isChatable = CHAT_ELIGIBLE_TYPES.has(actionKey);
+    const targetStr = log.target || log.targetId || log.details?.targetId || log.details?.postId || log.details?.connectionId;
+    const targetShort = targetStr ? (targetStr.length > 14 ? `${targetStr.slice(0, 12)}...` : targetStr) : null;
+    const isReplyTarget = actionKey.includes('BID') || (log.endpoint && log.endpoint.includes('/replies')) || (targetStr && (targetStr.startsWith('rep_') || targetStr.startsWith('REP_')));
+    const isPostTarget = !isReplyTarget && (actionKey.includes('POST') || (log.endpoint && log.endpoint.includes('/posts')) || (targetStr && (targetStr.startsWith('post_') || targetStr.startsWith('POST_'))));
+    const isThreadTarget = isPostTarget || isReplyTarget;
+    const isClusterTarget = actionKey.includes('CLUSTER') || (targetStr && (targetStr.startsWith('cluster_') || targetStr.startsWith('cls_'))) || Boolean(log.details?.clusterId);
+    const entities = resolveLogEntities(log);
+
+    return (
+      <div key={log.id} className="p-3.5 bg-[#1e1e1e] border border-white/10 text-xs space-y-2.5 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/15 transition-all duration-150">
+        {/* Row 1: Action Title & Time */}
+        <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90">
+          <span>{title}</span>
+          <span className="text-[10px] text-white/50 font-medium">{timeStr}</span>
+        </div>
+
+        {/* Row 2: Endpoint Used */}
+        <div className="text-[11px] text-white/80 font-bold flex flex-wrap items-center gap-1.5">
+          <span className="text-white/50 text-[10px] uppercase tracking-wider font-semibold">Endpoint Used:</span>
+          <code className="bg-white/5 px-2 py-0.5 border border-white/15 text-[11px] font-bold text-white/90">
+            {parseEndpoint(log.endpoint, log.action)}
+          </code>
+        </div>
+
+        {/* Row 3: Direct Link Boxes */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
+          {isClusterTarget && renderClusterBadge(targetStr || log.details?.clusterId, log.details)}
+          {isThreadTarget && targetStr && (onOpenThread || onOpenPost) && (
+            <button
+              type="button"
+              onClick={() => {
+                const targetId = log.details?.postId || log.details?.id || targetStr.replace('#', '');
+                if (isPostTarget) {
+                  if (onOpenPost) {
+                    onOpenPost(targetId, log.details);
+                  } else if (onOpenThread) {
+                    onOpenThread(targetId, log.details, 'post');
+                  }
+                } else {
+                  if (onOpenThread) {
+                    onOpenThread(targetId, log.details, 'bid');
+                  }
+                }
+              }}
+              className="font-black text-white/80 bg-[#141414] hover:bg-white hover:text-[#141414] border border-white/20 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              Thread #{targetShort}
+            </button>
+          )}
+          {!isClusterTarget && !isThreadTarget && entities.isRequest && (
+            <>
+              {entities.agentId && renderAgentBadge(entities.agentId, entities.agentName, entities.agentAvatar, log.details)}
+              {entities.requestId && renderRequestBadge(entities.requestId)}
+            </>
+          )}
+          {!isClusterTarget && !isThreadTarget && !entities.isRequest && (
+            renderAgentBadge(entities.agentId || targetStr, entities.agentName, entities.agentAvatar, log.details)
+          )}
+          {onOpenChat && isChatable && (
+            <button
+              type="button"
+              onClick={() => handleOpenChat(log)}
+              className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              Open Chat
+            </button>
+          )}
+          {onOpenRequestsTab && entities.isRequest && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenRequestsTab();
+              }}
+              className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-1.5"
+              title="Redirect to Account Requests tab"
+            >
+              <Inbox className="w-3.5 h-3.5 text-[#141414]" />
+              <span>Account Requests</span>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="bg-[#141414] border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 text-left font-mono text-white">
       {/* Header Bar */}
@@ -606,7 +753,10 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       {/* Tab Switcher */}
       <div className="flex gap-1 border-b border-white/10 pb-2">
         <button
-          onClick={() => setActiveTab('footprints')}
+          onClick={() => {
+            setActiveTab('footprints');
+            setActivityCache(accountKey, { activeTab: 'footprints' });
+          }}
           className={`text-[10px] uppercase font-black px-3 py-1.5 transition-all ${
             activeTab === 'footprints'
               ? 'bg-white text-[#141414]'
@@ -616,7 +766,10 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
           Footprints
         </button>
         <button
-          onClick={() => setActiveTab('webhooks')}
+          onClick={() => {
+            setActiveTab('webhooks');
+            setActivityCache(accountKey, { activeTab: 'webhooks' });
+          }}
           className={`text-[10px] uppercase font-black px-3 py-1.5 transition-all ${
             activeTab === 'webhooks'
               ? 'bg-white text-[#141414]'
@@ -627,103 +780,29 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         </button>
       </div>
 
-      {/* Logs Scroll Area */}
-      <div className="max-h-[360px] overflow-y-auto space-y-3 pr-1">
-        {isLoading ? (
+      {/* Footprints Scroll Container - Preserved across tab switches */}
+      <div className={`max-h-[360px] overflow-y-auto space-y-3 pr-1 ${activeTab === 'footprints' ? '' : 'hidden'}`}>
+        {isLoadingFootprints && footprintsLogs.length === 0 ? (
           <div className="flex justify-center items-center py-12 bg-white/5 border-2 border-dashed border-white/20">
             <BrutalistLoader text="Synchronizing" size="sm" theme="dark" className="py-4" />
           </div>
-        ) : logs.filter(l => activeTab === 'footprints' ? (l.category === 'footprint' || (!l.type && !!l.action)) : (l.category === 'event' || !!l.type || l.category !== 'footprint')).length > 0 ? (
-          logs.filter(l => activeTab === 'footprints' ? (l.category === 'footprint' || (!l.type && !!l.action)) : (l.category === 'event' || !!l.type || l.category !== 'footprint')).map((log) => {
-            const title = formatActionTitle(log.action || log.type);
-            const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
-            const actionKey = (log.action || log.type || '').toUpperCase();
-            const isChatable = CHAT_ELIGIBLE_TYPES.has(actionKey);
-            const targetStr = log.target || log.targetId || log.details?.targetId || log.details?.postId || log.details?.connectionId;
-            const targetShort = targetStr ? (targetStr.length > 14 ? `${targetStr.slice(0, 12)}...` : targetStr) : null;
-            const isReplyTarget = actionKey.includes('BID') || (log.endpoint && log.endpoint.includes('/replies')) || (targetStr && (targetStr.startsWith('rep_') || targetStr.startsWith('REP_')));
-            const isPostTarget = !isReplyTarget && (actionKey.includes('POST') || (log.endpoint && log.endpoint.includes('/posts')) || (targetStr && (targetStr.startsWith('post_') || targetStr.startsWith('POST_'))));
-            const isThreadTarget = isPostTarget || isReplyTarget;
-            const isClusterTarget = actionKey.includes('CLUSTER') || (targetStr && (targetStr.startsWith('cluster_') || targetStr.startsWith('cls_'))) || Boolean(log.details?.clusterId);
-            const entities = resolveLogEntities(log);
+        ) : footprintsLogs.length > 0 ? (
+          footprintsLogs.map((log) => renderLogItem(log))
+        ) : (
+          <div className="p-8 text-center text-xs text-white/60 border-2 border-dashed border-white/20 bg-white/5 uppercase tracking-wider font-bold">
+            No activity records found.
+          </div>
+        )}
+      </div>
 
-            return (
-              <div key={log.id} className="p-3.5 bg-[#1e1e1e] border border-white/10 text-xs space-y-2.5 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/15 transition-all duration-150">
-                {/* Row 1: Action Title & Time */}
-                <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90">
-                  <span>{title}</span>
-                  <span className="text-[10px] text-white/50 font-medium">{timeStr}</span>
-                </div>
-
-                {/* Row 2: Endpoint Used */}
-                <div className="text-[11px] text-white/80 font-bold flex flex-wrap items-center gap-1.5">
-                  <span className="text-white/50 text-[10px] uppercase tracking-wider font-semibold">Endpoint Used:</span>
-                  <code className="bg-white/5 px-2 py-0.5 border border-white/15 text-[11px] font-bold text-white/90">
-                    {parseEndpoint(log.endpoint, log.action)}
-                  </code>
-                </div>
-
-                {/* Row 3: Direct Link Boxes */}
-                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
-                  {isClusterTarget && renderClusterBadge(targetStr || log.details?.clusterId, log.details)}
-                  {isThreadTarget && targetStr && (onOpenThread || onOpenPost) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const targetId = log.details?.postId || log.details?.id || targetStr.replace('#', '');
-                        if (isPostTarget) {
-                          if (onOpenPost) {
-                            onOpenPost(targetId, log.details);
-                          } else if (onOpenThread) {
-                            onOpenThread(targetId, log.details, 'post');
-                          }
-                        } else {
-                          if (onOpenThread) {
-                            onOpenThread(targetId, log.details, 'bid');
-                          }
-                        }
-                      }}
-                      className="font-black text-white/80 bg-[#141414] hover:bg-white hover:text-[#141414] border border-white/20 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
-                    >
-                      Thread #{targetShort}
-                    </button>
-                  )}
-                  {!isClusterTarget && !isThreadTarget && entities.isRequest && (
-                    <>
-                      {entities.agentId && renderAgentBadge(entities.agentId, entities.agentName, entities.agentAvatar, log.details)}
-                      {entities.requestId && renderRequestBadge(entities.requestId)}
-                    </>
-                  )}
-                  {!isClusterTarget && !isThreadTarget && !entities.isRequest && (
-                    renderAgentBadge(entities.agentId || targetStr, entities.agentName, entities.agentAvatar, log.details)
-                  )}
-                  {onOpenChat && isChatable && (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenChat(log)}
-                      className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
-                    >
-                      Open Chat
-                    </button>
-                  )}
-                  {onOpenRequestsTab && entities.isRequest && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenRequestsTab();
-                      }}
-                      className="font-black text-[#141414] bg-white/90 hover:bg-white border border-white/10 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-1.5"
-                      title="Redirect to Account Requests tab"
-                    >
-                      <Inbox className="w-3.5 h-3.5 text-[#141414]" />
-                      <span>Account Requests</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })
+      {/* Webhooks Scroll Container - Preserved across tab switches */}
+      <div className={`max-h-[360px] overflow-y-auto space-y-3 pr-1 ${activeTab === 'webhooks' ? '' : 'hidden'}`}>
+        {isLoadingWebhooks && webhooksLogs.length === 0 ? (
+          <div className="flex justify-center items-center py-12 bg-white/5 border-2 border-dashed border-white/20">
+            <BrutalistLoader text="Synchronizing" size="sm" theme="dark" className="py-4" />
+          </div>
+        ) : webhooksLogs.length > 0 ? (
+          webhooksLogs.map((log) => renderLogItem(log))
         ) : (
           <div className="p-8 text-center text-xs text-white/60 border-2 border-dashed border-white/20 bg-white/5 uppercase tracking-wider font-bold">
             No activity records found.

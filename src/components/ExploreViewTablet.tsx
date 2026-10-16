@@ -9,6 +9,7 @@ import { BrutalistLoader } from './BrutalistLoader';
 import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
 import { NetworkTicket } from '../types';
 import { RegisterForm } from './RegisterForm';
+import { getAccountKey, getQueryCache, setQueryCache, getUiState, setUiState } from '../lib/appStateCache';
 
 interface ExploreViewProps {
   posts: NetworkTicket[];
@@ -32,14 +33,29 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
   onOpenClusterChat,
 }) => {
   const { login, register, isAuthenticated, user, logout, refreshProfile } = useAuth();
-  const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
+  const accountKey = getAccountKey(user?.id);
+
+  const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>(() => {
+    return getUiState(accountKey, 'hubTab_tablet', isAuthenticated ? 'dashboard' : 'login');
+  });
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+
+  const handleSetHubTab = (tab: 'login' | 'register' | 'adk' | 'dashboard') => {
+    setHubTab(tab);
+    setUiState(accountKey, 'hubTab_tablet', tab);
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
-      setHubTab('dashboard');
+      setHubTab(prev => {
+        if (prev === 'login' || prev === 'register') return 'dashboard';
+        return prev;
+      });
     } else {
-      setHubTab('login');
+      setHubTab(prev => {
+        if (prev === 'dashboard') return 'login';
+        return prev;
+      });
     }
   }, [isAuthenticated]);
 
@@ -68,14 +84,26 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
   const [copied, setCopied] = useState(false);
   const [copiedPlatform, setCopiedPlatform] = useState(false);
   const [copiedFrameworks, setCopiedFrameworks] = useState(false);
-  const [adkSpecText, setAdkSpecText] = useState(ADK_SPEC_FALLBACK);
+  const [adkSpecText, setAdkSpecText] = useState(() => {
+    return getQueryCache(accountKey, '/api/adk')?.data || ADK_SPEC_FALLBACK;
+  });
   const [isLoadingAdk, setIsLoadingAdk] = useState(false);
-  const [adkSubTab, setAdkSubTab] = useState<'endpoints' | 'platform' | 'frameworks'>('endpoints');
+  const [adkSubTab, setAdkSubTab] = useState<'endpoints' | 'platform' | 'frameworks'>(() => {
+    return getUiState(accountKey, 'adkSubTab_tablet', 'endpoints');
+  });
+
+  const handleSetAdkSubTab = (sub: 'endpoints' | 'platform' | 'frameworks') => {
+    setAdkSubTab(sub);
+    setUiState(accountKey, 'adkSubTab_tablet', sub);
+  };
 
   useEffect(() => {
     if (hubTab === 'adk') {
-      setIsLoadingAdk(true);
-      fetch(buildApiUrl(`/api/adk?v=${Date.now()}`))
+      const cached = getQueryCache(accountKey, '/api/adk');
+      if (!cached) {
+        setIsLoadingAdk(true);
+      }
+      fetch(buildApiUrl(`/api/adk`))
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
@@ -83,6 +111,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
         .then((resJson) => {
           if (resJson && resJson.success && resJson.data && resJson.data.adk) {
             setAdkSpecText(resJson.data.adk);
+            setQueryCache(accountKey, '/api/adk', resJson.data.adk);
           }
         })
         .catch((err) => {
@@ -90,7 +119,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
         })
         .finally(() => setIsLoadingAdk(false));
     }
-  }, [hubTab]);
+  }, [hubTab, accountKey]);
 
   const getPlatformSpecOnly = (fullText: string) => {
     if (!fullText) return '';
@@ -211,7 +240,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
           {isAuthenticated ? (
             <>
               <button
-                onClick={() => setHubTab('dashboard')}
+                onClick={() => handleSetHubTab('dashboard')}
                 className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'dashboard'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
@@ -223,7 +252,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setHubTab('adk')}
+                onClick={() => handleSetHubTab('adk')}
                 className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'adk'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
@@ -237,7 +266,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
           ) : (
             <>
               <button
-                onClick={() => setHubTab('login')}
+                onClick={() => handleSetHubTab('login')}
                 className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'login'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
@@ -249,7 +278,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setHubTab('register')}
+                onClick={() => handleSetHubTab('register')}
                 className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'register'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
@@ -261,7 +290,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setHubTab('adk')}
+                onClick={() => handleSetHubTab('adk')}
                 className={`py-3 px-4 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 ${
                   hubTab === 'adk'
                     ? 'bg-[#141414] text-white shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'
@@ -456,7 +485,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-b-2 border-[#141414]/20 pb-4">
               <button
-                onClick={() => setAdkSubTab('endpoints')}
+                onClick={() => handleSetAdkSubTab('endpoints')}
                 className={`py-2.5 px-3 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   adkSubTab === 'endpoints'
                     ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
@@ -468,7 +497,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setAdkSubTab('platform')}
+                onClick={() => handleSetAdkSubTab('platform')}
                 className={`py-2.5 px-3 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   adkSubTab === 'platform'
                     ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
@@ -480,7 +509,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setAdkSubTab('frameworks')}
+                onClick={() => handleSetAdkSubTab('frameworks')}
                 className={`py-2.5 px-3 font-mono font-black text-sm uppercase tracking-wider border-2 border-[#141414] transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   adkSubTab === 'frameworks'
                     ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'

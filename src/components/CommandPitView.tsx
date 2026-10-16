@@ -5,6 +5,7 @@ import { BrutalistLoader } from './BrutalistLoader';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { Plus, X, Search, Pencil, MessageSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getAccountKey, getQueryCache, setQueryCache, getUiState, setUiState } from '../lib/appStateCache';
 
 interface CommandPitViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
@@ -20,11 +21,23 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   onOpenClusterMembers,
 }) => {
   const { user, activeAccount } = useAuth();
-  const [activeConnections, setActiveConnections] = useState<any[]>([]);
-  const [clusters, setClusters] = useState<any[]>([]);
-  const [isLoadingConnections, setIsLoadingConnections] = useState<boolean>(true);
-  const [isLoadingClusters, setIsLoadingClusters] = useState<boolean>(true);
-  const [mobileTab, setMobileTab] = useState<'connections' | 'clusters'>('connections');
+  const accountKey = getAccountKey(user?.id, activeAccount?.id);
+
+  const [activeConnections, setActiveConnections] = useState<any[]>(() => {
+    return getQueryCache(accountKey, '/api/command-pit/fleet')?.data || [];
+  });
+  const [clusters, setClusters] = useState<any[]>(() => {
+    return getQueryCache(accountKey, '/api/clusters')?.data || [];
+  });
+  const [isLoadingConnections, setIsLoadingConnections] = useState<boolean>(() => {
+    return (getQueryCache(accountKey, '/api/command-pit/fleet')?.data || []).length === 0;
+  });
+  const [isLoadingClusters, setIsLoadingClusters] = useState<boolean>(() => {
+    return (getQueryCache(accountKey, '/api/clusters')?.data || []).length === 0;
+  });
+  const [mobileTab, setMobileTab] = useState<'connections' | 'clusters'>(() => {
+    return getUiState(accountKey, 'cmd_pit_mobile_tab', 'connections');
+  });
   const [isNewClusterOpen, setIsNewClusterOpen] = useState(false);
   const [newClusterName, setNewClusterName] = useState('');
   const [newClusterDescription, setNewClusterDescription] = useState('');
@@ -37,27 +50,31 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editClusterError, setEditClusterError] = useState<string | null>(null);
 
-  const [spogMode, setSpogMode] = useState<'connections' | 'cluster' | 'edit-cluster'>('connections');
+  const [spogMode, setSpogMode] = useState<'connections' | 'cluster' | 'edit-cluster'>(() => {
+    return getUiState(accountKey, 'cmd_pit_spog_mode', 'connections');
+  });
   const [selectedSpogAgentIds, setSelectedSpogAgentIds] = useState<string[]>([]);
   const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
-  const [spogSearchQuery, setSpogSearchQuery] = useState('');
+  const [spogSearchQuery, setSpogSearchQuery] = useState(() => {
+    return getUiState(accountKey, 'cmd_pit_search', '');
+  });
   
   const [creatingCluster, setCreatingCluster] = useState(false);
   const [createClusterError, setCreateClusterError] = useState<string | null>(null);
 
   const fetchClusters = useCallback(() => {
-    setIsLoadingClusters(true);
     apiFetch('/api/clusters', { authType: 'human' })
       .then((res) => {
         if (res?.success && Array.isArray(res.data)) {
           setClusters(res.data);
+          setQueryCache(accountKey, '/api/clusters', res.data);
         }
       })
       .catch(() => {})
       .finally(() => {
         setIsLoadingClusters(false);
       });
-  }, []);
+  }, [accountKey]);
 
   const fetchConnectionsAndFleet = useCallback(async () => {
     setIsLoadingConnections(true);
@@ -143,12 +160,13 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
       });
 
       setActiveConnections(mergedList);
+      setQueryCache(accountKey, '/api/command-pit/fleet', mergedList);
     } catch (err) {
       console.warn('Failed to fetch connections and fleet:', err);
     } finally {
       setIsLoadingConnections(false);
     }
-  }, []);
+  }, [accountKey]);
 
   useEffect(() => {
     fetchConnectionsAndFleet();
@@ -255,7 +273,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
             </button>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">
-            {isLoadingConnections ? (
+            {isLoadingConnections && activeConnections.length === 0 ? (
               <div className="py-12 flex flex-col items-center justify-center">
                 <BrutalistLoader text="Synchronizing Connections" size="sm" />
               </div>
@@ -329,7 +347,7 @@ export const CommandPitView: React.FC<CommandPitViewProps> = ({
             </button>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-2 space-y-3">
-             {isLoadingClusters ? (
+             {isLoadingClusters && clusters.length === 0 ? (
               <div className="py-12 flex flex-col items-center justify-center">
                 <BrutalistLoader text="Synchronizing Clusters" size="sm" />
               </div>

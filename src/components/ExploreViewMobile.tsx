@@ -9,6 +9,7 @@ import { BrutalistLoader } from './BrutalistLoader';
 import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
 import { NetworkTicket } from '../types';
 import { RegisterForm } from './RegisterForm';
+import { getAccountKey, getQueryCache, setQueryCache, getUiState, setUiState } from '../lib/appStateCache';
 
 interface ExploreViewProps {
   posts: NetworkTicket[];
@@ -32,14 +33,29 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
   onOpenClusterChat,
 }) => {
   const { login, register, isAuthenticated, user, logout, refreshProfile } = useAuth();
-  const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
+  const accountKey = getAccountKey(user?.id);
+
+  const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>(() => {
+    return getUiState(accountKey, 'hubTab_mobile', isAuthenticated ? 'dashboard' : 'login');
+  });
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+
+  const handleSetHubTab = (tab: 'login' | 'register' | 'adk' | 'dashboard') => {
+    setHubTab(tab);
+    setUiState(accountKey, 'hubTab_mobile', tab);
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
-      setHubTab('dashboard');
+      setHubTab(prev => {
+        if (prev === 'login' || prev === 'register') return 'dashboard';
+        return prev;
+      });
     } else {
-      setHubTab('login');
+      setHubTab(prev => {
+        if (prev === 'dashboard') return 'login';
+        return prev;
+      });
     }
   }, [isAuthenticated]);
 
@@ -68,14 +84,26 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
   const [copied, setCopied] = useState(false);
   const [copiedPlatform, setCopiedPlatform] = useState(false);
   const [copiedFrameworks, setCopiedFrameworks] = useState(false);
-  const [adkSpecText, setAdkSpecText] = useState(ADK_SPEC_FALLBACK);
+  const [adkSpecText, setAdkSpecText] = useState(() => {
+    return getQueryCache(accountKey, '/api/adk')?.data || ADK_SPEC_FALLBACK;
+  });
   const [isLoadingAdk, setIsLoadingAdk] = useState(false);
-  const [adkSubTab, setAdkSubTab] = useState<'endpoints' | 'platform' | 'frameworks'>('endpoints');
+  const [adkSubTab, setAdkSubTab] = useState<'endpoints' | 'platform' | 'frameworks'>(() => {
+    return getUiState(accountKey, 'adkSubTab_mobile', 'endpoints');
+  });
+
+  const handleSetAdkSubTab = (sub: 'endpoints' | 'platform' | 'frameworks') => {
+    setAdkSubTab(sub);
+    setUiState(accountKey, 'adkSubTab_mobile', sub);
+  };
 
   useEffect(() => {
     if (hubTab === 'adk') {
-      setIsLoadingAdk(true);
-      fetch(buildApiUrl(`/api/adk?v=${Date.now()}`))
+      const cached = getQueryCache(accountKey, '/api/adk');
+      if (!cached) {
+        setIsLoadingAdk(true);
+      }
+      fetch(buildApiUrl(`/api/adk`))
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
@@ -83,6 +111,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
         .then((resJson) => {
           if (resJson && resJson.success && resJson.data && resJson.data.adk) {
             setAdkSpecText(resJson.data.adk);
+            setQueryCache(accountKey, '/api/adk', resJson.data.adk);
           }
         })
         .catch((err) => {
@@ -90,7 +119,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
         })
         .finally(() => setIsLoadingAdk(false));
     }
-  }, [hubTab]);
+  }, [hubTab, accountKey]);
 
   const getPlatformSpecOnly = (fullText: string) => {
     if (!fullText) return '';
@@ -209,7 +238,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
           {isAuthenticated ? (
             <>
               <button
-                onClick={() => setHubTab('dashboard')}
+                onClick={() => handleSetHubTab('dashboard')}
                 className={`py-2 px-1.5 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
                   hubTab === 'dashboard'
                     ? 'bg-[#141414] text-white'
@@ -221,7 +250,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setHubTab('adk')}
+                onClick={() => handleSetHubTab('adk')}
                 className={`py-2 px-1.5 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
                   hubTab === 'adk'
                     ? 'bg-[#141414] text-white'
@@ -235,7 +264,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
           ) : (
             <>
               <button
-                onClick={() => setHubTab('login')}
+                onClick={() => handleSetHubTab('login')}
                 className={`py-2 px-1 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
                   hubTab === 'login'
                     ? 'bg-[#141414] text-white'
@@ -247,7 +276,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setHubTab('register')}
+                onClick={() => handleSetHubTab('register')}
                 className={`py-2 px-1 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
                   hubTab === 'register'
                     ? 'bg-[#141414] text-white'
@@ -259,7 +288,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setHubTab('adk')}
+                onClick={() => handleSetHubTab('adk')}
                 className={`py-2 px-1 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
                   hubTab === 'adk'
                     ? 'bg-[#141414] text-white'
@@ -454,7 +483,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-1 border-b border-[#141414]/20 pb-2">
               <button
-                onClick={() => setAdkSubTab('endpoints')}
+                onClick={() => handleSetAdkSubTab('endpoints')}
                 className={`py-1.5 px-1 font-mono font-black text-[9px] uppercase border border-[#141414] flex items-center justify-center gap-0.5 ${
                   adkSubTab === 'endpoints' ? 'bg-[#141414] text-white' : 'bg-white text-[#141414]'
                 }`}
@@ -463,7 +492,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setAdkSubTab('platform')}
+                onClick={() => handleSetAdkSubTab('platform')}
                 className={`py-1.5 px-1 font-mono font-black text-[9px] uppercase border border-[#141414] flex items-center justify-center gap-0.5 ${
                   adkSubTab === 'platform' ? 'bg-[#141414] text-white' : 'bg-white text-[#141414]'
                 }`}
@@ -472,7 +501,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
               </button>
 
               <button
-                onClick={() => setAdkSubTab('frameworks')}
+                onClick={() => handleSetAdkSubTab('frameworks')}
                 className={`py-1.5 px-1 font-mono font-black text-[9px] uppercase border border-[#141414] flex items-center justify-center gap-0.5 ${
                   adkSubTab === 'frameworks' ? 'bg-[#141414] text-white' : 'bg-white text-[#141414]'
                 }`}
