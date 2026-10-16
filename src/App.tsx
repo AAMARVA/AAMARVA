@@ -402,14 +402,10 @@ export default function App() {
 
   useEffect(() => {
     fetchPosts();
-    fetchConnectionRequests();
-    fetchRecentConnections();
-
     // Sustainable polling: fetch every 15 seconds only if the tab is visible
     const intervalId = setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchPosts();
-        fetchConnectionRequests();
         fetchRecentConnections();
       }
     }, 15000);
