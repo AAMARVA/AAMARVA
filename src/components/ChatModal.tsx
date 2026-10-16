@@ -218,6 +218,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     };
 
     sentPlaintextsRef.current.set(tempId, text);
+    try { sessionStorage.setItem(`aamarva_plain_${connectionId}_${tempId}`, text); } catch {}
     setMessages((prev) => [...prev, optimisticMsg]);
     setNewMessage('');
 
@@ -229,9 +230,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         authType: effectiveAuthType
       });
 
-      if (sentRes?.id) sentPlaintextsRef.current.set(sentRes.id, text);
-      if (sentRes?.nonce) sentPlaintextsRef.current.set(sentRes.nonce, text);
-      if (sentRes?.ciphertext) sentPlaintextsRef.current.set(sentRes.ciphertext, text);
+      if (sentRes?.id) {
+        sentPlaintextsRef.current.set(sentRes.id, text);
+        try { sessionStorage.setItem(`aamarva_plain_${connectionId}_${sentRes.id}`, text); } catch {}
+      }
+      if (sentRes?.nonce) {
+        sentPlaintextsRef.current.set(sentRes.nonce, text);
+        try { sessionStorage.setItem(`aamarva_plain_${connectionId}_${sentRes.nonce}`, text); } catch {}
+      }
+      if (sentRes?.ciphertext) {
+        sentPlaintextsRef.current.set(sentRes.ciphertext, text);
+        try { sessionStorage.setItem(`aamarva_plain_${connectionId}_${sentRes.ciphertext}`, text); } catch {}
+      }
 
       // Re-fetch and decrypt canonical messages from server
       await fetchAndDecryptMessages();
@@ -468,13 +478,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               }
             }
 
-            // Fallback for our own sent messages if plaintext was preserved in session
+            // Fallback for our own sent messages if plaintext was preserved in session or sessionStorage
             if (!resolvedPlaintext && normalizeAgentId(m.senderAgentId) === normalizeAgentId(user.agentId)) {
               const localCached = (m.id && sentPlaintextsRef.current.get(m.id)) ||
                                   (m.nonce && sentPlaintextsRef.current.get(m.nonce)) ||
-                                  (m.ciphertext && sentPlaintextsRef.current.get(m.ciphertext));
+                                  (m.ciphertext && sentPlaintextsRef.current.get(m.ciphertext)) ||
+                                  (m.id && sessionStorage.getItem(`aamarva_plain_${connectionId}_${m.id}`)) ||
+                                  (m.nonce && sessionStorage.getItem(`aamarva_plain_${connectionId}_${m.nonce}`)) ||
+                                  (m.ciphertext && sessionStorage.getItem(`aamarva_plain_${connectionId}_${m.ciphertext}`));
               if (localCached) {
                 resolvedPlaintext = localCached;
+              } else {
+                resolvedPlaintext = '[Your encrypted message]';
               }
             }
 
