@@ -86,8 +86,11 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
 }) => {
   const [internalSlaveAgents, setInternalSlaveAgents] = useState<any[]>(initialSlaveAgents || []);
   const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>('footprints');
-  const [logs, setLogs] = useState<LogItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [footprintsLogs, setFootprintsLogs] = useState<LogItem[]>([]);
+  const [webhooksLogs, setWebhooksLogs] = useState<LogItem[]>([]);
+  const [isLoadingFootprints, setIsLoadingFootprints] = useState(false);
+  const [isLoadingWebhooks, setIsLoadingWebhooks] = useState(false);
+  const isLoading = activeTab === 'footprints' ? isLoadingFootprints : isLoadingWebhooks;
 
   useEffect(() => {
     if (initialSlaveAgents && initialSlaveAgents.length > 0) {
@@ -127,8 +130,11 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
     ? initialSlaveAgents
     : internalSlaveAgents;
 
-  const fetchAllSlaveLogs = useCallback(async (tab: 'footprints' | 'webhooks', showLoader = false) => {
-    if (showLoader) setIsLoading(true);
+  const fetchSlaveLogs = useCallback(async (tab: 'footprints' | 'webhooks', showLoader = false) => {
+    if (showLoader) {
+      if (tab === 'footprints') setIsLoadingFootprints(true);
+      else setIsLoadingWebhooks(true);
+    }
     try {
       const endpoint = tab === 'footprints' ? '/api/agent/footprints' : '/api/webhooks/events';
       const allLogsMap = new Map<string, LogItem>();
@@ -179,23 +185,37 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
 
       const merged = Array.from(allLogsMap.values());
       merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      setLogs(merged.slice(0, 100));
+      const sliced = merged.slice(0, 100);
+
+      if (tab === 'footprints') {
+        if (sliced.length > 0 || showLoader) {
+          setFootprintsLogs(sliced);
+        }
+      } else {
+        if (sliced.length > 0 || showLoader) {
+          setWebhooksLogs(sliced);
+        }
+      }
     } catch (err) {
       console.warn('Slave Monitor fetch error:', err);
     } finally {
-      if (showLoader) setIsLoading(false);
+      if (showLoader) {
+        if (tab === 'footprints') setIsLoadingFootprints(false);
+        else setIsLoadingWebhooks(false);
+      }
     }
   }, [effectiveSlaveAgents]);
 
   useEffect(() => {
     if (!isOpen && !embedded) return;
-    setLogs([]); // Clear logs when switching tabs
-    fetchAllSlaveLogs(activeTab, true);
+    fetchSlaveLogs('footprints', true);
+    fetchSlaveLogs('webhooks', true);
     const interval = setInterval(() => {
-      fetchAllSlaveLogs(activeTab, false);
+      fetchSlaveLogs('footprints', false);
+      fetchSlaveLogs('webhooks', false);
     }, 6000);
     return () => clearInterval(interval);
-  }, [isOpen, embedded, activeTab, fetchAllSlaveLogs]);
+  }, [isOpen, embedded, fetchSlaveLogs]);
 
   if (!isOpen && !embedded) return null;
 
@@ -230,11 +250,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
     return ep.trim();
   };
 
-  const filteredLogs = logs.filter((log) => {
-    const isFootprint = !!log.action;
-    const isWebhook = !!log.type;
-    return activeTab === 'footprints' ? isFootprint : isWebhook;
-  });
+  const filteredLogs = activeTab === 'footprints' ? footprintsLogs : webhooksLogs;
 
   const effectiveCount = effectiveSlaveAgents?.length || 0;
 
@@ -247,7 +263,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => fetchAllSlaveLogs(activeTab, true)}
+              onClick={() => fetchSlaveLogs(activeTab, true)}
               className="p-1.5 bg-[#141414] hover:bg-white/10 border border-white/20 text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)]"
               title="Refresh logs"
               aria-label="Refresh logs"
@@ -285,7 +301,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
         <div className="hidden sm:flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={() => fetchAllSlaveLogs(activeTab, true)}
+            onClick={() => fetchSlaveLogs(activeTab, true)}
             className="p-1 sm:p-1.5 bg-[#141414] hover:bg-white/10 border border-white/20 text-white transition-all cursor-pointer shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
             title="Refresh logs"
             aria-label="Refresh logs"
@@ -316,7 +332,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
               activeTab === 'footprints' ? 'bg-white/90 text-[#141414]' : 'bg-[#141414] text-white/70 hover:bg-white/5'
             }`}
           >
-            <span>Agent Footprints ({logs.filter(l => !!l.action).length})</span>
+            <span>Agent Footprints ({footprintsLogs.length})</span>
           </button>
           <button
             type="button"
@@ -325,14 +341,14 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
               activeTab === 'webhooks' ? 'bg-white/90 text-[#141414]' : 'bg-[#141414] text-white/70 hover:bg-white/5'
             }`}
           >
-            <span>Webhook Events ({logs.filter(l => !!l.type).length})</span>
+            <span>Webhook Events ({webhooksLogs.length})</span>
           </button>
         </div>
       </div>
 
       {/* Logs Scroll Area - Same UI as Inbound & Outbound Activities */}
       <div className={`p-4 sm:p-5 overflow-y-auto space-y-3 ${embedded ? 'max-h-[340px]' : 'flex-1'}`}>
-        {isLoading && logs.length === 0 ? (
+        {isLoading && filteredLogs.length === 0 ? (
           <div className="flex justify-center items-center py-12 bg-white/5 border-2 border-dashed border-white/20">
             <BrutalistLoader text="Synchronizing Fleet Activities..." size="sm" theme="dark" className="py-4" />
           </div>
