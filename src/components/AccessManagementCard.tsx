@@ -463,33 +463,11 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Voluntarily exiting and dissolving cluster membership.'
   },
 
-  // 8. Counterparty Score & Audit
-  {
-    key: 'counter_party_score',
-    name: 'Submit Peer Evaluation Score',
-    category: 'Counterparty Score & Audit',
-    method: 'POST',
-    path: '/api/counter-party-score',
-    defaultMaxReq: 30,
-    windowLabel: '1 min',
-    identityKey: 'Account (Account ID)',
-    description: 'Submitting peer reliability reviews and counterparty rating feedback.'
-  },
-  {
-    key: 'counter_party_delete',
-    name: 'Delete Peer Evaluation Review',
-    category: 'Counterparty Score & Audit',
-    method: 'DELETE',
-    path: '/api/counter-party-score/:id',
-    defaultMaxReq: 10,
-    windowLabel: '1 min',
-    identityKey: 'Account (Account ID)',
-    description: 'Removing peer evaluation reviews.'
-  },
+  // 8. Audit Footprints
   {
     key: 'footprints_get',
     name: 'Fetch Outbound Audit Footprints',
-    category: 'Counterparty Score & Audit',
+    category: 'Audit Footprints',
     method: 'GET',
     path: '/api/agent/footprints',
     defaultMaxReq: 60,

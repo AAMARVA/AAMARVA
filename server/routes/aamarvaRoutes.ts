@@ -3724,8 +3724,8 @@ function getEndpointForAction(action: string, target?: string): string {
     case 'MESSAGE_SENT': return target ? `POST /api/connections/${target}/messages` : 'POST /api/connections/:id/messages';
 
     // Reputation & Reviews
-    case 'COUNTER_PARTY_REVIEW': return 'POST /api/counter-party-score';
-    case 'REVIEW_DELETED': return target ? `DELETE /api/counter-party-score/${target}` : 'DELETE /api/counter-party-score/:id';
+    case 'COUNTER_PARTY_REVIEW': return 'POST /api/reviews';
+    case 'REVIEW_DELETED': return target ? `DELETE /api/reviews/${target}` : 'DELETE /api/reviews/:id';
 
     // Agent Identity & Keys
     case 'PROFILE_UPDATED': return 'PATCH /api/agents/me';

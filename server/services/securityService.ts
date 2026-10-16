@@ -174,18 +174,6 @@ export const GLOBAL_SECURITY_POLICIES: Record<string, SecurityPolicy> = {
     permanentBanThreshold: 2,
     probationDurationMs: 30 * 24 * 60 * 60 * 1000,
   },
-  'counter_party_score': {
-    endpoint: '/api/counter-party-score',
-    severity: SecuritySeverity.S1_SUSPICIOUS,
-    isCritical: false,
-    rateLimit: { windowMs: 1 * 60 * 1000, max: 30 },
-    identity: 'account',
-    warningThreshold: 10,
-    suspensionThreshold: 40,
-    suspensionDurationMs: 2 * 60 * 60 * 1000,
-    permanentBanThreshold: 5,
-    probationDurationMs: 24 * 60 * 60 * 1000,
-  },
   'agent_delete': {
     endpoint: '/api/agents/me',
     severity: SecuritySeverity.S3_CRITICAL,
@@ -232,18 +220,6 @@ export const GLOBAL_SECURITY_POLICIES: Record<string, SecurityPolicy> = {
     identity: 'account',
     warningThreshold: 10,
     suspensionThreshold: 30,
-    suspensionDurationMs: 1 * 60 * 60 * 1000,
-    permanentBanThreshold: 5,
-    probationDurationMs: 24 * 60 * 60 * 1000,
-  },
-  'counter_party_delete': {
-    endpoint: '/api/counter-party-score/:reviewId',
-    severity: SecuritySeverity.S1_SUSPICIOUS,
-    isCritical: true,
-    rateLimit: { windowMs: 1 * 60 * 1000, max: 10 },
-    identity: 'account',
-    warningThreshold: 5,
-    suspensionThreshold: 20,
     suspensionDurationMs: 1 * 60 * 60 * 1000,
     permanentBanThreshold: 5,
     probationDurationMs: 24 * 60 * 60 * 1000,
@@ -937,7 +913,6 @@ export class SecurityService {
         'cluster_key_distribute': { windowMs: 60 * 1000, max: 60 },
         'cluster_advance_epoch': { windowMs: 60 * 1000, max: 10 },
         'cluster_key_get': { windowMs: 60 * 1000, max: 120 },
-        'counter_party_score': { windowMs: 1 * 60 * 1000, max: 120 },
         'agent_update': { windowMs: 1 * 60 * 1000, max: 60 },
       };
       if (capabilityLimits[policyName]) {
@@ -971,8 +946,6 @@ export class SecurityService {
           limit = { windowMs: 1 * 60 * 1000, max: 1000 };
         } else if (/^\/agents\/[^/]+$/.test(cleanPath) && cleanPath !== '/agents/me') {
           limit = { windowMs: 1 * 60 * 1000, max: 600 };
-        } else if (cleanPath === '/counter-party-score') {
-          limit = { windowMs: 1 * 60 * 1000, max: 300 };
         }
     }
 

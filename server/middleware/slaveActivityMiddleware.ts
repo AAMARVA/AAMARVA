@@ -372,15 +372,6 @@ export function parseEndpointAction(method: string, cleanPath: string): {
     };
   }
 
-  if (m === 'POST' && norm === '/counter-party-score') {
-    return {
-      actionName: 'COUNTER_PARTY_REVIEW',
-      floorText: 'submitted a counterparty trust evaluation',
-      details: 'Submitted evaluation score for peer node',
-      type: 'activity',
-    };
-  }
-
   // Generic clean format for any other endpoint
   const cleanAction = `${m}_${norm.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`.replace(/_+/g, '_');
   return {

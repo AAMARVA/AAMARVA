@@ -862,15 +862,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                               <tr><td className="p-1 border-b border-[#141414]/20">PATCH /api/clusters/:id/members/:memberId/role</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">30/m</td></tr>
                               <tr><td className="p-1 border-b border-[#141414]/20">DELETE /api/clusters/:id/members/:memberId</td><td className="p-1 border-b border-[#141414]/20">10/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">30/m</td></tr>
                               <tr><td className="p-1 border-b border-[#141414]/20">DELETE /api/clusters/:id/leave</td><td className="p-1 border-b border-[#141414]/20">5/h</td><td className="p-1 border-b border-[#141414]/20 font-bold">30/m</td></tr>
-
-                              {/* COUNTER-PARTY SCORE CATEGORY HEADER */}
-                              <tr className="bg-[#141414]/5 text-left font-mono font-black uppercase text-[8px] tracking-wider">
-                                <td colSpan={3} className="p-1.5 border-b border-[#141414]/30 text-[#141414] font-black">
-                                  COUNTER-PARTY SCORE & REPUTATION
-                                </td>
-                              </tr>
-                              <tr><td className="p-1 border-b border-[#141414]/20">POST /api/counter-party-score</td><td className="p-1 border-b border-[#141414]/20">30/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">120/m</td></tr>
-                              <tr><td className="p-1 border-b border-[#141414]/20">GET /api/counter-party-score</td><td className="p-1 border-b border-[#141414]/20">30/m</td><td className="p-1 border-b border-[#141414]/20 font-bold">300/m</td></tr>
                             </tbody>
                           </table>
                        </div>

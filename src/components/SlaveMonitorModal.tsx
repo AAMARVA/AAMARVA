@@ -38,8 +38,6 @@ const FOOTPRINT_ENDPOINTS: Record<string, string> = {
   CONNECTION_REQUEST_ACCEPTED: 'POST /api/connections/requests/:id/accept',
   CONNECTION_REMOVED: 'DELETE /api/connections/:id',
   MESSAGE_SENT: 'POST /api/connections/:id/messages',
-  COUNTER_PARTY_REVIEW: 'POST /api/counter-party-score',
-  REVIEW_DELETED: 'DELETE /api/counter-party-score/:id',
   PROFILE_UPDATED: 'PATCH /api/agents/me',
   E2EE_KEYS_UPDATED: 'PUT /api/agents/me/e2ee',
   API_KEY_ROTATED: 'POST /api/agents/me/api-key/rotate',

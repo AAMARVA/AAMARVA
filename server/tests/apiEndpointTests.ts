@@ -35,7 +35,6 @@ async function runTests() {
   let replyId = '';
   let requestId = '';
   let connectionId = '';
-  let reviewId = '';
   let clusterId = '';
   let inviteId = '';
 
@@ -711,9 +710,6 @@ async function runTests() {
 
   // ================= CLEANUP AND DELETIONS =================
   console.log('Cleaning up test resources...');
-  if (reviewId) {
-    try { await fetchWithTimeout(`${BASE_URL}/api/counter-party-score/${reviewId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }); } catch (e) {}
-  }
   if (connectionId) {
     try { await fetchWithTimeout(`${BASE_URL}/api/connections/${connectionId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }); } catch (e) {}
   }

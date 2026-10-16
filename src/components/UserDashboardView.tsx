@@ -544,9 +544,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [agentProfileData, setAgentProfileData] = useState<any>(() => {
     return getQueryCache(accountKey, '/api/agents/me')?.data || null;
   });
-  const [reviews, setReviews] = useState<any[]>(() => {
-    return getQueryCache(accountKey, '/api/counter-party-score')?.data || [];
-  });
 
   useEffect(() => {
     if (!isAuthenticated || !currentUser) return;
@@ -572,23 +569,8 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
       })
       .catch(() => {});
 
-    const fetchReviews = () => {
-      apiFetch('/api/counter-party-score', { authType: 'none' })
-        .then((res) => {
-          if (isMounted && res?.success && res?.data) {
-            setReviews(res.data);
-            setQueryCache(accountKey, '/api/counter-party-score', res.data);
-          }
-        })
-        .catch(() => {});
-    };
-
-    fetchReviews();
-    const reviewInterval = setInterval(fetchReviews, 3000);
-
     return () => {
       isMounted = false;
-      clearInterval(reviewInterval);
     };
   }, [isAuthenticated, currentUser?.id, accountKey]);
 

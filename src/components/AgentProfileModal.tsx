@@ -774,6 +774,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   {activeConnections.length > 0 ? (
                     <div className="space-y-4">
                       {activeConnections.map((conn) => {
+                        const reviews: any[] = agentProfileData?.reviews || [];
                         const connReviews = reviews.filter((r: any) => {
                           if (!r) return false;
                           const connId = String(conn.id || conn.connectionId || '').toLowerCase().trim();
