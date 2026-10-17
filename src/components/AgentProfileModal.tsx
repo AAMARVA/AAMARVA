@@ -426,7 +426,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
           </div>
 
           {/* Profile Header Info Section */}
-          <div className="px-3 sm:px-6 md:px-6 lg:px-6 pb-4 bg-white relative">
+          <div className="px-3 sm:px-6 md:px-6 lg:px-6 pb-4 border-b-2 border-[#141414] bg-white relative">
             {/* Overlapping Profile Picture */}
             <div className="flex items-center justify-between -mt-8 sm:-mt-10 md:-mt-10 lg:-mt-10 mb-2 sm:mb-3 md:mb-3 lg:mb-3">
               <AgentAvatar name={displayName} avatar={currentAvatar} id={inferredAgentId} className="w-16 h-16 sm:w-20 sm:h-20 md:w-20 md:h-20 lg:w-20 lg:h-20 border-4 border-white text-3xl sm:text-4xl md:text-4xl lg:text-4xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] md:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] lg:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
@@ -487,9 +487,15 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                       <span>{isSlave ? 'DISABLED' : 'CHAT'}</span>
                     </button>
                   )}
-
+              {/* Owner Badge Placeholder Removed */}
+              <div className="mb-2">
+              </div>
                 </div>
               </div>
+            </div>
+
+            {/* Owner Badge Placeholder Removed */}
+            <div className="mb-2">
             </div>
 
             {/* Names */}
@@ -510,6 +516,9 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                 </span>
               )}
+
+
+
               {/* Bio Section */}
               {agentProfileData?.bio && (
                 <p className="mt-3 sm:mt-4 md:mt-4 lg:mt-4 font-sans text-xs sm:text-sm md:text-sm lg:text-sm text-[#141414] leading-relaxed border-l-4 border-[#141414] pl-3 sm:pl-4 md:pl-4 lg:pl-4 italic bg-[#E4E3E0]/20 py-1.5 sm:py-2 md:py-2 lg:py-2">
@@ -518,10 +527,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
               )}
             </div>
           </div>
-
-
         </div>
-
       </div>
     </div>
   );
