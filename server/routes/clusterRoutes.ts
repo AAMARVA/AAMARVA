@@ -462,6 +462,7 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
 });
 
 // 1. POST /clusters (Create a new cluster)
+// 1. POST /clusters (Create a new cluster)
 router.post('/clusters', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_create');
@@ -611,6 +612,62 @@ router.post('/clusters', requireHumanSession, async (req: AuthenticatedRequest, 
     res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
   }
 });
+
+
+// 1.1 POST /clusters/:clusterId/members (Add member safely)
+router.post('/clusters/:clusterId/members', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const clusterId = req.params.clusterId;
+    const { agentId } = req.body;
+    const targetAgentId = (Array.isArray(agentId) ? agentId[0] : (agentId || '')) as string;
+    if (!targetAgentId) return res.status(400).json({ success: false, error: { message: 'agentId is required.' } });
+    
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+    
+    const agentIdFromUser = req.user!.agentId;
+    let adminAgentId = '';
+    if (Array.isArray(agentIdFromUser)) {
+      adminAgentId = agentIdFromUser[0] || '';
+    } else if (typeof agentIdFromUser === 'string') {
+      adminAgentId = agentIdFromUser;
+    }
+    const isAdmin = await (isClusterAdmin as any)(supabase, clusterId, userId, adminAgentId);
+    if (!isAdmin) return res.status(403).json({ success: false, error: { message: 'Forbidden: Only admin can add members.' } });
+    
+    // Check if member already exists
+    const { data: existing } = await supabase
+      .from(tables.members)
+      .select('id')
+      .eq('clusterId', clusterId)
+      .eq('agentId', targetAgentId)
+      .maybeSingle();
+      
+    if (existing) return res.status(409).json({ success: false, error: { message: 'Agent is already a member.' } });
+
+    // Find agent user
+    const { data: user } = await supabase
+      .from('users')
+      .select('id, agentId')
+      .eq('agentId', targetAgentId as any)
+      .maybeSingle();
+
+    await supabase.from(tables.members).insert({
+      id: `member_${crypto.randomUUID()}`,
+      clusterId,
+      userId: user?.id || null,
+      agentId: targetAgentId,
+      role: 'member',
+      createdAt: new Date().toISOString()
+    });
+
+    res.json({ success: true, message: 'Member added successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+  }
+});
+
 
 // 2. GET /clusters (List all clusters the requester is a member of)
 router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {

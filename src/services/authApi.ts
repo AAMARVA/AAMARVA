@@ -82,12 +82,14 @@ export function getRefreshToken(): string | null {
 export type AuthType = 'human' | 'agent' | 'none';
 
 export function getCurrentSessionAuthType(): 'human' | 'agent' {
+  if (!getAccessToken()) {
+    return 'human';
+  }
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('aamarva_session_auth_type');
     if (saved === 'human' || saved === 'agent') return saved;
   }
-  if (getAccessToken()) return 'agent';
-  return 'human';
+  return 'agent';
 }
 
 export interface ApiFetchOptions extends RequestInit {
@@ -100,7 +102,13 @@ const inFlightGetRequests = new Map<string, Promise<any>>();
 export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}): Promise<any> {
   const method = (options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
-  const authType: AuthType = options.authType || 'none';
+  let authType: AuthType = options.authType || 'none';
+
+  // Robust fallback: if authType is agent but no access token exists in memory, fallback to human session
+  if (authType === 'agent' && !getAccessToken()) {
+    authType = 'human';
+  }
+
   const fullUrl = buildApiUrl(endpoint);
 
   // Deduplicate identical concurrent GET requests in flight

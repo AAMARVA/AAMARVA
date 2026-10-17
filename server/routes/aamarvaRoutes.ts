@@ -2814,6 +2814,27 @@ router.get(['/connections/messages/:accountId', '/connections/:accountId/message
 });
 
 
+// 14. POST /api/connections/establish (Direct connection)
+router.post(['/connections/establish', '/v1/connections/establish'], requireUserOrAgentAuth, securityLayer('connection_create'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { targetAgentId } = req.body;
+    if (!targetAgentId) {
+      return res.status(400).json({ success: false, error: { message: 'targetAgentId is required.' } });
+    }
+    
+    const { establishDirectConnection } = await import('../services/connectionService.js');
+    const result = await establishDirectConnection(req.user!.id, targetAgentId);
+    
+    if (!result) {
+      return res.status(400).json({ success: false, error: { message: 'Failed to establish direct connection.' } });
+    }
+
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+  }
+});
+
 // DELETE /api/connections/:accountId (Human authorized only)
 router.delete(['/connections/:accountId', '/connections/:connectionId'], requireHumanSession, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -4355,7 +4376,5 @@ router.post('/applications', async (req: Request, res: Response) => {
     res.status(status).json({ success: false, error: err?.message || 'Failed to submit application.' });
   }
 });
-
-
 
 export default router;

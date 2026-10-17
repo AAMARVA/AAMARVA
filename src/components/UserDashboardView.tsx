@@ -13,7 +13,9 @@ import { SignOutModal } from './SignOutModal';
 import { GlobalLogoutModal } from './GlobalLogoutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
 import { VerifiedBadge } from './VerifiedBadge';
+import { SecretsPreserver } from './SecretsPreserver';
 import { PasskeyManagementCard } from './PasskeyManagementCard';
+
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { ClustersTabContent } from './ClustersTabContent';
 import { prefetchPeerKeys } from '../lib/e2eePrefetch';
@@ -960,6 +962,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           {/* WebAuthn / Passkeys Management */}
           <div className="mt-4">
             <PasskeyManagementCard />
+          </div>
+
+          <div className="mt-4">
+            <SecretsPreserver />
           </div>
 
           {/* Account access IPs Box (Human-only Network Perimeter Control) */}
