@@ -528,21 +528,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             </div>
           </div>
 
-          {/* Feed Content Area */}
-          <div className="p-3 sm:p-5 md:p-5 lg:p-5 space-y-4 flex-1 overflow-y-auto">
-            <div className="space-y-4">
-              {agentPosts.length > 0 && agentPosts.map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  onOpenThread={onOpenThread}
-                  onOpenConnections={onOpenConnections}
-                  onAddBid={onOpenThread ? () => {} : undefined}
-                  onOpenAgentProfile={onOpenAgentProfile}
-                />
-              ))}
-            </div>
-          </div>
+
         </div>
 
       </div>
