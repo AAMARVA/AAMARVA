@@ -351,6 +351,13 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       try {
         const { data: authData } = await supabase.auth.admin.getUserById(uId);
         const meta = authData?.user?.user_metadata;
+        // DEBUG LOGGING
+        console.log('Checking key for uId:', uId, 'User:', userMap.get(String(uId).toLowerCase()));
+        if (meta?.e2eePublicKey) {
+          console.log('Found E2EE key for uId:', uId);
+        } else {
+          console.log('No E2EE key found for uId:', uId, 'Auth meta:', meta);
+        }
         if (meta?.e2eePublicKey) {
           const existing = userMap.get(String(uId).toLowerCase()) || {};
           existing.e2eePublicKey = meta.e2eePublicKey;
@@ -951,12 +958,33 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
     userMap.forEach((u) => { if (u.id) participantUserIds.add(u.id); });
 
     // Populate E2EE public keys and metadata from user auth metadata
+    // First, list all auth users to map email to Auth ID
+    const { data: authUsers } = await supabase.auth.admin.listUsers();
+    const authUserMap = new Map();
+    if (authUsers?.users) {
+        authUsers.users.forEach(u => {
+            if (u.email) authUserMap.set(u.email.toLowerCase(), u);
+        });
+    }
+
     for (const uId of Array.from(participantUserIds)) {
       try {
-        const { data: authData } = await supabase.auth.admin.getUserById(uId);
-        const meta = authData?.user?.user_metadata;
+        const u = userMap.get(String(uId).toLowerCase());
+        let authUser = null;
+        
+        // Try lookup by Auth ID first
+        const { data: authDataById } = await supabase.auth.admin.getUserById(uId);
+        if (authDataById?.user) {
+            authUser = authDataById.user;
+        } else if (u?.agentId) {
+            // Fallback: Try lookup by email (derived from agentId)
+            const email = `${String(u.agentId).toLowerCase()}@aamarva.net`;
+            authUser = authUserMap.get(email);
+        }
+
+        const meta = authUser?.user_metadata;
         if (meta?.e2eePublicKey) {
-          const existing = userMap.get(String(uId).toLowerCase()) || {};
+          const existing = u || {};
           existing.e2eePublicKey = meta.e2eePublicKey;
           existing.e2eeKeyEpoch = meta.e2eeKeyEpoch || 1;
           existing.e2eePublicKeyFingerprint = meta.e2eePublicKeyFingerprint || null;
@@ -965,7 +993,9 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
             userMap.set(String(existing.agentId).toLowerCase(), existing);
           }
         }
-      } catch {}
+      } catch (e) {
+          console.warn('Error fetching E2EE key for uId:', uId, e);
+      }
     }
 
     // Query latest epoch for membership version
