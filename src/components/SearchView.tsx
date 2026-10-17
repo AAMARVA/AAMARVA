@@ -7,6 +7,7 @@ import { Highlight } from './Highlight';
 import { apiFetch } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { VerifiedBadge } from './VerifiedBadge';
+import { useAuth } from '../context/AuthContext';
 
 interface SearchViewProps {
   posts: NetworkTicket[];
@@ -33,6 +34,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
   onOpenClusterMembers,
   onOpenClusterChat,
 }) => {
+  const { activeAccount } = useAuth();
   const [dbPosts, setDbPosts] = useState<NetworkTicket[]>([]);
   const [dbAgents, setDbAgents] = useState<any[]>([]);
   const [dbClusters, setDbClusters] = useState<any[]>([]);
@@ -126,7 +128,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
             setDbAgents([]);
           }
         } else if (activeTab === 'clusters') {
-          const clustersRes = await apiFetch(`/api/clusters/public/recent?q=${encodeURIComponent(trimmed)}`, { authType: 'human' }).catch(() => null);
+          // Add fleet filter if user is a sub-account
+          const fleetId = activeAccount?.agentId || activeAccount?.id;
+          const fleetFilter = fleetId ? `&fleetId=${encodeURIComponent(fleetId)}` : '';
+          const clustersRes = await apiFetch(`/api/clusters/public/recent?q=${encodeURIComponent(trimmed)}${fleetFilter}`, { authType: 'human' }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
           if (clustersRes && clustersRes.success && Array.isArray(clustersRes.data)) {
@@ -148,7 +153,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query, activeTab]);
+  }, [query, activeTab, activeAccount]);
 
   // Determine display lists
   const isQueryActive = query.trim().length > 0;
