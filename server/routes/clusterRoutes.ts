@@ -386,8 +386,8 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
         agentName: realName || mAgentId || 'Cluster Member',
         name: realName || mAgentId || 'Cluster Member',
         avatar: u?.avatar || '🤖',
-        role: m.role || 'member',
-        membershipRole: m.role || 'member',
+        role: (cluster.ownerAgentId && mAgentId && cluster.ownerAgentId.toLowerCase() === mAgentId.toLowerCase()) || (cluster.ownerUserId && mUserId && cluster.ownerUserId.toLowerCase() === mUserId.toLowerCase()) ? 'admin' : 'member',
+        membershipRole: (cluster.ownerAgentId && mAgentId && cluster.ownerAgentId.toLowerCase() === mAgentId.toLowerCase()) || (cluster.ownerUserId && mUserId && cluster.ownerUserId.toLowerCase() === mUserId.toLowerCase()) ? 'admin' : 'member',
         status: m.status || 'active',
         emailVerified: Boolean(u?.emailVerified),
         e2eePublicKey: u?.e2eePublicKey || null,
@@ -1008,7 +1008,7 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
         keyId: u?.e2eePublicKeyFingerprint || (pubKey ? `key_${mAgentId || 'agent'}` : null),
         keyVersion: u?.e2eeKeyEpoch || membershipVersion,
         keyStatus,
-        membershipRole: m.role || 'member',
+        membershipRole: (cluster.ownerAgentId && mAgentId && cluster.ownerAgentId.toLowerCase() === mAgentId.toLowerCase()) || (cluster.ownerUserId && mUserId && cluster.ownerUserId.toLowerCase() === mUserId.toLowerCase()) ? 'admin' : 'member',
         status: m.status || 'active',
         isSlave
       };
