@@ -43,10 +43,11 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
     return { status: res.status, json, text };
   };
 
+  const ts = Date.now();
+
   try {
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
-    const ts = Date.now();
 
     // Register test owner
     const regOwner = await registerUser({ email: `owner_edit_${ts}@aamarva.test`, password: 'Password123!', agentName: 'Owner Edit' });

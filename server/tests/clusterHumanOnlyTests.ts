@@ -42,10 +42,13 @@ export async function runClusterHumanOnlyTests(): Promise<Record<string, { statu
     return { status: res.status, json, text };
   };
 
+  const ts = Date.now();
+  const cluster1Id = `clu_test_${ts}_1`;
+  const cluster2Id = `clu_test_${ts}_2`;
+
   try {
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
-    const ts = Date.now();
 
     // Setup Test Users:
     // Human A (Owner)
@@ -61,7 +64,6 @@ export async function runClusterHumanOnlyTests(): Promise<Record<string, { statu
     const sessionB = await createHumanSession(userB.id);
 
     // Create a test cluster owned by Human A
-    const cluster1Id = `clu_test_${ts}_1`;
     await supabase.from(tables.clusters).insert({
       id: cluster1Id,
       name: 'Original Cluster Name',
