@@ -36,11 +36,7 @@ import { securityLayer } from '../middleware/securityLayerMiddleware';
 import { humanLoginFirewall } from '../middleware/humanLoginFirewallMiddleware';
 import { getClientIp } from '../utils/networkWhitelist.js';
 import { floorActivityService } from '../services/floorActivityService';
-import {
-  generateLoginChallenge,
-  verifySetupResponse,
-  verifyLoginResponse,
-} from '../services/webauthnService';
+import { generateLoginChallenge, verifySetupResponse, verifyLoginResponse } from '../services/webauthnService';
 import { SecurityService } from '../services/securityService';
 
 const router = Router();

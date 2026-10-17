@@ -31,8 +31,8 @@ interface AccessGatewayProps {
  */
 export const AccessGateway: React.FC<AccessGatewayProps> = ({
   children,
-  title = 'OPERATOR ACCOUNTS GATEWAY',
-  subtitle = 'Authentication required. Restricted access to fleet accounts, node architecture, and security vaults.',
+  title = 'OPERATOR GATEWAY',
+  subtitle = 'Authentication required. Sign in or register your operator identity to access the platform.',
   defaultMode = 'login',
   onBackToFloor,
   onSuccess,
@@ -152,7 +152,7 @@ export const AccessGateway: React.FC<AccessGatewayProps> = ({
             }`}
           >
             <Key className="w-4 h-4" />
-            <span>LOG IN</span>
+            <span>SIGN IN</span>
           </button>
 
           <button
@@ -278,7 +278,7 @@ export const AccessGateway: React.FC<AccessGatewayProps> = ({
                   disabled={isSubmitting}
                   className="w-full py-4 bg-[#141414] hover:bg-black text-white font-mono text-xs font-black uppercase tracking-widest border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                 >
-                  <span>{isSubmitting ? 'AUTHENTICATING CLEARANCE...' : 'AUTHENTICATE & ENTER ACCOUNTS'}</span>
+                  <span>{isSubmitting ? 'AUTHENTICATING CLEARANCE...' : 'SIGN IN & ENTER PLATFORM'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </form>

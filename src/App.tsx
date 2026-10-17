@@ -16,7 +16,6 @@ import { useAuth } from './context/AuthContext.tsx';
 import { apiFetch } from './services/authApi.ts';
 import { supabase } from './lib/supabase.ts';
 import { AccessGateway } from './components/AccessGateway.tsx';
-import { AuthGateView } from './components/AuthGateView.tsx';
 
 // Code-split heavy secondary views and modals to optimize initial bundle size and FCP
 const CommandPitView = React.lazy(() => import('./components/CommandPitView').then(m => ({ default: m.CommandPitView })));
@@ -76,7 +75,7 @@ export default function App() {
     import('./components/TermsView');
   }, []);
 
-  const { user, activeAccount, isAuthenticated, logout, refreshProfile } = useAuth();
+  const { user, activeAccount, isAuthenticated, isLoading, logout, refreshProfile } = useAuth();
   const rawUser = activeAccount || user;
   const currentUser = rawUser ? ((rawUser as any).profile || rawUser) : null;
   const isSlaveAccount = (() => {
@@ -116,7 +115,9 @@ export default function App() {
 
     return false;
   })();
-  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>('floor');
+  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>(() => {
+    return isAuthenticated ? 'floor' : 'hub';
+  });
   const [visitedTabs, setVisitedTabs] = useState<{
     floor?: boolean;
     'command-pit'?: boolean;
@@ -124,9 +125,31 @@ export default function App() {
     hub?: boolean;
     dashboard?: boolean;
     terms?: boolean;
-  }>({
-    floor: true,
+  }>(() => {
+    return isAuthenticated ? { floor: true } : { hub: true };
   });
+
+  // Track authentication transitions: Instant Platform Entry upon sign in
+  const prevAuthRef = useRef(isAuthenticated);
+  useEffect(() => {
+    if (!prevAuthRef.current && isAuthenticated) {
+      // Instant Platform Entry upon authentication: transition user to Floor feed
+      setActiveTab('floor');
+      setVisitedTabs(prev => ({ ...prev, floor: true }));
+    } else if (prevAuthRef.current && !isAuthenticated) {
+      // User logged out: lock down to Agent Hub Gateway
+      setActiveTab('hub');
+      setVisitedTabs({ hub: true });
+    }
+    prevAuthRef.current = isAuthenticated;
+  }, [isAuthenticated]);
+
+  // Strict Gateway Guard: Never allow unauthenticated users into the platform
+  useEffect(() => {
+    if (!isAuthenticated && activeTab !== 'hub') {
+      setActiveTab('hub');
+    }
+  }, [isAuthenticated, activeTab]);
 
   useEffect(() => {
     const tabKey = activeTab === 'live' ? 'floor' : activeTab === 'explore' ? 'hub' : activeTab;
@@ -430,6 +453,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     fetchPosts();
     // Sustainable polling: fetch every 15 seconds only if the tab is visible
     const intervalId = setInterval(() => {
@@ -458,7 +482,7 @@ export default function App() {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [user]);
+  }, [isAuthenticated, user]);
 
 
 
@@ -748,8 +772,19 @@ export default function App() {
 
 
 
-  if (!isAuthenticated && !emailVerificationToken && !apiKeyRotationToken && !resetPasswordToken) {
-    return <AuthGateView />;
+  if (isLoading && !user && !activeAccount) {
+    return (
+      <div className="min-h-screen bg-white text-[#141414] font-sans flex flex-col justify-center items-center p-6 selection:bg-black selection:text-white">
+        <div className="flex flex-col items-center gap-4">
+          <img 
+            src="/f.png" 
+            alt="AAMARVA" 
+            className="w-10 h-10 bg-white border-2 border-[#141414] object-contain shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]" 
+          />
+          <BrutalistLoader text="INITIALIZING AAMARVA GATEWAY..." />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -768,18 +803,19 @@ export default function App() {
           onOpenAgentProfile={handleOpenAgentProfile}
           isVisible={showDesktopTabs}
           deviceSize={deviceSize}
+          isAuthenticated={isAuthenticated}
         />
 
       {/* Main Content Container */}
       <main className={`flex-1 max-w-6xl w-full mx-auto ${
         deviceSize === 'desktop'
-          ? 'py-6 px-8 flex flex-row gap-6 mb-0 items-start'
+          ? (isAuthenticated ? 'py-6 px-8 flex flex-row gap-6 mb-0 items-start' : 'py-6 px-8 flex flex-col items-center mb-0')
           : deviceSize === 'mobile'
-            ? 'px-4 py-3 flex flex-col gap-6 mb-28'
-            : 'px-6 pt-4 pb-4 flex flex-row gap-6 mb-0 items-start'
+            ? (isAuthenticated ? 'px-4 py-3 flex flex-col gap-6 mb-28' : 'px-4 py-3 flex flex-col gap-6 mb-8')
+            : (isAuthenticated ? 'px-6 pt-4 pb-4 flex flex-row gap-6 mb-0 items-start' : 'px-6 pt-4 pb-4 flex flex-col items-center mb-0')
       } ${isNewPostOpen ? 'overflow-hidden' : ''}`}>
-        {/* Left Vertical Navigation Bar (Desktop only) */}
-        {deviceSize === 'desktop' && (
+        {/* Left Vertical Navigation Bar (Desktop only, authenticated only) */}
+        {deviceSize === 'desktop' && isAuthenticated && (
           <aside className="sticky top-24 self-start z-30 flex flex-col gap-1 bg-[#141414] border-2 border-[#141414] p-1 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] w-20 shrink-0">
             {/* FLOOR */}
             <button
@@ -914,9 +950,46 @@ export default function App() {
               setActiveTab('dashboard');
             }}
           />
+        ) : !isAuthenticated ? (
+          /* AGENT HUB GATEWAY - Strict security gateway: user cannot enter until signed in */
+          <div className="flex-1 min-w-0 w-full flex flex-col items-center">
+            {deviceSize === 'desktop' ? (
+              <ExploreViewDesktop
+                posts={posts}
+                onOpenThread={handleOpenThread}
+                onOpenConnections={handleOpenConnections}
+                onAddBid={handleAddReply}
+                onOpenAgentProfile={handleOpenAgentProfile}
+                onOpenClusterMembers={handleOpenClusterMembers}
+                onOpenChat={handleOpenChat}
+                onOpenClusterChat={handleOpenClusterChat}
+              />
+            ) : deviceSize === 'tablet' ? (
+              <ExploreViewTablet
+                posts={posts}
+                onOpenThread={handleOpenThread}
+                onOpenConnections={handleOpenConnections}
+                onAddBid={handleAddReply}
+                onOpenAgentProfile={handleOpenAgentProfile}
+                onOpenClusterMembers={handleOpenClusterMembers}
+                onOpenChat={handleOpenChat}
+                onOpenClusterChat={handleOpenClusterChat}
+              />
+            ) : (
+              <ExploreViewMobile
+                posts={posts}
+                onOpenThread={handleOpenThread}
+                onOpenConnections={handleOpenConnections}
+                onAddBid={handleAddReply}
+                onOpenAgentProfile={handleOpenAgentProfile}
+                onOpenChat={handleOpenChat}
+                onOpenClusterChat={handleOpenClusterChat}
+              />
+            )}
+          </div>
         ) : (
           <>
-            {/* Main Active View Area */}
+            {/* Main Active View Area (Authenticated Platform Only) */}
             <div className="flex-1 min-w-0 w-full flex flex-col">
               {/* Tablet Top Navigation Bar */}
               {deviceSize === 'tablet' && (
@@ -1237,7 +1310,7 @@ export default function App() {
 
       {/* Modals */}
       <SearchDropdown
-        isOpen={isSearchModalOpen}
+        isOpen={isSearchModalOpen && isAuthenticated}
         onClose={() => setIsSearchModalOpen(false)}
         posts={posts}
         onOpenThread={handleOpenThread}
@@ -1330,7 +1403,7 @@ export default function App() {
       )}
 
       <NewPostModal
-        isOpen={isNewPostOpen}
+        isOpen={isNewPostOpen && isAuthenticated}
         onClose={() => setIsNewPostOpen(false)}
         onSubmitPost={handleCreatePost}
         defaultAgentName={currentUser?.name || currentUser?.agentName || currentUser?.agentId || 'Agent'}
@@ -1351,7 +1424,7 @@ export default function App() {
             window.history.replaceState({}, document.title, '/');
           }
           if (refreshProfile) refreshProfile();
-          setActiveTab('hub');
+          setActiveTab('floor');
         }}
         token={resetPasswordToken || undefined}
       />
@@ -1390,8 +1463,8 @@ export default function App() {
       />
       </React.Suspense>
 
-      {/* Mobile Bottom Navigation Bar for quick tab switching on smartphones */}
-      {deviceSize === 'mobile' && !isSearchModalOpen && (
+      {/* Mobile Bottom Navigation Bar for quick tab switching on smartphones (authenticated only) */}
+      {deviceSize === 'mobile' && isAuthenticated && !isSearchModalOpen && (
         <nav aria-label="Mobile Navigation" className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-[#141414] px-4 py-4 pb-5 shadow-[0_-3px_0px_0px_rgba(20,20,20,1)]">
           <div className={`${!isSlaveAccount ? 'max-w-xs sm:max-w-sm' : 'max-w-xs'} mx-auto flex items-center justify-around`}>
             {/* FLOOR */}

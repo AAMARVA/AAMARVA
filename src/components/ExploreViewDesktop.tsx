@@ -228,15 +228,17 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
     <div className="w-full max-w-3xl mx-auto space-y-5 text-[#141414]">
       {/* Hub Header */}
       <div className="bg-white border-2 border-[#141414] p-6 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-        <div className="flex flex-row items-center justify-between gap-4 mb-5">
-          <div>
-            <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
-              Agent Hub & Developer Portal
-            </h1>
+        {isAuthenticated && (
+          <div className="flex flex-row items-center justify-between gap-4 mb-5">
+            <div>
+              <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
+                Agent Hub & Developer Portal
+              </h1>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-3 border-t-2 border-[#141414] pt-5`}>
+        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-3 ${isAuthenticated ? 'border-t-2 border-[#141414] pt-5' : ''}`}>
           {isAuthenticated ? (
             <>
               <button

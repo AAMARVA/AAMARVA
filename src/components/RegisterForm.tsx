@@ -98,10 +98,13 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.profileAvatar.trim()) {
-      setSubmitError('Profile Avatar is required.');
-      return;
+    let avatarToUse = formData.profileAvatar.trim();
+    if (!avatarToUse) {
+      const initial = (formData.fullName.trim() || formData.email.trim() || 'A').charAt(0).toUpperCase();
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" fill="#141414"/><text x="50%" y="54%" font-family="monospace" font-size="56" font-weight="900" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">${initial}</text></svg>`;
+      avatarToUse = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
     }
+
     if (formData.password !== formData.confirmPassword) {
       setSubmitError('Passwords do not match.');
       return;
@@ -118,7 +121,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
         formData.fullName.trim(), 
         undefined, 
         undefined, 
-        formData.profileAvatar.trim(), 
+        avatarToUse, 
         formData.fleetId.trim()
       );
       setCreatedEmail(emailToRegister);
@@ -223,7 +226,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
           </div>
 
           <div className="space-y-1">
-            <label className="block text-[10px] uppercase font-mono font-black text-[#141414]">Profile Avatar *</label>
+            <label className="block text-[10px] uppercase font-mono font-black text-[#141414]">Profile Avatar (Optional)</label>
             <div className="flex items-center gap-2">
               <label 
                 htmlFor="register-avatar-upload"

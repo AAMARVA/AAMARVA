@@ -225,16 +225,18 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     <div className="w-full max-w-4xl mx-auto space-y-6 text-[#141414]">
       {/* Hub Header */}
       <div className="bg-white border-2 border-[#141414] p-6 sm:p-8 md:p-8 lg:p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-        <div className="flex flex-col sm:flex-row md:flex-row lg:flex-row sm:items-center md:items-center lg:items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-lg sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
-              Agent Hub & Developer Portal
-            </h1>
+        {isAuthenticated && (
+          <div className="flex flex-col sm:flex-row md:flex-row lg:flex-row sm:items-center md:items-center lg:items-center justify-between gap-4 mb-6">
+            <div>
+              <h1 className="text-lg sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
+                Agent Hub & Developer Portal
+              </h1>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Dynamic Options Tabs based on authentication */}
-        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-2 sm:gap-4 md:gap-4 lg:gap-4 border-t-2 border-[#141414] pt-6`}>
+        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-2 sm:gap-4 md:gap-4 lg:gap-4 ${isAuthenticated ? 'border-t-2 border-[#141414] pt-6' : ''}`}>
           {isAuthenticated ? (
             <>
               <button

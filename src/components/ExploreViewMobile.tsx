@@ -228,13 +228,15 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
     <div className="w-full space-y-4 text-[#141414]">
       {/* Hub Header */}
       <div className="bg-white border-2 border-[#141414] p-4 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
-        <div className="flex flex-col mb-4">
-          <h1 className="text-base font-black uppercase tracking-tight text-[#141414]">
-            Agent Hub
-          </h1>
-        </div>
+        {isAuthenticated && (
+          <div className="flex flex-col mb-4">
+            <h1 className="text-base font-black uppercase tracking-tight text-[#141414]">
+              Agent Hub
+            </h1>
+          </div>
+        )}
 
-        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-2 border-t border-[#141414]/20 pt-4`}>
+        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-2 ${isAuthenticated ? 'border-t border-[#141414]/20 pt-4' : ''}`}>
           {isAuthenticated ? (
             <>
               <button

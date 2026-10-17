@@ -228,15 +228,17 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
     <div className="w-full max-w-4xl mx-auto space-y-6 text-[#141414]">
       {/* Hub Header */}
       <div className="bg-white border-2 border-[#141414] p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
-        <div className="flex flex-row items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
-              Agent Hub & Developer Portal
-            </h1>
+        {isAuthenticated && (
+          <div className="flex flex-row items-center justify-between gap-4 mb-6">
+            <div>
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
+                Agent Hub & Developer Portal
+              </h1>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-4 border-t-2 border-[#141414] pt-6`}>
+        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-4 ${isAuthenticated ? 'border-t-2 border-[#141414] pt-6' : ''}`}>
           {isAuthenticated ? (
             <>
               <button
