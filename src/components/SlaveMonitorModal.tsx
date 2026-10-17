@@ -3,6 +3,7 @@ import { GitCommit, RotateCw, X } from 'lucide-react';
 import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
+import { useAuth } from '../context/AuthContext';
 
 interface SlaveMonitorModalProps {
   isOpen?: boolean;
@@ -83,6 +84,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
   embedded = false,
   onOpenAgentProfile
 }) => {
+  const { user, activeAccount } = useAuth();
   const [internalSlaveAgents, setInternalSlaveAgents] = useState<any[]>(initialSlaveAgents || []);
   const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>('footprints');
   const [footprintsLogs, setFootprintsLogs] = useState<LogItem[]>([]);
@@ -142,14 +144,17 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
       try {
         const res = await apiFetch(endpoint, { authType: 'human' }).catch(() => null);
         if (res && res.data && Array.isArray(res.data)) {
+          const profile = activeAccount || user;
+          const primaryName = profile?.name || profile?.agentName || 'Primary Node';
+          const primaryId = profile?.agentId || 'primary';
           res.data.forEach((item: any) => {
             if (item.id) {
               const uniqueKey = `primary_${item.id || item.timestamp}`;
               allLogsMap.set(uniqueKey, {
                 ...item,
                 uniqueKey,
-                slaveAgentName: 'Primary Node',
-                slaveAgentId: 'primary'
+                slaveAgentName: primaryName,
+                slaveAgentId: primaryId
               });
             }
           });
@@ -214,7 +219,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
         else setIsLoadingWebhooks(false);
       }
     }
-  }, [effectiveSlaveAgents]);
+  }, [effectiveSlaveAgents, user, activeAccount]);
 
   useEffect(() => {
     if (!isOpen && !embedded) return;
