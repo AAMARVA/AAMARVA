@@ -211,7 +211,8 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
         ciphertext: Buffer.from('test').toString('base64'),
         nonce: Buffer.from('123456789012').toString('base64'),
         version: 1,
-        keyEpoch: 1
+        keyEpoch: 1,
+        keys: { [ownerUser.agentId]: { iv: 'aGVsbG8=', key: 'd29ybGQ=' } }
       })
     });
     const slaveClusterRejected = resSlaveClusterMsg.status === 403 && resSlaveClusterMsg.json?.error?.code === 'SLAVE_UI_MESSAGING_DISABLED';
@@ -226,6 +227,12 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
     console.error('Test suite error:', err);
     recordResult('Test Suite Execution', false, err?.message);
   } finally {
+    const sb = getSupabaseClient();
+    const tables = await getClusterTables(sb);
+    // Cleanup clusters and users created in this test run
+    await sb.from(tables.clusters).delete().like('id', `clu_edit_test_%`);
+    await sb.from('users').delete().like('email', `%_edit_${ts}@aamarva.test%`);
+    await sb.from('users').delete().like('email', `slave_${ts}@aamarva.test`);
     server.close();
   }
 

@@ -302,6 +302,10 @@ export async function runClusterHumanOnlyTests(): Promise<Record<string, { statu
     );
 
   } finally {
+    const sb = getSupabaseClient();
+    const tables = await getClusterTables(sb);
+    await sb.from(tables.clusters).delete().eq('id', cluster1Id);
+    await sb.from(tables.clusters).delete().eq('id', cluster2Id);
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 

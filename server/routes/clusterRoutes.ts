@@ -1363,6 +1363,7 @@ router.get('/clusters/:clusterId/epoch', requireUserOrAgentAuth, async (req: Aut
 
 // 12. POST /clusters/:clusterId/keys (Distribute key package)
 router.post('/clusters/:clusterId/keys', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  return res.status(404).json({ success: false, error: { message: 'Endpoint deprecated' } });
   try {
     const clusterId = req.params.clusterId as string;
     const { epoch, keyFingerprint, distributionMap, senderPublicKey } = req.body;
@@ -1448,6 +1449,7 @@ router.post('/clusters/:clusterId/keys', requireUserOrAgentAuth, async (req: Aut
 
 // 13. POST /clusters/:clusterId/advance-epoch (Trigger rotation with key distribution)
 router.post('/clusters/:clusterId/advance-epoch', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  return res.status(404).json({ success: false, error: { message: 'Endpoint deprecated' } });
   try {
     const clusterId = req.params.clusterId as string;
     const { keyFingerprint, distributionMap, senderPublicKey, reason } = req.body;
@@ -1983,78 +1985,15 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       parsedKeyEpoch = keyEpoch;
     }
 
-    // Verify keyEpoch against authoritative cluster_epochs if established
-    const { data: latestClusterEpoch } = await supabase
-      .from('cluster_epochs')
-      .select('epoch, keyFingerprint')
-      .eq('clusterId', clusterId)
-      .order('epoch', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (latestClusterEpoch && latestClusterEpoch.keyFingerprint && latestClusterEpoch.keyFingerprint !== 'PENDING_INIT') {
-      if (parsedKeyEpoch !== latestClusterEpoch.epoch) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_KEY_EPOCH',
-            message: `Invalid keyEpoch ${parsedKeyEpoch}. Must match authoritative cluster epoch ${latestClusterEpoch.epoch}.`
-          }
-        });
-      }
-    }
-
-    // Check if cluster uses key distribution packages for this epoch
-    const { data: keyDistRecords } = await supabase
-      .from('cluster_key_distributions')
-      .select('recipientAgentId')
-      .eq('clusterId', clusterId)
-      .eq('epoch', parsedKeyEpoch);
-
-    const hasDistributions = Boolean(keyDistRecords && keyDistRecords.length > 0);
-
-    if (!hasDistributions) {
-      // Fallback: Verify keyEpoch against registered active key epochs for cluster participants when key distributions are not used
-      const senderActiveEpoch = typeof senderMeta.e2eeKeyEpoch === 'number' ? senderMeta.e2eeKeyEpoch : 1;
-      const senderEpochHistory = (senderMeta.e2eeEpochHistory as Record<string, any>) || {};
-      const senderHasEpoch = parsedKeyEpoch === senderActiveEpoch ||
-        Boolean(senderEpochHistory[String(parsedKeyEpoch)] && senderEpochHistory[String(parsedKeyEpoch)].publicKey);
-
-      if (!senderHasEpoch) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'KEY_EPOCH_NOT_FOUND',
-            message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
-          }
-        });
-      }
-
-      for (const peer of authoritativeActiveMembers) {
-        if (!peer.userId) continue;
-        try {
-          const { data: peerAuthData } = await supabase.auth.admin.getUserById(peer.userId);
-          const peerMeta = peerAuthData?.user?.user_metadata || {};
-          if (peerMeta.e2eePublicKey) {
-            const peerActiveEpoch = typeof peerMeta.e2eeKeyEpoch === 'number' ? peerMeta.e2eeKeyEpoch : 1;
-            const peerEpochHistory = (peerMeta.e2eeEpochHistory as Record<string, any>) || {};
-            const peerHasEpoch = parsedKeyEpoch === peerActiveEpoch ||
-              Boolean(peerEpochHistory[String(parsedKeyEpoch)] && peerEpochHistory[String(parsedKeyEpoch)].publicKey);
-
-            if (!peerHasEpoch) {
-              return res.status(400).json({
-                success: false,
-                error: {
-                  code: 'KEY_EPOCH_NOT_FOUND',
-                  message: `Invalid keyEpoch ${parsedKeyEpoch}. Key epoch ${parsedKeyEpoch} not found in registered active key or epoch history for cluster participants.`
-                }
-              });
-            }
-          }
-        } catch {
-          // Ignore lookup failures for optional peer keys in fallback mode
+    // 10. Recipient-based E2EE: Validate and persist recipient keys
+    if (!keys || typeof keys !== 'object' || Object.keys(keys).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_RECIPIENT_KEYS',
+          message: 'Private messages must include a map of recipient key envelopes.'
         }
-      }
+      });
     }
 
     // 11. Strict sequence validation (non-negative integer when supplied)
@@ -2110,6 +2049,27 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
 
     if (msgErr) {
       throw new Error(`Failed to send message: ${msgErr.message}`);
+    }
+
+    // Persist recipient key envelopes
+    const recipientInserts = Object.entries(keys).map(([recipientId, keyData]: [string, any]) => ({
+      id: `dist_${crypto.randomUUID()}`,
+      messageId: messageId,
+      clusterId: clusterId,
+      recipientAgentId: recipientId,
+      wrappedKey: keyData.key,
+      wrappedKeyIv: keyData.iv,
+      createdAt: now
+    }));
+
+    if (recipientInserts.length > 0) {
+      const { error: recErr } = await supabase
+        .from(tables.recipients)
+        .insert(recipientInserts);
+      
+      if (recErr) {
+        throw new Error(`Failed to persist message recipients: ${recErr.message}`);
+      }
     }
 
     // Log outbound footprint
@@ -2216,10 +2176,12 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
       });
     }
 
+    // Only retrieve messages where the current agent is an authorized recipient
     const { data: messages, error: msgErr } = await supabase
       .from(tables.messages)
-      .select('*')
+      .select('*, cluster_message_recipients!inner(recipientAgentId)')
       .eq('clusterId', clusterId)
+      .eq('cluster_message_recipients.recipientAgentId', req.user?.agentId || 'UNKNOWN')
       .order('createdAt', { ascending: true });
 
     if (msgErr) {
@@ -2487,6 +2449,7 @@ router.delete('/clusters/:clusterId/leave', requireHumanSession, async (req: Aut
 
 // 14. GET /clusters/:clusterId/keys/:epoch (Fetch assigned key package)
 router.get('/clusters/:clusterId/keys/:epoch', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  return res.status(404).json({ success: false, error: { message: 'Endpoint deprecated' } });
   try {
     const clusterId = req.params.clusterId as string;
     const epoch = Number(req.params.epoch) || 1;
