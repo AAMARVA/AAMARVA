@@ -111,9 +111,21 @@ export interface DatabaseSchema {
   cluster_members: ClusterMemberRecord[];
   cluster_invites: ClusterInviteRecord[];
   cluster_messages: ClusterMessageRecord[];
+  cluster_message_recipients: ClusterMessageRecipientRecord[];
   user_key_vaults: UserKeyVaultRecord[];
   cluster_epochs: ClusterEpochRecord[];
   cluster_key_distributions: ClusterKeyDistributionRecord[];
+}
+
+export interface ClusterMessageRecipientRecord {
+  id: string;
+  messageId: string;
+  clusterId: string;
+  recipientAgentId: string;
+  recipientUserId?: string | null;
+  wrappedKey: string;
+  wrappedKeyIv: string;
+  createdAt: string;
 }
 
 

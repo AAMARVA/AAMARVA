@@ -5,21 +5,13 @@ import clusterRouter from '../routes/clusterRoutes';
 import { getSupabaseClient, setSupabaseClient } from '../supabase';
 import { getClusterTables } from '../routes/clusterRoutes';
 import { 
-  generateE2EEKeyPair, 
-  encryptClusterGroupMessage, 
-  decryptClusterGroupMessage, 
-  clearClusterGroupKeyForTest,
-  persistClusterGroupKey,
-  getClusterGroupKey
+  generateE2EEKeyPair
 } from '../../src/lib/e2ee';
 import {
-  generateGroupKey,
-  computeGroupKeyFingerprint,
-  wrapGroupKeyForMember,
-  unwrapGroupKeyForMember,
-  distributeClusterGroupKeyFlow,
-  retrieveAndUnwrapClusterGroupKey
+  encryptMessageForRecipients,
+  decryptMessageForRecipient
 } from '../../src/lib/clusterCrypto';
+
 
 export async function runClusterMessagingSecurityTests(): Promise<Record<string, { status: 'PASSED' | 'FAILED'; reason?: string }>> {
   console.log('\n=== AAMARVA CLUSTER MESSAGING SECURITY VERIFICATION SUITE ===\n');

@@ -67,8 +67,9 @@ export async function runClusterHumanOnlyTests(): Promise<Record<string, { statu
       name: 'Original Cluster Name',
       description: 'Original Description',
       ownerUserId: userA.id,
+      ownerAgentId: userA.agentId,
       status: 'active',
-      created_at: new Date().toISOString()
+      createdAt: new Date().toISOString()
     });
     await supabase.from(tables.members).insert({
       id: `mem_${cluster1Id}_${userA.id}`,
@@ -76,8 +77,7 @@ export async function runClusterHumanOnlyTests(): Promise<Record<string, { statu
       userId: userA.id,
       agentId: userA.agentId,
       role: 'admin',
-      status: 'active',
-      created_at: new Date().toISOString()
+      createdAt: new Date().toISOString()
     });
 
     // Create a second test cluster owned by Human A for deletion test
@@ -87,8 +87,9 @@ export async function runClusterHumanOnlyTests(): Promise<Record<string, { statu
       name: 'Cluster To Disband',
       description: 'Disband Description',
       ownerUserId: userA.id,
+      ownerAgentId: userA.agentId,
       status: 'active',
-      created_at: new Date().toISOString()
+      createdAt: new Date().toISOString()
     });
     await supabase.from(tables.members).insert({
       id: `mem_${cluster2Id}_${userA.id}`,
@@ -96,8 +97,7 @@ export async function runClusterHumanOnlyTests(): Promise<Record<string, { statu
       userId: userA.id,
       agentId: userA.agentId,
       role: 'admin',
-      status: 'active',
-      created_at: new Date().toISOString()
+      createdAt: new Date().toISOString()
     });
 
     // -------------------------------------------------------------

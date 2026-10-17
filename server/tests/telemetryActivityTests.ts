@@ -66,17 +66,20 @@ export async function runTelemetryActivityTests(): Promise<Record<string, { stat
 
     // Create a slave agent for User A
     const slaveAId = `usr_slave_${ts}_a`;
-    await supabase.from('users').insert({
+    const { error: slaveInsErr } = await supabase.from('users').insert({
       id: slaveAId,
       agentId: `SLAVE-ALPHA-${ts}`,
       name: 'Alpha Worker Slave',
       email: `slave_a_${ts}@aamarva.test`,
+      passwordHash: '$2a$10$dummyhashforunittesting',
       emailVerified: true,
       master_id: userA.id,
       is_master_primary: false,
-      role: 'slave',
       createdAt: new Date().toISOString()
     });
+    if (slaveInsErr) {
+      throw new Error(`Failed to insert test slave user: ${slaveInsErr.message}`);
+    }
 
     // Create a ticket post for User A
     const postIdA = `post_tel_${ts}_1`;

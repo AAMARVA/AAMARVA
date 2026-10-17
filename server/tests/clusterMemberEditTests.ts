@@ -65,11 +65,10 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
       id: slaveId,
       agentId: slaveAgentId,
       email: `slave_${ts}@aamarva.test`,
+      passwordHash: '$2a$10$dummyhashforunittesting',
       name: 'Slave Agent',
       master_id: ownerUser.id,
-      account_type: 'slave',
-      role: 'slave',
-      is_slave: true,
+      is_master_primary: false,
       status: 'active',
       createdAt: new Date().toISOString()
     });

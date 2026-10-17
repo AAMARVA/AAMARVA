@@ -9,6 +9,7 @@ import { SecurityService } from '../services/securityService';
 import { MAX_BASE64_CIPHERTEXT_LENGTH, MAX_DECODED_CIPHERTEXT_BYTES } from '../services/connectionService';
 import { HUMAN_SESSION_COOKIE_NAME } from '../authService';
 import { clusterService } from '../services/clusterService';
+import { clusterMessageRecipientService } from '../services/clusterMessageRecipientService';
 
 const router = Router();
 
@@ -17,6 +18,7 @@ export interface ClusterTables {
   members: string;
   invites: string;
   messages: string;
+  recipients: string;
 }
 
 let cachedTables: ClusterTables | null = null;
@@ -36,6 +38,7 @@ export async function getClusterTables(supabase: any): Promise<ClusterTables> {
         members: 'cluster_members',
         invites: 'cluster_invites',
         messages: 'cluster_messages',
+        recipients: 'cluster_message_recipients',
       };
       return cachedTables;
     }
@@ -48,6 +51,7 @@ export async function getClusterTables(supabase: any): Promise<ClusterTables> {
     members: `${LEGACY_SCHEMA_PREFIX}cluster_members`,
     invites: `${LEGACY_SCHEMA_PREFIX}cluster_invites`,
     messages: `${LEGACY_SCHEMA_PREFIX}cluster_messages`,
+    recipients: `${LEGACY_SCHEMA_PREFIX}cluster_message_recipients`,
   };
   return cachedTables;
 }
@@ -1041,38 +1045,13 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
 
     const latestEpoch = latestEpochRecord?.epoch || 1;
 
-    console.log('DEBUG: userId:', req.user?.id, 'agentId:', req.user?.agentId, 'clusterId:', clusterId, 'latestEpoch:', latestEpoch);
-
-    // Fetch key package for current user
-    const { data: allPackages } = await supabase
-      .from('cluster_key_distributions')
-      .select('*')
-      .eq('clusterId', clusterId);
-      
-    console.log('DEBUG: All packages for cluster:', allPackages);
-
-    const { data: packageData, error: distErr } = await supabase
-      .from('cluster_key_distributions')
-      .select('encryptedKeyPackage, senderPublicKey')
-      .eq('clusterId', clusterId)
-      .eq('epoch', latestEpoch)
-      .eq('recipientAgentId', req.user?.agentId || req.user?.id)
-      .maybeSingle();
-      
-    console.log('DEBUG: packageData:', packageData, 'distErr:', distErr);
-
     res.json({
       success: true,
       data: {
         clusterId,
         membershipVersion: latestEpoch,
         members: membersList,
-        keyPackage: packageData ? {
-          encryptedKeyPackage: typeof packageData.encryptedKeyPackage === 'string' 
-            ? JSON.parse(packageData.encryptedKeyPackage) 
-            : packageData.encryptedKeyPackage,
-          senderPublicKey: packageData.senderPublicKey
-        } : null
+        keyPackage: null
       }
     });
   } catch (err: any) {
@@ -1812,28 +1791,14 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       throw new Error(`Failed to query authoritative cluster members: ${peerErr?.message || 'Unknown error'}`);
     }
 
-    // 4.5 Server-side authoritative recipient completeness enforcement
+    // 4.5 Server-side authoritative recipient authorization enforcement
     try {
       const decodedEnvStr = Buffer.from(ciphertext.trim(), 'base64').toString('utf8');
       const parsedEnv = JSON.parse(decodedEnvStr);
-      if (parsedEnv && (parsedEnv.type === 'AAMARVA_GROUP_E2EE_v1' || parsedEnv.type === 'AAMARVA_GROUP_E2EE_v2') && parsedEnv.keys) {
+      if (parsedEnv && (parsedEnv.type === 'AAMARVA_RECIPIENT_E2EE_v2' || parsedEnv.keys)) {
         const wrappedKeys = parsedEnv.keys || {};
         const wrappedIds = Object.keys(wrappedKeys).map(id => String(id).trim().toUpperCase());
         const activeIds = new Set(authoritativeActiveMembers.map(m => String(m.agentId || m.userId).trim().toUpperCase()));
-
-        for (const actMember of authoritativeActiveMembers) {
-          const aid = String(actMember.agentId || actMember.userId).trim().toUpperCase();
-          const hasKey = wrappedIds.includes(aid) || (actMember.userId && wrappedIds.includes(String(actMember.userId).trim().toUpperCase()));
-          if (!hasKey) {
-            return res.status(400).json({
-              success: false,
-              error: {
-                code: 'INCOMPLETE_RECIPIENT_WRAPPING',
-                message: `Server-side recipient completeness check failed. Group message envelope omits required active member ${actMember.agentId || actMember.userId}.`
-              }
-            });
-          }
-        }
 
         for (const wId of wrappedIds) {
           if (!activeIds.has(wId)) {
@@ -1841,7 +1806,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
               success: false,
               error: {
                 code: 'UNAUTHORIZED_RECIPIENT_KEY',
-                message: `Group message envelope includes wrapped key for unauthorized or inactive recipient (${wId}).`
+                message: `Message envelope includes wrapped key for unauthorized or inactive recipient (${wId}).`
               }
             });
           }
