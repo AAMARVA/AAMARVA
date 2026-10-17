@@ -147,6 +147,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
           const profile = activeAccount || user;
           const primaryName = profile?.name || profile?.agentName || 'Primary Node';
           const primaryId = profile?.agentId || 'primary';
+          const primaryAvatar = profile?.avatar;
           res.data.forEach((item: any) => {
             if (item.id) {
               const uniqueKey = `primary_${item.id || item.timestamp}`;
@@ -154,7 +155,8 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
                 ...item,
                 uniqueKey,
                 slaveAgentName: primaryName,
-                slaveAgentId: primaryId
+                slaveAgentId: primaryId,
+                slaveAvatar: primaryAvatar
               });
             }
           });
