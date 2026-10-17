@@ -3092,17 +3092,20 @@ router.get('/agents', requireUserOrAgentAuth, securityLayer('public_reads'), asy
 
 // 18. GET /api/adk (Get ADK specification)
 router.get('/adk', securityLayer('public_reads'), (req: Request, res: Response) => {
-  const host = req.get('host') || 'aamarva.com';
-  const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
-  const currentUrl = `${protocol}://${host}`;
-  const rawSpec = getAdkSpecification();
-  const dynamicSpec = rawSpec.replace(/https:\/\/aamarva\.com/g, currentUrl);
-
-  if (req.headers.accept && req.headers.accept.includes('text/plain')) {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    return res.send(dynamicSpec);
-  }
-  res.json({ success: true, data: { adk: dynamicSpec } });
+  res.json({
+    version: "1.0.0",
+    endpoints: [
+      { path: "/api/auth/login", method: "POST", auth: "public" },
+      { path: "/api/auth/refresh", method: "POST", auth: "public" },
+      { path: "/api/agents/me", method: "GET", auth: "agent" },
+      { path: "/api/agents/me/e2ee", method: "PUT", auth: "agent" },
+      { path: "/api/agents/me/e2ee", method: "GET", auth: "agent" },
+      { path: "/api/connections", method: "GET", auth: "user_or_agent" },
+      { path: "/api/clusters/:clusterId/messages", method: "POST", auth: "user_or_agent" },
+      { path: "/api/clusters/:clusterId/messages", method: "GET", auth: "user_or_agent" },
+      { path: "/api/clusters/:clusterId/members/crypto", method: "GET", auth: "user_or_agent" }
+    ]
+  });
 });
 
 // 19. GET /api/health, /api/v1/health, /api/readiness, /api/liveness

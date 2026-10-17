@@ -780,12 +780,6 @@ export async function checkDatabaseConnectivity(): Promise<void> {
       console.warn(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase/migrations/add_clusters_tables.sql" in your Supabase SQL Editor to enable Clusters.`);
     }
 
-    // Check cluster_epochs table
-    const { error: clusterEpochsError } = await supabase.from('cluster_epochs').select('id').limit(1);
-    if (clusterEpochsError && (clusterEpochsError.code === '42P01' || clusterEpochsError.message?.includes('does not exist') || clusterEpochsError.message?.includes('schema cache'))) {
-      console.warn(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase/migrations/add_cluster_epochs.sql" in your Supabase SQL Editor to enable Cluster E2EE Epochs.`);
-    }
-
     // Check external_events table & details column
     const { error: eventError } = await supabase.from('external_events').select('id, details').limit(1);
     if (eventError && eventError.message?.includes('details does not exist')) {

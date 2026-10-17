@@ -1,0 +1,637 @@
+
+> aamarva@1.0.0 test
+> tsx -e "import { runAutomaticSecretsTests } from './server/tests/automaticSecretsTests.ts'; import { runE2EEUnitTests } from './server/tests/e2eeUnitTests.ts'; import { runE2EESessionTestSuite } from './server/tests/e2eeSessionTestSuite.ts'; import { runE2EERegistrationTests } from './server/tests/e2eeRegistrationTests.ts'; import { runE2EEHardeningTests } from './server/tests/e2eeHardeningTests.ts'; import { runClusterMessagingSecurityTests } from './server/tests/clusterMessagingSecurityTests.ts'; import { runClusterHumanOnlyTests } from './server/tests/clusterHumanOnlyTests.ts'; import { runClusterMemberEditTests } from './server/tests/clusterMemberEditTests.ts'; import { runObsoleteEndpointRegressionTests } from './server/tests/obsoleteEndpointRegressionTests.ts'; import { runTelemetryActivityTests } from './server/tests/telemetryActivityTests.ts'; async function runAll() { const suites = [{name: 'automaticSecretsTests', fn: runAutomaticSecretsTests}, {name: 'e2eeUnitTests', fn: runE2EEUnitTests}, {name: 'e2eeSessionTestSuite', fn: runE2EESessionTestSuite}, {name: 'e2eeRegistrationTests', fn: runE2EERegistrationTests}, {name: 'e2eeHardeningTests', fn: runE2EEHardeningTests}, {name: 'clusterMessagingSecurityTests', fn: runClusterMessagingSecurityTests}, {name: 'clusterHumanOnlyTests', fn: runClusterHumanOnlyTests}, {name: 'clusterMemberEditTests', fn: runClusterMemberEditTests}, {name: 'obsoleteEndpointRegressionTests', fn: runObsoleteEndpointRegressionTests}, {name: 'telemetryActivityTests', fn: runTelemetryActivityTests}]; let hasFailure = false; for (const s of suites) { try { const res = await s.fn(); if (res && typeof res === 'object') { const failed = Object.entries(res).some(([k, v]: [string, any]) => v === false || v?.status === 'FAILED' || v?.passed === false); if (failed) { console.error('[FAILURE] Test suite ' + s.name + ' reported failures:', res); hasFailure = true; } } } catch (err) { console.error('[FAILURE] Test suite ' + s.name + ' threw error:', err); hasFailure = true; } } if (hasFailure) { console.error('\n[FAILURE] Aggregate test run failed.'); process.exit(1); } else { console.log('\n[SUCCESS] All test suites PASSED.'); process.exit(0); } } runAll().catch(e => { console.error('Fatal test runner error:', e); process.exit(1); });"
+
+◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+◇ injected env (0) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+--- AAMARVA AUTOMATIC CREDENTIAL PROTECTION TEST SUITE ---
+[PASS] 1. Manual Secrets Preserver secret still gets redacted
+[PASS] 2. Password context gets redacted
+[PASS] 3. API-key context gets redacted
+[PASS] 4. Access token gets redacted
+[PASS] 5. Refresh token gets redacted
+[PASS] 6. Bearer token gets redacted
+[PASS] 7. JWT gets redacted where appropriate
+[PASS] 8. Private-key PEM gets redacted
+[PASS] 9. Recognizable AAMARVA credentials get redacted
+[PASS] 10. Normal IDs are NOT unnecessarily redacted
+[PASS] 11. Normal UUIDs are NOT unnecessarily redacted
+[PASS] 12. Version numbers are NOT redacted
+[PASS] 13. Ordinary prose is NOT redacted
+[PASS] 14. Multiple credentials in one message are all redacted
+[PASS] 15. Credential inside JSON is redacted
+[PASS] 16. Credential inside a URL/query parameter is appropriately redacted
+[PASS] 17. No raw credential appears in logs/errors (verified by design)
+[PASS] 18. Existing E2EE behavior remains unchanged
+[PASS] 19. Existing Secrets Preserver behavior remains unchanged
+[PASS] 20. Existing authentication behavior remains unchanged
+--- TEST RESULTS: 20/20 PASSED ---
+--- AAMARVA E2EE CRYPTOGRAPHIC UNIT TEST SUITE ---
+[PASS] 1. Agent crypto identity generation succeeded
+[PASS] 2. Password-derived agent crypto identity generation succeeded
+[PASS] 3. Deterministic crypto identity derivation verified
+[PASS] 4. Fingerprint uniqueness verified
+--- E2EE UNIT TEST RESULTS: 4/4 PASSED ---
+====================================================
+    AAMARVA E2EE HUMAN & AGENT SESSION TEST SUITE   
+====================================================
+
+[SECTION 1] HUMAN SESSION REGISTRATION, PEER-KEY & MESSAGING
+[Agent Inventory] Replenishing 1000 inventory items with verified rendered images (Current: 0, Target: 1000)...
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:52.207Z","requestId":"req_17a334ff-b5de-4a84-b86e-90613548d7c3","method":"PUT","url":"/api/agents/me/e2ee","statusCode":200,"durationMs":28,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:52.224Z","requestId":"req_4a015527-0f90-4f51-b721-bdecc9c0802c","method":"PUT","url":"/api/agents/me/e2ee","statusCode":200,"durationMs":5,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:52.230Z","requestId":"req_70cd82b6-c4b2-417b-a2e1-2ae8b19e1d50","method":"GET","url":"/api/agents/me/e2ee","statusCode":200,"durationMs":1,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [1.1] Human registration and GET confirmation verified.
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:52.292Z","requestId":"req_a3a5a1e9-8676-43a7-afe3-ba18e882f6d9","method":"GET","url":"/api/connections/conn_human_1792264730982/peer-key","statusCode":200,"durationMs":59,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [1.2] Human peer-key retrieval verified.
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:52.305Z","requestId":"req_7070d9ee-76dd-4fa3-8cc5-73f17a395ec3","method":"POST","url":"/api/connections/conn_human_1792264730982/messages","statusCode":201,"durationMs":5,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:52.310Z","requestId":"req_55ca236f-9a35-4f39-98be-9d4a936fcf56","method":"GET","url":"/api/connections/conn_human_1792264730982/messages","statusCode":200,"durationMs":2,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [1.3] Human encrypted message persistence, retrieval & local decryption verified.
+
+[SECTION 2] AGENT SESSION REGISTRATION, PEER-KEY & MESSAGING
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:53.033Z","requestId":"req_48f3ac66-dccc-4062-bfb2-34ee4310a9d4","method":"POST","url":"/api/auth/login","statusCode":200,"durationMs":114,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:53.695Z","requestId":"req_85aa1928-74cc-48b9-81e2-d75f8ccaacd1","method":"POST","url":"/api/auth/login","statusCode":200,"durationMs":110,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:53.783Z","requestId":"req_8f7e66c7-fecd-46d9-ba4d-370e1a2a3618","method":"PUT","url":"/api/agents/me/e2ee","statusCode":200,"durationMs":6,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:53.789Z","requestId":"req_d9acebc9-de75-460b-b059-ca5c5d6f37e3","method":"PUT","url":"/api/agents/me/e2ee","statusCode":200,"durationMs":2,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:53.792Z","requestId":"req_b4b2cff9-41e1-41b1-888e-fa81a910415b","method":"GET","url":"/api/agents/me/e2ee","statusCode":200,"durationMs":1,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [2.1] Agent registration and GET confirmation verified.
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:53.795Z","requestId":"req_b9ff3774-64bf-47bf-b7a2-6d343cc90eb3","method":"GET","url":"/api/connections/conn_agent_1792264730982/peer-key","statusCode":200,"durationMs":2,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [2.2] Agent peer-key retrieval verified.
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:53.800Z","requestId":"req_664868d4-4c9a-48d3-99ee-e43363041d31","method":"POST","url":"/api/connections/conn_agent_1792264730982/messages","statusCode":201,"durationMs":2,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+[HTTP 2XX/3XX] {"timestamp":"2026-10-17T19:18:53.803Z","requestId":"req_8920adec-82b8-483f-9a9b-017e8dbb69f5","method":"GET","url":"/api/connections/conn_agent_1792264730982/messages","statusCode":200,"durationMs":2,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [2.3] Agent encrypted message persistence, retrieval & local decryption verified.
+
+[SECTION 3] NONEXISTENT CONNECTION & AUTHORIZATION GUARDS
+[HTTP 4XX] {"timestamp":"2026-10-17T19:18:53.807Z","requestId":"req_544bed19-e482-4957-b6c1-9efe18ebfe04","method":"GET","url":"/api/connections/nonexistent_conn_1792264730982/peer-key","statusCode":404,"durationMs":2,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [3.1] Nonexistent connection ID returns 404 and does not construct a record.
+[HTTP 4XX] {"timestamp":"2026-10-17T19:18:53.811Z","requestId":"req_94502f1c-ce2b-4279-acc1-ecda84a1a94a","method":"POST","url":"/api/connections/nonexistent_conn_1792264730982/messages","statusCode":404,"durationMs":2,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [3.2] Nonexistent connection ID message send returns 404.
+[HTTP 4XX] {"timestamp":"2026-10-17T19:18:53.814Z","requestId":"req_ddc6975d-dde8-4f61-b7bb-15fca602eff5","method":"GET","url":"/api/connections/conn_human_1792264730982/peer-key","statusCode":403,"durationMs":2,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [3.3] Unauthorized participant peer-key lookup rejected with HTTP 403.
+[HTTP 4XX] {"timestamp":"2026-10-17T19:18:53.817Z","requestId":"req_8909b991-dcd1-4344-a8f2-945031333973","method":"POST","url":"/api/connections/conn_human_1792264730982/messages","statusCode":403,"durationMs":2,"userAgent":"node","ip":"::ffff:127.0.0.1"}
+  ✓ [3.4] Unauthorized participant message send rejected with HTTP 403.
+
+====================================================
+   ALL HUMAN & AGENT SESSION E2EE TESTS PASSED!     
+====================================================
+
+====================================================
+   E2EE REGISTRATION & GET CONFIRMATION TEST SUITE  
+====================================================
+
+[TEST 1] Human-password account E2EE key derivation & registration prep...
+✓ [TEST 1 PASSED] Human cryptographic identity successfully derived and verified.
+
+[TEST 2] Agent-API-key account registration & token issuance...
+✓ [TEST 2 PASSED] Agent account successfully registered, token issued, and crypto identity derived.
+
+[TEST 3] Fail-closed verification & integrity checks...
+✓ [TEST 3 PASSED] Cryptographic uniqueness and fail-closed integrity verified.
+
+====================================================
+  ALL E2EE REGISTRATION & CONFIRMATION TESTS PASSED!
+====================================================
+=== AAMARVA E2EE HARDENING REGRESSION TEST SUITE ===
+
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+[PASSED] Test operational_keys_non_extractable: ECDH extractable: false, ECDSA extractable: false
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:55:20)
+    at async runAll ([eval]:16:19)
+[PASSED] Test vault_contains_only_ciphertext: Vault created successfully without exposing plaintext private keys
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:64:20)
+    at async runAll ([eval]:16:19)
+[PASSED] Test retry_before_cleanup_succeeds: Successfully retried creating vault before clearing
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:72:7)
+    at async runAll ([eval]:16:19)
+[PASSED] Test safe_failure_after_cleanup: Failed safely as expected
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at rotateAgentCryptoIdentity (/app/applet/src/lib/e2ee.ts:474:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:85:21)
+    at async runAll ([eval]:16:19)
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+[PASSED] Test rotated_keys_non_extractable: Rotated keys are operational and non-extractable
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:92:25)
+    at async runAll ([eval]:16:19)
+[PASSED] Test vault_epoch2_creation_succeeds: Vault updated with Rotated keys successfully
+E2EE Keystore: IndexedDB unavailable or persistence failed, using memory cache fallback: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at restoreFromEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1460:22)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:102:27)
+    at async runAll ([eval]:16:19)
+[PASSED] Test restored_keys_non_extractable: Restored keys are imported as non-extractable
+[PASSED] Test restored_key_integrity_and_fingerprint: Restored Epoch: 2 (expected 2), fingerprint match: true
+[PASSED] Test restored_key_message_decryption: Restored keys successfully encrypt/decrypt private messages
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async performRecoveryLifecycle (/app/applet/server/tests/e2eeHardeningTests.ts:162:21)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:174:7)
+    at async runAll ([eval]:16:19)
+[PASSED] Test test5_upload_failure_simulation: Production lifecycle correctly failed during mocked upload
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:186:20)
+    at async runAll ([eval]:16:19)
+[PASSED] Test test5_transient_material_survived_failure: Transient JWK material remains available after failed upload
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async performRecoveryLifecycle (/app/applet/server/tests/e2eeHardeningTests.ts:162:21)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:195:21)
+    at async runAll ([eval]:16:19)
+[PASSED] Test test5_retry_upload_success: Retry lifecycle completed successfully
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:205:7)
+    at async runAll ([eval]:16:19)
+[PASSED] Test test5_cleanup_after_success: Transient keys successfully cleaned up
+E2EE Keystore: IndexedDB unavailable or persistence failed, using memory cache fallback: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at restoreFromEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1460:22)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:213:31)
+    at async runAll ([eval]:16:19)
+[PASSED] Test test5_retry_vault_integrity: Retry vault matches the original identity fingerprint
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:234:11)
+    at async runAll ([eval]:16:19)
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:238:11)
+    at async runAll ([eval]:16:19)
+[PASSED] Test test6_scoped_cleanup: Cleanup correctly scoped to specific agent
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async runE2EEInitStateMachine (/app/applet/server/tests/e2eeHardeningTests.ts:330:24)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:354:25)
+    at async runAll ([eval]:16:19)
+E2EE Keystore: IndexedDB unavailable or persistence failed, using memory cache fallback: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at restoreFromEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1460:22)
+    at async runE2EEInitStateMachine (/app/applet/server/tests/e2eeHardeningTests.ts:292:28)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:371:25)
+    at async runAll ([eval]:16:19)
+[PASSED] Test safety_test1_new_device_successful_recovery: Original keys restored on new device; historical messages decrypt cleanly
+E2EE Keystore: IndexedDB unavailable or persistence failed, using memory cache fallback: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at restoreFromEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1460:22)
+    at async runE2EEInitStateMachine (/app/applet/server/tests/e2eeHardeningTests.ts:292:28)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:389:25)
+    at async runAll ([eval]:16:19)
+[PASSED] Test safety_test2_new_device_different_ip: Different IP does not alter E2EE identity; original messages decrypt
+[PASSED] Test safety_test3_recovery_download_failure: Download failure stopped initialization with recovery_required; no replacement keys or vault overwrite
+[PASSED] Test safety_test4_recovery_decryption_failure: Decryption failure entered recovery_required; no replacement keys or vault overwrite
+[PASSED] Test safety_test5_wrong_recovery_credential: Wrong password entered recovery_required; no replacement keys created
+E2EE Keystore: IndexedDB unavailable or persistence failed, using memory cache fallback: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at restoreFromEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1460:22)
+    at async runE2EEInitStateMachine (/app/applet/server/tests/e2eeHardeningTests.ts:292:28)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:449:25)
+    at async runAll ([eval]:16:19)
+[PASSED] Test safety_test6_successful_manual_recovery: Manual recovery with valid password restored original keys and decrypted messages
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async runE2EEInitStateMachine (/app/applet/server/tests/e2eeHardeningTests.ts:330:24)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:473:25)
+    at async runAll ([eval]:16:19)
+[PASSED] Test safety_test7_no_recovery_vault_first_time: Genuinely no vault correctly executed first-time initialization and vault creation
+[PASSED] Test safety_test8_existing_local_keys_priority: Existing local keys preserved without replacement
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:496:33)
+    at async runAll ([eval]:16:19)
+[PASSED] Test safety_test9_corrupt_historical_epoch_fails_atomically: Any corrupt epoch aborts the entire restoration procedure immediately.
+[PASSED] Test safety_test10_corrupt_private_key_fails_atomically: Corrupted or malformed JWK private key throws error and blocks recovery.
+[PASSED] Test safety_test11_unknown_vault_version_rejected: Unsupported recovery-vault version (>2) is rejected by safety validation checks.
+[PASSED] Test safety_test12_malformed_ciphertext_rejected: Non-Base64 malformed ciphertext strings are strictly rejected by the server transport layer.
+[PASSED] Test safety_test13_invalid_nonce_rejected: Nonces not exactly 12 bytes long for AES-GCM are explicitly rejected.
+[PASSED] Test safety_test14_atomic_persistence_failure_rollback: Failed recovery never writes partial keys or clears existing valid identity.
+[PASSED] Test safety_test15_agent_auth_cannot_access_recovery_vault: requireHumanSession strictly blocks agent credentials with 403 Forbidden.
+[PASSED] Test safety_test16_human_auth_can_access_recovery_vault: requireHumanSession passes authenticated human requests cleanly to endpoints.
+[PASSED] Test messaging_test17_agent_can_send_encrypted_message: Properly formatted E2EE encrypted envelopes are successfully processed & stored.
+[PASSED] Test messaging_test18_human_cannot_send_agent_message: Agent authentication middleware strictly prevents human session headers from accessing agent-only paths.
+[PASSED] Test messaging_test19_plaintext_content_rejected: Supplying unencrypted "content" throws PLAINTEXT_REJECTED error and fails.
+[PASSED] Test messaging_test20_plaintext_message_rejected: Supplying unencrypted "message" throws PLAINTEXT_REJECTED error and fails.
+[PASSED] Test messaging_test21_invalid_ciphertext_rejected: Malformed Base64 ciphertext strings are verified and thrown out.
+[PASSED] Test messaging_test22_invalid_nonce_rejected: Malformed Base64 nonce strings are thrown out.
+[PASSED] Test messaging_test23_wrong_nonce_length_rejected: Nonces that are not exactly 12 bytes fail validation checks with INVALID_NONCE.
+[PASSED] Test messaging_test24_unsupported_version_rejected: Unsupported protocol versions of the E2EE envelope are strictly rejected.
+[PASSED] Test messaging_test25_invalid_key_epoch_rejected: Malformed, decimal, or negative keyEpochs throw INVALID_KEY_EPOCH.
+[PASSED] Test messaging_test26_wrong_key_auth_failure: Decrypting with a wrong key causes standard WebCrypto cryptographic verification failure.
+[PASSED] Test messaging_test27_tampered_ciphertext_failure: Tampering with ciphertext bytes causes AES-GCM tag verification failure.
+[PASSED] Test messaging_test28_tampered_nonce_failure: Tampering with nonce bytes causes AES-GCM authentication verification failure.
+[PASSED] Test messaging_test29_no_plaintext_fallback: Failed decryption strictly outputs the unavailable placeholder rather than raw Base64 strings.
+[PASSED] Test messaging_test30_random_base64_never_displayed: Random bytes are safely displayed as locked secure status placeholders upon decryption failure.
+[PASSED] Test messaging_test31_private_message_ignores_plaintext_field: Injected plaintext on private messages cannot bypass WebCrypto decryption layer.
+[PASSED] Test messaging_test32_legacy_public_content_remains_functional: Legitimate public context messages are successfully resolved & rendered as plain text.
+[PASSED] Test messaging_test33_legacy_plaintext_isolation_on_private_channel: Legacy plaintext properties on private messages are completely isolated and never rendered.
+====================================================
+🚀 RUNNING AAMARVA E2EE VERSIONED KEY EPOCH TEST SUITE
+====================================================
+
+[TEST 1] Basic Dual-Direction E2EE Channel (Epoch 1)...
+✅ TEST 1 PASSED: Basic bidirectional E2EE works cleanly.
+
+[TEST 2] Cryptographic Tamper Resistance & Security Boundaries...
+✅ TEST 2 PASSED: Tamper resistance and channel binding verified.
+
+[TEST 3] Epoch Immutability Enforcement (Reject Overwrite of Epoch 1)...
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+✅ TEST 3 PASSED: Epoch 1 is strictly immutable and cannot be overwritten.
+
+[TEST 4] Safe Key Rotation & Multi-Epoch Historical Chat Decryption...
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+   Rotating Agent A to Epoch 2...
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at rotateAgentCryptoIdentity (/app/applet/src/lib/e2ee.ts:474:27)
+    at async runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:293:21)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+   Rotating Agent A to Epoch 3...
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at rotateAgentCryptoIdentity (/app/applet/src/lib/e2ee.ts:474:27)
+    at async runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:323:21)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+   Verifying historical messages remain decryptable...
+✅ TEST 4 PASSED: Multi-epoch historical message decryption works 100%.
+
+[TEST 5] Encrypted Recovery Vault Multi-Epoch Packaging...
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:380:20)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+✅ TEST 5 PASSED: Recovery vault packaged all historical epochs.
+
+[TEST 6] New-Device Multi-Epoch Recovery & Historical Decryption...
+E2EE Keystore: IndexedDB unavailable or persistence failed, using memory cache fallback: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at restoreFromEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1460:22)
+    at async runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:394:23)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+✅ TEST 6 PASSED: Complete multi-epoch history recovered on new device.
+
+[TEST 7] Password Change Recovery Vault Re-Encryption...
+E2EE Keystore: IndexedDB unavailable or persistence failed, using memory cache fallback: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at restoreFromEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1460:22)
+    at async reEncryptRecoveryVaultWithNewCredential (/app/applet/src/lib/e2ee.ts:1531:20)
+    at async runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:445:30)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+E2EE: Failed to decrypt existing vault during recovery vault creation: DOMException [OperationError]: The operation failed for an operation-specific reason
+    at AESCipherJob.onDone (node:internal/crypto/util:453:19) {
+  [cause]: [Error: Cipher job failed]
+}
+E2EE Keystore: getAllLocalEpochKeys IndexedDB query error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getAllLocalEpochKeys (/app/applet/src/lib/e2ee.ts:995:22)
+    at createEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1128:27)
+    at async reEncryptRecoveryVaultWithNewCredential (/app/applet/src/lib/e2ee.ts:1534:24)
+    at async runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:445:30)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+E2EE Keystore: IndexedDB unavailable or persistence failed, using memory cache fallback: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at restoreFromEncryptedRecoveryVault (/app/applet/src/lib/e2ee.ts:1460:22)
+    at async runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:464:33)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+✅ TEST 7 PASSED: Password change preserved complete key epoch history.
+
+[TEST 8] Missing Historical Epoch Failure Status...
+E2EE Keystore: IndexedDB read error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getLocalKeyPair (/app/applet/src/lib/e2ee.ts:826:22)
+    at runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:477:39)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+✅ TEST 8 PASSED: Missing historical epoch correctly reported as KEY_EPOCH_NOT_FOUND.
+
+[TEST 9] Strict Peer Public Key Resolution (Missing-Middle-Epoch Verification)...
+E2EE Pinning: IndexedDB pin read error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getPinnedPeerKey (/app/applet/src/lib/e2ee.ts:1574:22)
+    at getPeerEpochKey (/app/applet/src/lib/e2ee.ts:1756:24)
+    at resolveSenderPublicKey (/app/applet/src/lib/e2ee.ts:1789:32)
+    at runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:519:31)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+E2EE Pinning: IndexedDB pin read error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getPinnedPeerKey (/app/applet/src/lib/e2ee.ts:1574:22)
+    at resolveSenderPublicKey (/app/applet/src/lib/e2ee.ts:1795:24)
+    at async runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:519:25)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+E2EE Pinning: IndexedDB pin read error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getPinnedPeerKey (/app/applet/src/lib/e2ee.ts:1574:22)
+    at getPeerEpochKey (/app/applet/src/lib/e2ee.ts:1756:24)
+    at resolveSenderPublicKey (/app/applet/src/lib/e2ee.ts:1789:32)
+    at runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:525:31)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+E2EE Pinning: IndexedDB pin read error: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at getPinnedPeerKey (/app/applet/src/lib/e2ee.ts:1574:22)
+    at resolveSenderPublicKey (/app/applet/src/lib/e2ee.ts:1795:24)
+    at async runE2EEUnitTest (/app/applet/src/lib/test-e2ee.ts:525:25)
+    at async Object.runE2EEHardeningTests (/app/applet/server/tests/e2eeHardeningTests.ts:1173:23)
+    at async runAll ([eval]:16:19)
+✅ TEST 9 PASSED: Peer key resolution is strictly exact with zero numeric-range fallbacks.
+
+[TEST 10] Concurrency & Idempotency Invariants...
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:129:21)
+    at new Promise (<anonymous>)
+    at openKeyDatabase (/app/applet/src/lib/e2ee.ts:127:10)
+    at <anonymous> (/app/applet/src/lib/e2ee.ts:663:24)
+    at withAgentSaveLock (/app/applet/src/lib/e2ee.ts:561:18)
+✅ TEST 10 PASSED: Concurrency serialization and same-key idempotency verified.
+
+====================================================
+🎉 ALL E2EE KEY EPOCH & RECOVERY TESTS PASSED SUCCESSFULLY!
+====================================================
+[PASSED] Test messaging_test34_deterministic_e2ee_round_trip_and_serialization: Deterministic ECDH + HKDF + AES-256-GCM round-trip succeeds across simulated production DB serialization.
+[PASSED] Test messaging_test35_tamper_resistance_and_aad_channel_binding: AES-256-GCM authentication strictly rejects channel ID and sender identity tampering via AAD.
+[PASSED] Test messaging_test36_internal_error_classification: Decryption failures are accurately categorized into internal diagnostic error classifications.
+[PASSED] Test messaging_test37_unregistered_key_epoch_rejected: Arbitrary unverified keyEpochs (e.g. 9999) without published keys are strictly rejected by the backend.
+[PASSED] Test messaging_test38_no_public_key_rejected_with_403_e2ee_key_required: Agent without a registered E2EE public key is rejected with HTTP 403 E2EE_KEY_REQUIRED and creates no DB message.
+[PASSED] Test messaging_test39_malformed_public_key_rejected: Malformed or non-EC public keys fail verification and require proper E2EE key registration.
+[PASSED] Test messaging_test40_valid_public_key_accepted: Agent with registered EC P-256 public key successfully sends ciphertext-only message.
+[PASSED] Test messaging_test41_unauthorized_non_participant_agent_rejected: Agent attempting to message a connection they are not a participant of is rejected with HTTP 403 FORBIDDEN.
+[PASSED] Test messaging_test42_dissolved_connection_rejected: Sending message to dissolved connection is rejected with HTTP 403 CONNECTION_DISSOLVED.
+[PASSED] Test test_A_valid_historical_epoch_accepted: Valid registered historical epoch (Epoch 1) is cleanly accepted.
+[PASSED] Test test_B_missing_middle_epoch_rejected: Missing middle epoch 2 strictly rejected with KEY_EPOCH_NOT_FOUND (code: KEY_EPOCH_NOT_FOUND).
+[PASSED] Test test_C_future_epoch_rejected: Future unregistered epoch 4 is strictly rejected.
+[PASSED] Test test_D_arbitrary_huge_epoch_rejected: Arbitrary huge epoch 9999 is strictly rejected.
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+    at new Promise (<anonymous>)
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+[PASSED] Test test_E_concurrent_same_epoch_creation: Concurrent creation of Epoch 2 with different keys allows exactly one winner and rejects the conflicting write.
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+    at new Promise (<anonymous>)
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+[PASSED] Test test_F_idempotent_same_key_creation: Attempting to save identical key to existing epoch is completely idempotent and succeeds without corruption.
+E2EE Keystore: IndexedDB unavailable or write error, using session memory cache: Error: IndexedDB is not available in this environment.
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+    at new Promise (<anonymous>)
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+    at payload (/app/applet/src/lib/e2ee.ts:2269:17)
+[PASSED] Test test_G_overwrite_attempt_rejected: Attempting to overwrite Epoch 2 with different key is rejected with E2EE_EPOCH_ALREADY_EXISTS and original KEY_A remains intact.
+
+=== AAMARVA CLUSTER MESSAGING SECURITY RECIPIENT MODEL SUITE ===
+
+[PASSED] test_recipient_decryption_success: Authorized recipient decrypted correctly
+[PASSED] test_unauthorized_recipient_rejection: Unauthorized recipient rejected
+[PASSED] test_epoch_metadata_present: Epoch metadata matches
+[PASSED] test_epoch_decryption_success: Decrypted with coordinated keyEpoch
+[PASSED] test_mismatched_epoch_rejection: Mismatched keyEpoch strictly rejected via AAD
+[PASSED] Test test_recipient_decryption_success: Authorized recipient decrypted correctly
+[PASSED] Test test_unauthorized_recipient_rejection: Unauthorized recipient rejected
+[PASSED] Test test_epoch_metadata_present: Epoch metadata matches
+[PASSED] Test test_epoch_decryption_success: Decrypted with coordinated keyEpoch
+[PASSED] Test test_mismatched_epoch_rejection: Mismatched keyEpoch strictly rejected via AAD
+
+=== AAMARVA CLUSTER MESSAGING SECURITY RECIPIENT MODEL SUITE ===
+
+[PASSED] test_recipient_decryption_success: Authorized recipient decrypted correctly
+[PASSED] test_unauthorized_recipient_rejection: Unauthorized recipient rejected
+[PASSED] test_epoch_metadata_present: Epoch metadata matches
+[PASSED] test_epoch_decryption_success: Decrypted with coordinated keyEpoch
+[PASSED] test_mismatched_epoch_rejection: Mismatched keyEpoch strictly rejected via AAD
+
+=== AAMARVA CLUSTER HUMAN-ONLY ENDPOINT SECURITY TEST SUITE ===
+
+[PASSED] unauthenticated_patch_rejected: HTTP 401, code: UNAUTHORIZED
+[PASSED] agent_api_key_patch_rejected: Header x-api-key: HTTP 403 (AGENT_ACCESS_FORBIDDEN), Bearer sk_amr: HTTP 403
+[PASSED] valid_human_patch_with_permission_allowed: HTTP 200, persisted name: Updated Human Cluster
+[PASSED] valid_human_patch_without_permission_rejected: HTTP 403, message: Forbidden: Only an admin or master can update this cluster.
+[PASSED] unauthenticated_delete_rejected: HTTP 401, code: UNAUTHORIZED
+[PASSED] agent_api_key_delete_rejected: Header x-api-key: HTTP 403 (AGENT_ACCESS_FORBIDDEN), Bearer sk_amr: HTTP 403
+[PASSED] valid_human_delete_without_permission_rejected: HTTP 403, message: Forbidden: Only the owner can disband this cluster.
+[PASSED] valid_human_delete_with_permission_allowed: HTTP 200, status in DB: dissolved
+[verifyHumanSession catch error] invalid signature
+[verifyHumanSession catch error] jwt expired
+[PASSED] invalid_or_expired_human_session_rejected: Forged token: HTTP 401, Expired token: HTTP 401
+[PASSED] nonexistent_cluster_preserved_404: PATCH: HTTP 404, DELETE: HTTP 404
+[PASSED] agent_bypass_attempt_rejected: HTTP 403, code: AGENT_ACCESS_FORBIDDEN
+
+=== AAMARVA EDIT CLUSTER MEMBER & SAVE REGRESSION TEST SUITE ===
+
+[PASSED] Save changed name: Status: 200, name: Updated Cluster Name, desc: Initial Description
+[PASSED] Save changed description: Status: 200, name: Updated Cluster Name, desc: Updated Description Text
+[PASSED] Clear description: Status: 200, desc: null
+[PASSED] Add eligible agent: Status: 200, found added agent: true
+[PASSED] Added agent sees active cluster: Cluster found in peer profile: true
+[PASSED] Owner removal prevented: Status: 400, message: Cannot remove the cluster owner/admin.
+[PASSED] Remove member endpoint succeeded: Status: 200
+[PASSED] Removed agent dashboard excludes cluster from Active Clusters: Cluster still active in profile: false
+[PASSED] Removed member direct API access rejected with 403: GET cluster: 403, crypto: 403, messages: 403, POST message: 403
+[PASSED] Slave account connection messaging rejected in UI session: Status: 403, code: SLAVE_UI_MESSAGING_DISABLED
+[PASSED] Slave account cluster messaging rejected in UI session: Status: 403, code: SLAVE_UI_MESSAGING_DISABLED
+[PASSED] Owner remains active member in database after reload: Owner present: true, active members count: 1
+
+[SUCCESS] All Cluster Member Edit tests PASSED.
+
+=== AAMARVA OBSOLETE COUNTER-PARTY-SCORE ENDPOINT REGRESSION SUITE ===
+
+[PASSED] frontend_zero_counter_party_score_references: Zero occurrences in src/
+[PASSED] user_dashboard_view_no_polling: No polling interval or endpoint fetch in UserDashboardView
+[PASSED] user_dashboard_tablet_no_polling: No polling interval or endpoint fetch in UserDashboardViewTablet
+[PASSED] loadouts_box_no_obsolete_rate_limits: No counter-party-score entries in LoadoutsBox rate limits
+[PASSED] access_management_no_obsolete_policies: No counter_party policies in AccessManagementCard
+[PASSED] security_service_no_obsolete_policies: No counter_party_score policies in securityService.ts
+[PASSED] slave_activity_middleware_no_obsolete_endpoint: No /counter-party-score in slaveActivityMiddleware.ts
+[PASSED] cluster_endpoints_preserved: GET /api/clusters/:clusterId and GET /api/clusters/:clusterId/members/crypto are intact
+
+=== AAMARVA TELEMETRY ACTIVITY ENDPOINT TESTS ===
+
+[PASSED] TEST 1: Authenticated successful JSON response: Status: 200, agents: 2, clusters: 1, leak: false
+[PASSED] TEST 2: Unauthenticated access blocked with 401 JSON: Status: 401, contentType: application/json; charset=utf-8, code: UNAUTHORIZED
+[PASSED] TEST 3: Authorization isolation: fleet data strictly partitioned: Contains user A: false, Contains cluster A: false, Contains cluster B: true
+[PASSED] TEST 4: Unmatched API path returns 404 JSON, preventing unexpected token <: Status: 404, contentType: application/json; charset=utf-8, code: NOT_FOUND
+[PASSED] TEST 5: Component parsing guards prevent Unexpected token < and handle failures safely: HTML safely rejected: true, Error safely handled: true
+
+[SUCCESS] All test suites PASSED.

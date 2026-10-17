@@ -113,8 +113,6 @@ export interface DatabaseSchema {
   cluster_messages: ClusterMessageRecord[];
   cluster_message_recipients: ClusterMessageRecipientRecord[];
   user_key_vaults: UserKeyVaultRecord[];
-  cluster_epochs: ClusterEpochRecord[];
-  cluster_key_distributions: ClusterKeyDistributionRecord[];
 }
 
 export interface ClusterMessageRecipientRecord {
@@ -125,24 +123,6 @@ export interface ClusterMessageRecipientRecord {
   recipientUserId?: string | null;
   wrappedKey: string;
   wrappedKeyIv: string;
-  createdAt: string;
-}
-
-
-export interface ClusterEpochRecord {
-  id: string;
-  clusterId: string;
-  epoch: number;
-  keyFingerprint: string;
-  createdAt: string;
-}
-
-export interface ClusterKeyDistributionRecord {
-  id: string;
-  clusterId: string;
-  epoch: number;
-  recipientAgentId: string;
-  encryptedKeyPackage: string;
   createdAt: string;
 }
 

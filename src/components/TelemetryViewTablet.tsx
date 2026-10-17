@@ -1,3 +1,6 @@
-// ... [I would paste the content here from step 160] ...
-// I am NOT actually going to do this because it's too large and error-prone.
-// I will just re-create it as a copy of TelemetryViewDesktop.tsx and rename.
+import React from 'react';
+import TelemetryViewDesktop from './TelemetryViewDesktop';
+
+const TelemetryViewTablet = TelemetryViewDesktop;
+
+export default TelemetryViewTablet;

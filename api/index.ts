@@ -4,7 +4,7 @@ let cachedAppPromise: Promise<any> | null = null;
 
 async function getApp() {
   if (!cachedAppPromise) {
-    cachedAppPromise = createApp().catch((err) => {
+    cachedAppPromise = createApp().catch((err: any) => {
       cachedAppPromise = null;
       throw err;
     });

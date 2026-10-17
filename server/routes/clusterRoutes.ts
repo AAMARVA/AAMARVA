@@ -440,25 +440,13 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
     const oUid = cluster.ownerUserId;
     const ownerInfo = (oAid ? userMap.get(String(oAid).toLowerCase()) : null) || 
                       (oUid ? userMap.get(String(oUid).toLowerCase()) : null);
-    const { data: publicLatestEpoch } = await supabase
-      .from('cluster_epochs')
-      .select('epoch, keyFingerprint')
-      .eq('clusterId', cluster.id)
-      .order('epoch', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const publicCurrentEpoch = (publicLatestEpoch && publicLatestEpoch.keyFingerprint && publicLatestEpoch.keyFingerprint !== 'PENDING_INIT')
-      ? publicLatestEpoch.epoch
-      : 1;
+    const publicCurrentEpoch = 1;
 
     const enrichedCluster = {
       ...cluster,
       symbol: getClusterSymbol(cluster.id),
       ownerName: (ownerInfo?.name && String(ownerInfo.name).trim()) || cluster.ownerAgentId || 'Agent',
-      ownerAvatar: ownerInfo?.avatar || '🤖',
-      epoch: publicCurrentEpoch,
-      currentEpoch: publicCurrentEpoch
+      ownerAvatar: ownerInfo?.avatar || '🤖'
     };
 
     res.json({
@@ -848,18 +836,7 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
       .eq('clusterId', clusterId)
       .neq('status', 'dissolved');
 
-    // Query latest authoritative epoch from cluster_epochs
-    const { data: latestEpochRecord } = await supabase
-      .from('cluster_epochs')
-      .select('epoch, keyFingerprint')
-      .eq('clusterId', clusterId)
-      .order('epoch', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const currentEpoch = (latestEpochRecord && latestEpochRecord.keyFingerprint && latestEpochRecord.keyFingerprint !== 'PENDING_INIT')
-      ? latestEpochRecord.epoch
-      : 1;
+    const currentEpoch = 1;
 
     res.json({
       success: true,
@@ -870,8 +847,6 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
         description: cluster.description,
         ownerAgentId: cluster.ownerAgentId,
         membersCount: count || 0,
-        epoch: currentEpoch,
-        currentEpoch,
         createdAt: cluster.createdAt
       }
     });
@@ -998,16 +973,7 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
       }
     }
 
-    // Query latest epoch for membership version
-    const { data: latestEpochRecord } = await supabase
-      .from('cluster_epochs')
-      .select('epoch')
-      .eq('clusterId', clusterId)
-      .order('epoch', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const membershipVersion = latestEpochRecord?.epoch || 1;
+    const membershipVersion = 1;
 
     const membersList = (dbMembers || []).map((m: any) => {
       const mAgentId = m.agentId || m.agent_id;
@@ -1074,7 +1040,7 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
       });
     }
 
-    const latestEpoch = latestEpochRecord?.epoch || 1;
+    const latestEpoch = 1;
 
     res.json({
       success: true,
@@ -1604,30 +1570,6 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       throw new Error(`Failed to query authoritative cluster members: ${peerErr?.message || 'Unknown error'}`);
     }
 
-    // 4.5 Server-side authoritative recipient authorization enforcement
-    try {
-      const decodedEnvStr = Buffer.from(ciphertext.trim(), 'base64').toString('utf8');
-      const parsedEnv = JSON.parse(decodedEnvStr);
-      if (parsedEnv && (parsedEnv.type === 'AAMARVA_RECIPIENT_E2EE_v2' || parsedEnv.keys)) {
-        const wrappedKeys = parsedEnv.keys || {};
-        const wrappedIds = Object.keys(wrappedKeys).map(id => String(id).trim().toUpperCase());
-        const activeIds = new Set(authoritativeActiveMembers.map(m => String(m.agentId || m.userId).trim().toUpperCase()));
-
-        for (const wId of wrappedIds) {
-          if (!activeIds.has(wId)) {
-            return res.status(400).json({
-              success: false,
-              error: {
-                code: 'UNAUTHORIZED_RECIPIENT_KEY',
-                message: `Message envelope includes wrapped key for unauthorized or inactive recipient (${wId}).`
-              }
-            });
-          }
-        }
-      }
-    } catch (compErr: any) {
-      if (compErr?.status === 400) return compErr;
-    }
 
     // 5. Strict E2EE validation: reject any plaintext content (content or message fields)
     if (content != null || bodyMessage != null || body?.message != null || body?.content != null) {
@@ -1805,6 +1747,36 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
           message: 'Recipient-envelope messages (version 2) must include a map of recipient key envelopes.'
         }
       });
+    }
+    
+    // Authorization Check: Validate all recipients are active cluster members
+    if (parsedVersion === 2) {
+      const recipientIds = Object.keys(keys);
+      const { data: memberRecords, error: memErr } = await supabase
+        .from(tables.members)
+        .select('agentId, agent_id')
+        .eq('clusterId', clusterId)
+        .neq('status', 'dissolved');
+      
+      if (memErr) {
+        return res.status(500).json({ success: false, error: { message: 'Failed to validate cluster membership.' } });
+      }
+
+      const activeMemberIds = new Set(
+        (memberRecords || []).map((m: any) => (m.agentId || m.agent_id).toLowerCase())
+      );
+
+      for (const rId of recipientIds) {
+        if (!activeMemberIds.has(rId.toLowerCase())) {
+          return res.status(403).json({
+            success: false,
+            error: {
+              code: 'UNAUTHORIZED_RECIPIENT',
+              message: `Recipient ${rId} is not an active member of this cluster.`
+            }
+          });
+        }
+      }
     }
 
     // 11. Strict sequence validation (non-negative integer when supplied)
@@ -2040,9 +2012,6 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
         return true;
       }
       if (m.keys && typeof m.keys === 'object' && callerAgentId && m.keys[callerAgentId]) {
-        return true;
-      }
-      if (!m.keys && (!m.version || m.version === 1)) {
         return true;
       }
       return false;
