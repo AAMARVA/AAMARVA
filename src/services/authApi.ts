@@ -809,7 +809,7 @@ export async function sendClusterMessageApi(
   }
 
   for (const m of membersList) {
-    if (m.status !== 'dissolved' && m.agentId && m.publicKey) {
+    if (m.status === 'active' && m.agentId && m.publicKey) {
       const agentIdLower = m.agentId.toLowerCase().trim();
       if (!selectedSet || selectedSet.has(agentIdLower)) {
         memberPublicKeys[m.agentId] = m.publicKey;
@@ -850,7 +850,6 @@ export async function sendClusterMessageApi(
     method: 'POST',
     body: JSON.stringify({
       ciphertext: encrypted.ciphertext,
-      nonce: encrypted.nonce,
       version: encrypted.version,
       keyEpoch: clusterEpoch,
       recipients: Object.keys(encrypted.keys),

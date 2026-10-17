@@ -1631,8 +1631,8 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
           required_fields: {
             ciphertext: 'Base64 encoded AES-256-GCM ciphertext',
             nonce: 'Base64 encoded 96-bit initialization vector',
-            version: 'Optional (defaults to 1)',
-            keyEpoch: 'Optional (defaults to 1)'
+            version: 'Required (must be version 2)',
+            keyEpoch: 'Required (positive integer >= 1)'
           }
         }
       });
@@ -1703,19 +1703,19 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       });
     }
 
-    // 8. Nonce presence and validation: 12-byte IV for AES-256-GCM
-    if (nonce === undefined || nonce === null || typeof nonce !== 'string') {
+    // 8. Nonce (Deprecated: use inner envelope nonce instead)
+    if (nonce !== undefined && nonce !== null && typeof nonce !== 'string') {
       return res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_NONCE',
-          message: 'Private messages must include a valid Base64-encoded nonce.',
+          message: 'If provided, nonce must be a valid Base64-encoded string.',
         },
       });
     }
 
-    const trimmedNonce = nonce.trim();
-    if (trimmedNonce.length === 0 || !isValidBase64String(trimmedNonce)) {
+    const trimmedNonce = typeof nonce === 'string' ? nonce.trim() : null;
+    if (trimmedNonce && trimmedNonce.length > 0 && !isValidBase64String(trimmedNonce)) {
       return res.status(400).json({
         success: false,
         error: {
@@ -1726,15 +1726,17 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
     }
 
     try {
-      const nonceBuf = Buffer.from(trimmedNonce, 'base64');
-      if (nonceBuf.length !== 12) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_NONCE',
-            message: 'Invalid nonce. AES-256-GCM requires a valid 96-bit (12-byte) initialization vector.',
-          },
-        });
+      if (trimmedNonce) {
+        const nonceBuf = Buffer.from(trimmedNonce, 'base64');
+        if (nonceBuf.length !== 12) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_NONCE',
+              message: 'Invalid nonce. AES-256-GCM requires a valid 96-bit (12-byte) initialization vector.',
+            },
+          });
+        }
       }
     } catch {
       return res.status(400).json({
@@ -1925,14 +1927,6 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
           activeMemberIds.add(rawId);
         } else {
           inactiveMemberIds.add(rawId);
-        }
-      }
-      if (m.userId) {
-        const rawUid = m.userId.trim().toLowerCase();
-        if (m.status === 'active') {
-          activeMemberIds.add(rawUid);
-        } else {
-          inactiveMemberIds.add(rawUid);
         }
       }
     }

@@ -495,55 +495,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_one_active_per_owner
 ON clusters ("ownerUserId") 
 WHERE (status = 'active');
 
--- 21.1. Cluster Epochs Table (Authoritative Cryptographic Epochs)
-CREATE TABLE IF NOT EXISTS cluster_epochs (
-  id TEXT PRIMARY KEY,
-  "clusterId" TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
-  "epoch" INTEGER NOT NULL,
-  "keyFingerprint" TEXT NOT NULL, -- Fingerprint of the group key
-  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE("clusterId", "epoch")
-);
 
--- 21.2. Cluster Key Distributions Table (Per-Agent Encrypted Group Key Packages)
-CREATE TABLE IF NOT EXISTS cluster_key_distributions (
-  id TEXT PRIMARY KEY,
-  "clusterId" TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
-  "epoch" INTEGER NOT NULL,
-  "recipientAgentId" TEXT NOT NULL,
-  "encryptedKeyPackage" TEXT NOT NULL,
-  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Indexes for ultra-fast cluster epoch and key distribution lookups
-CREATE INDEX IF NOT EXISTS idx_cluster_epochs_cluster ON cluster_epochs("clusterId");
-CREATE INDEX IF NOT EXISTS idx_cluster_key_distributions_cluster_epoch ON cluster_key_distributions("clusterId", "epoch");
-CREATE INDEX IF NOT EXISTS idx_cluster_key_distributions_recipient ON cluster_key_distributions("clusterId", "epoch", "recipientAgentId");
-
--- Function: advance_cluster_epoch (Atomic epoch advancement for group key rotation)
-CREATE OR REPLACE FUNCTION advance_cluster_epoch(p_cluster_id TEXT)
-RETURNS JSON AS $$
-DECLARE
-  v_next_epoch INTEGER;
-  v_new_id TEXT;
-BEGIN
-  -- Lock the row for update to prevent concurrent races
-  SELECT COALESCE(MAX(epoch), 0) + 1 INTO v_next_epoch
-  FROM cluster_epochs
-  WHERE "clusterId" = p_cluster_id;
-
-  v_new_id := 'epoch_' || gen_random_uuid();
-
-  INSERT INTO cluster_epochs (id, "clusterId", epoch, "keyFingerprint", "createdAt")
-  VALUES (v_new_id, p_cluster_id, v_next_epoch, 'PENDING_INIT', NOW());
-
-  RETURN json_build_object('next_epoch', v_next_epoch);
-END;
-$$ LANGUAGE plpgsql;
-
--- Grant execution privileges on advance_cluster_epoch
-REVOKE EXECUTE ON FUNCTION advance_cluster_epoch(TEXT) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION advance_cluster_epoch(TEXT) TO service_role, authenticated;
 
 
 -- ==============================================================================

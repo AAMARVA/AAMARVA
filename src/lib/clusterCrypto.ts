@@ -17,7 +17,6 @@ export async function encryptMessageForRecipients(
   keyEpoch?: number
 ): Promise<{
   ciphertext: string;
-  nonce: string;
   version: number;
   keyEpoch: number;
   keys: Record<string, { iv: string; key: string }>;
@@ -102,13 +101,11 @@ export async function encryptMessageForRecipients(
     keys: wrappedKeysMap
   };
 
-  const outerNonce = cryptoObj.getRandomValues(new Uint8Array(12));
   const envelopeJson = JSON.stringify(messageEnvelope);
   const envelopeBytes = new TextEncoder().encode(envelopeJson);
 
   return {
     ciphertext: bufferToBase64(envelopeBytes.buffer),
-    nonce: bufferToBase64(outerNonce.buffer),
     version,
     keyEpoch: epoch,
     keys: wrappedKeysMap
@@ -122,7 +119,6 @@ export async function encryptMessageForRecipients(
  */
 export async function decryptMessageForRecipient(
   ciphertext: string,
-  nonce: string,
   receiverPrivateKey: CryptoKey | string,
   envelopeOrKeys: any,
   senderPublicKeyJwk: any,
@@ -141,58 +137,61 @@ export async function decryptMessageForRecipient(
   const sId = normalizeAgentId(senderAgentId);
 
   let envelope: any = null;
+  
   try {
     const rawBuf = base64ToBuffer(ciphertext);
     const decoded = new TextDecoder('utf-8', { fatal: true }).decode(rawBuf);
-    if (decoded && decoded.trim().startsWith('{')) {
-      envelope = JSON.parse(decoded.trim());
-    }
-  } catch {}
+    envelope = JSON.parse(decoded.trim());
+  } catch (err: any) {
+    throw new Error(`E2EE Error: Failed to parse envelope: ${err?.message || 'Invalid Base64 or JSON'}`);
+  }
 
-  // Enforce protocol version 2 (fail closed: reject missing, non-numeric, or unsupported versions)
-  if (envelopeOrKeys && typeof envelopeOrKeys === 'object' && envelopeOrKeys.version !== undefined && envelopeOrKeys.version !== null) {
-    if (typeof envelopeOrKeys.version !== 'number' || envelopeOrKeys.version !== 2) {
-      throw new Error(`E2EE Error: Unsupported protocol version (${envelopeOrKeys.version}). Only recipient-envelope protocol version 2 is supported.`);
-    }
+  if (!envelope || envelope.type !== 'AAMARVA_RECIPIENT_E2EE_v2') {
+    throw new Error('E2EE Error: Unsupported or missing envelope type.');
   }
-  if (envelope && envelope.version !== undefined && envelope.version !== null) {
-    if (typeof envelope.version !== 'number' || envelope.version !== 2) {
-      throw new Error(`E2EE Error: Unsupported protocol version (${envelope.version}). Only recipient-envelope protocol version 2 is supported.`);
-    }
+
+  // Validate version
+  const explicitVersion = (envelopeOrKeys && typeof envelopeOrKeys === 'object' && envelopeOrKeys.version !== undefined && envelopeOrKeys.version !== null)
+    ? envelopeOrKeys.version
+    : undefined;
+  if (explicitVersion !== undefined && explicitVersion !== null && explicitVersion !== envelope.version) {
+    throw new Error(`E2EE Error: Unsupported protocol version (${explicitVersion}).`);
   }
-  const rawVersion = envelope?.version ?? (envelopeOrKeys && typeof envelopeOrKeys === 'object' ? envelopeOrKeys.version : undefined);
-  if (rawVersion === undefined || rawVersion === null || typeof rawVersion !== 'number' || rawVersion !== 2) {
-    throw new Error(`E2EE Error: Missing or unsupported protocol version (${rawVersion}). Only recipient-envelope protocol version 2 is supported.`);
+  if (envelope.version !== 2) {
+    throw new Error(`E2EE Error: Unsupported protocol version (${envelope.version}). Only version 2 is supported.`);
   }
   const version = 2;
 
-  // Enforce keyEpoch (fail closed on missing or invalid epoch)
-  const rawEpoch = (keyEpoch !== undefined && keyEpoch !== null) 
+  // Validate keyEpoch
+  const explicitEpoch = (keyEpoch !== undefined && keyEpoch !== null) 
     ? keyEpoch 
     : (envelopeOrKeys && typeof envelopeOrKeys === 'object' && envelopeOrKeys.keyEpoch !== undefined && envelopeOrKeys.keyEpoch !== null)
       ? envelopeOrKeys.keyEpoch
-      : envelope?.keyEpoch;
-  if (rawEpoch === undefined || rawEpoch === null || typeof rawEpoch !== 'number' || !Number.isFinite(rawEpoch) || !Number.isInteger(rawEpoch) || rawEpoch < 1) {
-    throw new Error('E2EE Error: Missing or invalid keyEpoch in message payload.');
+      : undefined;
+  if (explicitEpoch !== undefined && explicitEpoch !== null && explicitEpoch !== envelope.keyEpoch) {
+    throw new Error(`E2EE Error: Mismatched keyEpoch (${explicitEpoch} vs envelope epoch ${envelope.keyEpoch}).`);
   }
-  const epoch = rawEpoch;
-
-  const keysMap = envelope?.keys || envelopeOrKeys?.keys || (envelopeOrKeys && typeof envelopeOrKeys === 'object' && !envelopeOrKeys.version && !envelopeOrKeys.keys ? envelopeOrKeys : null);
-  const actualCiphertext = envelope?.ciphertext || ciphertext;
-  const actualNonce = envelope?.nonce || nonce;
-  const actualSenderId = envelope?.senderAgentId || sId;
-
-  if (!actualCiphertext || typeof actualCiphertext !== 'string' || actualCiphertext.trim().length === 0) {
-    throw new Error('E2EE Error: Missing or invalid ciphertext in message payload.');
+  if (typeof envelope.keyEpoch !== 'number' || !Number.isFinite(envelope.keyEpoch) || !Number.isInteger(envelope.keyEpoch) || envelope.keyEpoch < 1) {
+    throw new Error('E2EE Error: Missing or invalid keyEpoch in envelope.');
   }
+  const epoch = envelope.keyEpoch;
 
-  if (!actualNonce || typeof actualNonce !== 'string' || actualNonce.trim().length === 0) {
-    throw new Error('E2EE Error: Missing or invalid nonce in message payload.');
+  // Validate keysMap
+  if (!envelope.keys || typeof envelope.keys !== 'object' || Array.isArray(envelope.keys) || Object.keys(envelope.keys).length === 0) {
+    throw new Error('E2EE Error: Malformed envelope: missing or invalid keys map.');
   }
+  const keysMap = envelope.keys;
 
-  if (!keysMap || typeof keysMap !== 'object' || Array.isArray(keysMap) || Object.keys(keysMap).length === 0) {
-    throw new Error('E2EE Error: Missing recipient key envelopes in message payload.');
+  // Validate ciphertext and nonce
+  if (!envelope.ciphertext || typeof envelope.ciphertext !== 'string' || envelope.ciphertext.trim().length === 0) {
+    throw new Error('E2EE Error: Malformed envelope: missing or invalid ciphertext.');
   }
+  if (!envelope.nonce || typeof envelope.nonce !== 'string' || envelope.nonce.trim().length === 0) {
+    throw new Error('E2EE Error: Malformed envelope: missing or invalid nonce.');
+  }
+  const actualCiphertext = envelope.ciphertext;
+  const actualNonce = envelope.nonce;
+  const actualSenderId = envelope.senderAgentId || sId;
 
   let matchedKeyEntry: { iv: string; key: string } | null = null;
   for (const [k, v] of Object.entries(keysMap)) {

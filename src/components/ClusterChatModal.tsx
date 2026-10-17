@@ -100,7 +100,20 @@ async function decryptClusterMessageEnvelope(
     };
   }
 
-  if (ciphertext && nonce && currentLocalKeys && userAgentId) {
+  // Isolate historical messages marked incompatible by the server
+  if (msg.isCurrentProtocolV2 === false) {
+    return {
+      text: '',
+      isDecrypted: false,
+      decryptionStatus: {
+        title: '🔒 Historical message incompatible with current E2EE protocol',
+        detail: 'This message does not conform to the current v2 recipient-envelope protocol.',
+        explanation: 'Legacy or incompatible historical messages cannot be decrypted.'
+      }
+    };
+  }
+
+  if (ciphertext && currentLocalKeys && userAgentId) {
     try {
       const decKey = currentLocalKeys.privateKey;
       const senderPubKey = msg.senderPublicKey || msg.e2eePublicKey;
@@ -108,7 +121,6 @@ async function decryptClusterMessageEnvelope(
       if (senderPubKey && decKey) {
         const resolvedPlaintext = await decryptMessageForRecipient(
           ciphertext,
-          nonce,
           decKey,
           { keys: msg.keys || (typeof ciphertext === 'string' && ciphertext.startsWith('{') ? undefined : msg.keys), version: msg.version, keyEpoch: msg.keyEpoch },
           senderPubKey,

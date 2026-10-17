@@ -46,7 +46,6 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     // 1. Authorized Recipient Decryption
     const decryptedA = await decryptMessageForRecipient(
       envelope.ciphertext,
-      envelope.nonce,
       recipientAPair.privateKey,
       envelope.keys,
       ownerPair.publicKey,
@@ -63,7 +62,6 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     try {
       await decryptMessageForRecipient(
         envelope.ciphertext,
-        envelope.nonce,
         intruderPair.privateKey,
         envelope.keys,
         ownerPair.publicKey,
@@ -91,7 +89,6 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
 
     const decryptedWithEpoch = await decryptMessageForRecipient(
       epochEnvelope.ciphertext,
-      epochEnvelope.nonce,
       recipientBPair.privateKey,
       epochEnvelope.keys,
       ownerPair.publicKey,
@@ -107,9 +104,8 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     try {
       await decryptMessageForRecipient(
         epochEnvelope.ciphertext,
-        epochEnvelope.nonce,
         recipientBPair.privateKey,
-        { keys: epochEnvelope.keys, keyEpoch: 999 },
+        { keys: epochEnvelope.keys, keyEpoch: 999, version: 2 },
         ownerPair.publicKey,
         'AMR-B',
         clusterId,
@@ -126,7 +122,6 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     try {
       await decryptMessageForRecipient(
         epochEnvelope.ciphertext,
-        epochEnvelope.nonce,
         recipientBPair.privateKey,
         { keys: epochEnvelope.keys, keyEpoch: epoch, version: 1 },
         ownerPair.publicKey,
@@ -145,7 +140,6 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     try {
       await decryptMessageForRecipient(
         Buffer.from('raw_ciphertext_bytes').toString('base64'),
-        envelope.nonce,
         recipientBPair.privateKey,
         { keys: epochEnvelope.keys, version: 2 },
         ownerPair.publicKey,
@@ -163,7 +157,6 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     try {
       await decryptMessageForRecipient(
         Buffer.from('raw_ciphertext_bytes').toString('base64'),
-        envelope.nonce,
         recipientBPair.privateKey,
         { keys: epochEnvelope.keys, keyEpoch: epoch },
         ownerPair.publicKey,
@@ -191,6 +184,61 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
       encryptMissingEpochFailed = true;
     }
     recordResult('test_crypto_encrypt_missing_epoch_rejected', encryptMissingEpochFailed, 'Encryption helper fails closed when keyEpoch is omitted');
+
+    // 6d. Crypto helper rejects malformed JSON envelope wrapper
+    let malformedWrapperFailed = false;
+    try {
+      const malformedJsonB64 = Buffer.from('{"ciphertext": "incomplete', 'utf-8').toString('base64');
+      await decryptMessageForRecipient(
+        malformedJsonB64,
+        recipientBPair.privateKey,
+        { keys: epochEnvelope.keys, version: 2, keyEpoch: epoch },
+        ownerPair.publicKey,
+        'AMR-B',
+        clusterId,
+        'AMR-OWNER',
+        epoch
+      );
+    } catch {
+      malformedWrapperFailed = true;
+    }
+    recordResult('test_crypto_malformed_json_wrapper_rejected', malformedWrapperFailed, 'Cryptographic helper rejects malformed JSON envelope wrapper');
+
+    // 6e. Crypto helper rejects invalid Base64
+    let invalidBase64Failed = false;
+    try {
+      await decryptMessageForRecipient(
+        'not-a-valid-base64-string!!!',
+        recipientBPair.privateKey,
+        { keys: epochEnvelope.keys, version: 2, keyEpoch: epoch },
+        ownerPair.publicKey,
+        'AMR-B',
+        clusterId,
+        'AMR-OWNER',
+        epoch
+      );
+    } catch {
+      invalidBase64Failed = true;
+    }
+    recordResult('test_crypto_invalid_base64_rejected', invalidBase64Failed, 'Cryptographic helper rejects invalid Base64');
+
+    // 6f. Crypto helper rejects non-wrapper ciphertext
+    let nonWrapperFailed = false;
+    try {
+      await decryptMessageForRecipient(
+        Buffer.from('plain-text-not-json-wrapper').toString('base64'),
+        recipientBPair.privateKey,
+        { keys: epochEnvelope.keys, version: 2, keyEpoch: epoch },
+        ownerPair.publicKey,
+        'AMR-B',
+        clusterId,
+        'AMR-OWNER',
+        epoch
+      );
+    } catch {
+      nonWrapperFailed = true;
+    }
+    recordResult('test_crypto_non_wrapper_rejected', nonWrapperFailed, 'Cryptographic helper rejects non-wrapper ciphertext');
 
     // -------------------------------------------------------------------------
     // SECTION 2: Endpoint Enforcement Verification (HTTP Protocol & Authorization)
