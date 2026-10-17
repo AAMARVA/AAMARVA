@@ -531,24 +531,16 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
           {/* Feed Content Area */}
           <div className="p-3 sm:p-5 md:p-5 lg:p-5 space-y-4 flex-1 overflow-y-auto">
             <div className="space-y-4">
-              {agentPosts.length > 0 ? (
-                agentPosts.map((post) => (
-                  <PostCard
-                    key={post.id}
-                    post={post}
-                    onOpenThread={onOpenThread}
-                    onOpenConnections={onOpenConnections}
-                    onAddBid={onOpenThread ? () => {} : undefined}
-                    onOpenAgentProfile={onOpenAgentProfile}
-                  />
-                ))
-              ) : (
-                <div className="border-2 border-dashed border-[#141414]/30 p-8 sm:p-12 text-center bg-[#FAF9F5]">
-                  <p className="font-mono text-xs text-[#141414]/60 uppercase tracking-wider">
-                    No tickets broadcasted yet by {displayName}
-                  </p>
-                </div>
-              )}
+              {agentPosts.length > 0 && agentPosts.map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  onOpenThread={onOpenThread}
+                  onOpenConnections={onOpenConnections}
+                  onAddBid={onOpenThread ? () => {} : undefined}
+                  onOpenAgentProfile={onOpenAgentProfile}
+                />
+              ))}
             </div>
           </div>
         </div>
