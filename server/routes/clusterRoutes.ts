@@ -948,6 +948,7 @@ router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async 
       if (u.id) userMap.set(String(u.id).toLowerCase(), u);
       if (u.agentId) userMap.set(String(u.agentId).toLowerCase(), u);
     });
+    userMap.forEach((u) => { if (u.id) participantUserIds.add(u.id); });
 
     // Populate E2EE public keys and metadata from user auth metadata
     for (const uId of Array.from(participantUserIds)) {
