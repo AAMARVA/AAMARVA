@@ -791,21 +791,31 @@ export async function sendClusterMessageApi(
     memberPublicKeys[senderAgentId] = localKeys.publicKey;
   }
 
-  const selectedSet = options?.selectedRecipientAgentIds 
-    ? new Set(options.selectedRecipientAgentIds.map(id => id.toLowerCase())) 
+  const hasExplicitRecipients = options?.selectedRecipientAgentIds !== undefined;
+  const selectedSet = hasExplicitRecipients 
+    ? new Set(options.selectedRecipientAgentIds!.map(id => id.toLowerCase().trim())) 
     : null;
+
+  if (hasExplicitRecipients && selectedSet && selectedSet.size === 0) {
+    throw new Error('E2EE Error: Explicit recipient selection is empty. No recipients specified.');
+  }
 
   for (const m of membersList) {
     if (m.status !== 'dissolved' && m.agentId && m.publicKey) {
-      const agentIdLower = m.agentId.toLowerCase();
-      if (!selectedSet || selectedSet.has(agentIdLower) || agentIdLower === senderAgentId.toLowerCase()) {
+      const agentIdLower = m.agentId.toLowerCase().trim();
+      if (!selectedSet || selectedSet.has(agentIdLower)) {
         memberPublicKeys[m.agentId] = m.publicKey;
       }
     }
   }
 
-  if (Object.keys(memberPublicKeys).length === 0) {
-    throw new Error('E2EE Error: No active cluster members with registered public keys found.');
+  // Ensure at least one intended recipient other than the sender is targeted
+  const recipientCount = Object.keys(memberPublicKeys).filter(
+    id => id.toLowerCase().trim() !== senderAgentId.toLowerCase().trim()
+  ).length;
+
+  if (recipientCount === 0) {
+    throw new Error('E2EE Error: No active cluster recipients with registered public keys selected.');
   }
 
   // 2.1 Obtain authoritative cluster epoch / membership version
@@ -816,13 +826,14 @@ export async function sendClusterMessageApi(
     clusterEpoch = await getClusterAuthoritativeEpochApi(clusterId, resolvedAuthType);
   }
 
-  // 3. Encrypt message using recipient-specific E2EE
+  // 3. Encrypt message using recipient-specific E2EE with authoritative cluster epoch
   const encrypted = await encryptMessageForRecipients(
     plaintext,
     memberPublicKeys,
     localKeys.privateKey,
     senderAgentId,
-    clusterId
+    clusterId,
+    clusterEpoch
   );
 
   // 4. Submit encrypted envelope to server

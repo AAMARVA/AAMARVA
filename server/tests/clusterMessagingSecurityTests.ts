@@ -65,6 +65,50 @@ export async function runClusterMessagingSecurityTests(): Promise<Record<string,
     }
     recordResult('test_unauthorized_recipient_rejection', intruderFailed, 'Unauthorized recipient rejected');
 
+    // Test 3: Multi-Epoch Cryptographic Authentication Coordination (Issue 3)
+    const epoch = 5;
+    const epochEnvelope = await encryptMessageForRecipients(
+      'Multi-epoch secret',
+      recipients,
+      ownerPair.privateKey,
+      'AMR-OWNER',
+      clusterId,
+      epoch
+    );
+    recordResult('test_epoch_metadata_present', epochEnvelope.keyEpoch === epoch && epochEnvelope.version === 2, 'Epoch metadata matches');
+
+    const decryptedWithEpoch = await decryptMessageForRecipient(
+      epochEnvelope.ciphertext,
+      epochEnvelope.nonce,
+      recipientBPair.privateKey,
+      epochEnvelope.keys,
+      ownerPair.publicKey,
+      'AMR-B',
+      clusterId,
+      'AMR-OWNER',
+      epoch
+    );
+    recordResult('test_epoch_decryption_success', decryptedWithEpoch === 'Multi-epoch secret', 'Decrypted with coordinated keyEpoch');
+
+    // Test 4: Mismatched Epoch Cryptographic Rejection
+    let mismatchedEpochFailed = false;
+    try {
+      await decryptMessageForRecipient(
+        epochEnvelope.ciphertext,
+        epochEnvelope.nonce,
+        recipientBPair.privateKey,
+        { keys: epochEnvelope.keys, keyEpoch: 999 }, // Mismatched epoch AAD
+        ownerPair.publicKey,
+        'AMR-B',
+        clusterId,
+        'AMR-OWNER',
+        999
+      );
+    } catch {
+      mismatchedEpochFailed = true;
+    }
+    recordResult('test_mismatched_epoch_rejection', mismatchedEpochFailed, 'Mismatched keyEpoch strictly rejected via AAD');
+
   } catch (err: any) {
     console.error('Test suite error:', err);
     recordResult('Test Suite Execution', false, err?.message);

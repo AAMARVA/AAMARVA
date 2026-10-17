@@ -13,11 +13,13 @@ export async function encryptMessageForRecipients(
   recipientsPublicKeys: Record<string, any>,
   senderPrivateKey: CryptoKey | string,
   senderAgentId: string,
-  clusterId: string = 'general'
+  clusterId: string = 'general',
+  keyEpoch: number = 1
 ): Promise<{
   ciphertext: string;
   nonce: string;
   version: number;
+  keyEpoch: number;
   keys: Record<string, { iv: string; key: string }>;
 }> {
   if (!plaintext || typeof plaintext !== 'string') {
@@ -34,6 +36,7 @@ export async function encryptMessageForRecipients(
   const version = 2;
   const sId = normalizeAgentId(senderAgentId);
   const cId = (clusterId || '').trim();
+  const epoch = (typeof keyEpoch === 'number' && Number.isFinite(keyEpoch) && keyEpoch >= 1) ? Math.floor(keyEpoch) : 1;
 
   // 1. Generate random 256-bit AES-GCM Content-Encryption Key (CEK)
   const cekBytes = cryptoObj.getRandomValues(new Uint8Array(32));
@@ -47,7 +50,7 @@ export async function encryptMessageForRecipients(
 
   // 2. Encrypt message body with AES-256-GCM
   const bodyIv = cryptoObj.getRandomValues(new Uint8Array(12));
-  const bodyAAD = constructAAD(cId, version, sId, 1);
+  const bodyAAD = constructAAD(cId, version, sId, epoch);
   const bodyCiphertextBuf = await cryptoObj.subtle.encrypt(
     {
       name: ENC_ALGO,
@@ -67,7 +70,7 @@ export async function encryptMessageForRecipients(
 
     const wrappingKey = await deriveChannelKey(senderPrivateKey, pubKeyJwk, cId);
     const wrapIv = cryptoObj.getRandomValues(new Uint8Array(12));
-    const wrapAAD = new TextEncoder().encode(`aamarva-envelope-wrap:${cId}:${recipientId}:1`);
+    const wrapAAD = new TextEncoder().encode(`aamarva-envelope-wrap:${cId}:${recipientId}:${epoch}`);
 
     const wrappedCekBuf = await cryptoObj.subtle.encrypt(
       {
@@ -90,6 +93,7 @@ export async function encryptMessageForRecipients(
     clusterId: cId,
     senderAgentId: sId,
     version,
+    keyEpoch: epoch,
     nonce: bufferToBase64(bodyIv.buffer),
     ciphertext: bufferToBase64(bodyCiphertextBuf),
     keys: wrappedKeysMap
@@ -103,6 +107,7 @@ export async function encryptMessageForRecipients(
     ciphertext: bufferToBase64(envelopeBytes.buffer),
     nonce: bufferToBase64(outerNonce.buffer),
     version,
+    keyEpoch: epoch,
     keys: wrappedKeysMap
   };
 }
@@ -120,7 +125,8 @@ export async function decryptMessageForRecipient(
   senderPublicKeyJwk: any,
   receiverAgentId: string,
   clusterId: string = 'general',
-  senderAgentId: string = ''
+  senderAgentId: string = '',
+  keyEpoch?: number
 ): Promise<string> {
   if (!ciphertext) {
     throw new Error('E2EE Error: Missing ciphertext payload.');
@@ -139,6 +145,12 @@ export async function decryptMessageForRecipient(
       envelope = JSON.parse(decoded.trim());
     }
   } catch {}
+
+  const rawEpoch = (keyEpoch !== undefined && keyEpoch !== null) 
+    ? keyEpoch 
+    : (envelope?.keyEpoch ?? envelopeOrKeys?.keyEpoch ?? 1);
+  const epoch = (typeof rawEpoch === 'number' && Number.isFinite(rawEpoch) && rawEpoch >= 1) ? Math.floor(rawEpoch) : 1;
+  const version = envelope?.version ?? envelopeOrKeys?.version ?? 2;
 
   const keysMap = envelope?.keys || envelopeOrKeys?.keys || envelopeOrKeys;
   const actualCiphertext = envelope?.ciphertext || ciphertext;
@@ -179,7 +191,7 @@ export async function decryptMessageForRecipient(
     throw new Error('E2EE Error: Failed to decode wrapped CEK buffers.');
   }
 
-  const wrapAAD = new TextEncoder().encode(`aamarva-envelope-wrap:${cId}:${rId}:1`);
+  const wrapAAD = new TextEncoder().encode(`aamarva-envelope-wrap:${cId}:${rId}:${epoch}`);
 
   let cekBytes: ArrayBuffer;
   try {
@@ -213,7 +225,7 @@ export async function decryptMessageForRecipient(
     throw new Error('E2EE Error: Failed to decode body ciphertext.');
   }
 
-  const bodyAAD = constructAAD(cId, 2, actualSenderId, 1);
+  const bodyAAD = constructAAD(cId, version, actualSenderId, epoch);
 
   let decryptedBodyBuf: ArrayBuffer;
   try {

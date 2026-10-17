@@ -1766,15 +1766,15 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       });
     }
 
-    // 9. Strict version validation (only version 1 is supported)
+    // 9. Strict version validation (support versions 1 and 2)
     let parsedVersion = 1;
     if (version !== undefined && version !== null) {
-      if (typeof version !== 'number' || !Number.isFinite(version) || !Number.isInteger(version) || version !== 1) {
+      if (typeof version !== 'number' || !Number.isFinite(version) || !Number.isInteger(version) || (version !== 1 && version !== 2)) {
         return res.status(400).json({
           success: false,
           error: {
             code: 'UNSUPPORTED_VERSION',
-            message: 'Unsupported E2EE protocol version. Only version 1 is supported.',
+            message: 'Unsupported E2EE protocol version. Supported versions are 1 and 2.',
           },
         });
       }
@@ -1796,13 +1796,13 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       parsedKeyEpoch = keyEpoch;
     }
 
-    // 10. Recipient-based E2EE: Validate and persist recipient keys
-    if (!keys || typeof keys !== 'object' || Object.keys(keys).length === 0) {
+    // 10. Recipient-based E2EE: Validate recipient keys (required for version 2 recipient-envelope messages)
+    if (parsedVersion === 2 && (!keys || typeof keys !== 'object' || Object.keys(keys).length === 0)) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'MISSING_RECIPIENT_KEYS',
-          message: 'Private messages must include a map of recipient key envelopes.'
+          message: 'Recipient-envelope messages (version 2) must include a map of recipient key envelopes.'
         }
       });
     }
@@ -1840,98 +1840,115 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       createdAt: now
     };
 
-    let { error: msgErr } = await supabase
-      .from(tables.messages)
-      .insert(insertPayload);
+    let messageInserted = false;
+    try {
+      let { error: msgErr } = await supabase
+        .from(tables.messages)
+        .insert(insertPayload);
 
-    if (msgErr && msgErr.message?.includes('schema cache')) {
-      const baselinePayload = {
-        id: messageId,
-        clusterId,
-        senderUserId: userId,
-        senderAgentId: agentId,
-        ciphertext: trimmedCiphertext,
-        nonce: trimmedNonce,
-        createdAt: now
-      };
-      const retry = await supabase.from(tables.messages).insert(baselinePayload);
-      msgErr = retry.error;
-    }
-
-    if (msgErr) {
-      throw new Error(`Failed to send message: ${msgErr.message}`);
-    }
-
-    // Persist recipient key envelopes
-    const recipientInserts = Object.entries(keys).map(([recipientId, keyData]: [string, any]) => ({
-      id: `dist_${crypto.randomUUID()}`,
-      messageId: messageId,
-      clusterId: clusterId,
-      recipientAgentId: recipientId,
-      wrappedKey: keyData.key,
-      wrappedKeyIv: keyData.iv,
-      createdAt: now
-    }));
-
-    if (recipientInserts.length > 0) {
-      const { error: recErr } = await supabase
-        .from(tables.recipients)
-        .insert(recipientInserts);
-      
-      if (recErr) {
-        throw new Error(`Failed to persist message recipients: ${recErr.message}`);
+      if (msgErr && msgErr.message?.includes('schema cache')) {
+        const baselinePayload = {
+          id: messageId,
+          clusterId,
+          senderUserId: userId,
+          senderAgentId: agentId,
+          ciphertext: trimmedCiphertext,
+          nonce: trimmedNonce,
+          createdAt: now
+        };
+        const retry = await supabase.from(tables.messages).insert(baselinePayload);
+        msgErr = retry.error;
       }
-    }
 
-    // Log outbound footprint
-    try {
-      await logAgentFootprint(
-        userId,
-        'CLUSTER_MESSAGE_SENT',
-        'Transmitted secure end-to-end encrypted payload to cluster',
-        clusterId,
-        agentId
-      );
-    } catch (e) {
-      console.error('Failed to log cluster message footprint:', e);
-    }
+      if (msgErr) {
+        throw new Error(`Failed to send message: ${msgErr.message}`);
+      }
+      messageInserted = true;
 
-    // Log inbound external event for active peer members
-    try {
-      if (authoritativeActiveMembers && authoritativeActiveMembers.length > 0) {
-        for (const peer of authoritativeActiveMembers) {
-          if (peer.userId) {
-            await logExternalEvent(
-              peer.userId,
-              'CLUSTER_MESSAGE_RECEIVED',
-              agentId || 'Agent',
-              messageId
-            );
+      // Persist recipient key envelopes
+      if (keys && typeof keys === 'object' && Object.keys(keys).length > 0) {
+        const recipientInserts = Object.entries(keys).map(([recipientId, keyData]: [string, any]) => ({
+          id: `dist_${crypto.randomUUID()}`,
+          messageId: messageId,
+          clusterId: clusterId,
+          recipientAgentId: recipientId,
+          wrappedKey: keyData?.key || '',
+          wrappedKeyIv: keyData?.iv || '',
+          createdAt: now
+        }));
+
+        if (recipientInserts.length > 0) {
+          const { error: recErr } = await supabase
+            .from(tables.recipients)
+            .insert(recipientInserts);
+          
+          if (recErr) {
+            throw new Error(`Failed to persist message recipients: ${recErr.message}`);
           }
         }
       }
-    } catch (e) {
-      console.error('Failed to log cluster message external event:', e);
-    }
 
-    res.status(201).json({
-      success: true,
-      data: {
-        id: messageId,
+      // Log outbound footprint
+      try {
+        await logAgentFootprint(
+          userId,
+          'CLUSTER_MESSAGE_SENT',
+          'Transmitted secure end-to-end encrypted payload to cluster',
+          clusterId,
+          agentId
+        );
+      } catch (e) {
+        console.error('Failed to log cluster message footprint:', e);
+      }
+
+      // Log inbound external event for active peer members
+      try {
+        if (authoritativeActiveMembers && authoritativeActiveMembers.length > 0) {
+          for (const peer of authoritativeActiveMembers) {
+            if (peer.userId) {
+              await logExternalEvent(
+                peer.userId,
+                'CLUSTER_MESSAGE_RECEIVED',
+                agentId || 'Agent',
+                messageId
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to log cluster message external event:', e);
+      }
+
+      return res.status(201).json({
+        success: true,
+        data: {
+          id: messageId,
+          messageId,
+          clusterId,
+          senderAgentId: agentId,
+          content: null,
+          ciphertext: trimmedCiphertext,
+          nonce: trimmedNonce,
+          version: parsedVersion,
+          keyEpoch: parsedKeyEpoch,
+          sequence: parsedSequence !== undefined ? parsedSequence : null,
+          createdAt: now
+        },
         messageId,
-        clusterId,
-        senderAgentId: agentId,
-        content: null,
-        ciphertext: trimmedCiphertext,
-        nonce: trimmedNonce,
-        version: parsedVersion,
-        keyEpoch: parsedKeyEpoch,
-        sequence: parsedSequence !== undefined ? parsedSequence : null,
         createdAt: now
-      },
-      messageId,
-      createdAt: now
-    });
+      });
+    } catch (atomicErr: any) {
+      // Atomic rollback on failure: eliminate partial or orphaned message state
+      if (messageInserted) {
+        try {
+          await supabase.from(tables.messages).delete().eq('id', messageId);
+          await supabase.from(tables.recipients).delete().eq('messageId', messageId);
+        } catch (cleanupErr) {
+          console.error('Failed to rollback message after insertion failure:', cleanupErr);
+        }
+      }
+      throw atomicErr;
+    }
   } catch (err: any) {
     console.error('Route handler error [POST /api/clusters/:clusterId/messages]:', err);
     const status = err.statusCode || (err.message?.includes('Forbidden') ? 403 : err.message?.includes('not found') ? 404 : 400);
@@ -1987,17 +2004,49 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
       });
     }
 
-    // Only retrieve messages where the current agent is an authorized recipient
-    const { data: messages, error: msgErr } = await supabase
+    const callerAgentId = (req.user?.agentId || '').trim();
+
+    // Query recipient mappings for the caller
+    let authorizedMessageIds = new Set<string>();
+    try {
+      const { data: recipientRows } = await supabase
+        .from(tables.recipients)
+        .select('messageId')
+        .eq('clusterId', clusterId)
+        .eq('recipientAgentId', callerAgentId);
+      if (recipientRows && Array.isArray(recipientRows)) {
+        recipientRows.forEach((r: any) => {
+          if (r.messageId) authorizedMessageIds.add(r.messageId);
+        });
+      }
+    } catch {}
+
+    const { data: allClusterMessages, error: msgErr } = await supabase
       .from(tables.messages)
-      .select('*, cluster_message_recipients!inner(recipientAgentId)')
+      .select('*')
       .eq('clusterId', clusterId)
-      .eq('cluster_message_recipients.recipientAgentId', req.user?.agentId || 'UNKNOWN')
       .order('createdAt', { ascending: true });
 
     if (msgErr) {
       throw new Error(`Failed to fetch messages: ${msgErr.message}`);
     }
+
+    // Filter to only messages where caller is an authorized recipient, sender, or legacy broadcast
+    const messages = (allClusterMessages || []).filter((m: any) => {
+      if (callerAgentId && m.senderAgentId && m.senderAgentId.toLowerCase() === callerAgentId.toLowerCase()) {
+        return true;
+      }
+      if (authorizedMessageIds.has(m.id)) {
+        return true;
+      }
+      if (m.keys && typeof m.keys === 'object' && callerAgentId && m.keys[callerAgentId]) {
+        return true;
+      }
+      if (!m.keys && (!m.version || m.version === 1)) {
+        return true;
+      }
+      return false;
+    });
 
     // Resolve sender public keys in parallel so client can decrypt without sequential roundtrips
     const senderUserIds = Array.from(new Set((messages || []).map((m: any) => m.senderUserId).filter(Boolean)));
@@ -2025,6 +2074,7 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
         version: m.version !== undefined && m.version !== null ? m.version : 1,
         keyEpoch: m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : 1,
         sequence: m.sequence !== undefined ? m.sequence : null,
+        keys: m.keys || null,
         createdAt: m.createdAt
       }))
     });

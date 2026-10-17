@@ -114,7 +114,8 @@ async function decryptClusterMessageEnvelope(
           senderPubKey,
           userAgentId,
           clusterId,
-          senderAgentId
+          senderAgentId,
+          msg.keyEpoch || 1
         );
         if (resolvedPlaintext) {
           return {
@@ -479,6 +480,23 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             onSubmit={async (e) => {
               e.preventDefault();
               if (!newMessage.trim() || !user?.agentId) return;
+
+              // Check explicit empty selection (Issue 2)
+              const isExplicitNone = selectedRecipientIds.has('__NONE__');
+              if (isExplicitNone) {
+                alert('Cannot send message: No recipients selected. Please select at least one recipient via SPOG.');
+                return;
+              }
+
+              let explicitRecipients: string[] | undefined = undefined;
+              if (selectedRecipientIds.size > 0) {
+                explicitRecipients = Array.from(selectedRecipientIds).filter((id) => Boolean(id && id !== user.agentId && id !== '__NONE__')) as string[];
+                if (explicitRecipients.length === 0) {
+                  alert('Cannot send message: No valid recipients selected. Please select at least one recipient.');
+                  return;
+                }
+              }
+
               const messageToSend = newMessage;
               setIsSending(true);
               try {
@@ -489,9 +507,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                   { 
                     password: userPassword || undefined, 
                     authType: 'human',
-                    selectedRecipientAgentIds: (selectedRecipientIds.size > 0 && !selectedRecipientIds.has('__NONE__'))
-                      ? (Array.from(selectedRecipientIds).filter((id) => Boolean(id && id !== user.agentId && id !== '__NONE__')) as string[])
-                      : undefined
+                    selectedRecipientAgentIds: explicitRecipients
                   }
                 );
                 if (res?.success || res?.id || res?.messageId) {
