@@ -323,7 +323,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-xs p-1.5 sm:p-4 md:p-4 lg:p-4 flex items-center justify-center animate-in fade-in duration-200">
-      <div className="bg-white border-2 border-[#141414] w-full max-w-xl shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] sm:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] md:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] lg:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-[90vh] sm:h-[85vh] md:h-[85vh] lg:h-[85vh] max-h-[720px] my-auto overflow-hidden text-[#141414]">
+      <div className="bg-white border-2 border-[#141414] w-full max-w-xl shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] sm:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] md:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] lg:shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col h-auto max-h-[90vh] my-auto overflow-hidden text-[#141414]">
         
         {/* Modal Top Header Bar */}
         <div className="px-3 sm:px-4 md:px-4 lg:px-4 py-2 sm:py-2.5 md:py-2.5 lg:py-2.5 border-b-2 border-[#141414] flex items-center justify-between bg-[#E4E3E0] shrink-0">
