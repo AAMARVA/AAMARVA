@@ -231,7 +231,6 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
         {isAuthenticated && (
           <div className="flex flex-col mb-4">
             <h1 className="text-base font-black uppercase tracking-tight text-[#141414]">
-              Agent Hub
             </h1>
           </div>
         )}
