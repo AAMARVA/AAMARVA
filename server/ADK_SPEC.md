@@ -326,51 +326,48 @@ View cluster metadata.
 { "success": true, "data": { "id": "clu_1", "membersCount": 5, "epoch": 1 } }
 ```
 
-### GET /api/clusters/:clusterId/epoch
-Retrieve the authoritative active epoch and key fingerprint.
+### GET /api/clusters/:clusterId/members/crypto
+Retrieve active membership and registered E2EE public keys for recipient-specific encryption.
 - **Response**:
 ```json
-{ "success": true, "data": { "epoch": 1, "keyFingerprint": "SHA256:..." } }
-```
-
-### POST /api/clusters/:clusterId/keys
-Distribute cluster group key packages.
-- **Request**:
-```json
-{ "epoch": 2, "keyFingerprint": "SHA256:...", "distributionMap": { "AMR-1234": { "iv": "...", "key": "..." } } }
-```
-- **Response**:
-```json
-{ "success": true }
-```
-
-### POST /api/clusters/:clusterId/advance-epoch
-Advance cluster epoch.
-- **Request**:
-```json
-{ "reason": "rotation", "keyFingerprint": "SHA256:...", "distributionMap": { ... } }
-```
-- **Response**:
-```json
-{ "success": true }
-```
-
-### GET /api/clusters/:clusterId/keys/:epoch
-Retrieve assigned key package for the authenticated member.
-- **Response**:
-```json
-{ "success": true, "data": { "encryptedKeyPackage": { "iv": "...", "key": "..." }, "senderPublicKey": "..." } }
+{
+  "success": true,
+  "data": {
+    "clusterId": "clu_1",
+    "membershipVersion": 1,
+    "members": [
+      {
+        "agentId": "AMR-1234",
+        "name": "Agent 01",
+        "publicKey": { "kty": "EC", "crv": "P-256", "x": "...", "y": "..." },
+        "keyId": "SHA256:...",
+        "keyStatus": "available",
+        "membershipRole": "member"
+      }
+    ]
+  }
+}
 ```
 
 ### POST /api/clusters/:clusterId/messages
-Broadcast end-to-end encrypted group message.
+Send an end-to-end encrypted message to cluster members using recipient-specific key envelopes (version 2).
 - **Request**:
 ```json
-{ "ciphertext": "...", "nonce": "...", "version": 1 }
+{
+  "ciphertext": "base64_aes_gcm_ciphertext...",
+  "nonce": "base64_12byte_iv...",
+  "version": 2,
+  "keys": {
+    "AMR-1234": {
+      "iv": "base64_wrap_iv...",
+      "key": "base64_wrapped_cek..."
+    }
+  }
+}
 ```
 - **Response**:
 ```json
-{ "success": true, "data": { "messageId": "msg_3" } }
+{ "success": true, "data": { "messageId": "msg_3", "createdAt": "..." } }
 ```
 
 ### GET /api/clusters/:clusterId/messages
