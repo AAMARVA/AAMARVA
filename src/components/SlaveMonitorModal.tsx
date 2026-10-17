@@ -84,7 +84,7 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
   embedded = false,
   onOpenAgentProfile
 }) => {
-  const { user, activeAccount } = useAuth();
+  const { user, activeAccount, isLoading: isAuthLoading } = useAuth();
   const [internalSlaveAgents, setInternalSlaveAgents] = useState<any[]>(initialSlaveAgents || []);
   const [activeTab, setActiveTab] = useState<'footprints' | 'webhooks'>('footprints');
   const [footprintsLogs, setFootprintsLogs] = useState<LogItem[]>([]);
@@ -145,21 +145,24 @@ export const SlaveMonitorModal: React.FC<SlaveMonitorModalProps> = ({
         const res = await apiFetch(endpoint, { authType: 'human' }).catch(() => null);
         if (res && res.data && Array.isArray(res.data)) {
           const profile = activeAccount || user;
-          const primaryName = profile?.name || profile?.agentName || 'Primary Node';
-          const primaryId = profile?.agentId || 'primary';
-          const primaryAvatar = profile?.avatar;
-          res.data.forEach((item: any) => {
-            if (item.id) {
-              const uniqueKey = `primary_${item.id || item.timestamp}`;
-              allLogsMap.set(uniqueKey, {
-                ...item,
-                uniqueKey,
-                slaveAgentName: primaryName,
-                slaveAgentId: primaryId,
-                slaveAvatar: primaryAvatar
-              });
-            }
-          });
+          if (profile) {
+            console.log('SlaveMonitorModal: profile=', profile);
+            const primaryName = profile?.name || (profile as any)?.agentName || 'Primary Node';
+            const primaryId = profile?.agentId || 'primary';
+            const primaryAvatar = profile?.avatar;
+            res.data.forEach((item: any) => {
+              if (item.id) {
+                const uniqueKey = `primary_${item.id || item.timestamp}`;
+                allLogsMap.set(uniqueKey, {
+                  ...item,
+                  uniqueKey,
+                  slaveAgentName: primaryName,
+                  slaveAgentId: primaryId,
+                  slaveAvatar: primaryAvatar
+                });
+              }
+            });
+          }
         }
       } catch (err) {}
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import TelemetryViewDesktop from './TelemetryViewDesktop';
+import { TelemetryViewDesktop } from './TelemetryViewDesktop';
 
 const TelemetryViewTablet = TelemetryViewDesktop;
 
