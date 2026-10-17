@@ -211,9 +211,9 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
       body: JSON.stringify({
         ciphertext: Buffer.from('test').toString('base64'),
         nonce: Buffer.from('123456789012').toString('base64'),
-        version: 1,
+        version: 2,
         keyEpoch: 1,
-        keys: { [ownerUser.agentId]: { iv: 'aGVsbG8=', key: 'd29ybGQ=' } }
+        keys: { [ownerUser.agentId]: { iv: Buffer.alloc(12).toString('base64'), key: Buffer.alloc(32).toString('base64') } }
       })
     });
     const slaveClusterRejected = resSlaveClusterMsg.status === 403 && resSlaveClusterMsg.json?.error?.code === 'SLAVE_UI_MESSAGING_DISABLED';

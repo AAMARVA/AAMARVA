@@ -629,8 +629,15 @@ async function runTests() {
         body: JSON.stringify({
           ciphertext: 'UHJlLWVuY3J5cHRlZCBjbHVzdGVyIG1lc3NhZ2UgcGF5bG9hZA==',
           nonce: 'MTIzNDU2Nzg5MDEy',
-          version: 1,
-          keyEpoch: 1
+          version: 2,
+          keyEpoch: 1,
+          recipients: [agentId],
+          keys: {
+            [agentId]: {
+              iv: 'MTIzNDU2Nzg5MDEy',
+              key: 'V3JhcHBlZEtleUZvclRlc3RBZ2VudDEyMzQ1Ng=='
+            }
+          }
         })
       });
       const json: any = await res.json();

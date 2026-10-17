@@ -853,6 +853,7 @@ export async function sendClusterMessageApi(
       nonce: encrypted.nonce,
       version: encrypted.version,
       keyEpoch: clusterEpoch,
+      recipients: Object.keys(encrypted.keys),
       keys: encrypted.keys
     })
   });

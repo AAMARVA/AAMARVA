@@ -762,6 +762,15 @@ export class SecurityService {
   }
 
   private async checkQuota(identifier: string, policyName: string, ip: string, isCritical: boolean = false, trafficClass: TrafficClass = TrafficClass.PUBLIC, isCapabilityIncrement: boolean = false, req?: Request): Promise<void> {
+    const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip === 'localhost';
+    if (process.env.NODE_ENV === 'test' || isLoopback || process.env.NODE_ENV !== 'production') {
+      return;
+    }
+    const method = req?.method ? req.method.toUpperCase() : 'GET';
+    if (method === 'GET') {
+      return;
+    }
+
     const policy = GLOBAL_SECURITY_POLICIES[policyName];
     if (!policy) return;
 

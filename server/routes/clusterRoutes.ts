@@ -23,35 +23,16 @@ export interface ClusterTables {
 
 let cachedTables: ClusterTables | null = null;
 
-// Dynamic table schema resolution: natively prefers canonical 'clusters' tables.
-// Supports legacy runtime table prefixing to preserve database state continuity.
-const LEGACY_SCHEMA_PREFIX = Buffer.from('656e636c6176655f', 'hex').toString('utf8');
-
-export async function getClusterTables(supabase: any): Promise<ClusterTables> {
+// Canonical cluster database tables
+export async function getClusterTables(_supabase?: any): Promise<ClusterTables> {
   if (cachedTables) return cachedTables;
 
-  try {
-    const { error } = await supabase.from('clusters').select('id').limit(1);
-    if (!error) {
-      cachedTables = {
-        clusters: 'clusters',
-        members: 'cluster_members',
-        invites: 'cluster_invites',
-        messages: 'cluster_messages',
-        recipients: 'cluster_message_recipients',
-      };
-      return cachedTables;
-    }
-  } catch {
-    // fallback
-  }
-
   cachedTables = {
-    clusters: `${LEGACY_SCHEMA_PREFIX}clusters`,
-    members: `${LEGACY_SCHEMA_PREFIX}cluster_members`,
-    invites: `${LEGACY_SCHEMA_PREFIX}cluster_invites`,
-    messages: `${LEGACY_SCHEMA_PREFIX}cluster_messages`,
-    recipients: `${LEGACY_SCHEMA_PREFIX}cluster_message_recipients`,
+    clusters: 'clusters',
+    members: 'cluster_members',
+    invites: 'cluster_invites',
+    messages: 'cluster_messages',
+    recipients: 'cluster_message_recipients',
   };
   return cachedTables;
 }
@@ -1765,74 +1746,286 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
       });
     }
 
-    // 9. Strict version validation (support versions 1 and 2)
-    let parsedVersion = 1;
-    if (version !== undefined && version !== null) {
-      if (typeof version !== 'number' || !Number.isFinite(version) || !Number.isInteger(version) || (version !== 1 && version !== 2)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'UNSUPPORTED_VERSION',
-            message: 'Unsupported E2EE protocol version. Supported versions are 1 and 2.',
-          },
-        });
-      }
-      parsedVersion = version;
+    // 9. Strict protocol version validation: ONLY version 2 recipient-envelope protocol is accepted
+    if (version === undefined || version === null) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_VERSION',
+          message: 'Cluster messages require explicit protocol version 2 (recipient-envelope protocol). Version 1 is deprecated and rejected.',
+        },
+      });
     }
 
-    // 10. Strict keyEpoch validation (positive integer when supplied)
-    let parsedKeyEpoch = 1;
-    if (keyEpoch !== undefined && keyEpoch !== null) {
-      if (typeof keyEpoch !== 'number' || !Number.isFinite(keyEpoch) || !Number.isInteger(keyEpoch) || keyEpoch < 1) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_KEY_EPOCH',
-            message: 'Invalid keyEpoch. When supplied, keyEpoch must be a positive integer (>= 1). Malformed, non-numeric, decimal, or negative values are rejected.',
-          },
-        });
-      }
-      parsedKeyEpoch = keyEpoch;
+    if (typeof version !== 'number' || !Number.isFinite(version) || !Number.isInteger(version) || version !== 2) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'UNSUPPORTED_VERSION',
+          message: 'Unsupported E2EE protocol version. Only recipient-envelope protocol version 2 is accepted for cluster messages. Legacy version 1 is rejected.',
+        },
+      });
+    }
+    const parsedVersion = 2;
+
+    // 10. Strict keyEpoch validation: required positive integer (>= 1), fail closed on missing/invalid
+    if (keyEpoch === undefined || keyEpoch === null) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_KEY_EPOCH',
+          message: 'Private cluster messages must specify an explicit keyEpoch (positive integer >= 1).',
+        },
+      });
     }
 
-    // 10. Recipient-based E2EE: Validate recipient keys (required for version 2 recipient-envelope messages)
-    if (parsedVersion === 2 && (!keys || typeof keys !== 'object' || Object.keys(keys).length === 0)) {
+    if (typeof keyEpoch !== 'number' || !Number.isFinite(keyEpoch) || !Number.isInteger(keyEpoch) || keyEpoch < 1) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_KEY_EPOCH',
+          message: 'Invalid keyEpoch. keyEpoch must be a positive integer (>= 1). Malformed, non-numeric, decimal, or negative values are rejected.',
+        },
+      });
+    }
+    const parsedKeyEpoch = keyEpoch;
+
+    // 11. Recipient-based E2EE: Validate recipient keys map presence and structure
+    if (!keys || typeof keys !== 'object' || Array.isArray(keys) || Object.keys(keys).length === 0) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'MISSING_RECIPIENT_KEYS',
-          message: 'Recipient-envelope messages (version 2) must include a map of recipient key envelopes.'
+          message: 'Recipient-envelope messages (version 2) must include a non-empty map of recipient key envelopes.'
         }
       });
     }
+
+    // Check for duplicate or empty recipient IDs in keys map
+    const rawRecipientKeys = Object.keys(keys);
+    const seenRecipientIds = new Set<string>();
+    for (const r of rawRecipientKeys) {
+      const trimmed = (r || '').trim();
+      if (trimmed.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MALFORMED_RECIPIENT_ID',
+            message: 'Recipient ID in keys map cannot be empty.',
+          },
+        });
+      }
+      const norm = trimmed.toLowerCase();
+      if (seenRecipientIds.has(norm)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_RECIPIENT',
+            message: `Duplicate recipient detected in keys map: ${r}.`,
+          },
+        });
+      }
+      seenRecipientIds.add(norm);
+    }
+
+    // 12. Require explicit intended-recipient set in every new Cluster message submission
+    const rawIntended = body.recipients ?? body.intendedRecipients ?? body.intended_recipients ?? body.recipientAgentIds;
+    if (rawIntended === undefined || rawIntended === null) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'MISSING_INTENDED_RECIPIENTS',
+          message: 'Cluster messages must include an explicit intended-recipients list (recipients array).',
+        },
+      });
+    }
+
+    if (!Array.isArray(rawIntended)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INTENDED_RECIPIENTS',
+          message: 'Intended recipients must be an array of agent IDs.',
+        },
+      });
+    }
+
+    if (rawIntended.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'EMPTY_RECIPIENTS',
+          message: 'Intended recipients array cannot be empty.',
+        },
+      });
+    }
+
+    const seenIntended = new Set<string>();
+    for (const intended of rawIntended) {
+      if (typeof intended !== 'string' || intended.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MALFORMED_RECIPIENT_ID',
+            message: 'All intended recipient entries must be non-empty strings.',
+          },
+        });
+      }
+      const normIntended = intended.trim().toLowerCase();
+      if (seenIntended.has(normIntended)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'DUPLICATE_RECIPIENT',
+            message: `Duplicate intended recipient: ${intended}.`,
+          },
+        });
+      }
+      seenIntended.add(normIntended);
+      if (!seenRecipientIds.has(normIntended)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MISSING_RECIPIENT_ENVELOPE',
+            message: `Missing recipient key envelope for intended recipient: ${intended}.`,
+          },
+        });
+      }
+    }
+    for (const r of rawRecipientKeys) {
+      const norm = r.trim().toLowerCase();
+      if (!seenIntended.has(norm)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'UNEXPECTED_RECIPIENT_ENVELOPE',
+            message: `Recipient key envelope provided for ${r} which was not in intended recipients list.`,
+          },
+        });
+      }
+    }
     
-    // Authorization Check: Validate all recipients are active cluster members
-    if (parsedVersion === 2) {
-      const recipientIds = Object.keys(keys);
-      const { data: memberRecords, error: memErr } = await supabase
-        .from(tables.members)
-        .select('agentId, agent_id')
-        .eq('clusterId', clusterId)
-        .neq('status', 'dissolved');
-      
-      if (memErr) {
-        return res.status(500).json({ success: false, error: { message: 'Failed to validate cluster membership.' } });
+    // Authoritative Membership & Recipient Authorization Check
+    const { data: memberRecords, error: memErr } = await supabase
+      .from(tables.members)
+      .select('userId, agentId, agent_id, status')
+      .eq('clusterId', clusterId);
+    
+    if (memErr) {
+      return res.status(500).json({ success: false, error: { message: 'Failed to validate cluster membership.' } });
+    }
+
+    const activeMemberIds = new Set<string>();
+    const inactiveMemberIds = new Set<string>();
+
+    for (const m of (memberRecords || [])) {
+      const rawId = ((m.agentId || m.agent_id) || '').trim().toLowerCase();
+      if (rawId) {
+        if (m.status === 'active') {
+          activeMemberIds.add(rawId);
+        } else {
+          inactiveMemberIds.add(rawId);
+        }
+      }
+      if (m.userId) {
+        const rawUid = m.userId.trim().toLowerCase();
+        if (m.status === 'active') {
+          activeMemberIds.add(rawUid);
+        } else {
+          inactiveMemberIds.add(rawUid);
+        }
+      }
+    }
+    // Strict authorization: Do not automatically authorize the Cluster owner unless the owner qualifies under the same authoritative membership rules.
+
+    for (const [rId, env] of Object.entries(keys as Record<string, any>)) {
+      const normId = rId.trim().toLowerCase();
+
+      // Check if recipient is known but inactive / dissolved
+      if (inactiveMemberIds.has(normId) && !activeMemberIds.has(normId)) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'INACTIVE_RECIPIENT',
+            message: `Recipient ${rId} is an inactive or dissolved member of this cluster.`
+          }
+        });
       }
 
-      const activeMemberIds = new Set(
-        (memberRecords || []).map((m: any) => (m.agentId || m.agent_id).toLowerCase())
-      );
+      // Check if recipient is an active cluster member
+      if (!activeMemberIds.has(normId)) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED_RECIPIENT',
+            message: `Recipient ${rId} is not an active member of this cluster.`
+          }
+        });
+      }
 
-      for (const rId of recipientIds) {
-        if (!activeMemberIds.has(rId.toLowerCase())) {
-          return res.status(403).json({
+      if (!env || typeof env !== 'object' || Array.isArray(env)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MALFORMED_RECIPIENT_ENVELOPE',
+            message: `Recipient envelope for ${rId} is malformed. Expected an object with iv and key properties.`
+          }
+        });
+      }
+
+      if (typeof env.iv !== 'string' || typeof env.key !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MALFORMED_RECIPIENT_ENVELOPE',
+            message: `Recipient envelope for ${rId} is missing required string fields 'iv' or 'key'.`
+          }
+        });
+      }
+
+      const trimmedIv = env.iv.trim();
+      const trimmedKey = env.key.trim();
+
+      if (trimmedIv.length === 0 || trimmedKey.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MALFORMED_RECIPIENT_ENVELOPE',
+            message: `Recipient envelope for ${rId} contains empty 'iv' or 'key'.`
+          }
+        });
+      }
+
+      if (!isValidBase64String(trimmedIv) || !isValidBase64String(trimmedKey)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_ENVELOPE_ENCODING',
+            message: `Recipient envelope for ${rId} contains invalid Base64 data.`
+          }
+        });
+      }
+
+      // Strict IV length validation: 12-byte IV for AES-256-GCM
+      try {
+        const ivBuf = Buffer.from(trimmedIv, 'base64');
+        if (ivBuf.length !== 12) {
+          return res.status(400).json({
             success: false,
             error: {
-              code: 'UNAUTHORIZED_RECIPIENT',
-              message: `Recipient ${rId} is not an active member of this cluster.`
+              code: 'MALFORMED_RECIPIENT_ENVELOPE',
+              message: `Recipient envelope for ${rId} has invalid IV length (${ivBuf.length} bytes). AES-256-GCM requires 12 bytes.`
             }
           });
         }
+      } catch {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_ENVELOPE_ENCODING',
+            message: `Recipient envelope for ${rId} contains unparseable Base64 IV.`
+          }
+        });
       }
     }
 
@@ -1871,23 +2064,9 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req:
 
     let messageInserted = false;
     try {
-      let { error: msgErr } = await supabase
+      const { error: msgErr } = await supabase
         .from(tables.messages)
         .insert(insertPayload);
-
-      if (msgErr && msgErr.message?.includes('schema cache')) {
-        const baselinePayload = {
-          id: messageId,
-          clusterId,
-          senderUserId: userId,
-          senderAgentId: agentId,
-          ciphertext: trimmedCiphertext,
-          nonce: trimmedNonce,
-          createdAt: now
-        };
-        const retry = await supabase.from(tables.messages).insert(baselinePayload);
-        msgErr = retry.error;
-      }
 
       if (msgErr) {
         throw new Error(`Failed to send message: ${msgErr.message}`);
@@ -2088,21 +2267,25 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, async (req: 
 
     res.json({
       success: true,
-      data: (messages || []).map((m: any) => ({
-        id: m.id,
-        messageId: m.id,
-        clusterId: m.clusterId,
-        senderAgentId: m.senderAgentId,
-        senderPublicKey: m.senderUserId ? (senderKeyMap.get(String(m.senderUserId)) || null) : null,
-        content: m.content !== undefined ? m.content : null,
-        ciphertext: m.ciphertext,
-        nonce: m.nonce,
-        version: m.version !== undefined && m.version !== null ? m.version : 1,
-        keyEpoch: m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : 1,
-        sequence: m.sequence !== undefined ? m.sequence : null,
-        keys: m.keys || null,
-        createdAt: m.createdAt
-      }))
+      data: (messages || []).map((m: any) => {
+        const isCurrentProtocolV2 = m.version === 2 && m.keyEpoch !== undefined && m.keyEpoch !== null && typeof m.keyEpoch === 'number';
+        return {
+          id: m.id,
+          messageId: m.id,
+          clusterId: m.clusterId,
+          senderAgentId: m.senderAgentId,
+          senderPublicKey: m.senderUserId ? (senderKeyMap.get(String(m.senderUserId)) || null) : null,
+          content: m.content !== undefined ? m.content : null,
+          ciphertext: m.ciphertext,
+          nonce: m.nonce,
+          version: m.version !== undefined && m.version !== null ? m.version : null,
+          keyEpoch: m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : null,
+          sequence: m.sequence !== undefined ? m.sequence : null,
+          keys: m.keys || null,
+          isCurrentProtocolV2,
+          createdAt: m.createdAt
+        };
+      })
     });
   } catch (err: any) {
     console.error('Route handler error [GET /api/clusters/:clusterId/messages]:', err);

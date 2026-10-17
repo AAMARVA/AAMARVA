@@ -46,6 +46,27 @@ export class ConnectionCapabilityError extends ConnectionError {
   }
 }
 
+export function isSlaveAccount(u: any): boolean {
+  if (!u) return false;
+  if (
+    u.account_type === 'master' ||
+    u.isMasterUser === true ||
+    u.is_master_primary === true ||
+    u.isMasterPrimary === true
+  ) {
+    return false;
+  }
+  return Boolean(
+    u.account_type === 'slave' ||
+    u.role === 'slave' ||
+    u.is_slave === true ||
+    u.isSlave === true ||
+    (u.master_id && u.id && String(u.master_id).toLowerCase() !== String(u.id).toLowerCase()) ||
+    (u.masterUserId && u.id && String(u.masterUserId).toLowerCase() !== String(u.id).toLowerCase()) ||
+    (u.email && typeof u.email === 'string' && u.email.includes('+AMR-'))
+  );
+}
+
 export async function establishDirectConnection(
   userAIdentifier: string,
   userBIdentifier: string
@@ -70,6 +91,13 @@ export async function establishDirectConnection(
   const uA = resA.data;
   const uB = resB.data;
   if (!uA || !uB || uA.id === uB.id) return null;
+
+  if (isSlaveAccount(uA) && isSlaveAccount(uB)) {
+    throw new ConnectionForbiddenError(
+      'Forbidden: Direct connections between two slave accounts are prohibited.',
+      'SLAVE_TO_SLAVE_CONNECTION_FORBIDDEN'
+    );
+  }
 
   // Check if a connection already exists in the database
   const { data: existing } = await supabase
@@ -172,6 +200,18 @@ export async function ensureConnectionRecord(
 
 export async function createConnection(userId1: string, userId2: string) {
   const supabase = getSupabaseClient();
+
+  const [u1Res, u2Res] = await Promise.all([
+    supabase.from('users').select('*').eq('id', userId1).maybeSingle(),
+    supabase.from('users').select('*').eq('id', userId2).maybeSingle()
+  ]);
+
+  if (isSlaveAccount(u1Res.data) && isSlaveAccount(u2Res.data)) {
+    throw new ConnectionForbiddenError(
+      'Forbidden: Direct connections between two slave accounts are prohibited.',
+      'SLAVE_TO_SLAVE_CONNECTION_FORBIDDEN'
+    );
+  }
   
   // Check for existing connection between these users
   const { data: existingConnection } = await supabase
@@ -926,6 +966,13 @@ export async function sendConnectionRequest(senderUserId: string, receiverAgentI
       throw new ConnectionError('Cannot send connection request to yourself.', 400, 'SELF_CONNECTION_FORBIDDEN');
     }
 
+    if (isSlaveAccount(sender) && isSlaveAccount(receiver)) {
+      throw new ConnectionForbiddenError(
+        'Forbidden: Direct connections between two slave accounts are prohibited.',
+        'SLAVE_TO_SLAVE_CONNECTION_FORBIDDEN'
+      );
+    }
+
     // Check if already connected (undirected check: both directions)
     const [connFwd, connRev] = await Promise.all([
       supabase.from('connections').select('id, status').eq('postOwnerUserId', sender.id).eq('replyAuthorUserId', receiver.id).maybeSingle(),
@@ -999,6 +1046,17 @@ export async function acceptConnectionRequest(requestId: string, userId: string)
 
   if (request.status !== 'pending') {
     throw new ConnectionConflictError('Connection request is no longer pending.', 'REQUEST_NOT_PENDING');
+  }
+
+  const [senderUserRes, receiverUserRes] = await Promise.all([
+    supabase.from('users').select('*').eq('id', request.senderUserId).maybeSingle(),
+    supabase.from('users').select('*').eq('id', request.receiverUserId).maybeSingle()
+  ]);
+  if (isSlaveAccount(senderUserRes.data) && isSlaveAccount(receiverUserRes.data)) {
+    throw new ConnectionForbiddenError(
+      'Forbidden: Direct connections between two slave accounts are prohibited.',
+      'SLAVE_TO_SLAVE_CONNECTION_FORBIDDEN'
+    );
   }
 
   // Check if a dissolved connection already exists between these two users

@@ -354,42 +354,48 @@ class MockPostgrestQueryBuilder implements PromiseLike<any> {
   }
 }
 
-const globalMemoryStore = new Map<string, any[]>();
-const mockAuthUsersStore = new Map<string, any>();
+const g = globalThis as any;
+const isStoreInitialized = !!g.__AAMARVA_GLOBAL_MEMORY_STORE__;
+const globalMemoryStore: Map<string, any[]> = g.__AAMARVA_GLOBAL_MEMORY_STORE__ || new Map<string, any[]>();
+const mockAuthUsersStore: Map<string, any> = g.__AAMARVA_MOCK_AUTH_USERS_STORE__ || new Map<string, any>();
+g.__AAMARVA_GLOBAL_MEMORY_STORE__ = globalMemoryStore;
+g.__AAMARVA_MOCK_AUTH_USERS_STORE__ = mockAuthUsersStore;
 
-// Pre-seed demo user so user lookup and agent identity work out of the box in development
-globalMemoryStore.set('users', [
-  {
-    id: 'usr_alpha_operator',
-    agentId: 'AMR-XAFU-H4V8',
-    name: 'Alpha Operator',
-    email: 'operator@aamarva.com',
-    emailVerified: true,
-    email_verified: true,
-    status: 'active',
-    type: 'agent',
-    role: 'agent',
-    avatar: '🤖',
-    whitelisted_networks: ['0.0.0.0/0', '::/0'],
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'usr_another_user',
-    agentId: 'AMR-TEST-123',
-    name: 'Test User',
-    email: 'test@example.com',
-    emailVerified: true,
-    email_verified: true,
-    status: 'active',
-    type: 'agent',
-    role: 'agent',
-    avatar: '🤖',
-    whitelisted_networks: ['0.0.0.0/0', '::/0'],
-    createdAt: new Date().toISOString()
-  }
-]);
+if (!isStoreInitialized) {
+  // Pre-seed demo user so user lookup and agent identity work out of the box in development
+  globalMemoryStore.set('users', [
+    {
+      id: 'usr_alpha_operator',
+      agentId: 'AMR-XAFU-H4V8',
+      name: 'Alpha Operator',
+      email: 'operator@aamarva.com',
+      emailVerified: true,
+      email_verified: true,
+      status: 'active',
+      type: 'agent',
+      role: 'agent',
+      avatar: '🤖',
+      whitelisted_networks: ['0.0.0.0/0', '::/0'],
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'usr_another_user',
+      agentId: 'AMR-TEST-123',
+      name: 'Test User',
+      email: 'test@example.com',
+      emailVerified: true,
+      email_verified: true,
+      status: 'active',
+      type: 'agent',
+      role: 'agent',
+      avatar: '🤖',
+      whitelisted_networks: ['0.0.0.0/0', '::/0'],
+      createdAt: new Date().toISOString()
+    }
+  ]);
 
-globalMemoryStore.set('posts', []);
+  globalMemoryStore.set('posts', []);
+}
 
 export function createMockSupabaseClient() {
   return {
@@ -658,37 +664,37 @@ export function createMockSupabaseClient() {
   };
 }
 
-let supabaseClient: any = null;
-
 export function getSupabaseClient() {
+  const g = globalThis as any;
   if (!isSupabaseConfigured()) {
-    if (!supabaseClient) {
-      supabaseClient = createMockSupabaseClient();
+    if (!g.__AAMARVA_SUPABASE_CLIENT__) {
+      g.__AAMARVA_SUPABASE_CLIENT__ = createMockSupabaseClient();
     }
-    return supabaseClient;
+    return g.__AAMARVA_SUPABASE_CLIENT__;
   }
 
   const supabaseUrl = process.env.SUPABASE_URL || PUBLIC_CONFIG.supabaseUrl;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseClient) {
+  if (!g.__AAMARVA_SUPABASE_CLIENT__) {
     try {
-      supabaseClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      const client = createClient(supabaseUrl, supabaseServiceRoleKey, {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
         },
       });
-      patchPostgrestBuilder(supabaseClient);
+      patchPostgrestBuilder(client);
+      g.__AAMARVA_SUPABASE_CLIENT__ = client;
     } catch (e) {
-      supabaseClient = createMockSupabaseClient();
+      g.__AAMARVA_SUPABASE_CLIENT__ = createMockSupabaseClient();
     }
   }
-  return supabaseClient;
+  return g.__AAMARVA_SUPABASE_CLIENT__;
 }
 
 export function setSupabaseClient(client: any) {
-  supabaseClient = client;
+  (globalThis as any).__AAMARVA_SUPABASE_CLIENT__ = client;
 }
 
 function patchPostgrestBuilder(client: any) {

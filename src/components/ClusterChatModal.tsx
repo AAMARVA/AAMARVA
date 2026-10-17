@@ -110,12 +110,12 @@ async function decryptClusterMessageEnvelope(
           ciphertext,
           nonce,
           decKey,
-          msg.keys || ciphertext,
+          { keys: msg.keys || (typeof ciphertext === 'string' && ciphertext.startsWith('{') ? undefined : msg.keys), version: msg.version, keyEpoch: msg.keyEpoch },
           senderPubKey,
           userAgentId,
           clusterId,
           senderAgentId,
-          msg.keyEpoch || 1
+          msg.keyEpoch
         );
         if (resolvedPlaintext) {
           return {

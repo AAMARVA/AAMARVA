@@ -2831,7 +2831,8 @@ router.post(['/connections/establish', '/v1/connections/establish'], requireUser
 
     res.json({ success: true, data: result });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+    const status = err.statusCode || (err.message?.includes('Forbidden') ? 403 : err.message?.includes('not found') ? 404 : 400);
+    res.status(status).json({ success: false, error: { message: err?.message || 'Internal server error.', code: err?.code } });
   }
 });
 
