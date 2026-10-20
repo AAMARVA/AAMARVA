@@ -590,8 +590,9 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                       {planHistory && planHistory.length > 0 ? (
                         <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
                           {planHistory.map((item, idx) => {
-                            const isAddon = item.action_type === 'add_accounts' || item.plan_subtitle?.includes('Capacity');
+                            const isAddon = item.action_type === 'add_accounts' || item.plan_subtitle?.includes('Capacity') || item.plan_name?.includes('Add-On');
                             const subtitle = item.plan_subtitle || (isAddon ? 'Capacity Add-On (+10 Accounts)' : 'Base Fleet Roster (10 Accounts)');
+                            const isMasterSlavePlan = !isAddon || item.plan_name?.includes('Master & Slave') || item.plan_name?.includes('Agent Plan');
 
                             return (
                               <div
@@ -621,14 +622,16 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                           <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                                             {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
                                           </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => setShowHistoryPlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                                                                                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[10px] ${item.plan_name === 'Master & Slave Agent Plan' ? 'hidden' : ''}`}
-                                          >
-                                            <span>View Accounts</span>
-                                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showHistoryPlanAgents[idx] ? 'rotate-180' : ''}`} />
-                                          </button>
+                                          {!isMasterSlavePlan && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setShowHistoryPlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                                              className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[10px]"
+                                            >
+                                              <span>View Accounts</span>
+                                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showHistoryPlanAgents[idx] ? 'rotate-180' : ''}`} />
+                                            </button>
+                                          )}
                                         </div>
                                       </div>
 
