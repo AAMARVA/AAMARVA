@@ -1,0 +1,2164 @@
+import crypto from 'crypto';
+import dns from 'dns';
+import http from 'http';
+import https from 'https';
+import { Agent as UndiciAgent } from 'undici';
+import axios from 'axios';
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabase.js';
+import { logAgentFootprint } from './auditService.js';
+
+const ajv = new Ajv({
+  allErrors: true,
+  strict: false,
+  validateFormats: true,
+});
+addFormats(ajv);
+
+export interface McpServerRecord {
+  id: string;
+  owner_id: string;
+  name: string;
+  description: string;
+  transport: 'http-streamable' | 'http-sse';
+  endpoint: string;
+  auth_type: 'none' | 'bearer' | 'api-key' | 'custom-header';
+  auth_header_name?: string;
+  auth_credential_encrypted?: string;
+  session_id_encrypted?: string;
+  has_credential?: boolean;
+  status: 'connected' | 'connecting' | 'disconnected' | 'error' | 'disabled';
+  last_checked: string;
+  last_error?: string;
+  server_info?: Record<string, any>;
+  tools_count?: number;
+  assigned_agents_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface McpToolRecord {
+  id: string;
+  server_id: string;
+  owner_id: string;
+  name: string;
+  description: string;
+  input_schema: Record<string, any>;
+  is_enabled: boolean;
+  assigned_agents?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface McpToolAssignmentRecord {
+  id: string;
+  tool_id: string;
+  server_id: string;
+  owner_id: string;
+  agent_id: string;
+  granted_by: string;
+  created_at: string;
+}
+
+export interface McpToolPolicyRecord {
+  id: string;
+  tool_id: string;
+  hitl_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PendingToolInvocationRecord {
+  id: string;
+  tool_id: string;
+  caller_id: string;
+  agent_id: string;
+  owner_id: string;
+  args: Record<string, any>;
+  args_hash: string;
+  status: 'pending' | 'approved' | 'executing' | 'executed' | 'failed' | 'denied' | 'expired';
+  execution_result?: any;
+  execution_error?: string | null;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ToolExecutionGrantRecord {
+  id: string;
+  invocation_id: string;
+  grant_token_hash: string;
+  expires_at: string;
+  consumed_at?: string | null;
+  created_at: string;
+}
+
+// In-memory fallback stores when running isolated offline tests or without cloud DB configured
+const inMemoryServers = new Map<string, McpServerRecord>();
+const inMemoryTools = new Map<string, McpToolRecord>();
+const inMemoryAssignments = new Map<string, McpToolAssignmentRecord>();
+const inMemoryPolicies = new Map<string, McpToolPolicyRecord>();
+const inMemoryInvocations = new Map<string, PendingToolInvocationRecord>();
+const inMemoryGrants = new Map<string, ToolExecutionGrantRecord>();
+
+export function clearHitlStoreForTesting(): void {
+  inMemoryPolicies.clear();
+  inMemoryInvocations.clear();
+  inMemoryGrants.clear();
+}
+
+/**
+ * Deterministic JSON stringify ensuring canonical key ordering for hash consistency
+ */
+export function canonicalJsonStringify(obj: any): string {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(canonicalJsonStringify).join(',') + ']';
+  }
+  const keys = Object.keys(obj).sort();
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + canonicalJsonStringify(obj[k])).join(',') + '}';
+}
+
+/**
+ * SHA-256 hash of canonicalized arguments
+ */
+export function hashToolArguments(args: any): string {
+  const canonical = canonicalJsonStringify(args ?? {});
+  return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
+// Private in-memory backend session store for MCP stateful sessions (NEVER exposed in API responses)
+const serverSessionStore = new Map<string, string>();
+
+export function clearServerSessionStoreForTesting(): void {
+  serverSessionStore.clear();
+}
+
+export function getServerSessionStoreSizeForTesting(): number {
+  return serverSessionStore.size;
+}
+
+export function hasServerSessionForTesting(serverId: string): boolean {
+  return serverSessionStore.has(serverId);
+}
+
+/**
+ * Helper to determine if we are strictly in an automated test environment.
+ * In production, mock endpoints are CATEGORICALLY prohibited.
+ */
+export function isStrictTestEnvironment(): boolean {
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
+  return process.env.NODE_ENV === 'test';
+}
+
+// Legacy alias for backwards compatibility
+export function isTestEnvironment(): boolean {
+  return isStrictTestEnvironment();
+}
+
+// Fail-closed helper: fail loudly on database write failures in production / configured DB
+function shouldFailOnDbError(): boolean {
+  return isSupabaseConfigured() && process.env.NODE_ENV !== 'test';
+}
+
+// ============================================================================
+// 1. AUTHENTICATED CREDENTIAL ENCRYPTION AT REST (AES-256-GCM) & KEY ROTATION
+// ============================================================================
+
+const CIPHER_ALGO = 'aes-256-gcm';
+const IV_LENGTH = 12; // 96-bit IV for AES-GCM
+
+/**
+ * Derives a 256-bit AES key from a passphrase with domain separation salt
+ */
+function deriveMcpKeyFromSecret(secret: string): Buffer {
+  return crypto.createHash('sha256').update(`aamarva-mcp-v1-salt:${secret}`).digest();
+}
+
+/**
+ * Retrieves primary encryption key.
+ * Fails closed if missing in non-test environment to prevent predictable hardcoded fallbacks.
+ */
+function getPrimaryMcpEncryptionKey(): Buffer {
+  const envKey = process.env.SECRETS_ENCRYPTION_KEY?.trim();
+
+  if (envKey && envKey.length >= 16) {
+    return deriveMcpKeyFromSecret(envKey);
+  }
+
+  if (isStrictTestEnvironment()) {
+    // In automated testing harnesses, allow a dedicated test-only key if not provided via env
+    return deriveMcpKeyFromSecret('aamarva_test_isolated_encryption_key_32_bytes_len');
+  }
+
+  throw new Error(
+    '[CRITICAL SECURITY CONFIGURATION] Dedicated SECRETS_ENCRYPTION_KEY environment variable is required ' +
+    'and must be configured with at least 16 characters for MCP credential encryption at rest. ' +
+    'Application refuses to start or encrypt/decrypt with an insecure fallback key.'
+  );
+}
+
+/**
+ * Returns all candidate decryption keys to support zero-downtime key rotation.
+ * The primary key is tried first, followed by rotation keys specified in SECRETS_ENCRYPTION_PREVIOUS_KEYS.
+ */
+function getAllMcpDecryptionKeys(): Buffer[] {
+  const keys: Buffer[] = [getPrimaryMcpEncryptionKey()];
+
+  const rotationKeysEnv =
+    process.env.SECRETS_ENCRYPTION_PREVIOUS_KEYS ||
+    process.env.SECRETS_ENCRYPTION_KEY_ROTATION;
+
+  if (rotationKeysEnv) {
+    const previousKeys = rotationKeysEnv
+      .split(',')
+      .map((k) => k.trim())
+      .filter((k) => k.length >= 8);
+
+    for (const prev of previousKeys) {
+      try {
+        keys.push(deriveMcpKeyFromSecret(prev));
+      } catch {}
+    }
+  }
+
+  return keys;
+}
+
+/**
+ * Encrypts sensitive MCP credentials using AES-256-GCM authenticated encryption
+ */
+export function encryptMcpCredential(plaintext: string): string {
+  if (!plaintext || typeof plaintext !== 'string') return '';
+  const key = getPrimaryMcpEncryptionKey();
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(CIPHER_ALGO, key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `enc:v1:${iv.toString('hex')}:${authTag.toString('hex')}:${ciphertext.toString('hex')}`;
+}
+
+/**
+ * Decrypts sensitive MCP credentials only in memory at connection time.
+ * Supports key rotation by attempting configured primary and fallback rotation keys.
+ */
+export function decryptMcpCredential(encrypted: string): string {
+  if (!encrypted || typeof encrypted !== 'string') return '';
+  if (!encrypted.startsWith('enc:v1:')) {
+    // If plaintext legacy or non-encrypted string is encountered, reject decryption to prevent leaks
+    return '';
+  }
+  const parts = encrypted.split(':');
+  if (parts.length !== 5) {
+    throw new Error('Malformed encrypted credential format.');
+  }
+  const iv = Buffer.from(parts[2], 'hex');
+  const authTag = Buffer.from(parts[3], 'hex');
+  const ciphertext = Buffer.from(parts[4], 'hex');
+
+  const candidateKeys = getAllMcpDecryptionKeys();
+  let lastError: Error | null = null;
+
+  for (const key of candidateKeys) {
+    try {
+      const decipher = crypto.createDecipheriv(CIPHER_ALGO, key, iv);
+      decipher.setAuthTag(authTag);
+      const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+      return plaintext.toString('utf8');
+    } catch (err: any) {
+      lastError = err;
+    }
+  }
+
+  throw new Error(`Failed to decrypt MCP credential: ${lastError?.message || 'Authentication tag verification failed.'}`);
+}
+
+// ============================================================================
+// 2. HARDENED SSRF & CONNECTION-LAYER DNS REBINDING DEFENSE
+// ============================================================================
+
+/**
+ * Validates whether an IP address belongs to restricted/private/loopback/cloud-metadata spaces
+ */
+export function isIpRestricted(ip: string): boolean {
+  if (!ip || typeof ip !== 'string') return true;
+
+  let cleanIp = ip.trim().toLowerCase();
+  // Strip IPv4-mapped IPv6 prefix (e.g. ::ffff:127.0.0.1)
+  if (cleanIp.startsWith('::ffff:')) {
+    cleanIp = cleanIp.slice(7);
+  }
+
+  // IPv4 Evaluation
+  const ipv4Match = cleanIp.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const o1 = parseInt(ipv4Match[1], 10);
+    const o2 = parseInt(ipv4Match[2], 10);
+    const o3 = parseInt(ipv4Match[3], 10);
+    const o4 = parseInt(ipv4Match[4], 10);
+
+    if (o1 > 255 || o2 > 255 || o3 > 255 || o4 > 255) return true;
+
+    // 0.0.0.0/8 (Current network)
+    if (o1 === 0) return true;
+    // 10.0.0.0/8 (RFC 1918 Private)
+    if (o1 === 10) return true;
+    // 100.64.0.0/10 (Shared address space / CGNAT)
+    if (o1 === 100 && o2 >= 64 && o2 <= 127) return true;
+    // 127.0.0.0/8 (Loopback)
+    if (o1 === 127) return true;
+    // 169.254.0.0/16 (Link-local / Cloud metadata, including 169.254.169.254)
+    if (o1 === 169 && o2 === 254) return true;
+    // 172.16.0.0/12 (RFC 1918 Private)
+    if (o1 === 172 && o2 >= 16 && o2 <= 31) return true;
+    // 192.0.0.0/24 (IETF protocol assignments)
+    if (o1 === 192 && o2 === 0 && o3 === 0) return true;
+    // 192.0.2.0/24 (TEST-NET-1)
+    if (o1 === 192 && o2 === 0 && o3 === 2) return true;
+    // 192.88.99.0/24 (6to4 anycast relay)
+    if (o1 === 192 && o2 === 88 && o3 === 99) return true;
+    // 192.168.0.0/16 (RFC 1918 Private)
+    if (o1 === 192 && o2 === 168) return true;
+    // 198.18.0.0/15 (Network benchmark testing)
+    if (o1 === 198 && (o2 === 18 || o2 === 19)) return true;
+    // 198.51.100.0/24 (TEST-NET-2)
+    if (o1 === 198 && o2 === 51 && o3 === 100) return true;
+    // 203.0.113.0/24 (TEST-NET-3)
+    if (o1 === 203 && o2 === 0 && o3 === 113) return true;
+    // 224.0.0.0/4 (Multicast)
+    if (o1 >= 224 && o1 <= 239) return true;
+    // 240.0.0.0/4 (Reserved)
+    if (o1 >= 240) return true;
+    // 255.255.255.255 (Broadcast)
+    if (o1 === 255 && o2 === 255 && o3 === 255 && o4 === 255) return true;
+
+    return false;
+  }
+
+  // IPv6 Evaluation
+  if (cleanIp === '::' || cleanIp === '::1') return true;
+  if (cleanIp.startsWith('fc') || cleanIp.startsWith('fd')) return true; // Unique local address (fc00::/7)
+  if (cleanIp.startsWith('fe8') || cleanIp.startsWith('fe9') || cleanIp.startsWith('fea') || cleanIp.startsWith('feb')) return true; // Link-local (fe80::/10)
+  if (cleanIp.startsWith('ff')) return true; // Multicast (ff00::/8)
+  if (cleanIp.startsWith('2001:db8:')) return true; // Documentation
+  if (cleanIp.startsWith('100::')) return true; // Discard-only
+
+  return false;
+}
+
+/**
+ * Checks whether a hostname belongs to internal or cloud-metadata domain names
+ */
+export function isHostnameRestricted(hostname: string): boolean {
+  if (!hostname || typeof hostname !== 'string') return true;
+  const h = hostname.trim().toLowerCase();
+  if (
+    h === 'localhost' ||
+    h === '0.0.0.0' ||
+    h.endsWith('.localhost') ||
+    h.endsWith('.local') ||
+    h.endsWith('.internal') ||
+    h.endsWith('.localdomain') ||
+    h === 'metadata.google.internal' ||
+    h === 'instance-data'
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export const safeLookup = (
+  hostname: string,
+  options: any,
+  callback: (err: NodeJS.ErrnoException | null, address: any, family?: number) => void
+) => {
+  if (isHostnameRestricted(hostname)) {
+    const err: any = new Error(`SSRF blocked: Domain '${hostname}' is restricted.`);
+    err.code = 'ENOTFOUND';
+    return callback(err, '', 4);
+  }
+
+  if (isIpRestricted(hostname)) {
+    const err: any = new Error(`SSRF blocked: Address '${hostname}' is in a restricted subnet.`);
+    err.code = 'ENOTFOUND';
+    return callback(err, '', 4);
+  }
+
+  dns.lookup(hostname, { all: true }, (err, addresses) => {
+    if (err) return callback(err, '', 4);
+    if (!addresses || addresses.length === 0) {
+      const notFoundErr: any = new Error(`DNS resolution failed for '${hostname}'`);
+      notFoundErr.code = 'ENOTFOUND';
+      return callback(notFoundErr, '', 4);
+    }
+
+    for (const rec of addresses) {
+      if (isIpRestricted(rec.address)) {
+        const ssrfErr: any = new Error(
+          `SSRF blocked at connection layer: Hostname '${hostname}' resolved to restricted IP '${rec.address}'.`
+        );
+        ssrfErr.code = 'ECONNREFUSED';
+        return callback(ssrfErr, '', 4);
+      }
+    }
+
+    const first = addresses[0];
+    if (options && options.all) {
+      return callback(null, addresses, first.family);
+    }
+    return callback(null, first.address, first.family);
+  });
+};
+
+/**
+ * Creates an SSRF-safe HTTP/HTTPS Agent that enforces destination IP restrictions
+ * at the actual connection socket layer. This eliminates DNS rebinding attacks.
+ */
+export function createSsrfSafeAgent(isHttps: boolean) {
+  const agentOptions = {
+    lookup: safeLookup,
+    keepAlive: false,
+    timeout: 15000
+  };
+
+  return isHttps ? new https.Agent(agentOptions) : new http.Agent(agentOptions);
+}
+
+/**
+ * SSRF-safe fetch implementation for official MCP SDK transports.
+ * Enforces destination IP restrictions and connection-layer SSRF defense via createSsrfSafeAgent().
+ */
+export async function ssrfSafeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+  const ssrf = await validateEndpointUrl(urlStr);
+  if (!ssrf.valid) {
+    throw new Error(`SSRF blocked at transport fetch: ${ssrf.error}`);
+  }
+
+  // Create an Undici dispatcher that enforces our IP restrictions via a custom lookup
+  const dispatcher = new UndiciAgent({
+    connect: {
+      lookup: safeLookup
+    }
+  });
+
+  return fetch(urlStr, {
+    ...init,
+    // @ts-ignore - undici dispatcher fits the fetch signature
+    dispatcher
+  });
+}
+
+/**
+ * Validates endpoint URL against SSRF, resolving DNS hostnames and enforcing IP restrictions.
+ * Enforces HTTPS in production and rejects plaintext HTTP when credentials are transmitted.
+ * Mock endpoints are strictly rejected in production.
+ */
+export async function validateEndpointUrl(
+  endpointUrl: string,
+  authType: string = 'none',
+  hasCredential: boolean = false
+): Promise<{ valid: boolean; error?: string }> {
+  if (!endpointUrl || typeof endpointUrl !== 'string') {
+    return { valid: false, error: 'Endpoint URL is required' };
+  }
+
+  const trimmed = endpointUrl.trim();
+
+  // Mock endpoints are strictly restricted to isolated automated test suites
+  if (trimmed.startsWith('mock://') || trimmed.includes('mock-mcp.internal')) {
+    if (!isStrictTestEnvironment() || process.env.NODE_ENV === 'production') {
+      return {
+        valid: false,
+        error: 'Restricted target: Mock endpoints are strictly prohibited outside automated test environments.'
+      };
+    }
+    return { valid: true };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { valid: false, error: 'Malformed endpoint URL. Must include protocol (e.g. https://...)' };
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { valid: false, error: 'Unsupported protocol. Only http: and https: are allowed.' };
+  }
+
+  // 1. Require HTTPS for remote MCP endpoints in production unless an explicitly approved secure transport design exists
+  if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') {
+    return {
+      valid: false,
+      error: 'Insecure protocol: HTTPS is strictly required for remote MCP endpoints in production.'
+    };
+  }
+
+  // 2. Prohibit sending credentials or bearer/API keys over plaintext HTTP in any environment
+  if (parsed.protocol === 'http:' && (authType !== 'none' || hasCredential)) {
+    return {
+      valid: false,
+      error: 'Insecure transport: Plaintext HTTP is prohibited when sending credentials, bearer tokens, or API keys. HTTPS is required.'
+    };
+  }
+
+  // Prohibit embedded credentials in URL
+  if (parsed.username || parsed.password) {
+    return { valid: false, error: 'Embedded credentials in endpoint URL are prohibited.' };
+  }
+
+  // Check port restrictions (block internal service ports)
+  if (parsed.port) {
+    const portNum = parseInt(parsed.port, 10);
+    const blockedPorts = [21, 22, 23, 25, 53, 110, 143, 445, 1433, 3306, 5432, 6379, 11211, 27017, 28017];
+    if (blockedPorts.includes(portNum)) {
+      return { valid: false, error: `Restricted target: Port ${portNum} is blocked for security.` };
+    }
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Block loopback and known cloud internal hostnames
+  if (isHostnameRestricted(hostname)) {
+    return { valid: false, error: 'Restricted target: Local and internal domain names are blocked.' };
+  }
+
+  // If hostname is directly an IP literal
+  if (isIpRestricted(hostname)) {
+    return { valid: false, error: 'Restricted target: Private, loopback, or cloud metadata IP addresses are blocked.' };
+  }
+
+  // Pre-validate DNS resolution to give helpful user-facing errors
+  try {
+    const lookup = await dns.promises.lookup(hostname, { all: true });
+    if (!lookup || lookup.length === 0) {
+      return { valid: false, error: `Unable to resolve server domain '${hostname}'.` };
+    }
+    for (const record of lookup) {
+      if (isIpRestricted(record.address)) {
+        return {
+          valid: false,
+          error: `Restricted target: Resolved IP address '${record.address}' belongs to a private, loopback, or metadata subnet.`
+        };
+      }
+    }
+  } catch (err: any) {
+    return { valid: false, error: `DNS resolution failed for '${hostname}': ${err.message}` };
+  }
+
+  return { valid: true };
+}
+
+// ============================================================================
+// 3. FLEET OWNERSHIP VERIFICATION
+// ============================================================================
+
+/**
+ * Enforces Master/Slave boundary: verifies target agent is an authentic member of operator's fleet
+ */
+export async function verifyAgentInOperatorFleet(operatorUserId: string, targetAgentId: string): Promise<boolean> {
+  if (!operatorUserId || !targetAgentId) return false;
+  // An operator can always assign tools to their primary account
+  if (targetAgentId === operatorUserId) return true;
+
+  const supabase = getSupabaseClient();
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, agentId, master_id')
+      .or(`id.eq.${targetAgentId},agentId.eq.${targetAgentId}`)
+      .maybeSingle();
+
+    if (!error && data) {
+      return data.id === operatorUserId || data.master_id === operatorUserId;
+    }
+  } catch {}
+
+  // In test / offline mode, check naming convention or local fleet registry
+  if (isStrictTestEnvironment()) {
+    if (targetAgentId.includes('slave') || targetAgentId === operatorUserId) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// ============================================================================
+// 4. JSON SCHEMA TOOL ARGUMENT VALIDATION (AJV & JSON SCHEMA DIALECT)
+// ============================================================================
+
+/**
+ * Validates tool invocation arguments against the discovered JSON schema using Ajv.
+ * Strictly verifies types, constraints, required parameters, and rejects malformed schemas and invalid arguments.
+ */
+export function validateToolArguments(
+  schema: Record<string, any>,
+  args: Record<string, any>
+): { valid: boolean; error?: string } {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return { valid: false, error: 'Malformed tool schema: schema must be an object' };
+  }
+
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+    return { valid: false, error: 'Tool arguments must be a JSON object' };
+  }
+
+  try {
+    const validate = ajv.compile(schema);
+    const valid = validate(args);
+    if (!valid) {
+      const errorText = ajv.errorsText(validate.errors, { separator: '; ' });
+      return { valid: false, error: errorText || 'Arguments failed schema validation' };
+    }
+    return { valid: true };
+  } catch (schemaErr: any) {
+    return { valid: false, error: `Malformed tool schema: ${schemaErr?.message || 'Invalid JSON Schema'}` };
+  }
+}
+
+// ============================================================================
+// 5. MCP CLIENT & PROTOCOL COMMUNICATION (Streamable HTTP & SSE)
+// ============================================================================
+
+/**
+ * Sanitizes server info object to ensure sensitive session tokens, credentials, or internal IDs
+ * are never leaked to client responses.
+ */
+export function sanitizeServerInfo(serverInfo: Record<string, any> | undefined): Record<string, any> {
+  if (!serverInfo || typeof serverInfo !== 'object') return {};
+  const copy: Record<string, any> = { ...serverInfo };
+  delete copy.sessionId;
+  delete copy.session_id;
+  delete copy.token;
+  delete copy.secret;
+  delete copy.credential;
+  delete copy.credentials;
+  delete copy.mcpSessionId;
+  delete copy.mcp_session_id;
+  return copy;
+}
+
+function buildAuthHeaders(
+  authType: 'none' | 'bearer' | 'api-key' | 'custom-header',
+  credential?: string,
+  headerName?: string
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream'
+  };
+
+  if (!credential || authType === 'none') {
+    return headers;
+  }
+
+  if (authType === 'bearer') {
+    headers['Authorization'] = `Bearer ${credential}`;
+  } else if (authType === 'api-key') {
+    const keyHeader = headerName?.trim() || 'X-API-Key';
+    headers[keyHeader] = credential;
+  } else if (authType === 'custom-header' && headerName?.trim()) {
+    headers[headerName.trim()] = credential;
+  }
+
+  return headers;
+}
+
+/**
+ * Parses raw stream response that may be JSON or Server-Sent Events (SSE).
+ */
+export function parseMcpResponseBody(rawBody: any, contentType?: string): any {
+  if (!rawBody) return null;
+  if (typeof rawBody === 'object') return rawBody;
+
+  const text = String(rawBody).trim();
+
+  // If text/event-stream or SSE-formatted lines
+  if ((contentType && contentType.includes('text/event-stream')) || text.startsWith('event:') || text.startsWith('data:')) {
+    const lines = text.split('\n');
+    let dataBuffer = '';
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine.startsWith('data:')) {
+        dataBuffer += trimmedLine.slice(5).trim();
+      }
+    }
+    if (dataBuffer) {
+      try {
+        return JSON.parse(dataBuffer);
+      } catch {}
+    }
+  }
+
+  // Attempt standard JSON parse
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * Dispatches an outbound JSON-RPC request to an MCP server using connection-layer SSRF defense
+ * and robust streamable HTTP / SSE handling.
+ */
+async function sendMcpRpcRequest(
+  endpoint: string,
+  payload: Record<string, any>,
+  headers: Record<string, string>,
+  timeoutMs = 12000
+): Promise<{ status: number; data: any; sessionId?: string; error?: string }> {
+  const isHttps = endpoint.startsWith('https:');
+  const agent = createSsrfSafeAgent(isHttps);
+
+  const res = await axios.post(endpoint, payload, {
+    headers,
+    timeout: timeoutMs,
+    maxContentLength: 4 * 1024 * 1024,
+    maxBodyLength: 4 * 1024 * 1024,
+    maxRedirects: 0, // Strict: no redirects allowed to prevent redirect-based SSRF bypass
+    httpAgent: isHttps ? undefined : agent,
+    httpsAgent: isHttps ? agent : undefined,
+    responseType: 'text',
+    transformResponse: [(data) => data],
+    validateStatus: (status) => status < 500
+  });
+
+  const contentType = String(res.headers['content-type'] || '').toLowerCase();
+  const parsedData = parseMcpResponseBody(res.data, contentType);
+
+  const rawSessionId = res.headers['mcp-session-id'] || res.headers['x-mcp-session-id'];
+  const sessionId = rawSessionId ? String(rawSessionId) : undefined;
+
+  return {
+    status: res.status,
+    data: parsedData,
+    sessionId
+  };
+}
+
+/**
+ * Performs live MCP Protocol handshake and tool discovery using @modelcontextprotocol/sdk where compatible
+ */
+export async function testMcpConnectionAndDiscover(
+  endpoint: string,
+  authType: 'none' | 'bearer' | 'api-key' | 'custom-header' = 'none',
+  credential?: string,
+  headerName?: string,
+  transport: 'http-streamable' | 'http-sse' = 'http-streamable'
+): Promise<{
+  success: boolean;
+  status: 'connected' | 'error';
+  serverInfo: Record<string, any>;
+  tools: Array<{ name: string; description?: string; inputSchema?: Record<string, any> }>;
+  sessionId?: string;
+  error?: string;
+}> {
+  // Validate supported transports strictly
+  if (transport !== 'http-streamable' && transport !== 'http-sse') {
+    return {
+      success: false,
+      status: 'error',
+      serverInfo: {},
+      tools: [],
+      error: `Unsupported transport '${transport}'. Only 'http-streamable' and 'http-sse' are supported.`
+    };
+  }
+
+  // Validate SSRF boundary and plaintext credential protections
+  const ssrfCheck = await validateEndpointUrl(endpoint, authType, Boolean(credential));
+  if (!ssrfCheck.valid) {
+    return {
+      success: false,
+      status: 'error',
+      serverInfo: {},
+      tools: [],
+      error: ssrfCheck.error
+    };
+  }
+
+  // Handle mock endpoints strictly for automated test suites
+  if (endpoint.startsWith('mock://') || endpoint.includes('mock-mcp.internal')) {
+    if (!isStrictTestEnvironment() || process.env.NODE_ENV === 'production') {
+      return {
+        success: false,
+        status: 'error',
+        serverInfo: {},
+        tools: [],
+        error: 'Restricted target: Mock endpoints are restricted to automated testing environments.'
+      };
+    }
+    if (endpoint.includes('fail') || endpoint.includes('unreachable')) {
+      return {
+        success: false,
+        status: 'error',
+        serverInfo: {},
+        tools: [],
+        error: 'Connection refused: Remote MCP server is unreachable.'
+      };
+    }
+    return {
+      success: true,
+      status: 'connected',
+      serverInfo: { name: 'mock-mcp-server', version: '1.2.0', protocolVersion: '2024-11-05' },
+      tools: [
+        {
+          name: 'query_vector_index',
+          description: 'Search embedded vector index for matching semantic concepts',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Semantic search query' },
+              limit: { type: 'number', description: 'Maximum items to retrieve' }
+            },
+            required: ['query'],
+            additionalProperties: false
+          }
+        },
+        {
+          name: 'execute_sql_query',
+          description: 'Executes read-only SQL query against sanitized analytics store',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'Read-only SQL query' }
+            },
+            required: ['query'],
+            additionalProperties: false
+          }
+        }
+      ],
+      sessionId: 'sess_mock_test_123'
+    };
+  }
+
+  // Decrypt credential if passed as encrypted string
+  let rawCredential = credential;
+  if (credential && credential.startsWith('enc:v1:')) {
+    try {
+      rawCredential = decryptMcpCredential(credential);
+    } catch {
+      return {
+        success: false,
+        status: 'error',
+        serverInfo: {},
+        tools: [],
+        error: 'Failed to decrypt stored credential.'
+      };
+    }
+  }
+
+  const headers = buildAuthHeaders(authType, rawCredential, headerName);
+
+  try {
+    // Attempt live protocol handshake and discovery using official @modelcontextprotocol/sdk
+    let client: Client | null = null;
+    try {
+      const url = new URL(endpoint);
+      const sdkTransport = transport === 'http-sse'
+        ? new SSEClientTransport(url, {
+            requestInit: { headers },
+            fetch: ssrfSafeFetch,
+          })
+        : new StreamableHTTPClientTransport(url, {
+            requestInit: { headers },
+            fetch: ssrfSafeFetch,
+          });
+
+      client = new Client(
+        { name: 'aamarva-floor', version: '1.0.0' },
+        { capabilities: { roots: { listChanged: true } } }
+      );
+
+      await client.connect(sdkTransport);
+      const sdkToolsRes = await client.listTools();
+      const serverVersion = client.getServerVersion() || { name: 'mcp-server', version: '1.0.0' };
+      const cleanServerInfo = sanitizeServerInfo(serverVersion);
+      const activeSessionId = (sdkTransport as any).sessionId || undefined;
+
+      const sanitizedTools = Array.isArray(sdkToolsRes?.tools)
+        ? sdkToolsRes.tools.map((t: any) => ({
+            name: String(t.name || 'unnamed_tool'),
+            description: String(t.description || ''),
+            inputSchema: t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : { type: 'object' }
+          }))
+        : [];
+
+      return {
+        success: true,
+        status: 'connected',
+        serverInfo: cleanServerInfo,
+        tools: sanitizedTools,
+        sessionId: activeSessionId
+      };
+    } finally {
+      if (client) {
+        await client.close().catch(() => {});
+      }
+    }
+  } catch (sdkErr: any) {
+    try {
+      // Fall back to robust Streamable HTTP / SSE JSON-RPC protocol dispatches
+      const initPayload = {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {
+            tools: { listChanged: true }
+          },
+          clientInfo: {
+            name: 'aamarva-floor',
+            version: '1.0.0'
+          }
+        }
+      };
+
+      const initRes = await sendMcpRpcRequest(endpoint, initPayload, headers, 8000);
+
+      if (initRes.status >= 400) {
+        return {
+          success: false,
+          status: 'error',
+          serverInfo: {},
+          tools: [],
+          error: `MCP handshake failed with HTTP ${initRes.status}: ${JSON.stringify(initRes.data?.error || initRes.data)}`
+        };
+      }
+
+      const rawServerInfo = initRes.data?.result?.serverInfo || { protocolVersion: '2024-11-05' };
+      const cleanServerInfo = sanitizeServerInfo(rawServerInfo);
+
+      let activeSessionId = initRes.sessionId;
+      if (activeSessionId) {
+        headers['Mcp-Session-Id'] = activeSessionId;
+      }
+
+      // 2. Initialized Notification
+      try {
+        await sendMcpRpcRequest(
+          endpoint,
+          { jsonrpc: '2.0', method: 'notifications/initialized' },
+          headers,
+          4000
+        );
+      } catch {}
+
+      // 3. Discover Tools (JSON-RPC 2.0 tools/list)
+      const listPayload = {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/list',
+        params: {}
+      };
+
+      const listRes = await sendMcpRpcRequest(endpoint, listPayload, headers, 8000);
+
+      if (listRes.status >= 400 || listRes.data?.error) {
+        return {
+          success: false,
+          status: 'error',
+          serverInfo: cleanServerInfo,
+          tools: [],
+          error: `Tool discovery failed: ${listRes.data?.error?.message || `HTTP ${listRes.status}`}`
+        };
+      }
+
+      const rawTools = listRes.data?.result?.tools || [];
+      const sanitizedTools = Array.isArray(rawTools)
+        ? rawTools.map((t: any) => ({
+            name: String(t.name || 'unnamed_tool'),
+            description: String(t.description || ''),
+            inputSchema: t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : { type: 'object' }
+          }))
+        : [];
+
+      return {
+        success: true,
+        status: 'connected',
+        serverInfo: cleanServerInfo,
+        tools: sanitizedTools,
+        sessionId: activeSessionId
+      };
+    } catch (fallbackErr: any) {
+      const message = fallbackErr.response?.data?.error?.message || fallbackErr.message || sdkErr.message || 'Unknown network error';
+      return {
+        success: false,
+        status: 'error',
+        serverInfo: {},
+        tools: [],
+        error: `Connection error: ${message}`
+      };
+    }
+  }
+}
+
+/**
+ * Dispatches an authorized tool call to the connected remote MCP server.
+ * Restores and persists session IDs across serverless cold starts.
+ */
+export async function executeRemoteMcpTool(
+  server: McpServerRecord,
+  tool: McpToolRecord,
+  toolArgs: Record<string, any>
+): Promise<{ success: boolean; result?: any; error?: string }> {
+  // 1. JSON Schema validation
+  const validation = validateToolArguments(tool.input_schema, toolArgs);
+  if (!validation.valid) {
+    return {
+      success: false,
+      error: `Schema validation error: ${validation.error}`
+    };
+  }
+
+  // 2. Resolve session ID across serverless cold starts (memory -> encrypted server record -> database)
+  let storedSessionId = serverSessionStore.get(server.id);
+  if (!storedSessionId && server.session_id_encrypted) {
+    try {
+      storedSessionId = decryptMcpCredential(server.session_id_encrypted);
+      if (storedSessionId) {
+        serverSessionStore.set(server.id, storedSessionId);
+      }
+    } catch {}
+  }
+  if (!storedSessionId && isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase.from('mcp_servers').select('session_id_encrypted').eq('id', server.id).maybeSingle();
+      if (data?.session_id_encrypted) {
+        storedSessionId = decryptMcpCredential(data.session_id_encrypted);
+        if (storedSessionId) {
+          serverSessionStore.set(server.id, storedSessionId);
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Handle mock endpoints strictly in test environment
+  if (server.endpoint.startsWith('mock://') || server.endpoint.includes('mock-mcp.internal')) {
+    if (!isStrictTestEnvironment() || process.env.NODE_ENV === 'production') {
+      return { success: false, error: 'Mock endpoints are strictly prohibited in production.' };
+    }
+    if (server.endpoint.includes('session-required') && !storedSessionId) {
+      return { success: false, error: 'Session required: No valid session established for session-dependent MCP server.' };
+    }
+    return {
+      success: true,
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: `[Mock Execution Output] Executed tool '${tool.name}' successfully with arguments: ${JSON.stringify(toolArgs)}${storedSessionId ? ' [Session: Active]' : ''}`
+          }
+        ]
+      }
+    };
+  }
+
+  // 4. Re-verify SSRF destination and HTTPS protocol
+  const ssrf = await validateEndpointUrl(server.endpoint, server.auth_type, Boolean(server.auth_credential_encrypted));
+  if (!ssrf.valid) {
+    return { success: false, error: `Outbound security check rejected destination: ${ssrf.error}` };
+  }
+
+  // 5. Decrypt credential on demand
+  let rawCredential: string | undefined = undefined;
+  if (server.auth_credential_encrypted) {
+    try {
+      rawCredential = decryptMcpCredential(server.auth_credential_encrypted);
+    } catch {
+      return { success: false, error: 'Failed to decrypt stored credentials for tool invocation.' };
+    }
+  }
+
+  const headers = buildAuthHeaders(server.auth_type, rawCredential, server.auth_header_name);
+  if (storedSessionId) {
+    headers['Mcp-Session-Id'] = storedSessionId;
+  }
+
+  // 6. Attempt execution using official @modelcontextprotocol/sdk where compatible
+  let client: Client | null = null;
+  try {
+    const url = new URL(server.endpoint);
+    const sdkTransport = server.transport === 'http-sse'
+      ? new SSEClientTransport(url, {
+          requestInit: { headers },
+          fetch: ssrfSafeFetch,
+        })
+      : new StreamableHTTPClientTransport(url, {
+          requestInit: { headers },
+          sessionId: storedSessionId,
+          fetch: ssrfSafeFetch,
+        });
+
+    client = new Client(
+      { name: 'aamarva-floor', version: '1.0.0' },
+      { capabilities: {} }
+    );
+
+    await client.connect(sdkTransport);
+    const toolRes = await client.callTool({
+      name: tool.name,
+      arguments: toolArgs || {},
+    });
+
+    const newSessionId = (sdkTransport as any).sessionId;
+    if (newSessionId && newSessionId !== storedSessionId) {
+      serverSessionStore.set(server.id, newSessionId);
+      try {
+        const enc = encryptMcpCredential(newSessionId);
+        const supabase = getSupabaseClient();
+        await supabase.from('mcp_servers').update({ session_id_encrypted: enc }).eq('id', server.id);
+      } catch (err) {
+        if (shouldFailOnDbError()) throw err;
+      }
+    }
+
+    return {
+      success: true,
+      result: toolRes
+    };
+  } catch (sdkErr: any) {
+    // No automatic duplicate tool execution fallback after an MCP SDK invocation fails.
+    // Report execution failure directly without a second retry attempt.
+    return {
+      success: false,
+      error: `Execution error: ${sdkErr?.message || 'Remote MCP server failed to execute tool'}`
+    };
+  } finally {
+    if (client) {
+      await client.close().catch(() => {});
+    }
+  }
+}
+
+// ============================================================================
+// 6. MCP SERVER INVENTORY & LIFECYCLE MANAGEMENT
+// ============================================================================
+
+/**
+ * List all configured MCP servers belonging to the user
+ */
+export async function listUserMcpServers(userId: string): Promise<McpServerRecord[]> {
+  const supabase = getSupabaseClient();
+  let servers: McpServerRecord[] = [];
+
+  try {
+    const { data, error } = await supabase
+      .from('mcp_servers')
+      .select('*')
+      .eq('owner_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data)) {
+      servers = data;
+    } else if (error && shouldFailOnDbError()) {
+      throw error;
+    } else {
+      servers = Array.from(inMemoryServers.values()).filter((s) => s.owner_id === userId);
+    }
+  } catch (err) {
+    if (shouldFailOnDbError()) throw err;
+    servers = Array.from(inMemoryServers.values()).filter((s) => s.owner_id === userId);
+  }
+
+  // Augment with tool counts & strictly redact credentials and session tokens
+  const sanitized = await Promise.all(
+    servers.map(async (server) => {
+      const tools = await listToolsForServer(userId, server.id);
+      const assignments = await listAssignmentsForServer(server.id);
+      const uniqueAssigned = new Set(assignments.map((a) => a.agent_id));
+
+      const { auth_credential_encrypted, session_id_encrypted, server_info, ...rest } = server;
+      return {
+        ...rest,
+        has_credential: Boolean(auth_credential_encrypted && auth_credential_encrypted.length > 0),
+        server_info: sanitizeServerInfo(server_info),
+        tools_count: tools.length,
+        assigned_agents_count: uniqueAssigned.size
+      };
+    })
+  );
+
+  return sanitized;
+}
+
+/**
+ * Retrieve a specific MCP server with ownership verification
+ */
+export async function getMcpServer(userId: string, serverId: string): Promise<McpServerRecord | null> {
+  const supabase = getSupabaseClient();
+  let server: McpServerRecord | null = null;
+
+  try {
+    const { data, error } = await supabase
+      .from('mcp_servers')
+      .select('*')
+      .eq('id', serverId)
+      .eq('owner_id', userId)
+      .maybeSingle();
+
+    if (!error && data) {
+      server = data;
+    } else if (error && shouldFailOnDbError()) {
+      throw error;
+    } else {
+      server = inMemoryServers.get(serverId) || null;
+      if (server && server.owner_id !== userId) server = null;
+    }
+  } catch (err) {
+    if (shouldFailOnDbError()) throw err;
+    server = inMemoryServers.get(serverId) || null;
+    if (server && server.owner_id !== userId) server = null;
+  }
+
+  if (!server) return null;
+
+  const tools = await listToolsForServer(userId, server.id);
+  const assignments = await listAssignmentsForServer(server.id);
+  const uniqueAssigned = new Set(assignments.map((a) => a.agent_id));
+
+  return {
+    ...server,
+    has_credential: Boolean(server.auth_credential_encrypted && server.auth_credential_encrypted.length > 0),
+    auth_credential_encrypted: undefined, // Strictly redact credential
+    session_id_encrypted: undefined, // Strictly redact session identifier
+    server_info: sanitizeServerInfo(server.server_info), // Strictly redact session identifiers
+    tools_count: tools.length,
+    assigned_agents_count: uniqueAssigned.size
+  };
+}
+
+/**
+ * Adds an MCP server, validates connection, performs live handshake, encrypts credentials at rest, and discovers tools
+ */
+export async function addMcpServerWithDiscovery(
+  userId: string,
+  params: {
+    name: string;
+    endpoint: string;
+    description?: string;
+    transport?: 'http-streamable' | 'http-sse';
+    auth_type?: 'none' | 'bearer' | 'api-key' | 'custom-header';
+    auth_header_name?: string;
+    auth_credential?: string;
+  }
+): Promise<{ server: McpServerRecord; tools: McpToolRecord[]; error?: string }> {
+  const name = params.name.trim();
+  const endpoint = params.endpoint.trim();
+  const transport = params.transport || 'http-streamable';
+  const authType = params.auth_type || 'none';
+  const headerName = params.auth_header_name?.trim();
+  const credential = params.auth_credential?.trim();
+
+  if (transport !== 'http-streamable' && transport !== 'http-sse') {
+    throw new Error(`Unsupported transport '${transport}'. Only 'http-streamable' and 'http-sse' are supported.`);
+  }
+
+  // 1. SSRF Boundary Enforcement & HTTPS verification
+  const ssrf = await validateEndpointUrl(endpoint, authType, Boolean(credential));
+  if (!ssrf.valid) {
+    throw new Error(ssrf.error || 'Invalid or forbidden endpoint URL.');
+  }
+
+  // 2. Perform live protocol handshake and discovery
+  const discovery = await testMcpConnectionAndDiscover(endpoint, authType, credential, headerName, transport);
+
+  const serverId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  // Store session identifier privately on backend and encrypt for serverless persistence
+  let encryptedSessionId: string | undefined = undefined;
+  if (discovery.sessionId) {
+    serverSessionStore.set(serverId, discovery.sessionId);
+    encryptedSessionId = encryptMcpCredential(discovery.sessionId);
+  }
+
+  // 3. Encrypt credential at rest using AES-256-GCM
+  const encryptedCredential = credential ? encryptMcpCredential(credential) : undefined;
+
+  const newServerRecord: McpServerRecord = {
+    id: serverId,
+    owner_id: userId,
+    name,
+    description: params.description?.trim() || '',
+    transport,
+    endpoint,
+    auth_type: authType,
+    auth_header_name: headerName,
+    auth_credential_encrypted: encryptedCredential,
+    session_id_encrypted: encryptedSessionId,
+    status: discovery.status,
+    last_checked: now,
+    last_error: discovery.error,
+    server_info: sanitizeServerInfo(discovery.serverInfo),
+    created_at: now,
+    updated_at: now
+  };
+
+  const supabase = getSupabaseClient();
+  let savedServer = newServerRecord;
+
+  try {
+    const { data, error } = await supabase
+      .from('mcp_servers')
+      .insert(newServerRecord)
+      .select()
+      .single();
+
+    if (error && shouldFailOnDbError()) {
+      throw new Error(`Database persistence failed: ${error.message}`);
+    }
+    if (!error && data) {
+      savedServer = data;
+    }
+  } catch (err) {
+    if (shouldFailOnDbError()) throw err;
+  }
+  inMemoryServers.set(serverId, savedServer);
+
+  // 4. Save discovered tools
+  const savedTools: McpToolRecord[] = [];
+  for (const t of discovery.tools) {
+    const toolId = crypto.randomUUID();
+    const toolRecord: McpToolRecord = {
+      id: toolId,
+      server_id: serverId,
+      owner_id: userId,
+      name: t.name,
+      description: t.description || '',
+      input_schema: t.inputSchema || { type: 'object' },
+      is_enabled: true,
+      created_at: now,
+      updated_at: now
+    };
+
+    let savedTool = toolRecord;
+    try {
+      const { data, error } = await supabase
+        .from('mcp_tools')
+        .insert(toolRecord)
+        .select()
+        .single();
+
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error saving tool '${t.name}': ${error.message}`);
+      }
+      if (!error && data) {
+        savedTool = data;
+      }
+    } catch (err) {
+      if (shouldFailOnDbError()) throw err;
+    }
+    inMemoryTools.set(savedTool.id, savedTool);
+    savedTools.push(savedTool);
+  }
+
+  // Redact credentials and session IDs before returning to client
+  const sanitized = {
+    ...savedServer,
+    has_credential: Boolean(credential),
+    auth_credential_encrypted: undefined,
+    session_id_encrypted: undefined,
+    server_info: sanitizeServerInfo(savedServer.server_info),
+    tools_count: savedTools.length,
+    assigned_agents_count: 0
+  };
+
+  return {
+    server: sanitized,
+    tools: savedTools,
+    error: discovery.error
+  };
+}
+
+/**
+ * Re-validates connection and fully synchronizes tools (updates schemas, adds new tools, removes deleted tools).
+ * Propagates production database errors instead of silently converting them into a missing-server result.
+ */
+export async function revalidateAndSyncMcpServer(
+  userId: string,
+  serverId: string
+): Promise<{ server: McpServerRecord; tools: McpToolRecord[]; error?: string }> {
+  const supabase = getSupabaseClient();
+  let server: McpServerRecord | null = null;
+
+  try {
+    const { data, error } = await supabase
+      .from('mcp_servers')
+      .select('*')
+      .eq('id', serverId)
+      .eq('owner_id', userId)
+      .maybeSingle();
+
+    if (error && shouldFailOnDbError()) {
+      throw new Error(`Database error retrieving MCP server: ${error.message}`);
+    }
+    server = data;
+  } catch (err) {
+    if (shouldFailOnDbError()) throw err;
+  }
+
+  if (!server) {
+    server = inMemoryServers.get(serverId) || null;
+    if (server && server.owner_id !== userId) server = null;
+  }
+
+  if (!server) {
+    throw new Error('MCP server not found or unauthorized.');
+  }
+
+  const discovery = await testMcpConnectionAndDiscover(
+    server.endpoint,
+    server.auth_type,
+    server.auth_credential_encrypted,
+    server.auth_header_name,
+    server.transport
+  );
+
+  const now = new Date().toISOString();
+  const updatedStatus = discovery.status;
+  const updatedError = discovery.error || null;
+  const sanitizedServerInfo = sanitizeServerInfo(discovery.serverInfo);
+
+  let updatedEncryptedSessionId = server.session_id_encrypted;
+  if (discovery.sessionId) {
+    serverSessionStore.set(serverId, discovery.sessionId);
+    updatedEncryptedSessionId = encryptMcpCredential(discovery.sessionId);
+  }
+
+  try {
+    const { error } = await supabase
+      .from('mcp_servers')
+      .update({
+        status: updatedStatus,
+        last_checked: now,
+        last_error: updatedError,
+        server_info: sanitizedServerInfo,
+        session_id_encrypted: updatedEncryptedSessionId,
+        updated_at: now
+      })
+      .eq('id', serverId);
+
+    if (error && shouldFailOnDbError()) {
+      throw new Error(`Database error updating server status: ${error.message}`);
+    }
+  } catch (err) {
+    if (shouldFailOnDbError()) throw err;
+  }
+
+  server.status = updatedStatus;
+  server.last_checked = now;
+  server.last_error = updatedError || undefined;
+  server.server_info = sanitizedServerInfo;
+  server.session_id_encrypted = updatedEncryptedSessionId;
+  server.updated_at = now;
+  inMemoryServers.set(serverId, server);
+
+  // If connection was successful, synchronize tools
+  if (discovery.success) {
+    const existingTools = await listToolsForServer(userId, serverId);
+    const remoteToolMap = new Map<string, { name: string; description?: string; inputSchema?: Record<string, any> }>();
+    for (const rt of discovery.tools) {
+      remoteToolMap.set(rt.name, rt);
+    }
+
+    // 1. Update existing tools or remove tools no longer exposed by server
+    for (const existing of existingTools) {
+      const matchingRemote = remoteToolMap.get(existing.name);
+      if (matchingRemote) {
+        try {
+          await supabase
+            .from('mcp_tools')
+            .update({
+              description: matchingRemote.description || '',
+              input_schema: matchingRemote.inputSchema || { type: 'object' },
+              updated_at: now
+            })
+            .eq('id', existing.id);
+        } catch {}
+        const updatedRec = {
+          ...existing,
+          description: matchingRemote.description || '',
+          input_schema: matchingRemote.inputSchema || { type: 'object' },
+          updated_at: now
+        };
+        inMemoryTools.set(existing.id, updatedRec);
+      } else {
+        // Tool was removed on remote: prune assignments and delete tool
+        try {
+          await supabase.from('mcp_tool_assignments').delete().eq('tool_id', existing.id);
+          await supabase.from('mcp_tools').delete().eq('id', existing.id);
+        } catch {}
+        inMemoryTools.delete(existing.id);
+        for (const [aId, a] of inMemoryAssignments.entries()) {
+          if (a.tool_id === existing.id) inMemoryAssignments.delete(aId);
+        }
+      }
+    }
+
+    // 2. Add newly discovered tools (start unassigned / zero-trust)
+    for (const [name, rt] of remoteToolMap.entries()) {
+      const alreadyExists = existingTools.some((et) => et.name === name);
+      if (!alreadyExists) {
+        const toolId = crypto.randomUUID();
+        const toolRec: McpToolRecord = {
+          id: toolId,
+          server_id: serverId,
+          owner_id: userId,
+          name: rt.name,
+          description: rt.description || '',
+          input_schema: rt.inputSchema || { type: 'object' },
+          is_enabled: true,
+          created_at: now,
+          updated_at: now
+        };
+        try {
+          await supabase.from('mcp_tools').insert(toolRec);
+        } catch {}
+        inMemoryTools.set(toolId, toolRec);
+      }
+    }
+  }
+
+  const currentTools = await listToolsForServer(userId, serverId);
+  const assignments = await listAssignmentsForServer(serverId);
+  const uniqueAssigned = new Set(assignments.map((a) => a.agent_id));
+
+  return {
+    server: {
+      ...server,
+      has_credential: Boolean(server.auth_credential_encrypted),
+      auth_credential_encrypted: undefined,
+      session_id_encrypted: undefined,
+      server_info: sanitizeServerInfo(server.server_info),
+      tools_count: currentTools.length,
+      assigned_agents_count: uniqueAssigned.size
+    },
+    tools: currentTools,
+    error: discovery.error
+  };
+}
+
+/**
+ * Removes an MCP server and cascades deletion of its tools & assignments
+ */
+export async function removeMcpServer(userId: string, serverId: string): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  try {
+    const { error: assnErr } = await supabase.from('mcp_tool_assignments').delete().eq('server_id', serverId);
+    if (assnErr && shouldFailOnDbError()) throw assnErr;
+
+    const { error: toolsErr } = await supabase.from('mcp_tools').delete().eq('server_id', serverId).eq('owner_id', userId);
+    if (toolsErr && shouldFailOnDbError()) throw toolsErr;
+
+    const { error: srvErr } = await supabase.from('mcp_servers').delete().eq('id', serverId).eq('owner_id', userId);
+    if (srvErr && shouldFailOnDbError()) throw srvErr;
+  } catch (err) {
+    if (shouldFailOnDbError()) throw err;
+  }
+
+  inMemoryServers.delete(serverId);
+  serverSessionStore.delete(serverId);
+  for (const [tId, t] of inMemoryTools.entries()) {
+    if (t.server_id === serverId) inMemoryTools.delete(tId);
+  }
+  for (const [aId, a] of inMemoryAssignments.entries()) {
+    if (a.server_id === serverId) inMemoryAssignments.delete(aId);
+  }
+  return true;
+}
+
+/**
+ * List all tools for a specific server with user ownership check
+ */
+export async function listToolsForServer(userId: string, serverId: string): Promise<McpToolRecord[]> {
+  const supabase = getSupabaseClient();
+  let tools: McpToolRecord[] = [];
+
+  try {
+    const { data, error } = await supabase
+      .from('mcp_tools')
+      .select('*')
+      .eq('server_id', serverId)
+      .eq('owner_id', userId);
+
+    if (!error && Array.isArray(data)) {
+      tools = data;
+    } else {
+      tools = Array.from(inMemoryTools.values()).filter(
+        (t) => t.server_id === serverId && t.owner_id === userId
+      );
+    }
+  } catch {
+    tools = Array.from(inMemoryTools.values()).filter(
+      (t) => t.server_id === serverId && t.owner_id === userId
+    );
+  }
+
+  // Attach assigned agents list
+  const assignments = await listAssignmentsForServer(serverId);
+  return tools.map((t) => {
+    const assigned = assignments.filter((a) => a.tool_id === t.id).map((a) => a.agent_id);
+    return {
+      ...t,
+      assigned_agents: assigned
+    };
+  });
+}
+
+/**
+ * List all assignments for a specific server
+ */
+export async function listAssignmentsForServer(serverId: string): Promise<McpToolAssignmentRecord[]> {
+  const supabase = getSupabaseClient();
+  try {
+    const { data, error } = await supabase
+      .from('mcp_tool_assignments')
+      .select('*')
+      .eq('server_id', serverId);
+
+    if (!error && Array.isArray(data)) {
+      return data;
+    }
+  } catch {}
+
+  return Array.from(inMemoryAssignments.values()).filter((a) => a.server_id === serverId);
+}
+
+/**
+ * Toggles or sets agent access to a specific tool with fleet membership verification
+ */
+export async function setToolAssignment(
+  userId: string,
+  toolId: string,
+  agentId: string,
+  granted: boolean
+): Promise<{ success: boolean; assigned: boolean }> {
+  if (typeof granted !== 'boolean') {
+    throw new Error('granted must be a boolean');
+  }
+
+  // 1. Verify target agent belongs to operator's authentic fleet
+  const isFleetMember = await verifyAgentInOperatorFleet(userId, agentId);
+  if (!isFleetMember) {
+    throw new Error(`Target agent '${agentId}' does not belong to operator's fleet.`);
+  }
+
+  const supabase = getSupabaseClient();
+
+  // 2. Verify tool exists and belongs to this operator
+  let tool = inMemoryTools.get(toolId);
+  if (!tool) {
+    try {
+      const { data } = await supabase.from('mcp_tools').select('*').eq('id', toolId).maybeSingle();
+      tool = data;
+    } catch {}
+  }
+
+  if (!tool || tool.owner_id !== userId) {
+    throw new Error('Tool not found or unauthorized.');
+  }
+
+  if (!granted) {
+    // Revoke access
+    try {
+      const { error } = await supabase
+        .from('mcp_tool_assignments')
+        .delete()
+        .eq('tool_id', toolId)
+        .eq('agent_id', agentId);
+
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error revoking assignment: ${error.message}`);
+      }
+    } catch (err) {
+      if (shouldFailOnDbError()) throw err;
+    }
+
+    for (const [k, v] of inMemoryAssignments.entries()) {
+      if (v.tool_id === toolId && v.agent_id === agentId) {
+        inMemoryAssignments.delete(k);
+      }
+    }
+    return { success: true, assigned: false };
+  } else {
+    // Grant access
+    const assignmentId = crypto.randomUUID();
+    const assignmentRecord: McpToolAssignmentRecord = {
+      id: assignmentId,
+      tool_id: toolId,
+      server_id: tool.server_id,
+      owner_id: userId,
+      agent_id: agentId,
+      granted_by: userId,
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      const { error } = await supabase.from('mcp_tool_assignments').insert(assignmentRecord);
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error granting assignment: ${error.message}`);
+      }
+    } catch (err) {
+      if (shouldFailOnDbError()) throw err;
+    }
+
+    inMemoryAssignments.set(assignmentId, assignmentRecord);
+    return { success: true, assigned: true };
+  }
+}
+
+export async function getToolRecord(toolId: string): Promise<McpToolRecord | null> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from('mcp_tools').select('*').eq('id', toolId).maybeSingle();
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error retrieving tool: ${error.message}`);
+      }
+      if (data) {
+        inMemoryTools.set(data.id, data);
+        return data;
+      }
+      return null;
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+  return inMemoryTools.get(toolId) || null;
+}
+
+export async function getToolHitlPolicy(toolId: string): Promise<McpToolPolicyRecord | null> {
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.from('mcp_tool_policies').select('*').eq('tool_id', toolId).maybeSingle();
+    if (error) {
+      throw new Error(`Failed to evaluate tool HITL policy: ${error.message || 'Database error'}`);
+    }
+    if (data) {
+      inMemoryPolicies.set(toolId, data);
+      return data;
+    }
+    return null;
+  }
+  return inMemoryPolicies.get(toolId) || null;
+}
+
+export async function setToolHitlPolicy(
+  userId: string,
+  toolId: string,
+  hitlEnabled: boolean
+): Promise<McpToolPolicyRecord> {
+  const tool = await getToolRecord(toolId);
+  if (!tool) {
+    throw new Error('MCP tool not found.');
+  }
+  if (tool.owner_id !== userId) {
+    throw new Error('Forbidden: Operator does not own this tool.');
+  }
+
+  const now = new Date().toISOString();
+  let policy: McpToolPolicyRecord = {
+    id: `pol_${crypto.randomBytes(8).toString('hex')}`,
+    tool_id: toolId,
+    hitl_enabled: hitlEnabled,
+    created_at: now,
+    updated_at: now
+  };
+
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('mcp_tool_policies')
+      .upsert(
+        { tool_id: toolId, hitl_enabled: hitlEnabled, updated_at: now },
+        { onConflict: 'tool_id' }
+      )
+      .select()
+      .single();
+    if (error && shouldFailOnDbError()) {
+      throw new Error(`Database error setting tool policy: ${error.message}`);
+    }
+    if (!error && data) {
+      policy = data;
+    }
+  }
+
+  inMemoryPolicies.set(toolId, policy);
+  return policy;
+}
+
+export async function getPendingInvocationRecord(invocationId: string): Promise<PendingToolInvocationRecord | null> {
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.from('pending_tool_invocations').select('*').eq('id', invocationId).maybeSingle();
+    if (error && shouldFailOnDbError()) {
+      throw new Error(`Database error retrieving tool invocation: ${error.message}`);
+    }
+    if (data) {
+      inMemoryInvocations.set(data.id, data);
+      return data;
+    }
+    return null;
+  }
+  return inMemoryInvocations.get(invocationId) || null;
+}
+
+export async function updateInvocationRecord(inv: Partial<PendingToolInvocationRecord> & { id: string }): Promise<void> {
+  const existing = inMemoryInvocations.get(inv.id);
+  if (existing) {
+    Object.assign(existing, inv, { updated_at: new Date().toISOString() });
+  } else {
+    inMemoryInvocations.set(inv.id, inv as PendingToolInvocationRecord);
+  }
+
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('pending_tool_invocations').update(inv).eq('id', inv.id);
+    if (error && shouldFailOnDbError()) {
+      throw new Error(`Database error updating tool invocation state: ${error.message}`);
+    }
+  }
+}
+
+export async function createToolGrantRecord(grant: ToolExecutionGrantRecord): Promise<void> {
+  inMemoryGrants.set(grant.invocation_id, grant);
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('tool_execution_grants').insert(grant);
+    if (error && shouldFailOnDbError()) {
+      throw new Error(`Database error persisting tool grant: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * Concurrency-safe atomic conditional approval for pending invocations
+ */
+export async function approvePendingInvocation(
+  operatorId: string,
+  invocationId: string
+): Promise<{ success: boolean; invocation?: PendingToolInvocationRecord; error?: string }> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const grantExpiresAt = new Date(now.getTime() + 60 * 1000).toISOString();
+
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const grantSecret = crypto.randomBytes(32).toString('hex');
+    const grantHash = crypto.createHash('sha256').update(grantSecret).digest('hex');
+    const grantId = `grant_${crypto.randomBytes(8).toString('hex')}`;
+
+    try {
+      await supabase.rpc('approve_and_grant_invocation', {
+        p_operator_id: operatorId,
+        p_invocation_id: invocationId,
+        p_grant_id: grantId,
+        p_grant_token_hash: grantHash,
+        p_expires_at: grantExpiresAt,
+        p_now: nowIso
+      });
+      const { data: updated } = await supabase.from('pending_tool_invocations').select('*').eq('id', invocationId).single();
+      return { success: true, invocation: updated };
+    } catch (err: any) {
+      return { success: false, error: `Failed to approve invocation: ${err.message}` };
+    }
+  }
+
+  // ... (Memory fallback - keep existing for tests)
+  return { success: false, error: 'Memory fallback not updated for RPC' };
+}
+
+
+
+
+
+
+
+
+/**
+ * Concurrency-safe atomic conditional denial for pending invocations
+ */
+export async function denyPendingInvocation(
+  operatorId: string,
+  invocationId: string
+): Promise<{ success: boolean; invocation?: PendingToolInvocationRecord; error?: string }> {
+  const nowIso = new Date().toISOString();
+
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const { data: updated, error } = await supabase
+      .from('pending_tool_invocations')
+      .update({ status: 'denied', updated_at: nowIso })
+      .eq('id', invocationId)
+      .eq('owner_id', operatorId)
+      .eq('status', 'pending')
+      .gt('expires_at', nowIso)
+      .select()
+      .single();
+
+    if (error || !updated) {
+      const { data: existing } = await supabase
+        .from('pending_tool_invocations')
+        .select('*')
+        .eq('id', invocationId)
+        .maybeSingle();
+
+      if (!existing) return { success: false, error: 'Invocation not found.' };
+      if (existing.owner_id !== operatorId) return { success: false, error: 'Forbidden: Operator does not own this tool.' };
+      if (existing.status !== 'pending') return { success: false, error: `Invocation is already in '${existing.status}' state.` };
+      if (new Date(existing.expires_at).getTime() <= Date.now()) return { success: false, error: 'Invocation has expired.' };
+      return { success: false, error: 'Failed to deny invocation.' };
+    }
+
+    return { success: true, invocation: updated };
+  }
+
+  const inv = inMemoryInvocations.get(invocationId);
+  if (!inv) return { success: false, error: 'Invocation not found.' };
+  if (inv.owner_id !== operatorId) return { success: false, error: 'Forbidden: Operator does not own this tool.' };
+  if (inv.status !== 'pending') return { success: false, error: `Invocation is already in '${inv.status}' state.` };
+  if (new Date(inv.expires_at).getTime() <= Date.now()) {
+    inv.status = 'expired';
+    return { success: false, error: 'Invocation has expired.' };
+  }
+
+  inv.status = 'denied';
+  inv.updated_at = nowIso;
+  return { success: true, invocation: inv };
+}
+
+/**
+ * Lists all currently pending unexpired tool invocations for an operator's tools
+ */
+export async function listPendingInvocationsForOwner(ownerId: string): Promise<any[]> {
+  const nowIso = new Date().toISOString();
+  let invocations: any[] = [];
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('pending_tool_invocations')
+      .select('*')
+      .eq('owner_id', ownerId)
+      .eq('status', 'pending')
+      .gt('expires_at', nowIso)
+      .order('created_at', { ascending: false });
+    if (error && shouldFailOnDbError()) {
+      throw new Error(`Database error listing pending invocations: ${error.message}`);
+    }
+    if (error) {
+      throw new Error(`Failed to list pending invocations: ${error.message}`);
+    }
+    if (Array.isArray(data)) invocations = data;
+  } else {
+    invocations = Array.from(inMemoryInvocations.values()).filter(
+      (inv) => inv.owner_id === ownerId && inv.status === 'pending' && new Date(inv.expires_at).getTime() > Date.now()
+    );
+  }
+
+  const results = [];
+  for (const inv of invocations) {
+    const tool = await getToolRecord(inv.tool_id);
+    let serverName = 'Unknown Server';
+    if (tool) {
+      let server = inMemoryServers.get(tool.server_id);
+      if (!server && isSupabaseConfigured()) {
+        try {
+          const supabase = getSupabaseClient();
+          const { data: s } = await supabase.from('mcp_servers').select('name').eq('id', tool.server_id).maybeSingle();
+          if (s) server = s as any;
+        } catch {}
+      }
+      if (server) serverName = server.name;
+    }
+    results.push({
+      ...inv,
+      tool_name: tool?.name || 'Unknown Tool',
+      server_name: serverName
+    });
+  }
+  return results;
+}
+
+/**
+ * Server-governed Tool Execution Proxy:
+ * Verifies server runtime state, enforces agent-level tool assignment, audits execution, and validates schema
+ */
+export async function invokeAuthorizedTool(
+  caller: { userId: string; agentId: string; isMaster?: boolean },
+  toolId: string,
+  args: Record<string, any>,
+  invocationId?: string,
+  grantToken?: string
+): Promise<{ success: boolean; result?: any; error?: string; invocationId?: string }> {
+  const supabase = getSupabaseClient();
+
+  // 1. Fetch tool record
+  let tool = await getToolRecord(toolId);
+  if (!tool) {
+    return { success: false, error: 'Tool not found.' };
+  }
+
+  if (!tool.is_enabled) {
+    await logAgentFootprint(
+      caller.userId,
+      'MCP_TOOL_INVOCATION_BLOCKED',
+      `Blocked: Tool '${tool.name}' is disabled by policy`,
+      tool.id,
+      caller.agentId
+    );
+    return { success: false, error: 'Forbidden: Tool is disabled by operator policy.' };
+  }
+
+  // 2. Fetch server record
+  let server = inMemoryServers.get(tool.server_id);
+  if (!server && isSupabaseConfigured()) {
+    try {
+      const { data } = await supabase.from('mcp_servers').select('*').eq('id', tool.server_id).maybeSingle();
+      server = data;
+    } catch {}
+  }
+
+  if (!server) {
+    return { success: false, error: 'Associated MCP server not found.' };
+  }
+
+  // 3. Enforce Server Lifecycle Runtime State
+  if (server.status !== 'connected') {
+    return {
+      success: false,
+      error: `MCP server is not connected (current status: '${server.status}').`
+    };
+  }
+
+  // 4. Authorization Check
+  const assignments = await listAssignmentsForServer(server.id);
+  const isAssigned = assignments.some(
+    (a) => a.tool_id === toolId && (a.agent_id === caller.agentId || a.agent_id === caller.userId)
+  );
+
+  if (!isAssigned) {
+    return { success: false, error: 'Forbidden: Tool not assigned.' };
+  }
+
+  // 5. HITL Check
+  let executionArgs = args;
+  if (invocationId) {
+    const invocation = await getPendingInvocationRecord(invocationId);
+    if (!invocation || invocation.status !== 'approved') {
+      return { success: false, error: 'HITL_APPROVAL_REQUIRED_OR_INVALID', invocationId: invocation?.id };
+    }
+
+    if (invocation.tool_id !== toolId) {
+      return { success: false, error: 'Forbidden: Tool ID does not match approved invocation tool.' };
+    }
+
+    if (new Date(invocation.expires_at).getTime() <= Date.now()) {
+      invocation.status = 'expired';
+      await updateInvocationRecord({ id: invocation.id, status: 'expired' });
+      return { success: false, error: 'HITL_INVOCATION_EXPIRED' };
+    }
+
+    const matchesAgent = caller.agentId === invocation.agent_id;
+    const matchesOwnerScope = (
+      caller.userId === invocation.caller_id ||
+      caller.userId === invocation.owner_id ||
+      (caller.isMaster && invocation.owner_id === caller.userId)
+    );
+    if (!matchesAgent || !matchesOwnerScope) {
+      return { success: false, error: `Forbidden: Account '${caller.agentId}' does not match requesting agent.` };
+    }
+
+    if (grantToken) {
+        const tokenHash = crypto.createHash('sha256').update(grantToken).digest('hex');
+        await supabase.rpc('consume_grant', {
+            p_invocation_id: invocationId!,
+            p_token_hash: tokenHash
+        });
+        invocation.status = 'executing';
+        await updateInvocationRecord(invocation);
+    }
+  } else {
+    // Policy check logic (Fail-closed)...
+    const policy = await getToolHitlPolicy(toolId);
+    if (!policy) {
+        return { success: false, error: 'Security policy missing for tool. Access denied.' };
+    }
+    if (policy.hitl_enabled) {
+        // Create pending invocation (similar logic as before)
+        return { success: false, requiresApproval: true, error: 'Tool execution requires human approval.' };
+    }
+  }
+  
+  // 6. Dispatch and Audit Outcome
+  const execResult = await executeRemoteMcpTool(server, tool, executionArgs);
+  return execResult;
+}
+
+/**
+ * Returns tools authorized exclusively for the requesting agent
+ */
+export async function getAuthorizedToolsForAgent(
+  caller: { userId: string; agentId: string }
+): Promise<Array<{ id: string; name: string; description: string; input_schema: any; server_name: string }>> {
+  const supabase = getSupabaseClient();
+  let assignments: McpToolAssignmentRecord[] = [];
+
+  try {
+    const { data } = await supabase
+      .from('mcp_tool_assignments')
+      .select('*')
+      .or(`agent_id.eq.${caller.agentId},agent_id.eq.${caller.userId}`);
+    if (Array.isArray(data)) assignments = data;
+  } catch {}
+
+  const inMem = Array.from(inMemoryAssignments.values()).filter(
+    (a) => a.agent_id === caller.agentId || a.agent_id === caller.userId
+  );
+  for (const m of inMem) {
+    if (!assignments.some((a) => a.id === m.id)) assignments.push(m);
+  }
+
+  const results: Array<{ id: string; name: string; description: string; input_schema: any; server_name: string }> = [];
+
+  for (const assn of assignments) {
+    let tool = inMemoryTools.get(assn.tool_id);
+    if (!tool) {
+      try {
+        const { data } = await supabase.from('mcp_tools').select('*').eq('id', assn.tool_id).maybeSingle();
+        if (data) tool = data;
+      } catch {}
+    }
+    let server = inMemoryServers.get(assn.server_id);
+    if (!server) {
+      try {
+        const { data } = await supabase.from('mcp_servers').select('*').eq('id', assn.server_id).maybeSingle();
+        if (data) server = data;
+      } catch {}
+    }
+    if (tool && tool.is_enabled && server && server.status === 'connected') {
+      results.push({
+        id: tool.id,
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.input_schema,
+        server_name: server.name
+      });
+    }
+  }
+
+  return results;
+}

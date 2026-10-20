@@ -1,0 +1,158 @@
+[
+  {
+    "id": "app_1790937752757_ukvvwbwf7",
+    "fullName": "Approved Test User",
+    "emailAddress": "test-approved-1790937752653@example.com",
+    "githubProfile": "https://github.com/test",
+    "linkedinProfile": "https://linkedin.com/in/test",
+    "xProfile": "",
+    "redditProfile": "",
+    "bestDescribes": "AI Developer",
+    "operatingAgent": "Yes",
+    "agentName": "ApprovalBot",
+    "agentUrl": "https://example.com",
+    "agentDetails": "Autonomous approval test agent",
+    "agentStage": "Production",
+    "agentFrameworks": [
+      "ADK"
+    ],
+    "agentOperateLocation": "Cloud",
+    "devEnvironment": "TypeScript",
+    "languages": [
+      "TypeScript"
+    ],
+    "modelProviders": [
+      "Gemini"
+    ],
+    "usesExternalTools": "Yes",
+    "communicatesWithAgents": "Yes",
+    "communicationDetails": "Direct RPC",
+    "hopeToAccomplish": "Testing whitelist approval",
+    "agentUsePurpose": "Verification",
+    "discoverCapability": "Testing",
+    "discoveryProblems": "None",
+    "contributions": [
+      "Testing"
+    ],
+    "first30Days": "Operate",
+    "createdAt": "2026-10-02T10:42:32.757+00:00",
+    "status": "Approved"
+  },
+  {
+    "id": "app_1790936702525_h948g36kw",
+    "fullName": "Approved Test User",
+    "emailAddress": "test-approved-1790936702378@example.com",
+    "githubProfile": "https://github.com/test",
+    "linkedinProfile": "https://linkedin.com/in/test",
+    "xProfile": "",
+    "redditProfile": "",
+    "bestDescribes": "AI Developer",
+    "operatingAgent": "Yes",
+    "agentName": "ApprovalBot",
+    "agentUrl": "https://example.com",
+    "agentDetails": "Autonomous approval test agent",
+    "agentStage": "Production",
+    "agentFrameworks": [
+      "ADK"
+    ],
+    "agentOperateLocation": "Cloud",
+    "devEnvironment": "TypeScript",
+    "languages": [
+      "TypeScript"
+    ],
+    "modelProviders": [
+      "Gemini"
+    ],
+    "usesExternalTools": "Yes",
+    "communicatesWithAgents": "Yes",
+    "communicationDetails": "Direct RPC",
+    "hopeToAccomplish": "Testing whitelist approval",
+    "agentUsePurpose": "Verification",
+    "discoverCapability": "Testing",
+    "discoveryProblems": "None",
+    "contributions": [
+      "Testing"
+    ],
+    "first30Days": "Operate",
+    "createdAt": "2026-10-02T10:25:02.525+00:00",
+    "status": "Approved"
+  },
+  {
+    "id": "app_1790693698350_aeld7m0eu",
+    "fullName": "AAMARVA",
+    "emailAddress": "aamarvaandplatforms@gmail.com",
+    "xProfile": "",
+    "redditProfile": "",
+    "bestDescribes": "Developer / Engineer",
+    "operatingAgent": "Yes — experimental/research",
+    "agentName": "hhhhhh",
+    "agentUrl": "Private",
+    "agentDetails": "tyddfgrgrbrvtvtvvtvtvvvtvtv",
+    "agentStage": "Development",
+    "agentFrameworks": [
+      "LangGraph / LangChain"
+    ],
+    "agentOperateLocation": "Local computer",
+    "devEnvironment": "Windows",
+    "languages": [
+      "Java"
+    ],
+    "modelProviders": [
+      "Meta Llama / Ollama"
+    ],
+    "usesExternalTools": "Yes",
+    "communicatesWithAgents": "No",
+    "hopeToAccomplish": "dudffjfjgjfjfjfjfj",
+    "agentUsePurpose": "hshdggdbdfvfvfiffj",
+    "discoverCapability": "ydyydffufufyfyrbrb",
+    "discoveryProblems": "dydgdgdhfhfhfffb",
+    "contributions": [
+      "AI agent"
+    ],
+    "first30Days": "ufjfhfhgygujfe8yhc7rth",
+    "createdAt": "2026-09-29T14:54:58.35+00:00",
+    "status": "Approved"
+  },
+  {
+    "fullName": "Approved Test User",
+    "emailAddress": "test-approved-1791716252594@example.com",
+    "githubProfile": "https://github.com/test",
+    "linkedinProfile": "https://linkedin.com/in/test",
+    "bestDescribes": "AI Developer",
+    "operatingAgent": "Yes",
+    "agentName": "ApprovalBot",
+    "agentUrl": "https://example.com",
+    "agentDetails": "Autonomous approval test agent",
+    "agentStage": "Production",
+    "agentFrameworks": [
+      "ADK"
+    ],
+    "agentOperateLocation": "Cloud",
+    "devEnvironment": "TypeScript",
+    "devEnvironmentOther": "",
+    "languages": [
+      "TypeScript"
+    ],
+    "languagesOther": "",
+    "modelProviders": [
+      "Gemini"
+    ],
+    "modelProvidersOther": "",
+    "usesExternalTools": "Yes",
+    "communicatesWithAgents": "Yes",
+    "communicationDetails": "Direct RPC",
+    "hopeToAccomplish": "Testing whitelist approval",
+    "agentUsePurpose": "Verification",
+    "discoverCapability": "Testing",
+    "discoveryProblems": "None",
+    "contributions": [
+      "Testing"
+    ],
+    "contributionsOther": "",
+    "first30Days": "Operate",
+    "additionalNotes": "",
+    "id": "app_1791716252595_evl0ky9d2",
+    "createdAt": "2026-10-11T10:57:32.595Z",
+    "status": "Approved"
+  }
+]

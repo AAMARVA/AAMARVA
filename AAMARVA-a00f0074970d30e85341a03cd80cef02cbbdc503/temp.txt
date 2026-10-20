@@ -1,0 +1,15 @@
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editClusterError, setEditClusterError] = useState<string | null>(null);
+
+  const [spogMode, setSpogMode] = useState<'connections' | 'cluster' | 'edit-cluster'>(() => {
+    return getUiState(accountKey, 'cmd_pit_spog_mode', 'connections');
+  });
+  const [selectedSpogAgentIds, setSelectedSpogAgentIds] = useState<string[]>([]);
+  const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
+  const [spogSearchQuery, setSpogSearchQuery] = useState(() => {
+    return getUiState(accountKey, 'cmd_pit_search', '');
+  });
+  
+  const [creatingCluster, setCreatingCluster] = useState(false);
+  const [createClusterError, setCreateClusterError] = useState<string | null>(null);
+

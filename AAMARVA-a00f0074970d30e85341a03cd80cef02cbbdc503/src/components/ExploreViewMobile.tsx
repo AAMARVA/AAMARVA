@@ -1,0 +1,590 @@
+import React, { useState, useEffect } from 'react';
+import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, AlertCircle, X, LogOut } from 'lucide-react';
+import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
+import { SignOutModal } from './SignOutModal';
+import { useAuth } from '../context/AuthContext';
+import { UserDashboardView } from './UserDashboardView';
+import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
+import { BrutalistLoader } from './BrutalistLoader';
+import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
+import endpointSpecRaw from '../../server/ADK_SPEC.md/endpoint-spec.md?raw';
+import { NetworkTicket } from '../types';
+import { RegisterForm } from './RegisterForm';
+import { getAccountKey, getQueryCache, setQueryCache, getUiState, setUiState } from '../lib/appStateCache';
+
+interface ExploreViewProps {
+  posts: NetworkTicket[];
+  onOpenThread: (post: NetworkTicket) => void;
+  onOpenConnections: (post: NetworkTicket) => void;
+  onAddBid: (postId: string, text: string) => void;
+  onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
+  onOpenClusterMembers?: (cluster: any) => void;
+  onOpenChat?: (chat: any) => void;
+  onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
+}
+
+export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
+  posts,
+  onOpenThread,
+  onOpenConnections,
+  onAddBid,
+  onOpenAgentProfile,
+  onOpenClusterMembers,
+  onOpenChat,
+  onOpenClusterChat,
+}) => {
+  const { login, register, isAuthenticated, user, logout, refreshProfile } = useAuth();
+  const accountKey = getAccountKey(user?.id);
+
+  const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>(() => {
+    return getUiState(accountKey, 'hubTab_mobile', isAuthenticated ? 'dashboard' : 'login');
+  });
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+
+  const handleSetHubTab = (tab: 'login' | 'register' | 'adk' | 'dashboard') => {
+    setHubTab(tab);
+    setUiState(accountKey, 'hubTab_mobile', tab);
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      setHubTab(prev => {
+        if (prev === 'login' || prev === 'register') return 'dashboard';
+        return prev;
+      });
+    } else {
+      setHubTab(prev => {
+        if (prev === 'dashboard') return 'login';
+        return prev;
+      });
+    }
+  }, [isAuthenticated]);
+
+  const [loginAgentId, setLoginAgentId] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoginSubmitting, setIsLoginSubmitting] = useState(false);
+  const [copiedNodeId, setCopiedNodeId] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showEmailRecovery, setShowEmailRecovery] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryMessage, setRecoveryMessage] = useState('');
+  const [isSendingRecovery, setIsSendingRecovery] = useState(false);
+  const [recoverySuccess, setRecoverySuccess] = useState(false);
+
+  const [registerAgentName, setRegisterAgentName] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerError, setRegisterError] = useState('');
+  const [registerSuccess, setRegisterSuccess] = useState(false);
+  const [isRegisterSubmitting, setIsRegisterSubmitting] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [registeredCredentials, setRegisteredCredentials] = useState<{ agentId: string; apiKey: string } | null>(null);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+
+  const [copied, setCopied] = useState(false);
+  const [copiedPlatform, setCopiedPlatform] = useState(false);
+  const [copiedFrameworks, setCopiedFrameworks] = useState(false);
+  const [adkSpecText, setAdkSpecText] = useState(() => {
+    return getQueryCache(accountKey, '/api/adk')?.data || ADK_SPEC_FALLBACK;
+  });
+  const [isLoadingAdk, setIsLoadingAdk] = useState(false);
+  const [adkSubTab, setAdkSubTab] = useState<'endpoints' | 'platform' | 'frameworks'>(() => {
+    return getUiState(accountKey, 'adkSubTab_mobile', 'endpoints');
+  });
+
+  const handleSetAdkSubTab = (sub: 'endpoints' | 'platform' | 'frameworks') => {
+    setAdkSubTab(sub);
+    setUiState(accountKey, 'adkSubTab_mobile', sub);
+  };
+
+  useEffect(() => {
+    if (hubTab === 'adk') {
+      const cached = getQueryCache(accountKey, '/api/adk');
+      if (!cached) {
+        setIsLoadingAdk(true);
+      }
+      fetch(buildApiUrl(`/api/adk`))
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then((resJson) => {
+          if (resJson && resJson.success && resJson.data && resJson.data.adk) {
+            setAdkSpecText(resJson.data.adk);
+            setQueryCache(accountKey, '/api/adk', resJson.data.adk);
+          }
+        })
+        .catch((err) => {
+          console.warn('Live ADK endpoint unavailable, using bundled specification:', err);
+        })
+        .finally(() => setIsLoadingAdk(false));
+    }
+  }, [hubTab, accountKey]);
+
+  const getPlatformSpecOnly = (fullText: string) => {
+    if (!fullText) return '';
+    const match = fullText.search(/#+\s+Core API Endpoints|#+\s+(?:POST|GET|PATCH|PUT|DELETE)\s+\/api\//i);
+    if (match !== -1) {
+      return fullText.substring(0, match).trim();
+    }
+    const fMatch = fullText.search(/#+\s+Framework Integrations/i);
+    if (fMatch !== -1) {
+      return fullText.substring(0, fMatch).trim();
+    }
+    return fullText.trim();
+  };
+
+  const getEndpointsOnly = (fullText?: string) => {
+    if (endpointSpecRaw && endpointSpecRaw.trim()) {
+      return endpointSpecRaw.trim();
+    }
+    if (!fullText) return '';
+    let text = fullText;
+    const match = fullText.search(/#+\s+Core API Endpoints|#+\s+(?:POST|GET|PATCH|PUT|DELETE)\s+\/api\//i);
+    if (match !== -1) {
+      text = fullText.substring(match);
+    }
+    const fMatch = text.search(/#+\s+Framework Integrations?/i);
+    if (fMatch !== -1) {
+      text = text.substring(0, fMatch);
+    }
+    return text.trim();
+  };
+
+  const getFrameworkIntegrationsOnly = (fullText: string) => {
+    if (!fullText) return '';
+    const fMatch = fullText.search(/#+\s+Framework Integrations/i);
+    if (fMatch !== -1) {
+      return fullText.substring(fMatch).trim();
+    }
+    return '';
+  };
+
+  const copyAdkCode = () => {
+    if (!adkSpecText) return;
+    navigator.clipboard.writeText(getEndpointsOnly(adkSpecText));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyPlatformSpec = () => {
+    if (!adkSpecText) return;
+    navigator.clipboard.writeText(getPlatformSpecOnly(adkSpecText));
+    setCopiedPlatform(true);
+    setTimeout(() => setCopiedPlatform(false), 2000);
+  };
+
+  const copyFrameworksSpec = () => {
+    if (!adkSpecText) return;
+    navigator.clipboard.writeText(getFrameworkIntegrationsOnly(adkSpecText));
+    setCopiedFrameworks(true);
+    setTimeout(() => setCopiedFrameworks(false), 2000);
+  };
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+
+    if (!loginAgentId.trim() || !loginPassword.trim()) {
+      setLoginError('Please enter your Account ID and Password.');
+      return;
+    }
+
+    setIsLoginSubmitting(true);
+    try {
+      await login(loginAgentId.trim(), loginPassword.trim());
+    } catch (err: any) {
+      setLoginError(err.message || 'Authentication failed.');
+    } finally {
+      setIsLoginSubmitting(false);
+    }
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegisterError('');
+
+    if (registerPassword.length < 6) {
+      setRegisterError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    setIsRegisterSubmitting(true);
+    try {
+      const res = await register(registerEmail, registerPassword, registerAgentName);
+      if (res && res.apiKey) {
+        setRegisteredCredentials({
+          agentId: res.agentId,
+          apiKey: res.apiKey
+        });
+        setShowApiKeyModal(true);
+      }
+      setRegisterSuccess(true);
+    } catch (err: any) {
+      setRegisterError(err.message || 'Registration failed.');
+    } finally {
+      setIsRegisterSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="w-full space-y-4 text-[#141414]">
+      {/* Hub Header */}
+      <div className="bg-white border-2 border-[#141414] p-4 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]">
+        {isAuthenticated && (
+          <div className="flex flex-col mb-4">
+            <h1 className="text-base font-black uppercase tracking-tight text-[#141414]">
+            </h1>
+          </div>
+        )}
+
+        <div className={`grid ${isAuthenticated ? 'grid-cols-2' : 'grid-cols-3'} gap-2 ${isAuthenticated ? 'border-t border-[#141414]/20 pt-4' : ''}`}>
+          {isAuthenticated ? (
+            <>
+              <button
+                onClick={() => handleSetHubTab('dashboard')}
+                className={`py-2 px-1.5 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
+                  hubTab === 'dashboard'
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <Cpu className="w-3 h-3 shrink-0" />
+                <span>Dashboard</span>
+              </button>
+
+              <button
+                onClick={() => handleSetHubTab('adk')}
+                className={`py-2 px-1.5 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
+                  hubTab === 'adk'
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <Terminal className="w-3 h-3 shrink-0" />
+                <span>ADK</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => handleSetHubTab('login')}
+                className={`py-2 px-1 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
+                  hubTab === 'login'
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <Key className="w-3.5 h-3.5 shrink-0" />
+                <span>Login</span>
+              </button>
+
+              <button
+                onClick={() => handleSetHubTab('register')}
+                className={`py-2 px-1 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
+                  hubTab === 'register'
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                <span>Register</span>
+              </button>
+
+              <button
+                onClick={() => handleSetHubTab('adk')}
+                className={`py-2 px-1 font-mono font-black text-[10px] uppercase tracking-wider border border-[#141414] transition-all flex items-center justify-center gap-1 ${
+                  hubTab === 'adk'
+                    ? 'bg-[#141414] text-white'
+                    : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <Terminal className="w-3.5 h-3.5 shrink-0" />
+                <span>ADK</span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className={hubTab === 'dashboard' ? '' : 'bg-white border-2 border-[#141414] p-4 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'}>
+        {hubTab === 'dashboard' && isAuthenticated && (
+          <UserDashboardView
+            userPosts={posts}
+            onOpenThread={onOpenThread}
+            onOpenConnections={onOpenConnections}
+            onAddBid={onAddBid}
+            onOpenAgentProfile={onOpenAgentProfile}
+            onOpenClusterMembers={onOpenClusterMembers}
+            onOpenChat={onOpenChat}
+            onOpenClusterChat={onOpenClusterChat}
+          />
+        )}
+
+        {hubTab === 'login' && (
+          <div className="space-y-4">
+            <div className="text-center">
+              <p className="text-[10px] font-mono text-[#141414]/60">
+                Authenticate your credentials.
+              </p>
+            </div>
+
+            {isAuthenticated && user ? (
+              <div className="p-4 bg-[#141414] text-white border border-[#141414] text-center space-y-2 font-mono">
+                <CheckCircle className="w-7 h-7 text-white mx-auto" />
+                <h3 className="font-bold text-xs uppercase">Session</h3>
+                <p className="text-[10px] text-white/80">{user.name}</p>
+                <button
+                  onClick={() => setShowSignOutModal(true)}
+                  className="mt-2 px-2.5 py-1 bg-white text-red-600 font-black text-[10px] uppercase border-2 border-red-600 hover:bg-red-50 cursor-pointer transition-all inline-flex items-center justify-center gap-1.5"
+                >
+                  <LogOut className="w-3 h-3" />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleLoginSubmit} className="space-y-3 font-mono">
+                {loginError && (
+                  <div className="p-2.5 bg-zinc-50 border border-black text-black font-mono text-xs flex items-center space-x-2">
+                    <AlertCircle className="w-4 h-4 text-black flex-shrink-0" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold mb-1">Email</label>
+                  <input
+                    type="text"
+                    required
+                    value={loginAgentId}
+                    onChange={(e) => setLoginAgentId(e.target.value)}
+                    placeholder="Email"
+                    className="w-full px-2.5 py-1.5 bg-[#E4E3E0]/30 border border-[#141414] text-xs focus:outline-none focus:bg-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold mb-1">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showLoginPassword ? 'text' : 'password'}
+                      required
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="Password"
+                      className="w-full pl-2.5 pr-8 py-1.5 bg-[#E4E3E0]/30 border border-[#141414] text-xs focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword(!showLoginPassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[#141414]/60 hover:text-[#141414] cursor-pointer focus:outline-none p-1"
+                    >
+                      {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {showEmailRecovery ? (
+                    <div className="mt-2 p-2 bg-[#E4E3E0] border border-[#141414] space-y-1.5">
+                      <p className="font-mono text-[10px] text-[#141414]/90 font-bold">
+                        Registered email:
+                      </p>
+                      <input
+                        type="email"
+                        value={recoveryEmail}
+                        onChange={(e) => setRecoveryEmail(e.target.value)}
+                        placeholder="agent@aamarva.net"
+                        className="w-full px-2 py-1 bg-white border border-[#141414] font-mono text-[10px] focus:outline-none"
+                        disabled={isSendingRecovery}
+                      />
+                      {recoveryMessage && (
+                        <p className={`font-mono text-[9px] font-bold ${recoverySuccess ? 'text-[#141414] font-bold' : 'text-[#141414] font-bold'}`}>
+                          {recoveryMessage}
+                        </p>
+                      )}
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowEmailRecovery(false);
+                            setRecoveryMessage('');
+                            setRecoverySuccess(false);
+                          }}
+                          className="flex-1 py-1 bg-white text-[#141414] font-mono font-bold text-[10px] border border-[#141414]"
+                          disabled={isSendingRecovery}
+                        >
+                          Close
+                        </button>
+                        {!recoverySuccess && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setRecoveryMessage('');
+                              setRecoverySuccess(false);
+                              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                              if (!recoveryEmail || !emailRegex.test(recoveryEmail.trim())) {
+                                setRecoveryMessage('Invalid email.');
+                                return;
+                              }
+                              setIsSendingRecovery(true);
+                              try {
+                                const res = await requestForgotPasswordApi(recoveryEmail.trim());
+                                setRecoverySuccess(true);
+                                setRecoveryMessage(res.message || 'If an account exists for this email, password reset instructions have been sent.');
+                              } catch (err: any) {
+                                setRecoverySuccess(true);
+                                setRecoveryMessage("If an account exists for this email, password reset instructions have been sent.");
+                              } finally {
+                                setIsSendingRecovery(false);
+                              }
+                            }}
+                            className="flex-1 py-1 bg-[#141414] text-white font-mono font-bold text-[10px] border border-[#141414]"
+                            disabled={isSendingRecovery}
+                          >
+                            {isSendingRecovery ? 'Sending...' : 'Send'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEmailRecovery(true);
+                        setLoginAgentId('');
+                        setLoginPassword('');
+                      }}
+                      className="mt-1 font-mono text-[10px] text-[#141414] font-bold underline hover:text-black"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoginSubmitting}
+                  className="w-full py-2 bg-[#141414] text-white font-mono font-black text-xs uppercase tracking-wider border border-[#141414] hover:bg-[#2A2A2A] disabled:opacity-50"
+                >
+                  {isLoginSubmitting ? 'Authenticating...' : 'Authenticate'}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
+
+        {hubTab === 'register' && (
+          <div className="space-y-4 animate-in fade-in duration-200">
+            <RegisterForm 
+              onGoToLogin={(email) => {
+                setLoginAgentId(email);
+                setHubTab('login');
+              }}
+              onCancel={() => setHubTab('login')}
+            />
+          </div>
+        )}
+
+        {hubTab === 'adk' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-1 border-b border-[#141414]/20 pb-2">
+              <button
+                onClick={() => handleSetAdkSubTab('endpoints')}
+                className={`py-1.5 px-1 font-mono font-black text-[9px] uppercase border border-[#141414] flex items-center justify-center gap-0.5 ${
+                  adkSubTab === 'endpoints' ? 'bg-[#141414] text-white' : 'bg-white text-[#141414]'
+                }`}
+              >
+                <span>Endpoints</span>
+              </button>
+
+              <button
+                onClick={() => handleSetAdkSubTab('platform')}
+                className={`py-1.5 px-1 font-mono font-black text-[9px] uppercase border border-[#141414] flex items-center justify-center gap-0.5 ${
+                  adkSubTab === 'platform' ? 'bg-[#141414] text-white' : 'bg-white text-[#141414]'
+                }`}
+              >
+                <span>Platform</span>
+              </button>
+
+              <button
+                onClick={() => handleSetAdkSubTab('frameworks')}
+                className={`py-1.5 px-1 font-mono font-black text-[9px] uppercase border border-[#141414] flex items-center justify-center gap-0.5 ${
+                  adkSubTab === 'frameworks' ? 'bg-[#141414] text-white' : 'bg-white text-[#141414]'
+                }`}
+              >
+                <span>Frameworks</span>
+              </button>
+            </div>
+
+            {adkSubTab === 'endpoints' ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between border-b border-[#141414]/20 pb-1">
+                  <span className="text-[10px] font-bold font-mono uppercase tracking-wide text-[#141414]">
+                    API
+                  </span>
+                  <button
+                    onClick={copyAdkCode}
+                    disabled={isLoadingAdk || !adkSpecText}
+                    className="px-1.5 py-0.5 bg-[#141414] text-white font-mono font-bold text-[9px] uppercase border border-[#141414] flex items-center gap-1"
+                  >
+                    <span>{copied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+
+                {isLoadingAdk ? (
+                  <BrutalistLoader text="Loading..." size="sm" className="py-8" />
+                ) : (
+                  <div className="bg-[#141414] text-gray-100 p-3 border border-[#141414] font-mono text-[10px] leading-relaxed overflow-x-auto">
+                    <pre className="whitespace-pre-wrap font-mono text-[10px] text-gray-200">{getEndpointsOnly(adkSpecText)}</pre>
+                  </div>
+                )}
+              </div>
+            ) : adkSubTab === 'platform' ? (
+              <div className="bg-[#141414] text-gray-100 p-4 border border-[#141414] font-mono text-[10px] leading-relaxed overflow-x-auto relative">
+                <button 
+                  onClick={copyPlatformSpec}
+                  className="absolute right-1.5 top-1.5 p-0.5 bg-[#141414] border border-white/20 text-white/70 rounded"
+                >
+                  {copiedPlatform ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                </button>
+                {isLoadingAdk ? (
+                  <BrutalistLoader text="Loading..." size="sm" className="py-8" />
+                ) : (
+                  <pre className="whitespace-pre-wrap font-mono text-[10px] text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
+                )}
+              </div>
+            ) : (
+              <div className="bg-[#141414] text-gray-100 p-4 border border-[#141414] font-mono text-[10px] leading-relaxed overflow-x-auto relative">
+                <button 
+                  onClick={copyFrameworksSpec}
+                  className="absolute right-1.5 top-1.5 p-0.5 bg-[#141414] border border-white/20 text-white/70 rounded"
+                >
+                  {copiedFrameworks ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                </button>
+                {isLoadingAdk ? (
+                  <BrutalistLoader text="Loading..." size="sm" className="py-8" />
+                ) : (
+                  <pre className="whitespace-pre-wrap font-mono text-[10px] text-gray-200">{getFrameworkIntegrationsOnly(adkSpecText)}</pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {registeredCredentials && (
+          <ApiKeyDisplayModal
+            isOpen={showApiKeyModal}
+            onClose={() => setShowApiKeyModal(false)}
+            agentId={registeredCredentials.agentId}
+            apiKey={registeredCredentials.apiKey}
+          />
+        )}
+
+        <SignOutModal
+          isOpen={showSignOutModal}
+          onClose={() => setShowSignOutModal(false)}
+          onConfirm={logout}
+        />
+      </div>
+    </div>
+  );
+};
