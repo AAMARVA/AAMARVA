@@ -621,6 +621,8 @@ export class MasterAccountService {
     try {
       const { getSupabaseClient } = await import('../supabase.js');
       const sb = getSupabaseClient();
+      
+      // 1. Get master's own plan entitlement events
       const { data, error } = await sb
         .from('external_events')
         .select('*')
@@ -632,9 +634,61 @@ export class MasterAccountService {
         console.warn('[MasterAccountService] Error fetching plan events:', error.message);
       }
 
+      // 2. Get all subordinate slave user IDs for this master
+      const { data: slaves } = await sb
+        .from('users')
+        .select('id, agentId, name')
+        .eq('master_id', masterId);
+
+      const slaveIds = (slaves || []).map((s: any) => s.id);
+      let capabilityEvents: any[] = [];
+      if (slaveIds.length > 0) {
+        const { data: capEvs } = await sb
+          .from('external_events')
+          .select('*')
+          .eq('type', 'SLAVE_CAPABILITY_ACTIVATED')
+          .order('created_at', { ascending: false });
+
+        capabilityEvents = (capEvs || []).filter((ev: any) => {
+          let details = ev.details;
+          if (typeof details === 'string') {
+            try { details = JSON.parse(details); } catch (e) {}
+          }
+          return slaveIds.includes(ev.user_id) || slaveIds.includes(details?.user_id) || details?.master_id === masterId;
+        });
+      }
+
+      const formattedCapabilities = capabilityEvents.map((ev: any) => {
+        let details = ev.details;
+        if (typeof details === 'string') {
+          try { details = JSON.parse(details); } catch (e) {}
+        }
+        const validityDays = details?.metadata?.validity_days_extended || 30;
+        const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
+        const targetName = details?.metadata?.target_slave_name || details?.agent_id || 'Slave Agent';
+        return {
+          id: ev.id,
+          plan_name: 'Capability Increment Plan',
+          plan_subtitle: `Rate-Limit Increment for ${targetName} (+${validityDays} Days)`,
+          plan_type: 'slave_capability',
+          action_type: 'capability_increment',
+          allowance_accounts: 1,
+          accounts_in_transaction: 1,
+          amount: 100,
+          currency: 'USD',
+          created_at: ev.created_at,
+          expires_at: details?.expires_at || null,
+          status: isEvActive ? (details?.status || 'active') : 'expired',
+          is_active: isEvActive,
+          is_direct: true,
+          target_slave_id: ev.user_id
+        };
+      });
+
       const eventsList = (data && Array.isArray(data)) ? data : [];
 
       // If no history events found but master plan exists, synthesize base / add-on events
+      let masterHistory: any[] = [];
       if (eventsList.length === 0) {
         const plan = await this.getMasterPlan(masterId);
         if (plan && plan.status === 'active') {
@@ -685,70 +739,71 @@ export class MasterAccountService {
             metadata: { action_type: 'new_plan', accounts_bought: 10 }
           });
 
-          return synthesized;
+          masterHistory = synthesized;
         }
-        return [];
+      } else {
+        masterHistory = eventsList.map((ev: any) => {
+          let details = ev.details;
+          if (typeof details === 'string') {
+            try {
+              details = JSON.parse(details);
+            } catch (e) {
+              details = {};
+            }
+          }
+          const allowance = details?.allowance_accounts || 10;
+          const meta = details?.metadata || {};
+          const actionType = meta.action_type || (allowance > 10 ? 'add_accounts' : 'new_plan');
+          
+          const accountsInTx = details?.accounts_in_transaction 
+            || meta?.accounts_in_transaction 
+            || meta?.accounts_bought 
+            || meta?.added_accounts 
+            || (actionType === 'new_plan' ? 10 : Math.max(1, allowance - (meta?.previous_allowance || 10)));
+
+          let planTitle = 'Master & Slave Agent Plan';
+          let planSubtitle = 'Base Fleet Roster';
+          let amount = 50;
+
+          if (actionType === 'add_accounts' || meta.added_accounts > 0 || meta.previous_allowance > 0) {
+            const added = accountsInTx;
+            amount = Math.round(added * 2.5);
+            planTitle = 'Master & Slave Agent Plan';
+            planSubtitle = `Capacity Add-On (+${added} Accounts)`;
+          } else {
+            planTitle = 'Master & Slave Agent Plan';
+            planSubtitle = `Base Fleet Roster (${accountsInTx} Accounts)`;
+            amount = 50;
+          }
+
+          const txCreatedAt = ev.created_at ? new Date(ev.created_at) : new Date();
+          const txExpiresAt = meta.expires_at || details?.expires_at 
+            ? new Date(meta.expires_at || details.expires_at).toISOString() 
+            : new Date(txCreatedAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          const isCurrentlyActive = new Date(txExpiresAt).getTime() > Date.now();
+
+          return {
+            id: ev.id,
+            plan_name: planTitle,
+            plan_subtitle: planSubtitle,
+            plan_type: details?.plan_type || 'master_slave_scale',
+            action_type: actionType,
+            allowance_accounts: allowance,
+            accounts_in_transaction: accountsInTx,
+            added_accounts: accountsInTx,
+            tier: details?.tier || 'scale',
+            status: isCurrentlyActive ? 'active' : 'expired',
+            is_active: isCurrentlyActive,
+            amount: amount,
+            currency: 'USD',
+            created_at: ev.created_at,
+            expires_at: txExpiresAt,
+            metadata: meta
+          };
+        });
       }
 
-      return eventsList.map((ev: any, idx: number) => {
-        let details = ev.details;
-        if (typeof details === 'string') {
-          try {
-            details = JSON.parse(details);
-          } catch (e) {
-            details = {};
-          }
-        }
-        const allowance = details?.allowance_accounts || 10;
-        const meta = details?.metadata || {};
-        const actionType = meta.action_type || (allowance > 10 ? 'add_accounts' : 'new_plan');
-        
-        const accountsInTx = details?.accounts_in_transaction 
-          || meta?.accounts_in_transaction 
-          || meta?.accounts_bought 
-          || meta?.added_accounts 
-          || (actionType === 'new_plan' ? 10 : Math.max(1, allowance - (meta?.previous_allowance || 10)));
-
-        let planTitle = 'Master & Slave Agent Plan';
-        let planSubtitle = 'Base Fleet Roster';
-        let amount = 50;
-
-        if (actionType === 'add_accounts' || meta.added_accounts > 0 || meta.previous_allowance > 0) {
-          const added = accountsInTx;
-          amount = Math.round(added * 2.5);
-          planTitle = 'Master & Slave Agent Plan';
-          planSubtitle = `Capacity Add-On (+${added} Accounts)`;
-        } else {
-          planTitle = 'Master & Slave Agent Plan';
-          planSubtitle = `Base Fleet Roster (${accountsInTx} Accounts)`;
-          amount = 50;
-        }
-
-        const txCreatedAt = ev.created_at ? new Date(ev.created_at) : new Date();
-        const txExpiresAt = meta.expires_at || details?.expires_at 
-          ? new Date(meta.expires_at || details.expires_at).toISOString() 
-          : new Date(txCreatedAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-        const isCurrentlyActive = new Date(txExpiresAt).getTime() > Date.now();
-
-        return {
-          id: ev.id,
-          plan_name: planTitle,
-          plan_subtitle: planSubtitle,
-          plan_type: details?.plan_type || 'master_slave_scale',
-          action_type: actionType,
-          allowance_accounts: allowance,
-          accounts_in_transaction: accountsInTx,
-          added_accounts: accountsInTx,
-          tier: details?.tier || 'scale',
-          status: isCurrentlyActive ? 'active' : 'expired',
-          is_active: isCurrentlyActive,
-          amount: amount,
-          currency: 'USD',
-          created_at: ev.created_at,
-          expires_at: txExpiresAt,
-          metadata: meta
-        };
-      });
+      return [...formattedCapabilities, ...masterHistory];
     } catch (e) {
       console.warn('[MasterAccountService] Error fetching plan history:', e);
       return [];
