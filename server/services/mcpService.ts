@@ -1878,8 +1878,31 @@ export async function approvePendingInvocation(
     }
   }
 
-  // ... (Memory fallback - keep existing for tests)
-  return { success: false, error: 'Memory fallback not updated for RPC' };
+  const inv = inMemoryInvocations.get(invocationId);
+  if (!inv) return { success: false, error: 'Invocation not found.' };
+  if (inv.owner_id !== operatorId) return { success: false, error: 'Forbidden: Operator does not own this tool.' };
+  if (inv.status !== 'pending') return { success: false, error: `Invocation is already in '${inv.status}' state.` };
+  if (new Date(inv.expires_at).getTime() <= Date.now()) {
+    inv.status = 'expired';
+    return { success: false, error: 'Invocation has expired.' };
+  }
+
+  const grantSecret = crypto.randomBytes(32).toString('hex');
+  const grantHash = crypto.createHash('sha256').update(grantSecret).digest('hex');
+  const grantId = `grant_${crypto.randomBytes(8).toString('hex')}`;
+
+  const grantRecord: ToolExecutionGrantRecord = {
+    id: grantId,
+    invocation_id: invocationId,
+    grant_token_hash: grantHash,
+    expires_at: grantExpiresAt,
+    created_at: nowIso
+  };
+  inMemoryGrants.set(invocationId, grantRecord);
+
+  inv.status = 'approved';
+  inv.updated_at = nowIso;
+  return { success: true, invocation: inv };
 }
 
 
@@ -2003,7 +2026,7 @@ export async function invokeAuthorizedTool(
   args: Record<string, any>,
   invocationId?: string,
   grantToken?: string
-): Promise<{ success: boolean; result?: any; error?: string; invocationId?: string }> {
+): Promise<{ success: boolean; result?: any; error?: string; invocationId?: string; requiresApproval?: boolean }> {
   const supabase = getSupabaseClient();
 
   // 1. Fetch tool record
@@ -2051,7 +2074,7 @@ export async function invokeAuthorizedTool(
   );
 
   if (!isAssigned) {
-    return { success: false, error: 'Forbidden: Tool not assigned.' };
+    return { success: false, error: 'Forbidden: Tool not authorized or assigned to caller.' };
   }
 
   // 5. HITL Check
@@ -2082,24 +2105,79 @@ export async function invokeAuthorizedTool(
       return { success: false, error: `Forbidden: Account '${caller.agentId}' does not match requesting agent.` };
     }
 
-    if (grantToken) {
+    const incomingHash = hashToolArguments(args);
+    if (incomingHash !== invocation.args_hash) {
+      return { success: false, error: 'HITL_ARGUMENTS_MISMATCH' };
+    }
+
+    const grant = inMemoryGrants.get(invocationId);
+    if (grant) {
+      if (new Date(grant.expires_at).getTime() <= Date.now()) {
+        return { success: false, error: 'HITL_GRANT_EXPIRED' };
+      }
+      if (grantToken) {
+        const expectedHash = crypto.createHash('sha256').update(grantToken).digest('hex');
+        if (expectedHash !== grant.grant_token_hash) {
+          return { success: false, error: 'HITL_GRANT_INVALID' };
+        }
+      }
+      inMemoryGrants.delete(invocationId);
+    } else if (isSupabaseConfigured()) {
+      if (grantToken) {
         const tokenHash = crypto.createHash('sha256').update(grantToken).digest('hex');
-        await supabase.rpc('consume_grant', {
-            p_invocation_id: invocationId!,
+        try {
+          await supabase.rpc('consume_grant', {
+            p_invocation_id: invocationId,
             p_token_hash: tokenHash
-        });
-        invocation.status = 'executing';
-        await updateInvocationRecord(invocation);
+          });
+        } catch {
+          return { success: false, error: 'HITL_GRANT_CONSUMED_OR_INVALID' };
+        }
+      }
     }
+
+    invocation.status = 'executed';
+    await updateInvocationRecord({ id: invocation.id, status: 'executed' });
+    executionArgs = invocation.args || args;
   } else {
-    // Policy check logic (Fail-closed)...
     const policy = await getToolHitlPolicy(toolId);
-    if (!policy) {
-        return { success: false, error: 'Security policy missing for tool. Access denied.' };
-    }
-    if (policy.hitl_enabled) {
-        // Create pending invocation (similar logic as before)
-        return { success: false, requiresApproval: true, error: 'Tool execution requires human approval.' };
+    if (policy && policy.hitl_enabled) {
+      const invId = `inv_${crypto.randomBytes(8).toString('hex')}`;
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const argsHash = hashToolArguments(args);
+      const nowIso = new Date().toISOString();
+
+      const pendingRecord: PendingToolInvocationRecord = {
+        id: invId,
+        tool_id: toolId,
+        caller_id: caller.userId,
+        agent_id: caller.agentId,
+        owner_id: tool.owner_id,
+        args,
+        args_hash: argsHash,
+        status: 'pending',
+        expires_at: expiresAt,
+        created_at: nowIso,
+        updated_at: nowIso
+      };
+
+      inMemoryInvocations.set(invId, pendingRecord);
+      if (isSupabaseConfigured()) {
+        try {
+          await supabase.from('pending_tool_invocations').insert(pendingRecord);
+        } catch (err: any) {
+          if (shouldFailOnDbError()) {
+            throw new Error(`Database error saving pending invocation: ${err.message}`);
+          }
+        }
+      }
+
+      return {
+        success: false,
+        requiresApproval: true,
+        error: 'HITL_APPROVAL_REQUIRED',
+        invocationId: invId
+      };
     }
   }
   

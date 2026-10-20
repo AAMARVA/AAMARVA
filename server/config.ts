@@ -17,6 +17,9 @@ if (process.env.NODE_ENV !== 'production') {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'mock_service_role_key_for_development';
   }
+  if (process.env.NODE_ENV !== 'test' && (!process.env.SECRETS_ENCRYPTION_KEY || process.env.SECRETS_ENCRYPTION_KEY.length < 32)) {
+    process.env.SECRETS_ENCRYPTION_KEY = 'aamarva_development_secrets_encryption_key_32_bytes';
+  }
 }
 
 /**
