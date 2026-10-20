@@ -534,41 +534,73 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                               </div>
                             </div>
                           </div>
-                      ) : currentPlan && currentPlan.status === 'active' ? (
+                      ) : (currentPlan && currentPlan.status === 'active') || (planHistory && planHistory.some(h => (h.status === 'active' || h.is_active) && (h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability')))) ? (
                         <div className="space-y-3">
-                          <div className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left font-mono">
-                            <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
-                              <div>
-                                <span className="text-xs font-black uppercase tracking-wider block text-[#141414]">
-                                  {currentPlan.plan_name || 'Master & Slave Account Plan'}
+                          {currentPlan && currentPlan.status === 'active' && (
+                            <div className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left font-mono">
+                              <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
+                                <div>
+                                  <span className="text-xs font-black uppercase tracking-wider block text-[#141414]">
+                                    {currentPlan.plan_name || 'Master & Slave Account Plan'}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
+                                    Aggregate Master Fleet Entitlement
+                                  </span>
+                                </div>
+                                <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider border border-[#141414] bg-green-600 text-white">
+                                  ACTIVE
                                 </span>
-                                <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
-                                  Aggregate Master Fleet Entitlement
-                                </span>
                               </div>
-                              <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider border border-[#141414] bg-green-600 text-white">
-                                ACTIVE
-                              </span>
-                            </div>
-                            <div className="text-[11px] text-[#141414]/75 space-y-2 font-mono">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Total Account Capacity:</span>
-                                <strong className="text-[#141414] font-black">{currentPlan.allowance_accounts || 10} Accounts</strong>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Deployed Accounts:</span>
-                                <strong className="text-[#141414] font-black">{slaveAgentsList.filter(a => a.isDeployed).length} Deployed</strong>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Available Accounts:</span>
-                                <strong className="text-[#141414] font-black">{Math.max(0, (currentPlan.allowance_accounts || 10) - slaveAgentsList.filter(a => a.isDeployed).length)} Available</strong>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Valid Until:</span>
-                                <strong className="text-[#141414] font-black">{getFormattedExpiryDate(currentPlan)}</strong>
+                              <div className="text-[11px] text-[#141414]/75 space-y-2 font-mono">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Total Account Capacity:</span>
+                                  <strong className="text-[#141414] font-black">{currentPlan.allowance_accounts || 10} Accounts</strong>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Deployed Accounts:</span>
+                                  <strong className="text-[#141414] font-black">{slaveAgentsList.filter(a => a.isDeployed).length} Deployed</strong>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Available Accounts:</span>
+                                  <strong className="text-[#141414] font-black">{Math.max(0, (currentPlan.allowance_accounts || 10) - slaveAgentsList.filter(a => a.isDeployed).length)} Available</strong>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Valid Until:</span>
+                                  <strong className="text-[#141414] font-black">{getFormattedExpiryDate(currentPlan)}</strong>
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          )}
+
+                          {planHistory
+                            .filter(item => (item.status === 'active' || item.is_active) && (item.plan_type === 'slave_capability' || item.action_type === 'capability_increment' || item.plan_name?.includes('Capability')))
+                            .map((capPlan, idx) => (
+                              <div key={capPlan.id || idx} className="p-4 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-left font-mono">
+                                <div className="pb-2 border-b border-[#141414]/15 flex items-center justify-between">
+                                  <div>
+                                    <span className="text-xs font-black uppercase tracking-wider block text-[#141414]">
+                                      {capPlan.plan_name || 'Capability Increment Plan'}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
+                                      {capPlan.plan_subtitle || 'Per-Slave Agent Rate-Limit Increment'}
+                                    </span>
+                                  </div>
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider border border-[#141414] bg-green-600 text-white">
+                                    ACTIVE
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-[#141414]/75 space-y-2 font-mono">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Plan Type:</span>
+                                    <strong className="text-[#141414] font-black">Capability Boost</strong>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Valid Until:</span>
+                                    <strong className="text-[#141414] font-black">{getFormattedExpiryDate(capPlan)}</strong>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                         </div>
                       ) : (
                         <div className="p-6 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3 text-center font-mono">
