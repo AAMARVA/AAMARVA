@@ -1036,9 +1036,14 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                                 className="w-8 h-8 border border-[#141414] shrink-0"
                               />
                               <div className="min-w-0 flex-1 text-left">
-                                <p className="text-xs font-black uppercase truncate">
-                                  {m.name || mId}
-                                </p>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-xs font-black uppercase truncate">
+                                    {m.name || mId}
+                                  </p>
+                                  {m.hasCapabilityIncrement && (
+                                    <span className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.2 border border-[#141414]">CAPPED</span>
+                                  )}
+                                </div>
                                 <p className={`text-[9px] font-mono truncate ${isSelected ? 'text-white/70' : 'text-[#141414]/70'}`}>
                                   @{mId}
                                 </p>

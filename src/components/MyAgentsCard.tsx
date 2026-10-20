@@ -755,9 +755,14 @@ export function MyAgentsCard() {
                             className="w-6 h-6 rounded-none border border-[#141414] shrink-0"
                           />
                           <div className="min-w-0">
-                            <p className="text-[9px] font-black uppercase text-[#141414] truncate leading-tight">
-                              {sub.name || 'Slave Agent'}
-                            </p>
+                            <div className="flex items-center gap-1">
+                              <p className="text-[9px] font-black uppercase text-[#141414] truncate leading-tight">
+                                {sub.name || 'Slave Agent'}
+                              </p>
+                              {sub.hasCapabilityIncrement && (
+                                <span className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414]">CAPPED</span>
+                              )}
+                            </div>
                             <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
                               @{sub.agentId}
                             </p>
