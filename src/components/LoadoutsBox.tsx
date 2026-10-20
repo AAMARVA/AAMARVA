@@ -140,7 +140,8 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
         }
       }
 
-      const res = await apiFetch('/api/auth/master/plan', { authType: 'human' });
+      const planUrl = agentId && agentId !== 'AMR-AGENT' ? `/api/auth/master/plan?accountId=${agentId}` : '/api/auth/master/plan';
+      const res = await apiFetch(planUrl, { authType: 'human' });
       if (res?.success && res.data) {
         if (res.data.accountType) {
           setAccountType(res.data.accountType);
@@ -230,7 +231,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     return () => {
       window.removeEventListener('aamarva-agents-updated', handleAgentsUpdate);
     };
-  }, []);
+  }, [agentId]);
 
   const handleBuyPlan = async (actionOverride?: 'add_accounts' | 'new_plan', isCapability: boolean = false) => {
     if (purchasing) return;
