@@ -27,14 +27,19 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
       fetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`)
         .then(res => res.json())
         .then(data => {
+          console.log('API Response:', data);
           if (data?.success && data?.data) {
             const plan = data.data.plan;
             const history = data.data.history || [];
             const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
 
             const latestItem = capabilityItems[0] || plan;
-            const rawDate = latestItem?.created_at || plan?.created_at || history[0]?.created_at;
-            const rawExpiry = latestItem?.expires_at || plan?.expires_at || history[0]?.expires_at;
+            const rawDate = latestItem?.created_at || latestItem?.createdAt || plan?.created_at || plan?.createdAt || history[0]?.created_at || history[0]?.createdAt;
+            const rawExpiry = latestItem?.expires_at || latestItem?.expiresAt || plan?.expires_at || plan?.expiresAt || history[0]?.expires_at || history[0]?.expiresAt;
+
+            console.log('LatestItem:', latestItem);
+            console.log('RawDate:', rawDate);
+            console.log('RawExpiry:', rawExpiry);
 
             const purchaseDate = rawDate 
               ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
