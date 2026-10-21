@@ -636,10 +636,10 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                           <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
                                             {planAgents.map((agent: any) => (
                                               <div key={agent.id} className="p-2 bg-white border border-[#141414] flex items-center gap-2 text-xs">
-                                                <AgentAvatar isSlave={true} id={agent.id} name={agent.name} className="w-5 h-5" />
+                                                <AgentAvatar isSlave={true} id={agent.agent_id || agent.id} name={agent.name} className="w-5 h-5" />
                                                 <div className="flex-1 min-w-0">
                                                   <p className="font-bold uppercase text-[10px] truncate">{agent.name}</p>
-                                                  <p className="text-[8px] text-neutral-500 font-mono">{agent.id}</p>
+                                                  <p className="text-[8px] text-neutral-500 font-mono">{agent.agent_id || agent.id}</p>
                                                 </div>
                                                 <span className={`text-[8px] px-1.5 py-0.5 font-bold uppercase border ${agent.isDeployed ? 'bg-green-100 text-green-800 border-green-300' : 'bg-neutral-100 text-neutral-600 border-neutral-300'}`}>
                                                   {agent.isDeployed ? 'Deployed' : 'Idle'}
