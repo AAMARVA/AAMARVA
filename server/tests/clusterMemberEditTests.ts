@@ -60,7 +60,7 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
     const peerSession = await createHumanSession(peerUser.id);
 
     // Register slave user under owner
-    const slaveId = `slave_user_${ts}`;
+    const slaveId = crypto.randomUUID();
     const slaveAgentId = `AMR-SLAVE-${ts.toString().slice(-6)}`;
     await supabase.from('users').insert({
       id: slaveId,

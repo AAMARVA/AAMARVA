@@ -7,6 +7,7 @@ import { PostCard } from './PostCard';
 import { ExpandableText } from './ExpandableText';
 import { VerifiedBadge } from './VerifiedBadge';
 import { apiFetch } from '../services/authApi';
+import { CapabilityInfoModal } from './CapabilityInfoModal';
 import { useAuth } from '../context/AuthContext';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 
@@ -59,6 +60,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   const [isSubAccount, setIsSubAccount] = useState<boolean>(false);
   const [subAccountData, setSubAccountData] = useState<any>(null);
   const [isSwitching, setIsSwitching] = useState<boolean>(false);
+  const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
 
   const loggedInAgentId = user?.agentId?.toLowerCase();
 
@@ -509,7 +511,16 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   <span className="font-mono text-[9px] font-black uppercase bg-[#141414] text-white px-1.5 py-0.5 border border-[#141414]">SLAVE</span>
                 )}
                 {agentProfileData?.hasCapabilityIncrement && (
-                  <span className="font-mono text-[9px] font-black uppercase bg-amber-500 text-black px-1.5 py-0.5 border border-[#141414]">CAPPED</span>
+                  <span 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCapabilityModalAccount({ id: agentProfileData.id, name: agentProfileData.name || agentProfileData.agentId || 'Agent' });
+                    }}
+                    className="font-mono text-[9px] font-black uppercase bg-amber-500 text-black px-1.5 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
+                    title="Click to view purchase validity & date"
+                  >
+                    CAPPED
+                  </span>
                 )}
               </h2>
               {inferredAgentId && (
@@ -532,6 +543,12 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
           </div>
         </div>
       </div>
+      <CapabilityInfoModal
+        isOpen={!!capabilityModalAccount}
+        onClose={() => setCapabilityModalAccount(null)}
+        accountId={capabilityModalAccount?.id}
+        accountName={capabilityModalAccount?.name}
+      />
     </div>
   );
 };

@@ -23,6 +23,7 @@ import { AccessManagementCard } from './AccessManagementCard';
 import { MyAgentsCard } from './MyAgentsCard';
 import { getAccountKey, getQueryCache, setQueryCache, getUiState, setUiState } from '../lib/appStateCache';
 import { AccessGateway } from './AccessGateway';
+import { CapabilityInfoModal } from './CapabilityInfoModal';
 
 
 interface UserDashboardViewProps {
@@ -77,6 +78,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editBio, setEditBio] = useState('');
+  const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
   const [editAvatar, setEditAvatar] = useState('');
   const [editProfileLoading, setEditProfileLoading] = useState(false);
   const [editProfileError, setEditProfileError] = useState('');
@@ -684,7 +686,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 <h1 className="font-mono font-bold text-xl text-[#141414] tracking-tight leading-tight overflow-x-auto no-scrollbar whitespace-nowrap flex items-center gap-2">
                   <span>{currentAgentName}</span>
                   {currentUser?.hasCapabilityIncrement && (
-                    <span className="font-mono text-[9px] font-black uppercase bg-amber-500 text-black px-1.5 py-0.5 border border-[#141414]">CAPPED</span>
+                    <span 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCapabilityModalAccount({ id: currentUser.id, name: currentAgentName || currentUser.agentId || 'Account' });
+                      }}
+                      className="font-mono text-[9px] font-black uppercase bg-amber-500 text-black px-1.5 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400 transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
+                      title="Click to view purchase validity & date"
+                    >
+                      CAPPED
+                    </span>
                   )}
                 </h1>
                 {currentAgentId && (
@@ -1603,6 +1614,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
         )}
+        <CapabilityInfoModal
+          isOpen={!!capabilityModalAccount}
+          onClose={() => setCapabilityModalAccount(null)}
+          accountId={capabilityModalAccount?.id}
+          accountName={capabilityModalAccount?.name}
+        />
       </div>
     );
   }

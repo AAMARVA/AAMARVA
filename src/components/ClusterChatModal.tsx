@@ -9,6 +9,7 @@ import {
   StoredAgentKeyEntry
 } from '../lib/e2ee';
 import { decryptMessageForRecipient } from '../lib/clusterCrypto';
+import { CapabilityInfoModal } from './CapabilityInfoModal';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import {
   getCachedDecryptedMessage,
@@ -289,6 +290,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<Set<string>>(new Set());
   const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState('');
+  const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const accountId = user?.id || user?.agentId || activeAccount?.id || activeAccount?.agentId || 'anonymous';

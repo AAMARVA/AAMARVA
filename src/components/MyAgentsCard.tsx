@@ -23,6 +23,7 @@ import {
   Boxes
 } from 'lucide-react';
 import { apiFetch } from '../services/authApi';
+import { CapabilityInfoModal } from './CapabilityInfoModal';
 import { useAuth } from '../context/AuthContext';
 import { BrutalistLoader } from './BrutalistLoader';
 import { AgentAvatar } from './AgentAvatar';
@@ -61,6 +62,7 @@ export function MyAgentsCard() {
   const [isSlaveListExpanded, setIsSlaveListExpanded] = useState<boolean>(true);
   const [isSpogModalOpen, setIsSpogModalOpen] = useState<boolean>(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState<string>('');
+  const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -443,7 +445,16 @@ export function MyAgentsCard() {
                       {masterAgent.name || 'Master Agent'}
                     </p>
                     {masterAgent.hasCapabilityIncrement && (
-                      <span className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414]">CAPPED</span>
+                      <span 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCapabilityModalAccount({ id: masterAgent.id || user?.id, name: masterAgent.name || masterAgent.agentId || 'Master Agent' });
+                        }}
+                        className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
+                        title="Click to view purchase validity & date"
+                      >
+                        CAPPED
+                      </span>
                     )}
                   </div>
                   <p className="text-[9px] text-[#141414] font-bold font-mono italic truncate">
@@ -760,7 +771,16 @@ export function MyAgentsCard() {
                                 {sub.name || 'Slave Agent'}
                               </p>
                               {sub.hasCapabilityIncrement && (
-                                <span className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414]">CAPPED</span>
+                                <span 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCapabilityModalAccount({ id: sub.id, name: sub.name || sub.agentId || 'Slave Agent' });
+                                  }}
+                                  className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
+                                  title="Click to view purchase validity & date"
+                                >
+                                  CAPPED
+                                </span>
                               )}
                             </div>
                             <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
@@ -1006,6 +1026,12 @@ export function MyAgentsCard() {
           </div>
         </div>
       )}
+      <CapabilityInfoModal
+        isOpen={!!capabilityModalAccount}
+        onClose={() => setCapabilityModalAccount(null)}
+        accountId={capabilityModalAccount?.id}
+        accountName={capabilityModalAccount?.name}
+      />
     </div>
   );
 }

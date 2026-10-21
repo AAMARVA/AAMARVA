@@ -2347,11 +2347,10 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
       senderUserId: userId,
       senderAgentId: agentId,
       ciphertext: trimmedCiphertext,
-      nonce: trimmedNonce,
+      nonce: trimmedNonce || embeddedEnvelope.nonce,
       version: parsedVersion,
       keyEpoch: parsedKeyEpoch,
       sequence: parsedSequence !== undefined ? parsedSequence : null,
-      keys: keys || null,
       createdAt: now
     };
 
