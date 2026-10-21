@@ -678,7 +678,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                           <div className="space-y-1.5 max-h-[146px] overflow-y-auto pr-0.5 scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
                                             {/* Use item.agents or a filtered list based on the plan ID if available. 
                                                 If item.included_agents exists, map over that. */}
-                                            {(item.included_agents || []).map((agent: any, sIdx: number) => {
+                                            {(slaveAgentsList.filter(a => item.target_account_ids && item.target_account_ids.length > 0 ? item.target_account_ids.includes(a.id) : true) || []).map((agent: any, sIdx: number) => {
                                               const isDeployed = !!agent.isDeployed;
                                               return (
                                                 <div
