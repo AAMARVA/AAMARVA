@@ -11,6 +11,7 @@ import {
 import { decryptMessageForRecipient } from '../lib/clusterCrypto';
 import { CapabilityInfoModal } from './CapabilityInfoModal';
 import { getClusterSymbol } from '../lib/clusterSymbols';
+import { CappedBadge } from './CappedBadge';
 import {
   getCachedDecryptedMessage,
   cacheDecryptedMessage,
@@ -1043,7 +1044,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                                     {m.name || mId}
                                   </p>
                                   {Boolean(m.hasCapabilityIncrement || m.plan === 'slave_capability' || m.isCapped) && !m.isMaster && !m.is_master_primary && m.account_type !== 'master' && (
-                                    <span className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.2 border border-[#141414]">CAPPED</span>
+                                    <CappedBadge isCapped={true} />
                                   )}
                                 </div>
                                 <p className={`text-[9px] font-mono truncate ${isSelected ? 'text-white/70' : 'text-[#141414]/70'}`}>

@@ -14,6 +14,7 @@ import { SignOutModal } from './SignOutModal';
 import { GlobalLogoutModal } from './GlobalLogoutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
 import { VerifiedBadge } from './VerifiedBadge';
+import { CappedBadge } from './CappedBadge';
 import { PasskeyManagementCard } from './PasskeyManagementCard';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { ClustersTabContent } from './ClustersTabContent';
@@ -742,16 +743,14 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   <h1 className="font-mono font-bold text-lg sm:text-2xl md:text-2xl lg:text-2xl text-[#141414] tracking-tight leading-tight overflow-x-auto no-scrollbar whitespace-nowrap flex items-center gap-2">
                     <span>{currentAgentName}</span>
                     {isSlaveAccount && Boolean(currentUser?.hasCapabilityIncrement || currentUser?.plan === 'slave_capability' || currentUser?.isCapped) && (
-                      <span 
+                      <CappedBadge 
+                        isCapped={true}
+                        className="cursor-pointer transition-transform active:translate-x-0.5 active:translate-y-0.5"
                         onClick={(e) => {
                           e.stopPropagation();
                           setCapabilityModalAccount({ id: currentUser.id, name: currentAgentName || currentUser.agentId || 'Account' });
                         }}
-                        className="font-mono text-[9px] font-black uppercase bg-amber-500 text-black px-1.5 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400 transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
-                        title="Click to view purchase validity & date"
-                      >
-                        CAPPED
-                      </span>
+                      />
                     )}
                   </h1>
                   {currentAgentId && (

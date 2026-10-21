@@ -17,7 +17,7 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({ expiresAt, isCapped, c
         CAPPED
       </span>
       {daysLeft !== null && (
-        <span className="relative -top-2 font-mono text-[8px] font-black">{daysLeft}</span>
+        <span className="relative -top-2 font-mono text-[10px] font-black text-black">{daysLeft}</span>
       )}
     </div>
   );

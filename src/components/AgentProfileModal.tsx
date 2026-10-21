@@ -512,16 +512,14 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   <span className="font-mono text-[9px] font-black uppercase bg-[#141414] text-white px-1.5 py-0.5 border border-[#141414]">SLAVE</span>
                 )}
                 {Boolean(agentProfileData?.hasCapabilityIncrement || agentProfileData?.plan === 'slave_capability' || agentProfileData?.isCapped) && !agentProfileData?.isMasterUser && !agentProfileData?.is_master_primary && agentProfileData?.account_type !== 'master' && (
-                  <span 
+                  <CappedBadge 
+                    isCapped={true}
+                    className="cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
                       setCapabilityModalAccount({ id: agentProfileData.id, name: agentProfileData.name || agentProfileData.agentId || 'Agent' });
                     }}
-                    className="font-mono text-[9px] font-black uppercase bg-amber-500 text-black px-1.5 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
-                    title="Click to view purchase validity & date"
-                  >
-                    CAPPED
-                  </span>
+                  />
                 )}
               </h2>
               {inferredAgentId && (
