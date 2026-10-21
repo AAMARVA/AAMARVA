@@ -639,11 +639,35 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
       const capService = CapabilityService.getInstance();
       const validityDays = req.body?.validityDays ? parseInt(req.body.validityDays, 10) : 30;
 
+      const batchId = crypto.randomUUID();
+      const nowIso = new Date().toISOString();
       const activatedList = [];
       for (const accountId of targetAccounts) {
         const cap = await capService.activateSlaveCapability(masterUserId, accountId, { validityDays });
         activatedList.push(cap);
       }
+
+      try {
+        const supabase = getSupabaseClient();
+        await supabase.from('external_events').insert({
+          id: batchId,
+          user_id: masterUserId,
+          type: 'SLAVE_CAPABILITY_BATCH_ACTIVATED',
+          details: JSON.stringify({
+            batch_id: batchId,
+            master_id: masterUserId,
+            target_account_ids: targetAccounts,
+            accounts_count: targetAccounts.length,
+            validity_days: validityDays,
+            created_at: nowIso,
+            metadata: {
+              validity_days_extended: validityDays,
+              accounts_in_transaction: targetAccounts.length
+            }
+          }),
+          created_at: nowIso
+        });
+      } catch (e) {}
 
       const { MasterAccountService } = await import('../services/masterAccountService.js');
       const existingMasterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);

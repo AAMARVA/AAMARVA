@@ -30,17 +30,24 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
           if (data?.success && data?.data) {
             const plan = data.data.plan;
             const history = data.data.history || [];
-            const capabilityItem = history.find((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment') || history[0] || plan;
+            const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
 
-            const validityDays = capabilityItem?.metadata?.validity_days_extended || plan?.metadata?.validity_days_extended || 30;
-            const rawDate = capabilityItem?.created_at || plan?.created_at || history[0]?.created_at;
+            const validityDays = capabilityItems.length > 0
+              ? capabilityItems.reduce((sum: number, item: any) => {
+                  const days = item.metadata?.validity_days_extended || 30;
+                  return sum + (Number(days) || 30);
+                }, 0)
+              : (plan?.metadata?.validity_days_extended || 30);
+
+            const latestItem = capabilityItems[0] || plan;
+            const rawDate = latestItem?.created_at || plan?.created_at || history[0]?.created_at;
 
             const purchaseDate = rawDate 
               ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
               : 'October 2026';
 
             setCapabilityData({
-              validityDays,
+              validityDays: validityDays > 0 ? validityDays : 30,
               purchaseDate,
               status: plan?.status || 'active'
             });
@@ -55,7 +62,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
         .catch(() => {
           setCapabilityData({
             validityDays: 30,
-            purchaseDate: 'Recently Purchased',
+            purchaseDate: 'October 2026',
             status: 'active'
           });
         })
