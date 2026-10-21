@@ -570,19 +570,20 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     name: raw.name || '',
     status: raw.status || 'active',
     avatar: (() => {
+      if (raw.avatar && typeof raw.avatar === 'string' && raw.avatar.trim().length > 0) {
+        const trimmed = raw.avatar.trim();
+        if (trimmed !== '🤖' && trimmed !== '👾') {
+          return trimmed;
+        }
+      }
       const isSlave = Boolean((raw.master_id && raw.master_id !== raw.id) || (raw.masterUserId && raw.masterUserId !== raw.id) || (raw.email && raw.email.includes('+AMR-')) || raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true);
       const isMaster = !isSlave;
       if (isMaster) {
-        if (!raw.avatar || raw.avatar === '🤖' || raw.avatar === '👾' || (typeof raw.avatar === 'string' && (raw.avatar.includes('robohash.org') || raw.avatar.includes('robohash')))) {
-          const cleanName = (raw.name || raw.agentId || 'M').trim().replace(/^@/, '');
-          const initial = (cleanName.charAt(0) || 'M').toUpperCase();
-          return `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" fill="#141414"/><text x="50%" y="54%" font-family="monospace" font-size="56" font-weight="900" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">${initial}</text></svg>`)}`;
-        }
-        return raw.avatar;
+        const cleanName = (raw.name || raw.agentId || 'M').trim().replace(/^@/, '');
+        const initial = (cleanName.charAt(0) || 'M').toUpperCase();
+        return `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" fill="#141414"/><text x="50%" y="54%" font-family="monospace" font-size="56" font-weight="900" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">${initial}</text></svg>`)}`;
       }
-      return (raw.avatar && typeof raw.avatar === 'string' && raw.avatar.includes('robohash.org'))
-        ? raw.avatar.replace(/https?:\/\/robohash\.org/g, config.robohashBaseUrl).replace('?set=set1', '').replace(/([&?])gravatar=[^&]+/g, '')
-        : (raw.avatar || '');
+      return `${config.robohashBaseUrl}/${encodeURIComponent(raw.agentId || 'agent')}.png`;
     })(),
     bio: (raw.bio || '').trim() || DEFAULT_BIO,
     whitelisted_networks,
@@ -720,8 +721,8 @@ export async function registerUser(data: {
   let agentId = (data.agentId || inventoryItem.agentId).trim();
   const isMasterRegistration = !(data as any).master_id && !(data.email && data.email.includes('+AMR-')) && (data as any).account_type !== 'slave';
   const customAvatar = (data as any).profileAvatar || (data as any).avatar;
-  let assignedAvatar = customAvatar;
-  if (!assignedAvatar) {
+  let assignedAvatar = customAvatar ? customAvatar.trim() : '';
+  if (!assignedAvatar || assignedAvatar === '🤖' || assignedAvatar === '👾') {
     if (isMasterRegistration) {
       const cleanName = (data.name || data.email || 'M').trim().replace(/^@/, '');
       const initial = (cleanName.charAt(0) || 'M').toUpperCase();
@@ -729,10 +730,6 @@ export async function registerUser(data: {
     } else {
       assignedAvatar = inventoryItem.avatar || `${config.robohashBaseUrl}/${agentId.toLowerCase()}.png`;
     }
-  } else if (isMasterRegistration && (assignedAvatar.includes('robohash.org') || assignedAvatar.includes('robohash'))) {
-    const cleanName = (data.name || data.email || 'M').trim().replace(/^@/, '');
-    const initial = (cleanName.charAt(0) || 'M').toUpperCase();
-    assignedAvatar = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" fill="#141414"/><text x="50%" y="54%" font-family="monospace" font-size="56" font-weight="900" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">${initial}</text></svg>`)}`;
   }
 
   if (!data.agentId) {

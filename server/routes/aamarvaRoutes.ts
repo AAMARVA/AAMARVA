@@ -335,14 +335,42 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
   try {
     const supabase = getSupabaseClient();
     const primaryUserId = req.user.id;
+    const isUserSlave = !!(
+      req.user.account_type === 'slave' ||
+      req.user.role === 'slave' ||
+      req.user.is_slave ||
+      ((req.user as any).master_id && (req.user as any).master_id !== primaryUserId)
+    );
+    const authMasterId = isUserSlave ? (req.user as any).master_id : primaryUserId;
+
     const requestedAccountId = (req.query?.accountId as string) || (req.query?.userId as string) || primaryUserId;
 
-    // Check if the requested account is a slave agent
-    const { data: targetUser } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', requestedAccountId)
-      .maybeSingle();
+    // Strict Fleet Isolation: Verify requested account belongs to authenticated user's fleet
+    let targetUser: any = null;
+    if (requestedAccountId === authMasterId || requestedAccountId === primaryUserId) {
+      const { data: u } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', requestedAccountId)
+        .maybeSingle();
+      targetUser = u || req.user;
+    } else {
+      const { data: u } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', requestedAccountId)
+        .maybeSingle();
+
+      if (!u || (u.id !== authMasterId && u.master_id !== authMasterId)) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            message: 'Unauthorized: Cross-fleet subscription access forbidden.'
+          }
+        });
+      }
+      targetUser = u;
+    }
 
     const isSlave = !!(
       targetUser && (
@@ -350,33 +378,35 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         targetUser.role === 'slave' ||
         targetUser.is_slave === true ||
         (targetUser.email && targetUser.email.includes('+AMR-')) ||
-        (targetUser.master_id && targetUser.master_id !== targetUser.id)
+        (targetUser.master_id && targetUser.master_id !== authMasterId)
       )
     );
 
+    const actualMasterId = targetUser?.master_id || authMasterId;
+
     if (isSlave && targetUser) {
       // SLAVE ACCOUNT SCOPE:
-      // A Slave account can own Capability Increment entitlements and inherit Master plan coverage.
       const { CapabilityService } = await import('../services/capabilityService.js');
       const { MasterAccountService } = await import('../services/masterAccountService.js');
       const capService = CapabilityService.getInstance();
       const slaveCap = await capService.getAgentCapability(targetUser.id) || await capService.getAgentCapability(targetUser.agentId);
 
+      const now = Date.now();
       const isCapActive = !!(
         slaveCap &&
         slaveCap.status === 'active' &&
         slaveCap.expires_at &&
-        new Date(slaveCap.expires_at).getTime() > Date.now()
+        new Date(slaveCap.expires_at).getTime() > now
       );
 
       let masterPlanObj = null;
       let isMasterActive = false;
       let masterHistory = [];
-      if (targetUser.master_id) {
-        masterPlanObj = await MasterAccountService.getInstance().getMasterPlan(targetUser.master_id);
-        const isMasterExpired = !!(masterPlanObj?.expires_at && new Date(masterPlanObj.expires_at).getTime() <= Date.now());
+      if (actualMasterId) {
+        masterPlanObj = await MasterAccountService.getInstance().getMasterPlan(actualMasterId);
+        const isMasterExpired = !!(masterPlanObj?.expires_at && new Date(masterPlanObj.expires_at).getTime() <= now);
         isMasterActive = !!(masterPlanObj && masterPlanObj.status === 'active' && !isMasterExpired);
-        masterHistory = await MasterAccountService.getInstance().getMasterPlanHistory(targetUser.master_id);
+        masterHistory = await MasterAccountService.getInstance().getMasterPlanHistory(actualMasterId);
       }
 
       // Fetch persistent capability purchase history for this slave only
@@ -394,13 +424,34 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         return ev.user_id === targetUser.id || details?.user_id === targetUser.id || details?.agent_id === targetUser.agentId;
       });
 
+      const latestActiveEvent = slaveEvents.find((ev: any) => {
+        let details = ev.details;
+        if (typeof details === 'string') {
+          try { details = JSON.parse(details); } catch (e) {}
+        }
+        return details?.expires_at && new Date(details.expires_at).getTime() > now;
+      }) || slaveEvents[0];
+
+      const isLatestEventActive = !!(
+        latestActiveEvent &&
+        (() => {
+          let details = latestActiveEvent.details;
+          if (typeof details === 'string') {
+            try { details = JSON.parse(details); } catch (e) {}
+          }
+          return details?.expires_at && new Date(details.expires_at).getTime() > now;
+        })()
+      );
+
+      const effectiveIsActive = isCapActive || isLatestEventActive;
+
       const slaveHistory = slaveEvents.map((ev: any) => {
         let details = ev.details;
         if (typeof details === 'string') {
           try { details = JSON.parse(details); } catch (e) {}
         }
         const validityDays = details?.metadata?.validity_days_extended || 30;
-        const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
+        const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > now : true;
         return {
           id: ev.id,
           plan_name: 'Capability Increment Plan',
@@ -423,47 +474,58 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         ...mh,
         id: `inherited_${mh.id}`,
         plan_name: 'Master & Slave Agent Plan',
-        plan_subtitle: `Master Account ${mh.plan_subtitle || 'Purchase'} — Applied to this account`,
+        plan_subtitle: `Master Account ${mh.plan_subtitle || 'Purchase'} — Fleet Coverage`,
         is_inherited: true
       }));
 
       const combinedSlaveHistory = [...slaveHistory, ...formattedMasterHistory];
 
-      const activePlanObj = slaveCap ? {
-        id: slaveCap.id,
-        master_account_id: targetUser.id,
-        plan_type: 'slave_capability',
-        plan_name: 'Capability Increment Plan',
-        status: isCapActive ? 'active' : 'expired',
-        allowance_accounts: 1,
-        tier: 'capability',
-        created_at: slaveCap.created_at || targetUser.created_at,
-        updated_at: slaveCap.updated_at,
-        expires_at: slaveCap.expires_at,
-        metadata: slaveCap.metadata || {}
-      } : (slaveEvents.length > 0 ? {
-        id: slaveEvents[0].id,
-        master_account_id: targetUser.id,
-        plan_type: 'slave_capability',
-        plan_name: 'Capability Increment Plan',
-        status: 'active',
-        allowance_accounts: 1,
-        tier: 'capability',
-        created_at: slaveEvents[0].created_at || targetUser.created_at,
-        expires_at: slaveEvents[0].details?.expires_at || null,
-        metadata: slaveEvents[0].details?.metadata || { validity_days_extended: 30 }
-      } : {
-        id: `plan_${targetUser.id}`,
-        master_account_id: targetUser.id,
-        plan_type: 'slave_capability',
-        plan_name: 'Capability Increment Plan',
-        status: 'inactive',
-        allowance_accounts: 0,
-        tier: 'capability',
-        created_at: targetUser.created_at || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        expires_at: null
-      });
+      let activePlanObj = null;
+      if (slaveCap && isCapActive) {
+        activePlanObj = {
+          id: slaveCap.id,
+          master_account_id: targetUser.id,
+          plan_type: 'slave_capability',
+          plan_name: 'Capability Increment Plan',
+          status: 'active',
+          allowance_accounts: 1,
+          tier: 'capability',
+          created_at: slaveCap.created_at || targetUser.created_at,
+          updated_at: slaveCap.updated_at,
+          expires_at: slaveCap.expires_at,
+          metadata: slaveCap.metadata || {}
+        };
+      } else if (latestActiveEvent && isLatestEventActive) {
+        let details = latestActiveEvent.details;
+        if (typeof details === 'string') {
+          try { details = JSON.parse(details); } catch (e) {}
+        }
+        activePlanObj = {
+          id: latestActiveEvent.id,
+          master_account_id: targetUser.id,
+          plan_type: 'slave_capability',
+          plan_name: 'Capability Increment Plan',
+          status: 'active',
+          allowance_accounts: 1,
+          tier: 'capability',
+          created_at: latestActiveEvent.created_at || targetUser.created_at,
+          expires_at: details?.expires_at || null,
+          metadata: details?.metadata || { validity_days_extended: 30 }
+        };
+      } else {
+        activePlanObj = {
+          id: `plan_${targetUser.id}`,
+          master_account_id: targetUser.id,
+          plan_type: 'slave_capability',
+          plan_name: 'Capability Increment Plan',
+          status: effectiveIsActive ? 'active' : 'inactive',
+          allowance_accounts: 1,
+          tier: 'capability',
+          created_at: targetUser.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          expires_at: slaveCap?.expires_at || null
+        };
+      }
 
       const inheritedPlanObj = masterPlanObj ? {
         ...masterPlanObj,
@@ -477,11 +539,11 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         data: {
           accountId: targetUser.id,
           accountType: 'slave',
-          masterId: targetUser.master_id || null,
+          masterId: actualMasterId,
           inheritedPlan: inheritedPlanObj,
           plan: activePlanObj,
-          active: isCapActive || isMasterActive,
-          status: (isCapActive || isMasterActive) ? 'active' : 'inactive',
+          active: effectiveIsActive || isMasterActive,
+          status: (effectiveIsActive || isMasterActive) ? 'active' : 'inactive',
           allowance: 0,
           currentSlaveAgentsCount: 0,
           remainingAllowance: 0,
@@ -492,14 +554,12 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     }
 
     // MASTER ACCOUNT SCOPE:
-    // A Master account can own Master & Slave Agent Plan entitlements.
-    // A Master must never inherit a Slave's Capability Increment.
-    const masterUserId = (req.user as any).masterUserId || primaryUserId;
+    const masterUserId = authMasterId;
     const { MasterAccountService } = await import('../services/masterAccountService.js');
     const masterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
 
-    // Fetch existing slave agents
-    const { data: subAgents, error: subErr } = await supabase
+    // Fetch existing slave agents in this fleet
+    const { data: subAgents } = await supabase
       .from('users')
       .select('*')
       .eq('master_id', masterUserId);
@@ -512,12 +572,12 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
       });
     }
     const currentSlaveCount = cleanSubAgents.length;
-    const isExpired = !!(masterPlan?.expires_at && new Date(masterPlan.expires_at).getTime() <= Date.now());
+    const now = Date.now();
+    const isExpired = !!(masterPlan?.expires_at && new Date(masterPlan.expires_at).getTime() <= now);
     const isActive = !!(masterPlan && masterPlan.status === 'active' && !isExpired);
     const allowance = isActive ? (masterPlan?.allowance_accounts || 0) : 0;
     const history = await MasterAccountService.getInstance().getMasterPlanHistory(masterUserId);
 
-    const now = Date.now();
     let rawBlocks = masterPlan?.metadata?.blocks || [];
     if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) {
       if (masterPlan && masterPlan.status === 'active') {
