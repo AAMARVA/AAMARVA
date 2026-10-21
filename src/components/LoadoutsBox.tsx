@@ -624,19 +624,19 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                     {showHistoryPlanAgents[idx] && (() => {
                                       const targetIds = item.target_account_ids || [];
                                       const planAgents = slaveAgentsList.filter((agent: any) => 
-                                        targetIds.includes(agent.id) || targetIds.includes(agent.account_id) || item.account_id === agent.id || item.account_id === agent.account_id
+                                        targetIds.includes(agent.id)
                                       );
-                                      const effectiveAgents = planAgents.length > 0 ? planAgents : slaveAgentsList.slice(0, item.accounts_in_transaction || item.target_account_ids?.length || 1);
+                                      
                                       return (
                                         <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2 mt-2">
                                           <div className="flex items-center justify-between text-[10px] font-bold text-[#141414]">
-                                            <span>INCLUDED FLEET ROSTER ({effectiveAgents.length} AGENTS)</span>
+                                            <span>INCLUDED FLEET ROSTER ({planAgents.length} AGENTS)</span>
                                             <span className="text-[9px] font-mono text-[#141414]/70">Selected Plan Roster</span>
                                           </div>
                                           <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
-                                            {effectiveAgents.map((agent: any) => (
+                                            {planAgents.map((agent: any) => (
                                               <div key={agent.id} className="p-2 bg-white border border-[#141414] flex items-center gap-2 text-xs">
-                                                <AgentAvatar agentId={agent.id} agentName={agent.name} className="w-5 h-5" />
+                                                <AgentAvatar isSlave={true} id={agent.id} name={agent.name} className="w-5 h-5" />
                                                 <div className="flex-1 min-w-0">
                                                   <p className="font-bold uppercase text-[10px] truncate">{agent.name}</p>
                                                   <p className="text-[8px] text-neutral-500 font-mono">{agent.id}</p>
