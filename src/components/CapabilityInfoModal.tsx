@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Calendar, Clock, Award } from 'lucide-react';
+import { apiFetch } from '../services/authApi';
 
 interface CapabilityInfoModalProps {
   isOpen: boolean;
@@ -38,8 +39,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
 
       if (accountId) {
         setLoading(true);
-        fetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`)
-          .then(res => res.json())
+        apiFetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`, { authType: 'human' })
           .then(data => {
             if (data?.success && data?.data) {
               const plan = data.data.plan;
