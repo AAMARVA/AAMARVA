@@ -1457,6 +1457,8 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
         onClose={() => setCapabilityModalAccount(null)}
         accountId={capabilityModalAccount?.id}
         accountName={capabilityModalAccount?.name}
+        purchaseDate={currentPlan?.created_at}
+        expiryDate={currentPlan?.expires_at}
       />
     </div>
   );
