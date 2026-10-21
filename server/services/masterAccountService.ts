@@ -793,72 +793,70 @@ export class MasterAccountService {
         }
       } else {
         const seenTitles = new Set<string>();
-        masterHistory = eventsList.map((ev: any) => {
-          let details = ev.details;
-          if (typeof details === 'string') {
-            try {
-              details = JSON.parse(details);
-            } catch (e) {
-              details = {};
+        const groupedEvents: Record<string, any[]> = {};
+        for (const ev of eventsList) {
+          const timestamp = ev.created_at;
+          if (!groupedEvents[timestamp]) groupedEvents[timestamp] = [];
+          groupedEvents[timestamp].push(ev);
+        }
+
+        masterHistory = Object.entries(groupedEvents).map(([timestamp, events]) => {
+          // Combine details from all events in the same transaction
+          const combinedDetails = events.reduce((acc, ev) => {
+            let details = ev.details;
+            if (typeof details === 'string') {
+              try { details = JSON.parse(details); } catch (e) {}
             }
-          }
-          const allowance = details?.allowance_accounts || 10;
-          const meta = details?.metadata || {};
+            return { ...acc, ...details };
+          }, {});
+
+          const allowance = combinedDetails?.allowance_accounts || 10;
+          const meta = combinedDetails?.metadata || {};
           const actionType = meta.action_type || (allowance > 10 ? 'add_accounts' : 'new_plan');
           
-          const accountsInTx = details?.accounts_in_transaction 
+          const accountsInTx = combinedDetails?.accounts_in_transaction 
             || meta?.accounts_in_transaction 
             || meta?.accounts_bought 
             || meta?.added_accounts 
             || (actionType === 'new_plan' ? 10 : Math.max(1, allowance - (meta?.previous_allowance || 10)));
 
+          // Construct a comprehensive subtitle if it's a combined transaction
           let planTitle = 'Master & Slave Agent Plan';
-          let planSubtitle = 'Base Fleet Roster';
+          let planSubtitle = 'Master & Slave Agent Plan Subscription';
           let amount = 50;
 
-          if (actionType === 'add_accounts' || meta.added_accounts > 0 || meta.previous_allowance > 0) {
-            const added = accountsInTx;
-            amount = Math.round(added * 2.5);
-            planTitle = 'Master & Slave Agent Plan';
-            planSubtitle = `Capacity Add-On (+${added} Accounts)`;
+          if (meta.action_type === 'add_accounts' || meta.added_accounts > 0) {
+            planSubtitle = `Fleet Roster (${allowance} Accounts Total)`;
+            amount = 50 + Math.max(0, allowance - 10) * 2.5;
           } else {
-            planTitle = 'Master & Slave Agent Plan';
             planSubtitle = `Base Fleet Roster (${accountsInTx} Accounts)`;
             amount = 50;
           }
 
-          const txCreatedAt = ev.created_at ? new Date(ev.created_at) : new Date();
-          const txExpiresAt = meta.expires_at || details?.expires_at 
-            ? new Date(meta.expires_at || details.expires_at).toISOString() 
+          const txCreatedAt = new Date(timestamp);
+          const txExpiresAt = meta.expires_at || combinedDetails?.expires_at 
+            ? new Date(meta.expires_at || combinedDetails.expires_at).toISOString() 
             : new Date(txCreatedAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
           const isCurrentlyActive = new Date(txExpiresAt).getTime() > Date.now();
 
           return {
-            id: ev.id,
+            id: events[0].id,
             plan_name: planTitle,
             plan_subtitle: planSubtitle,
-            plan_type: details?.plan_type || 'master_slave_scale',
+            plan_type: combinedDetails?.plan_type || 'master_slave_scale',
             action_type: actionType,
             allowance_accounts: allowance,
             accounts_in_transaction: accountsInTx,
             added_accounts: accountsInTx,
-            tier: details?.tier || 'scale',
+            tier: combinedDetails?.tier || 'scale',
             status: isCurrentlyActive ? 'active' : 'expired',
             is_active: isCurrentlyActive,
             amount: amount,
             currency: 'USD',
-            created_at: ev.created_at,
+            created_at: timestamp,
             expires_at: txExpiresAt,
             metadata: meta
           };
-        }).filter((item) => {
-            // Deduplicate based on ID if present (same event), otherwise use a combination of subtitle and timestamp bucket
-            const dedupeKey = item.id || `${item.plan_subtitle}_${new Date(item.created_at).getTime()}`;
-            if (seenTitles.has(dedupeKey)) {
-                return false;
-            }
-            seenTitles.add(dedupeKey);
-            return true;
         });
       }
 
