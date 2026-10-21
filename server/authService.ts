@@ -577,13 +577,10 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
         }
       }
       const isSlave = Boolean((raw.master_id && raw.master_id !== raw.id) || (raw.masterUserId && raw.masterUserId !== raw.id) || (raw.email && raw.email.includes('+AMR-')) || raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true);
-      const isMaster = !isSlave;
-      if (isMaster) {
-        const cleanName = (raw.name || raw.agentId || 'M').trim().replace(/^@/, '');
-        const initial = (cleanName.charAt(0) || 'M').toUpperCase();
-        return `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" fill="#141414"/><text x="50%" y="54%" font-family="monospace" font-size="56" font-weight="900" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">${initial}</text></svg>`)}`;
+      if (isSlave) {
+        return `${config.robohashBaseUrl}/${encodeURIComponent(raw.agentId || 'agent')}.png`;
       }
-      return `${config.robohashBaseUrl}/${encodeURIComponent(raw.agentId || 'agent')}.png`;
+      return raw.avatar || '';
     })(),
     bio: (raw.bio || '').trim() || DEFAULT_BIO,
     whitelisted_networks,

@@ -657,8 +657,12 @@ export class MasterAccountService {
       });
 
       let formattedCapabilities: any[] = [];
+      const seenBatchIds = new Set<string>();
       if (masterBatches.length > 0) {
-        formattedCapabilities = masterBatches.map((ev: any) => {
+        for (const ev of masterBatches) {
+          if (seenBatchIds.has(ev.id)) continue;
+          seenBatchIds.add(ev.id);
+
           let details = ev.details;
           if (typeof details === 'string') {
             try { details = JSON.parse(details); } catch (e) {}
@@ -666,7 +670,7 @@ export class MasterAccountService {
           const validityDays = details?.validity_days || details?.metadata?.validity_days_extended || 30;
           const count = details?.accounts_count || details?.target_account_ids?.length || 1;
           const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
-          return {
+          formattedCapabilities.push({
             id: ev.id,
             plan_name: 'Capability Increment Plan',
             plan_subtitle: `Rate-Limit Increment (${count} ${count === 1 ? 'Account' : 'Accounts'} in Transaction, +${validityDays} Days)`,
@@ -682,8 +686,8 @@ export class MasterAccountService {
             status: 'active',
             is_active: isEvActive,
             is_batch: true
-          };
-        });
+          });
+        }
       } else if (slaveIds.length > 0) {
         const { data: capEvs } = await sb
           .from('external_events')
@@ -699,7 +703,11 @@ export class MasterAccountService {
           return slaveIds.includes(ev.user_id) || slaveIds.includes(details?.user_id) || details?.master_id === masterId;
         });
 
-        formattedCapabilities = capabilityEvents.map((ev: any) => {
+        const seenIndiv = new Set<string>();
+        for (const ev of capabilityEvents) {
+          if (seenIndiv.has(ev.id)) continue;
+          seenIndiv.add(ev.id);
+
           let details = ev.details;
           if (typeof details === 'string') {
             try { details = JSON.parse(details); } catch (e) {}
@@ -707,7 +715,7 @@ export class MasterAccountService {
           const validityDays = details?.metadata?.validity_days_extended || 30;
           const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
           const targetName = details?.metadata?.target_slave_name || details?.agent_id || 'Slave Agent';
-          return {
+          formattedCapabilities.push({
             id: ev.id,
             plan_name: 'Capability Increment Plan',
             plan_subtitle: `Rate-Limit Increment for ${targetName} (+${validityDays} Days)`,
@@ -723,8 +731,8 @@ export class MasterAccountService {
             is_active: isEvActive,
             is_direct: true,
             target_slave_id: ev.user_id
-          };
-        });
+          });
+        }
       }
 
       const eventsList = (data && Array.isArray(data)) ? data : [];

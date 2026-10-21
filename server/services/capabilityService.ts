@@ -160,7 +160,7 @@ export class CapabilityService {
         return entitlement;
       }
 
-      // 2. Secondary fallback lookup in external_events audit log (strictly per-slave target)
+      // 3. Secondary fallback lookup in external_events audit log (strictly per-slave target)
       const { data: eventRecord, error: eventErr } = await sb
         .from('external_events')
         .select('*')
@@ -180,7 +180,7 @@ export class CapabilityService {
               const now = Date.now();
               const expiresAtMs = new Date(parsed.expires_at).getTime();
               if (expiresAtMs <= now) {
-                return null;
+                continue;
               }
 
               const entitlement: CapabilityEntitlement = {
@@ -200,6 +200,37 @@ export class CapabilityService {
               return entitlement;
             }
           } catch (e) {}
+        }
+      }
+
+      // 4. Fallback lookup in users table for plan_expires_at & plan_status
+      const { data: userRecord } = await sb
+        .from('users')
+        .select('*')
+        .or(`id.eq.${agentIdentifier},agentId.eq.${agentIdentifier}`)
+        .maybeSingle();
+
+      if (userRecord && userRecord.plan_status === 'active' && userRecord.plan_expires_at) {
+        const now = Date.now();
+        const expiresAtMs = new Date(userRecord.plan_expires_at).getTime();
+        if (expiresAtMs > now) {
+          const entitlement: CapabilityEntitlement = {
+            id: `usr_ent_${userRecord.id}`,
+            agent_id: userRecord.agentId || userRecord.id,
+            user_id: userRecord.id,
+            master_id: userRecord.master_id,
+            capability_level: 1,
+            status: 'active',
+            created_at: userRecord.plan_created_at || userRecord.createdAt || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            expires_at: userRecord.plan_expires_at,
+            metadata: { upgraded_rate_limits: true }
+          };
+          this.capabilityCache.set(entitlement.agent_id, entitlement);
+          if (entitlement.user_id) {
+            this.capabilityCache.set(entitlement.user_id, entitlement);
+          }
+          return entitlement;
         }
       }
     } catch (err: any) {
@@ -338,7 +369,9 @@ export class CapabilityService {
       try {
         await sb.from('users').update({
           plan: 'slave_capability',
-          plan_status: 'active'
+          plan_status: 'active',
+          plan_expires_at: entitlement.expires_at,
+          plan_created_at: entitlement.created_at
         }).eq('id', slaveUser.id);
       } catch (uErr) {}
 
