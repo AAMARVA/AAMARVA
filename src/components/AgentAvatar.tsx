@@ -101,35 +101,30 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
   }, [canonicalSeed]);
 
   const initialUrl = useMemo(() => {
-    // 1. MASTER ACCOUNT RULE: The master account must NEVER show RoboHash.
+    // ALWAYS respect custom uploaded avatar if provided (data URI, http/https URL, or path)
+    if (avatar && typeof avatar === 'string' && avatar.trim().length > 0) {
+      const trimmed = avatar.trim();
+      const isGenericEmoji = trimmed === '🤖' || trimmed === '👾';
+      if (!isGenericEmoji && (trimmed.startsWith('data:') || trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/'))) {
+        return trimmed;
+      }
+    }
+
+    // Check current logged-in user custom avatar
+    if (currentUser?.avatar && typeof currentUser.avatar === 'string') {
+      const uAv = currentUser.avatar.trim();
+      const isGenericEmoji = uAv === '🤖' || uAv === '👾';
+      if (!isGenericEmoji && (uAv.startsWith('data:') || uAv.startsWith('http://') || uAv.startsWith('https://') || uAv.startsWith('/'))) {
+        return uAv;
+      }
+    }
+
     if (isMasterAccount) {
-      // Check if avatar is custom (e.g. data URI or uploaded image URL not containing robohash)
-      if (avatar && typeof avatar === 'string' && avatar.trim().length > 0) {
-        const trimmed = avatar.trim();
-        const isRobohash = trimmed.includes('robohash.org') || trimmed.includes('robohash');
-        const isGenericEmoji = trimmed === '🤖' || trimmed === '👾';
-        if (!isRobohash && !isGenericEmoji) {
-          if (trimmed.startsWith('data:')) return trimmed;
-          if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/')) {
-            return trimmed;
-          }
-        }
-      }
-
-      // If current logged-in user has custom avatar, use it
-      if (isCurrentMaster && currentUser?.avatar && typeof currentUser.avatar === 'string') {
-        const uAv = currentUser.avatar.trim();
-        if (!uAv.includes('robohash') && uAv !== '🤖' && uAv !== '👾') {
-          return uAv;
-        }
-      }
-
       // Generate the exact custom avatar SVG created for this account at registration
       return getMasterCustomAvatarSvg(name, id);
     }
 
-    // 2. Non-master account logic
-    // FORCE RoboHash for all non-master accounts
+    // Non-master account default fallback to Robohash
     return defaultRobohashUrl;
   }, [avatar, canonicalSeed, defaultRobohashUrl, isMasterAccount, isCurrentMaster, currentUser, name, id]);
 
