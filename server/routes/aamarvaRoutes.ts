@@ -429,18 +429,29 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
 
       const combinedSlaveHistory = [...slaveHistory, ...formattedMasterHistory];
 
-      const activePlanObj = isCapActive ? {
+      const activePlanObj = slaveCap ? {
         id: slaveCap.id,
+        master_account_id: targetUser.id,
+        plan_type: 'slave_capability',
+        plan_name: 'Capability Increment Plan',
+        status: isCapActive ? 'active' : 'expired',
+        allowance_accounts: 1,
+        tier: 'capability',
+        created_at: slaveCap.created_at || targetUser.created_at,
+        updated_at: slaveCap.updated_at,
+        expires_at: slaveCap.expires_at,
+        metadata: slaveCap.metadata || {}
+      } : (slaveEvents.length > 0 ? {
+        id: slaveEvents[0].id,
         master_account_id: targetUser.id,
         plan_type: 'slave_capability',
         plan_name: 'Capability Increment Plan',
         status: 'active',
         allowance_accounts: 1,
         tier: 'capability',
-        created_at: slaveCap.created_at,
-        updated_at: slaveCap.updated_at,
-        expires_at: slaveCap.expires_at,
-        metadata: slaveCap.metadata || {}
+        created_at: slaveEvents[0].created_at || targetUser.created_at,
+        expires_at: slaveEvents[0].details?.expires_at || null,
+        metadata: slaveEvents[0].details?.metadata || { validity_days_extended: 30 }
       } : {
         id: `plan_${targetUser.id}`,
         master_account_id: targetUser.id,
@@ -449,10 +460,10 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         status: 'inactive',
         allowance_accounts: 0,
         tier: 'capability',
-        created_at: new Date().toISOString(),
+        created_at: targetUser.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
         expires_at: null
-      };
+      });
 
       const inheritedPlanObj = masterPlanObj ? {
         ...masterPlanObj,
