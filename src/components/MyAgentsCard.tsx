@@ -448,6 +448,7 @@ export function MyAgentsCard() {
                       <span 
                         onClick={(e) => {
                           e.stopPropagation();
+                          console.log('DEBUG: Clicking Master CAPPED span', { masterAgent, userId: user?.id });
                           setCapabilityModalAccount({ id: masterAgent.id || user?.id, name: masterAgent.name || masterAgent.agentId || 'Master Agent' });
                         }}
                         className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
@@ -774,6 +775,7 @@ export function MyAgentsCard() {
                                 <span 
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    console.log('DEBUG: Clicking Slave CAPPED span', { sub });
                                     setCapabilityModalAccount({ id: sub.id, name: sub.name || sub.agentId || 'Slave Agent' });
                                   }}
                                   className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
