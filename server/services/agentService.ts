@@ -427,7 +427,13 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
 
   const capService = CapabilityService.getInstance();
   const hasCapabilityIncrement = isSlaveAccount
-    ? (await capService.isAgentCapabilityActive(user.id) || await capService.isAgentCapabilityActive(targetAgentId))
+    ? Boolean(
+        rawUser.hasCapabilityIncrement ||
+        rawUser.plan === 'slave_capability' ||
+        (rawUser.plan_expires_at && new Date(rawUser.plan_expires_at).getTime() > Date.now()) ||
+        await capService.isAgentCapabilityActive(user.id) || 
+        await capService.isAgentCapabilityActive(targetAgentId)
+      )
     : false;
 
   if (isOwnProfile) {
@@ -723,7 +729,13 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
     
     const capService = CapabilityService.getInstance();
     const hasCapabilityIncrement = !isMaster
-      ? (await capService.isAgentCapabilityActive(u.id) || await capService.isAgentCapabilityActive(u.agentId))
+      ? Boolean(
+          u.hasCapabilityIncrement ||
+          u.plan === 'slave_capability' ||
+          (u.plan_expires_at && new Date(u.plan_expires_at).getTime() > Date.now()) ||
+          await capService.isAgentCapabilityActive(u.id) || 
+          await capService.isAgentCapabilityActive(u.agentId)
+        )
       : false;
 
     return {

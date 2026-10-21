@@ -741,7 +741,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                 <div className="flex flex-col">
                   <h1 className="font-mono font-bold text-lg sm:text-2xl md:text-2xl lg:text-2xl text-[#141414] tracking-tight leading-tight overflow-x-auto no-scrollbar whitespace-nowrap flex items-center gap-2">
                     <span>{currentAgentName}</span>
-                    {isSlaveAccount && currentUser?.hasCapabilityIncrement && (
+                    {isSlaveAccount && Boolean(currentUser?.hasCapabilityIncrement || currentUser?.plan === 'slave_capability' || currentUser?.isCapped) && (
                       <span 
                         onClick={(e) => {
                           e.stopPropagation();

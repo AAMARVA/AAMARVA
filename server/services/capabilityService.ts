@@ -43,11 +43,26 @@ export class CapabilityService {
       if (!users || !Array.isArray(users)) return;
 
       for (const u of users) {
+        const isSlave = Boolean(
+          (u.master_id && u.master_id !== u.id) ||
+          (u.masterUserId && u.masterUserId !== u.id) ||
+          (u.email && typeof u.email === 'string' && u.email.includes('+AMR-')) ||
+          u.account_type === 'slave' ||
+          u.role === 'slave' ||
+          u.is_slave === true ||
+          u.isSlave === true
+        );
+
+        if (isSlave) {
+          // Never touch or wipe slave accounts in master cleanup!
+          continue;
+        }
+
         const isMaster = Boolean(
           u.account_type === 'master' ||
           u.is_master_primary === true ||
           u.role === 'master' ||
-          (!u.master_id && u.id) ||
+          (!u.master_id && !u.masterUserId) ||
           u.master_id === u.id
         );
         if (isMaster) {
@@ -135,11 +150,21 @@ export class CapabilityService {
 
       // Hard Rule: Master accounts CAN NEVER have capability increments!
       if (canonicalUser) {
-        const isMaster = Boolean(
+        const isSlave = Boolean(
+          (canonicalUser.master_id && canonicalUser.master_id !== canonicalUser.id) ||
+          (canonicalUser.masterUserId && canonicalUser.masterUserId !== canonicalUser.id) ||
+          (canonicalUser.email && typeof canonicalUser.email === 'string' && canonicalUser.email.includes('+AMR-')) ||
+          canonicalUser.account_type === 'slave' ||
+          canonicalUser.role === 'slave' ||
+          canonicalUser.is_slave === true ||
+          canonicalUser.isSlave === true
+        );
+
+        const isMaster = !isSlave && Boolean(
           canonicalUser.account_type === 'master' ||
           canonicalUser.is_master_primary === true ||
           canonicalUser.role === 'master' ||
-          (!canonicalUser.master_id && canonicalUser.id) ||
+          (!canonicalUser.master_id && !canonicalUser.masterUserId) ||
           canonicalUser.master_id === canonicalUser.id
         );
         if (isMaster) {
@@ -159,7 +184,13 @@ export class CapabilityService {
         }
       }
 
-      const candidateIds = Array.from(new Set([trimmed, canonicalUser?.id, canonicalUser?.agentId].filter(Boolean)));
+      const candidateIds = Array.from(new Set([
+        trimmed, 
+        canonicalUser?.id, 
+        canonicalUser?.agentId,
+        canonicalUser?.name
+      ].filter(Boolean) as string[]));
+      const candidateIdsLower = new Set(candidateIds.map(c => String(c).toLowerCase()));
 
       // 1. Primary lookup in capability_entitlements table
       for (const cand of candidateIds) {
@@ -263,20 +294,34 @@ export class CapabilityService {
         .select('*')
         .in('type', ['SLAVE_CAPABILITY_ACTIVATED', 'SLAVE_CAPABILITY_BATCH_ACTIVATED'])
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
 
       if (!eventErr && eventRecord && Array.isArray(eventRecord)) {
         for (const ev of eventRecord) {
           try {
             const parsed = typeof ev.details === 'string' ? JSON.parse(ev.details) : ev.details;
-            // CRITICAL: Do NOT match ev.user_id: that is the master purchaser/actor, not the target slave!
-            const matchesId = candidateIds.some(cid => 
-              parsed?.agent_id === cid || 
-              parsed?.user_id === cid || 
-              parsed?.target_slave_id === cid ||
-              (Array.isArray(parsed?.target_account_ids) && parsed.target_account_ids.includes(cid))
+            
+            // Comprehensive check across target_accounts array, target_account_ids, target_slave_id, user_id, agent_id
+            const matchInTargetAccounts = Array.isArray(parsed?.target_accounts) && parsed.target_accounts.some((acc: any) => {
+              const accId = String(acc?.id || '').toLowerCase();
+              const accAgentId = String(acc?.agent_id || acc?.agentId || '').toLowerCase();
+              const accName = String(acc?.name || '').toLowerCase();
+              return (accId && candidateIdsLower.has(accId)) || 
+                     (accAgentId && candidateIdsLower.has(accAgentId)) || 
+                     (accName && candidateIdsLower.has(accName));
+            });
+
+            const matchInTargetAccountIds = Array.isArray(parsed?.target_account_ids) && parsed.target_account_ids.some((tid: any) => {
+              return candidateIdsLower.has(String(tid).toLowerCase());
+            });
+
+            const directMatch = (
+              (parsed?.agent_id && candidateIdsLower.has(String(parsed.agent_id).toLowerCase())) ||
+              (parsed?.target_slave_id && candidateIdsLower.has(String(parsed.target_slave_id).toLowerCase())) ||
+              (parsed?.user_id && candidateIdsLower.has(String(parsed.user_id).toLowerCase()) && parsed?.user_id !== ev.user_id)
             );
-            if (matchesId) {
+
+            if (matchInTargetAccounts || matchInTargetAccountIds || directMatch) {
               const now = Date.now();
               const evCreated = ev.created_at || new Date().toISOString();
               const validityDays = parsed?.validity_days || parsed?.metadata?.validity_days_extended || 30;
@@ -316,18 +361,21 @@ export class CapabilityService {
       })());
 
       const isSlaveRecord = targetUserRecord && Boolean(
-        targetUserRecord.master_id && 
-        targetUserRecord.master_id !== targetUserRecord.id && 
-        !targetUserRecord.is_master_primary && 
-        targetUserRecord.account_type !== 'master' && 
-        targetUserRecord.role !== 'master'
+        (targetUserRecord.master_id && targetUserRecord.master_id !== targetUserRecord.id) ||
+        (targetUserRecord.masterUserId && targetUserRecord.masterUserId !== targetUserRecord.id) ||
+        (targetUserRecord.email && typeof targetUserRecord.email === 'string' && targetUserRecord.email.includes('+AMR-')) ||
+        targetUserRecord.account_type === 'slave' ||
+        targetUserRecord.role === 'slave' ||
+        targetUserRecord.is_slave === true ||
+        targetUserRecord.isSlave === true ||
+        (!targetUserRecord.is_master_primary && targetUserRecord.account_type !== 'master' && targetUserRecord.role !== 'master')
       );
 
       if (
         isSlaveRecord &&
         (
           targetUserRecord.plan_expires_at ||
-          targetUserRecord.hasCapabilityIncrement ||
+          targetUserRecord.hasCapabilityIncrement === true ||
           targetUserRecord.plan === 'slave_capability' ||
           (targetUserRecord.plan_status && targetUserRecord.plan_status.toLowerCase() === 'active')
         )
@@ -538,7 +586,8 @@ export class CapabilityService {
           plan: 'slave_capability',
           plan_status: 'active',
           plan_expires_at: entitlement.expires_at,
-          plan_created_at: entitlement.created_at
+          plan_created_at: entitlement.created_at,
+          hasCapabilityIncrement: true
         }).eq('id', slaveUser.id);
       } catch (uErr) {}
 

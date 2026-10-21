@@ -288,7 +288,13 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
     if (subAgents && Array.isArray(subAgents)) {
       cleanSubAgents = await Promise.all(subAgents.filter(u => u.id !== masterUserId).map(async (u: any) => {
         const { passwordHash, apiKeyHash, ...safe } = u;
-        const hasCapabilityIncrement = await capService.isAgentCapabilityActive(u.id) || await capService.isAgentCapabilityActive(u.agentId);
+        const hasCapabilityIncrement = Boolean(
+          safe.hasCapabilityIncrement ||
+          safe.plan === 'slave_capability' ||
+          (safe.plan_expires_at && new Date(safe.plan_expires_at).getTime() > Date.now()) ||
+          await capService.isAgentCapabilityActive(u.id) || 
+          await capService.isAgentCapabilityActive(u.agentId)
+        );
         return { ...safe, hasCapabilityIncrement };
       }));
     }
@@ -729,10 +735,19 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
 
     let cleanSubAgents: any[] = [];
     if (subAgents && Array.isArray(subAgents)) {
-      cleanSubAgents = subAgents.filter(u => u.id !== masterUserId).map(u => {
+      const { CapabilityService } = await import('../services/capabilityService.js');
+      const capService = CapabilityService.getInstance();
+      cleanSubAgents = await Promise.all(subAgents.filter(u => u.id !== masterUserId).map(async (u: any) => {
         const { passwordHash, apiKeyHash, ...safe } = u;
-        return safe;
-      });
+        const hasCapabilityIncrement = Boolean(
+          safe.hasCapabilityIncrement ||
+          safe.plan === 'slave_capability' ||
+          (safe.plan_expires_at && new Date(safe.plan_expires_at).getTime() > Date.now()) ||
+          await capService.isAgentCapabilityActive(u.id) || 
+          await capService.isAgentCapabilityActive(u.agentId)
+        );
+        return { ...safe, hasCapabilityIncrement };
+      }));
     }
     const currentSlaveCount = cleanSubAgents.length;
     const now = Date.now();
@@ -822,6 +837,7 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         currentSlaveAgentsCount: currentSlaveCount,
         remainingAllowance: Math.max(0, allowance - currentSlaveCount),
         slaveAgents: cleanSubAgents,
+        subAgents: cleanSubAgents,
         history: history,
         capability: null
       }
@@ -878,6 +894,15 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
       for (const accountId of targetAccounts) {
         const cap = await capService.activateSlaveCapability(masterUserId, accountId, { validityDays });
         activatedList.push(cap);
+        try {
+          await supabase.from('users').update({
+            hasCapabilityIncrement: true,
+            plan: 'slave_capability',
+            plan_status: 'active',
+            plan_expires_at: cap.expires_at,
+            plan_created_at: cap.created_at
+          }).eq('id', cap.user_id);
+        } catch (uErr) {}
         const { data: uInfo } = await supabase.from('users').select('avatar').eq('id', cap.user_id).maybeSingle();
         activatedAccountsDetails.push({
           id: cap.user_id,

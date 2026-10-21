@@ -538,7 +538,7 @@ export function MyAgentsCard() {
                           <p className="text-[10px] font-black uppercase text-[#141414] truncate leading-tight">
                             {sub.name || 'Slave Agent'}
                           </p>
-                          {sub.hasCapabilityIncrement && (
+                          {Boolean(sub.hasCapabilityIncrement || sub.plan === 'slave_capability' || sub.isCapped) && (
                             <span className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414]">CAPPED</span>
                           )}
                         </div>
@@ -758,7 +758,7 @@ export function MyAgentsCard() {
                               <p className="text-[9px] font-black uppercase text-[#141414] truncate leading-tight">
                                 {sub.name || 'Slave Agent'}
                               </p>
-                              {sub.hasCapabilityIncrement && (
+                              {Boolean(sub.hasCapabilityIncrement || sub.plan === 'slave_capability' || sub.isCapped) && (
                                 <span 
                                   onClick={(e) => {
                                     e.stopPropagation();
