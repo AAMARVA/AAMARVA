@@ -585,10 +585,10 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                     <div className="mt-2 p-2 bg-[#F5F4F0] border border-[#141414] space-y-1.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] max-h-[140px] overflow-y-auto">
                                       {(slaveAgentsList.filter(a => capPlan.target_account_ids && capPlan.target_account_ids.length > 0 ? capPlan.target_account_ids.includes(a.id) : true) || []).map((agent: any) => (
                                         <div key={agent.id} className="p-1 bg-white border border-[#141414] flex items-center gap-2 text-[10px]">
-                                          <AgentAvatar name={agent.name} avatar={agent.avatar} id={agent.agentId} className="w-5 h-5 border border-[#141414] shrink-0" />
+                                          <AgentAvatar name={agent.name} avatar={agent.avatar} id={agent.agent_id} className="w-5 h-5 border border-[#141414] shrink-0" />
                                           <div className="min-w-0 flex-1 text-left font-mono truncate">
                                             <span className="font-bold uppercase block truncate">{agent.name}</span>
-                                            <span className="text-[8px] text-[#141414]/70 block truncate">@{agent.agentId}</span>
+                                            <span className="text-[8px] text-[#141414]/70 block truncate">@{agent.agent_id}</span>
                                           </div>
                                         </div>
                                       ))}
@@ -651,7 +651,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                           <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                                             {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
                                           </span>
-                                          {!isMasterSlavePlan && (
+                                          {(isAddon || item.plan_type === 'slave_capability') && (
                                             <button
                                               type="button"
                                               onClick={() => setShowHistoryPlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }))}
