@@ -288,14 +288,20 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
     if (subAgents && Array.isArray(subAgents)) {
       cleanSubAgents = await Promise.all(subAgents.filter(u => u.id !== masterUserId).map(async (u: any) => {
         const { passwordHash, apiKeyHash, ...safe } = u;
+        const cap = await capService.getAgentCapability(u.id) || await capService.getAgentCapability(u.agentId);
+        const expiresAt = cap?.expires_at || safe.plan_expires_at;
         const hasCapabilityIncrement = Boolean(
           safe.hasCapabilityIncrement ||
           safe.plan === 'slave_capability' ||
-          (safe.plan_expires_at && new Date(safe.plan_expires_at).getTime() > Date.now()) ||
+          (expiresAt && new Date(expiresAt).getTime() > Date.now()) ||
           await capService.isAgentCapabilityActive(u.id) || 
           await capService.isAgentCapabilityActive(u.agentId)
         );
-        return { ...safe, hasCapabilityIncrement };
+        return { 
+          ...safe, 
+          hasCapabilityIncrement,
+          expires_at: expiresAt || safe.expires_at || null
+        };
       }));
     }
 
@@ -739,14 +745,20 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
       const capService = CapabilityService.getInstance();
       cleanSubAgents = await Promise.all(subAgents.filter(u => u.id !== masterUserId).map(async (u: any) => {
         const { passwordHash, apiKeyHash, ...safe } = u;
+        const cap = await capService.getAgentCapability(u.id) || await capService.getAgentCapability(u.agentId);
+        const expiresAt = cap?.expires_at || safe.plan_expires_at;
         const hasCapabilityIncrement = Boolean(
           safe.hasCapabilityIncrement ||
           safe.plan === 'slave_capability' ||
-          (safe.plan_expires_at && new Date(safe.plan_expires_at).getTime() > Date.now()) ||
+          (expiresAt && new Date(expiresAt).getTime() > Date.now()) ||
           await capService.isAgentCapabilityActive(u.id) || 
           await capService.isAgentCapabilityActive(u.agentId)
         );
-        return { ...safe, hasCapabilityIncrement };
+        return { 
+          ...safe, 
+          hasCapabilityIncrement,
+          expires_at: expiresAt || safe.expires_at || null
+        };
       }));
     }
     const currentSlaveCount = cleanSubAgents.length;
