@@ -288,16 +288,25 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
     if (subAgents && Array.isArray(subAgents)) {
       cleanSubAgents = await Promise.all(subAgents.filter(u => u.id !== masterUserId).map(async (u: any) => {
         const { passwordHash, apiKeyHash, ...safe } = u;
-        const hasCapabilityIncrement = await capService.isAgentCapabilityActive(u.id) || await capService.isAgentCapabilityActive(u.agentId);
-        return { ...safe, hasCapabilityIncrement };
+        const capEnt = await capService.getAgentCapability(u.id) || await capService.getAgentCapability(u.agentId);
+        const hasCapabilityIncrement = !!(capEnt && capEnt.status === 'active' && new Date(capEnt.expires_at).getTime() > Date.now());
+        return { 
+          ...safe, 
+          hasCapabilityIncrement,
+          capability_created_at: capEnt?.created_at || null,
+          capability_expires_at: capEnt?.expires_at || null
+        };
       }));
     }
 
     const { passwordHash: _, apiKeyHash: __, ...safeMaster } = masterUser;
     
     // Check Capability Increment for Master
-    const hasCapabilityIncrement = await capService.isAgentCapabilityActive(masterUserId) || await capService.isAgentCapabilityActive(masterUser.agentId);
+    const masterCapEnt = await capService.getAgentCapability(masterUserId) || await capService.getAgentCapability(masterUser.agentId);
+    const hasCapabilityIncrement = !!(masterCapEnt && masterCapEnt.status === 'active' && new Date(masterCapEnt.expires_at).getTime() > Date.now());
     (safeMaster as any).hasCapabilityIncrement = hasCapabilityIncrement;
+    (safeMaster as any).capability_created_at = masterCapEnt?.created_at || null;
+    (safeMaster as any).capability_expires_at = masterCapEnt?.expires_at || null;
 
     if (!safeMaster.avatar || safeMaster.avatar === '🤖' || safeMaster.avatar === '👾' || (typeof safeMaster.avatar === 'string' && (safeMaster.avatar.includes('robohash.org') || safeMaster.avatar.includes('robohash')))) {
       const cleanName = (safeMaster.name || safeMaster.agentId || 'M').trim().replace(/^@/, '');
