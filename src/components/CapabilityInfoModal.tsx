@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { X, Calendar, Clock, Award } from 'lucide-react';
-import { apiFetch } from '../services/authApi';
 
 interface CapabilityInfoModalProps {
   isOpen: boolean;
@@ -15,7 +14,6 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   accountId,
   accountName,
 }) => {
-  console.log('DEBUG: CapabilityInfoModal mounted', { isOpen, accountId });
   const [loading, setLoading] = useState(false);
   const [capabilityData, setCapabilityData] = useState<{
     purchaseDate: string;
@@ -24,24 +22,19 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   } | null>(null);
 
   useEffect(() => {
-    console.log('DEBUG: CapabilityInfoModal useEffect check', { isOpen, accountId });
     if (isOpen && accountId) {
       setLoading(true);
-      apiFetch(`/auth/master/plan?accountId=${encodeURIComponent(accountId)}`, { authType: 'human' })
+      fetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`)
+        .then(res => res.json())
         .then(data => {
-          console.log('DEBUG: Full API Data:', data);
-          if (data?.success) {
-            const plan = data.data?.plan;
-            const history = data.data?.history || [];
-            console.log('DEBUG: Parsed Plan:', plan);
-            console.log('DEBUG: Parsed History:', history);
-            
+          if (data?.success && data?.data) {
+            const plan = data.data.plan;
+            const history = data.data.history || [];
             const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
-            console.log('DEBUG: Capability Items:', capabilityItems);
 
             const latestItem = capabilityItems[0] || plan;
-            const rawDate = latestItem?.created_at || latestItem?.createdAt || plan?.created_at || plan?.createdAt || history[0]?.created_at || history[0]?.createdAt;
-            const rawExpiry = latestItem?.expires_at || latestItem?.expiresAt || plan?.expires_at || plan?.expiresAt || history[0]?.expires_at || history[0]?.expiresAt;
+            const rawDate = latestItem?.created_at || plan?.created_at || history[0]?.created_at;
+            const rawExpiry = latestItem?.expires_at || plan?.expires_at || history[0]?.expires_at;
 
             const purchaseDate = rawDate 
               ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
@@ -57,7 +50,6 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               status: plan?.status || 'active'
             });
           } else {
-            console.error('API Error in response:', data);
             setCapabilityData({
               purchaseDate: 'N/A',
               expiryDate: 'N/A',
@@ -65,8 +57,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             });
           }
         })
-        .catch(err => {
-          console.error('API Fetch Error:', err);
+        .catch(() => {
           setCapabilityData({
             purchaseDate: 'N/A',
             expiryDate: 'N/A',
