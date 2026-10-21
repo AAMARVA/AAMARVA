@@ -30,14 +30,14 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
           if (data?.success && data?.data) {
             const plan = data.data.plan;
             const history = data.data.history || [];
-            const capabilityItems = history.filter((h: any) => 
+            console.log('[CapabilityInfoModal] Debug - AccountId:', accountId, 'History:', history);
+            const capabilityItem = history.find((h: any) => 
               (h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'))
-              && (!h.target_account_ids || h.target_account_ids.includes(accountId))
-            );
+              && h.created_at
+            ) || plan;
 
-            const latestItem = capabilityItems[0];
-            const rawDate = latestItem?.created_at;
-            const rawExpiry = latestItem?.expires_at;
+            const rawDate = capabilityItem?.created_at;
+            const rawExpiry = capabilityItem?.expires_at;
 
             const purchaseDate = rawDate 
               ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
