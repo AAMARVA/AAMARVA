@@ -371,7 +371,23 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
       if (typeof details === 'string') {
         try { details = JSON.parse(details); } catch (e) {}
       }
-      return ev.user_id === accountIdToUse || details?.user_id === accountIdToUse || details?.agent_id === agentIdToUse || details?.target_slave_id === accountIdToUse || ev.user_id === agentIdToUse;
+      const targetName = (targetUser?.name || '').trim().toLowerCase();
+      const targetAgentId = (targetUser?.agentId || '').trim().toLowerCase();
+      const subtitle = (details?.plan_subtitle || '').toLowerCase();
+      const slaveName = (details?.target_slave_name || '').toLowerCase();
+
+      return (
+        ev.user_id === accountIdToUse || 
+        details?.user_id === accountIdToUse || 
+        details?.agent_id === agentIdToUse || 
+        details?.target_slave_id === accountIdToUse || 
+        ev.user_id === agentIdToUse ||
+        details?.master_account_id === accountIdToUse ||
+        details?.master_id === accountIdToUse ||
+        (targetName && (slaveName.includes(targetName) || subtitle.includes(targetName))) ||
+        (targetAgentId && (subtitle.includes(targetAgentId) || slaveName.includes(targetAgentId))) ||
+        (requestedAccountId && subtitle.includes(requestedAccountId.toLowerCase()))
+      );
     });
 
     const slaveHistory = slaveEvents.map((ev: any) => {
