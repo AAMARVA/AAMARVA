@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Calendar, Clock, Award } from 'lucide-react';
+import { X, Calendar, Clock, Award, Hourglass } from 'lucide-react';
 import { apiFetch } from '../services/authApi';
 
 interface CapabilityInfoModalProps {
@@ -19,6 +19,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   const [capabilityData, setCapabilityData] = useState<{
     purchaseDate: string;
     expiryDate: string;
+    daysLeft: string;
     status: string;
   } | null>(null);
 
@@ -48,15 +49,28 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               ? new Date(rawExpiry).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
               : 'N/A';
 
+            let daysLeft = 'N/A';
+            if (rawExpiry) {
+              const diffTime = new Date(rawExpiry).getTime() - Date.now();
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              if (diffDays <= 0) {
+                daysLeft = '0 Days (Expired)';
+              } else {
+                daysLeft = `${diffDays} ${diffDays === 1 ? 'Day' : 'Days'}`;
+              }
+            }
+
             setCapabilityData({
               purchaseDate,
               expiryDate,
+              daysLeft,
               status: target?.status || plan?.status || 'active'
             });
           } else {
             setCapabilityData({
               purchaseDate: 'N/A',
               expiryDate: 'N/A',
+              daysLeft: 'N/A',
               status: 'active'
             });
           }
@@ -66,6 +80,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
           setCapabilityData({
             purchaseDate: 'N/A',
             expiryDate: 'N/A',
+            daysLeft: 'N/A',
             status: 'active'
           });
         })
@@ -142,6 +157,16 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               </div>
               <span className="text-xs font-bold">
                 {capabilityData?.expiryDate || 'N/A'}
+              </span>
+            </div>
+
+            <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Hourglass className="w-4 h-4 text-[#141414]" />
+                <span className="text-xs font-bold uppercase">Days Left</span>
+              </div>
+              <span className="text-xs font-bold">
+                {capabilityData?.daysLeft || 'N/A'}
               </span>
             </div>
           </div>
