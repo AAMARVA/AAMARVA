@@ -32,19 +32,17 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             const history = data.data.history || [];
             const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
 
-            console.log('DEBUG: accountId:', accountId);
-            console.log('DEBUG: data:', data);
+            const latestItem = capabilityItems[0] || plan;
+            const rawDate = latestItem?.created_at || plan?.created_at || history[0]?.created_at;
+            const rawExpiry = latestItem?.expires_at || plan?.expires_at || history[0]?.expires_at;
 
-            const activeItem = capabilityItems.find(item => item.status === 'active');
-            const latestItem = activeItem || capabilityItems[0] || plan;
-            console.log('DEBUG: latestItem', latestItem);
-            const purchaseDate = latestItem?.created_at 
-              ? new Date(latestItem.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
+            const purchaseDate = rawDate 
+              ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
               : 'N/A';
 
-            const expiryDate = latestItem?.expires_at 
-              ? new Date(latestItem.expires_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-              : 'N/A';
+            const expiryDate = rawExpiry
+              ? new Date(rawExpiry).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+              : (rawDate ? new Date(new Date(rawDate).getTime() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A');
 
             setCapabilityData({
               purchaseDate,
