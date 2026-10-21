@@ -792,6 +792,7 @@ export class MasterAccountService {
           masterHistory = synthesized;
         }
       } else {
+        const seenTitles = new Set<string>();
         masterHistory = eventsList.map((ev: any) => {
           let details = ev.details;
           if (typeof details === 'string') {
@@ -850,6 +851,12 @@ export class MasterAccountService {
             expires_at: txExpiresAt,
             metadata: meta
           };
+        }).filter((item) => {
+            if (seenTitles.has(item.plan_subtitle)) {
+                return false;
+            }
+            seenTitles.add(item.plan_subtitle);
+            return true;
         });
       }
 

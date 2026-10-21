@@ -31,9 +31,12 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             const plan = data.data.plan;
             const history = data.data.history || [];
 
-            // Directly read authoritative per-account entitlement fields
-            const rawDate = plan?.created_at || history[0]?.created_at;
-            const rawExpiry = plan?.expires_at || history[0]?.expires_at;
+            // More robust data access for entitlement fields
+            // Ensure we check plan, history, and potentially event details within history
+            const authoritativePlan = plan || (history.length > 0 ? history[0] : null);
+            
+            const rawDate = authoritativePlan?.created_at;
+            const rawExpiry = authoritativePlan?.expires_at;
 
             const purchaseDate = rawDate 
               ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
@@ -42,6 +45,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             const expiryDate = rawExpiry
               ? new Date(rawExpiry).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
               : 'N/A';
+
 
             setCapabilityData({
               purchaseDate,
