@@ -7,8 +7,6 @@ interface CapabilityInfoModalProps {
   onClose: () => void;
   accountId?: string;
   accountName?: string;
-  purchaseDate?: string;
-  expiryDate?: string;
 }
 
 export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
@@ -16,8 +14,6 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   onClose,
   accountId,
   accountName,
-  purchaseDate: propPurchaseDate,
-  expiryDate: propExpiryDate,
 }) => {
   const [loading, setLoading] = useState(false);
   const [capabilityData, setCapabilityData] = useState<{
@@ -27,67 +23,56 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   } | null>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      if (propPurchaseDate && propExpiryDate) {
-        setCapabilityData({
-          purchaseDate: new Date(propPurchaseDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          expiryDate: new Date(propExpiryDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          status: 'active'
-        });
-        return;
-      }
+    if (isOpen && accountId) {
+      setLoading(true);
+      apiFetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`, { authType: 'human' })
+        .then(data => {
+          if (data?.success && data?.data) {
+            const plan = data.data.plan;
+            const history = data.data.history || [];
+            const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
 
-      if (accountId) {
-        setLoading(true);
-        apiFetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`, { authType: 'human' })
-          .then(data => {
-            if (data?.success && data?.data) {
-              const plan = data.data.plan;
-              const history = data.data.history || [];
-              const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
+            const latestItem = capabilityItems[0] || plan;
+            const rawDate = latestItem?.created_at || plan?.created_at || history[0]?.created_at;
+            const rawExpiry = latestItem?.expires_at || plan?.expires_at || history[0]?.expires_at;
 
-              const latestItem = capabilityItems[0] || plan;
-              const rawDate = latestItem?.created_at || plan?.created_at || history[0]?.created_at;
-              const rawExpiry = latestItem?.expires_at || plan?.expires_at || history[0]?.expires_at;
+            const purchaseDate = rawDate 
+              ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
+              : 'N/A';
 
-              const purchaseDate = rawDate 
-                ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
-                : 'N/A';
+            const expiryDate = rawExpiry
+              ? new Date(rawExpiry).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+              : (rawDate ? new Date(new Date(rawDate).getTime() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A');
 
-              const expiryDate = rawExpiry
-                ? new Date(rawExpiry).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                : (rawDate ? new Date(new Date(rawDate).getTime() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A');
-
-              setCapabilityData({
-                purchaseDate,
-                expiryDate,
-                status: plan?.status || 'active'
-              });
-            } else {
-              setCapabilityData({
-                purchaseDate: 'N/A',
-                expiryDate: 'N/A',
-                status: 'active'
-              });
-            }
-          })
-          .catch(() => {
+            setCapabilityData({
+              purchaseDate,
+              expiryDate,
+              status: plan?.status || 'active'
+            });
+          } else {
             setCapabilityData({
               purchaseDate: 'N/A',
               expiryDate: 'N/A',
               status: 'active'
             });
-          })
-          .finally(() => setLoading(false));
-      } else {
-        setCapabilityData({
-          purchaseDate: 'N/A',
-          expiryDate: 'N/A',
-          status: 'active'
-        });
-      }
+          }
+        })
+        .catch(() => {
+          setCapabilityData({
+            purchaseDate: 'N/A',
+            expiryDate: 'N/A',
+            status: 'active'
+          });
+        })
+        .finally(() => setLoading(false));
+    } else if (isOpen) {
+      setCapabilityData({
+        purchaseDate: 'N/A',
+        expiryDate: 'N/A',
+        status: 'active'
+      });
     }
-  }, [isOpen, accountId, propPurchaseDate, propExpiryDate]);
+  }, [isOpen, accountId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
