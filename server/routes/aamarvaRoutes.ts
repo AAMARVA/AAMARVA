@@ -472,7 +472,8 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
           expires_at: details?.expires_at || null,
           status: isEvActive ? (details?.status || 'active') : 'expired',
           is_active: isEvActive,
-          is_direct: true
+          is_direct: true,
+          target_slave_id: ev.user_id
         };
       });
 
@@ -484,7 +485,16 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         is_inherited: true
       }));
 
-      const combinedSlaveHistory = [...slaveHistory, ...formattedMasterHistory];
+      const batchItems = formattedMasterHistory.filter((item: any) => item.is_batch);
+      const filteredSlaveHistory = slaveHistory.filter((sItem: any) => {
+        const isPartOfBatch = batchItems.some((bItem: any) => {
+          return bItem.target_account_ids && bItem.target_account_ids.includes(sItem.target_slave_id) &&
+            Math.abs(new Date(bItem.created_at).getTime() - new Date(sItem.created_at).getTime()) < 5000;
+        });
+        return !isPartOfBatch;
+      });
+
+      const combinedSlaveHistory = [...filteredSlaveHistory, ...formattedMasterHistory];
 
       let activePlanObj = null;
       if (slaveCap && isCapActive) {
