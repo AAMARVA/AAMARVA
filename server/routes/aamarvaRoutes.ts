@@ -528,6 +528,19 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         const evCreated = ev.created_at;
         const evExpires = details?.expires_at || new Date(new Date(evCreated).getTime() + validityDays * 24 * 60 * 60 * 1000).toISOString();
         const isEvActive = new Date(evExpires).getTime() > now;
+        const rawTargetIds = details?.target_account_ids || (details?.target_slave_id ? [details.target_slave_id] : [targetUser.id]);
+        const targetIds: string[] = Array.isArray(rawTargetIds) ? rawTargetIds : [rawTargetIds];
+        const targetAccounts = Array.isArray(details?.target_accounts) && details.target_accounts.length > 0
+          ? details.target_accounts
+          : targetIds.map((tid: string) => ({
+              id: tid,
+              agent_id: tid === targetUser.id ? (targetUser.agentId || targetUser.id) : tid,
+              name: tid === targetUser.id ? (targetUser.name || targetUser.agentId || 'Slave Agent') : tid,
+              avatar: tid === targetUser.id ? targetUser.avatar : undefined,
+              isDeployed: true,
+              status: 'active'
+            }));
+
         return {
           id: ev.id,
           batch_id: details?.batch_id,
@@ -535,9 +548,11 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
           plan_subtitle: `Per-Slave Agent Rate-Limit Increment (+${validityDays} Days)`,
           plan_type: 'slave_capability',
           action_type: 'capability_increment',
-          allowance_accounts: 1,
-          accounts_in_transaction: 1,
-          amount: 100,
+          allowance_accounts: targetAccounts.length,
+          accounts_in_transaction: targetAccounts.length,
+          target_account_ids: targetIds,
+          target_accounts: targetAccounts,
+          amount: 100 * targetAccounts.length,
           currency: 'USD',
           created_at: evCreated,
           expires_at: evExpires,
@@ -551,8 +566,8 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
       const formattedMasterHistory = masterHistory.map((mh: any) => ({
         ...mh,
         id: `inherited_${mh.id}`,
-        plan_name: 'Master & Slave Agent Plan',
-        plan_subtitle: `Master Account ${mh.plan_subtitle || 'Purchase'} — Fleet Coverage`,
+        plan_name: mh.plan_name || (mh.plan_type === 'slave_capability' ? 'Capability Increment Plan' : 'Master & Slave Agent Plan'),
+        plan_subtitle: mh.plan_subtitle || (mh.plan_type === 'slave_capability' ? 'Rate-Limit Increment' : `Master Account ${mh.plan_subtitle || 'Purchase'} — Fleet Coverage`),
         is_inherited: true
       }));
 
@@ -810,9 +825,17 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
       const batchId = crypto.randomUUID();
       const nowIso = new Date().toISOString();
       const activatedList = [];
+      const activatedAccountsDetails = [];
       for (const accountId of targetAccounts) {
         const cap = await capService.activateSlaveCapability(masterUserId, accountId, { validityDays });
         activatedList.push(cap);
+        activatedAccountsDetails.push({
+          id: cap.user_id,
+          agent_id: cap.agent_id,
+          name: cap.metadata?.target_slave_name || cap.agent_id,
+          isDeployed: true,
+          status: 'active'
+        });
       }
 
       try {
@@ -825,6 +848,7 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
             batch_id: batchId,
             master_id: masterUserId,
             target_account_ids: targetAccounts,
+            target_accounts: activatedAccountsDetails,
             accounts_count: targetAccounts.length,
             validity_days: validityDays,
             created_at: nowIso,

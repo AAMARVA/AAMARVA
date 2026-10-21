@@ -634,13 +634,21 @@ export class MasterAccountService {
         console.warn('[MasterAccountService] Error fetching plan events:', error.message);
       }
 
-      // 2. Get all subordinate slave user IDs for this master
-      const { data: slaves } = await sb
+      // 2. Get all users in fleet (master + subordinate slaves) to accurately resolve transaction accounts
+      const { data: fleetUsers } = await sb
         .from('users')
-        .select('id, agentId, name')
-        .eq('master_id', masterId);
+        .select('id, agentId, name, avatar, status')
+        .or(`id.eq.${masterId},master_id.eq.${masterId}`);
 
-      const slaveIds = (slaves || []).map((s: any) => s.id);
+      const userLookupMap = new Map<string, any>();
+      for (const u of (fleetUsers || [])) {
+        if (u.id) userLookupMap.set(String(u.id).toLowerCase(), u);
+        if (u.agentId) userLookupMap.set(String(u.agentId).toLowerCase(), u);
+        if (u.name) userLookupMap.set(String(u.name).toLowerCase(), u);
+      }
+
+      const slaveIds = (fleetUsers || []).filter((u: any) => u.id !== masterId).map((s: any) => s.id);
+
       // Get batch capability activation events
       const { data: batchEvs } = await sb
         .from('external_events')
@@ -658,81 +666,131 @@ export class MasterAccountService {
 
       let formattedCapabilities: any[] = [];
       const seenBatchIds = new Set<string>();
-      if (masterBatches.length > 0) {
-        for (const ev of masterBatches) {
-          if (seenBatchIds.has(ev.id)) continue;
-          seenBatchIds.add(ev.id);
 
-          let details = ev.details;
-          if (typeof details === 'string') {
-            try { details = JSON.parse(details); } catch (e) {}
-          }
-          const validityDays = details?.validity_days || details?.metadata?.validity_days_extended || 30;
-          const count = details?.accounts_count || details?.target_account_ids?.length || 1;
-          const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
-          formattedCapabilities.push({
-            id: ev.id,
-            plan_name: 'Capability Increment Plan',
-            plan_subtitle: `Rate-Limit Increment (${count} ${count === 1 ? 'Account' : 'Accounts'} in Transaction, +${validityDays} Days)`,
-            plan_type: 'slave_capability',
-            action_type: 'capability_increment',
-            allowance_accounts: count,
-            accounts_in_transaction: count,
-            target_account_ids: details?.target_account_ids || [],
-            amount: 100 * count,
-            currency: 'USD',
-            created_at: ev.created_at,
-            expires_at: details?.expires_at || null,
-            status: 'active',
-            is_active: isEvActive,
-            is_batch: true
+      for (const ev of masterBatches) {
+        if (seenBatchIds.has(ev.id)) continue;
+        seenBatchIds.add(ev.id);
+
+        let details = ev.details;
+        if (typeof details === 'string') {
+          try { details = JSON.parse(details); } catch (e) {}
+        }
+        const validityDays = details?.validity_days || details?.metadata?.validity_days_extended || 30;
+        const rawTargetIds = details?.target_account_ids || (details?.target_slave_id ? [details.target_slave_id] : (ev.user_id ? [ev.user_id] : []));
+        const targetAccountIds: string[] = Array.isArray(rawTargetIds) ? rawTargetIds : [rawTargetIds];
+        const count = details?.accounts_count || targetAccountIds.length || 1;
+        const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
+
+        // Resolve exact target_accounts objects
+        let resolvedTargetAccounts: any[] = [];
+        if (Array.isArray(details?.target_accounts) && details.target_accounts.length > 0) {
+          resolvedTargetAccounts = details.target_accounts;
+        } else {
+          resolvedTargetAccounts = targetAccountIds.map((targetId: string, tIdx: number) => {
+            const trimmed = String(targetId).trim().toLowerCase();
+            const found = userLookupMap.get(trimmed);
+            if (found) {
+              return {
+                id: found.id,
+                agent_id: found.agentId || found.id,
+                name: found.name || found.agentId || 'Slave Agent',
+                avatar: found.avatar,
+                isDeployed: true,
+                status: found.status || 'active'
+              };
+            }
+            return {
+              id: targetId,
+              agent_id: targetId,
+              name: targetId.startsWith('usr_') ? `Slave Agent #${tIdx + 1}` : targetId,
+              isDeployed: true,
+              status: 'active'
+            };
           });
         }
-      } else if (slaveIds.length > 0) {
-        const { data: capEvs } = await sb
-          .from('external_events')
-          .select('*')
-          .eq('type', 'SLAVE_CAPABILITY_ACTIVATED')
-          .order('created_at', { ascending: false });
 
-        const capabilityEvents = (capEvs || []).filter((ev: any) => {
-          let details = ev.details;
-          if (typeof details === 'string') {
-            try { details = JSON.parse(details); } catch (e) {}
-          }
-          return slaveIds.includes(ev.user_id) || slaveIds.includes(details?.user_id) || details?.master_id === masterId;
+        formattedCapabilities.push({
+          id: ev.id,
+          plan_name: 'Capability Increment Plan',
+          plan_subtitle: `Rate-Limit Increment (${count} ${count === 1 ? 'Account' : 'Accounts'} in Transaction, +${validityDays} Days)`,
+          plan_type: 'slave_capability',
+          action_type: 'capability_increment',
+          allowance_accounts: count,
+          accounts_in_transaction: count,
+          target_account_ids: targetAccountIds,
+          target_accounts: resolvedTargetAccounts,
+          amount: 100 * count,
+          currency: 'USD',
+          created_at: ev.created_at,
+          expires_at: details?.expires_at || null,
+          status: 'active',
+          is_active: isEvActive,
+          is_batch: true
         });
+      }
 
-        const seenIndiv = new Set<string>();
-        for (const ev of capabilityEvents) {
-          if (seenIndiv.has(ev.id)) continue;
-          seenIndiv.add(ev.id);
+      // Also include direct individual capability events if any exist and not already in batch
+      const { data: capEvs } = await sb
+        .from('external_events')
+        .select('*')
+        .eq('type', 'SLAVE_CAPABILITY_ACTIVATED')
+        .order('created_at', { ascending: false });
 
-          let details = ev.details;
-          if (typeof details === 'string') {
-            try { details = JSON.parse(details); } catch (e) {}
-          }
-          const validityDays = details?.metadata?.validity_days_extended || 30;
-          const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
-          const targetName = details?.metadata?.target_slave_name || details?.agent_id || 'Slave Agent';
-          formattedCapabilities.push({
-            id: ev.id,
-            plan_name: 'Capability Increment Plan',
-            plan_subtitle: `Rate-Limit Increment for ${targetName} (+${validityDays} Days)`,
-            plan_type: 'slave_capability',
-            action_type: 'capability_increment',
-            allowance_accounts: 1,
-            accounts_in_transaction: 1,
-            amount: 100,
-            currency: 'USD',
-            created_at: ev.created_at,
-            expires_at: details?.expires_at || null,
-            status: isEvActive ? (details?.status || 'active') : 'expired',
-            is_active: isEvActive,
-            is_direct: true,
-            target_slave_id: ev.user_id
-          });
+      const capabilityEvents = (capEvs || []).filter((ev: any) => {
+        let details = ev.details;
+        if (typeof details === 'string') {
+          try { details = JSON.parse(details); } catch (e) {}
         }
+        return slaveIds.includes(ev.user_id) || slaveIds.includes(details?.user_id) || details?.master_id === masterId || ev.user_id === masterId;
+      });
+
+      const seenIndiv = new Set<string>();
+      for (const ev of capabilityEvents) {
+        if (seenIndiv.has(ev.id) || seenBatchIds.has(ev.id)) continue;
+        seenIndiv.add(ev.id);
+
+        let details = ev.details;
+        if (typeof details === 'string') {
+          try { details = JSON.parse(details); } catch (e) {}
+        }
+
+        // Skip if this event was part of an already included batch
+        if (details?.batch_id && seenBatchIds.has(details.batch_id)) continue;
+
+        const validityDays = details?.metadata?.validity_days_extended || details?.validity_days || 30;
+        const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
+        const targetId = ev.user_id || details?.user_id || details?.agent_id;
+        const targetUserFound = userLookupMap.get(String(targetId || '').trim().toLowerCase());
+        const targetName = details?.metadata?.target_slave_name || targetUserFound?.name || details?.agent_id || 'Slave Agent';
+
+        const indivTargetAccount = {
+          id: targetUserFound?.id || targetId,
+          agent_id: targetUserFound?.agentId || details?.agent_id || targetId,
+          name: targetName,
+          avatar: targetUserFound?.avatar,
+          isDeployed: true,
+          status: targetUserFound?.status || 'active'
+        };
+
+        formattedCapabilities.push({
+          id: ev.id,
+          plan_name: 'Capability Increment Plan',
+          plan_subtitle: `Rate-Limit Increment for ${targetName} (+${validityDays} Days)`,
+          plan_type: 'slave_capability',
+          action_type: 'capability_increment',
+          allowance_accounts: 1,
+          accounts_in_transaction: 1,
+          target_account_ids: [targetId],
+          target_accounts: [indivTargetAccount],
+          amount: 100,
+          currency: 'USD',
+          created_at: ev.created_at,
+          expires_at: details?.expires_at || null,
+          status: isEvActive ? (details?.status || 'active') : 'expired',
+          is_active: isEvActive,
+          is_direct: true,
+          target_slave_id: targetId
+        });
       }
 
       const eventsList = (data && Array.isArray(data)) ? data : [];

@@ -75,10 +75,12 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
 
   // Previously owned slave agents list
   const [slaveAgentsList, setSlaveAgentsList] = useState<any[]>([]);
+  const [allFleetSlaves, setAllFleetSlaves] = useState<any[]>([]);
   const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
   const [showActivePlanAgents, setShowActivePlanAgents] = useState<{ [key: string]: boolean }>({});
   const [showQueuedPlanAgents, setShowQueuedPlanAgents] = useState<{ [key: number]: boolean }>({});
   const [showHistoryPlanAgents, setShowHistoryPlanAgents] = useState<{ [key: number]: boolean }>({});
+  const [showScalePlanAgents, setShowScalePlanAgents] = useState<{ [key: number]: boolean }>({});
 
   const getFormattedBoughtDate = (plan: any) => {
     if (!plan) return 'OCT 5, 2026';
@@ -157,46 +159,53 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           fetchedSlaves = res.data.slaveAgents;
         }
 
+        setAllFleetSlaves(fetchedSlaves);
+
+        const effectiveAllowance = (res.data.plan && typeof res.data.plan.allowance_accounts === 'number')
+          ? res.data.plan.allowance_accounts
+          : (fetchedSlaves.length > 0 ? fetchedSlaves.length : 10);
+
         if (res.data.plan) {
           setCurrentPlan(res.data.plan);
           setActivePlan(res.data.plan.plan_type || 'master_slave_scale');
-          const allowance = res.data.plan.allowance_accounts || 10;
-          setTotalAccounts(allowance);
-
-          const slots = Array.from({ length: allowance }, (_, idx) => {
-            const existing = fetchedSlaves[idx];
-            const slotNum = idx + 1;
-            if (existing) {
-              return {
-                id: existing.id,
-                slotNum,
-                isDeployed: true,
-                name: existing.name || `Slave Agent #${String(slotNum).padStart(2, '0')}`,
-                agent_id: existing.agentId || existing.agent_id || `@${existing.id}`,
-                avatar_url: existing.avatar || existing.avatar_url || undefined,
-                status: existing.status || 'active',
-                email: existing.email || ''
-              };
-            } else {
-              return {
-                id: `slot_${slotNum}`,
-                slotNum,
-                isDeployed: false,
-                name: `Slave Slot #${String(slotNum).padStart(2, '0')}`,
-                agent_id: 'NOT DEPLOYED',
-                avatar_url: undefined,
-                status: 'not_deployed',
-                email: ''
-              };
-            }
-          });
-
-          setSlaveAgentsList(slots);
+          setTotalAccounts(effectiveAllowance);
         } else {
           setCurrentPlan(null);
           setActivePlan(null);
-          setSlaveAgentsList([]);
         }
+
+        // Never truncate deployed slave agents based on allowance.
+        // Maintain the complete roster of deployed slave nodes in slaveAgentsList.
+        const totalSlotsCount = Math.max(effectiveAllowance, fetchedSlaves.length);
+        const slots = Array.from({ length: totalSlotsCount }, (_, idx) => {
+          const existing = fetchedSlaves[idx];
+          const slotNum = idx + 1;
+          if (existing) {
+            return {
+              id: existing.id,
+              slotNum,
+              isDeployed: true,
+              name: existing.name || `Slave Agent #${String(slotNum).padStart(2, '0')}`,
+              agent_id: existing.agentId || existing.agent_id || `@${existing.id}`,
+              avatar_url: existing.avatar || existing.avatar_url || undefined,
+              status: existing.status || 'active',
+              email: existing.email || ''
+            };
+          } else {
+            return {
+              id: `slot_${slotNum}`,
+              slotNum,
+              isDeployed: false,
+              name: `Slave Slot #${String(slotNum).padStart(2, '0')}`,
+              agent_id: 'NOT DEPLOYED',
+              avatar_url: undefined,
+              status: 'not_deployed',
+              email: ''
+            };
+          }
+        });
+
+        setSlaveAgentsList(slots);
 
         if (Array.isArray(res.data.history)) {
           let history = [...res.data.history];
@@ -559,13 +568,24 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                     </span>
                                   </div>
                                   <div className="text-[11px] text-[#141414]/75 space-y-1.5">
-                                    <div className="flex justify-between">
+                                    <div className="flex justify-between items-center">
                                       <span className="text-[#141414]/60 text-[10px] uppercase font-bold">
                                         {isAddon ? 'Capacity Added:' : 'Plan Accounts:'}
                                       </span>
-                                      <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                        {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
-                                      </span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                                          {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setShowScalePlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }));
+                                          }}
+                                          className="text-[9px] font-black uppercase bg-[#141414] text-white px-2.5 py-1 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1 cursor-pointer hover:bg-neutral-800 transition-all"
+                                        >
+                                          <span>View Accounts {showScalePlanAgents[idx] ? '▲' : '▼'}</span>
+                                        </button>
+                                      </div>
                                     </div>
                                     <div className="flex justify-between">
                                       <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Plan Valuation:</span>
@@ -577,6 +597,46 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                       <span className="text-[#141414]/60 uppercase">Date Purchased:</span>
                                       <span className="text-[#141414] font-mono">{new Date(item.created_at).toLocaleString()}</span>
                                     </div>
+                                    {showScalePlanAgents[idx] && (() => {
+                                      const deployedSlaves = slaveAgentsList.filter(a => a.isDeployed);
+                                      const planAgents = deployedSlaves.length > 0 ? deployedSlaves : allFleetSlaves.map((s, sIdx) => ({
+                                        id: s.id,
+                                        agent_id: s.agentId || s.agent_id || `@${s.id}`,
+                                        name: s.name || `Slave Agent #${sIdx + 1}`,
+                                        avatar_url: s.avatar || s.avatar_url,
+                                        isDeployed: true,
+                                        status: s.status || 'active'
+                                      }));
+
+                                      return (
+                                        <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2 mt-2">
+                                          <div className="flex items-center justify-between text-[10px] font-bold text-[#141414]">
+                                            <span>INCLUDED FLEET ROSTER ({planAgents.length} AGENTS)</span>
+                                            <span className="text-[9px] font-mono text-[#141414]/70">Fleet Coverage</span>
+                                          </div>
+                                          <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                                            {planAgents.map((agent: any, aIdx: number) => (
+                                              <div key={agent.id || aIdx} className="p-2 bg-white border border-[#141414] flex items-center gap-2 text-xs">
+                                                <AgentAvatar 
+                                                  isSlave={agent.id !== masterAgent?.id && agent.agent_id !== masterAgent?.agentId} 
+                                                  id={agent.agent_id || agent.id} 
+                                                  name={agent.name} 
+                                                  avatar={agent.avatar || agent.avatar_url}
+                                                  className="w-5 h-5 shrink-0" 
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="font-bold uppercase text-[10px] truncate">{agent.name}</p>
+                                                  <p className="text-[8px] text-neutral-500 font-mono truncate">{agent.agent_id || agent.id}</p>
+                                                </div>
+                                                <span className={`text-[8px] px-1.5 py-0.5 font-bold uppercase border shrink-0 ${agent.isDeployed ? 'bg-green-100 text-green-800 border-green-300' : 'bg-neutral-100 text-neutral-600 border-neutral-300'}`}>
+                                                  {agent.isDeployed ? 'Deployed' : 'Idle'}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               );
@@ -628,7 +688,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                       <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Plan Accounts:</span>
                                       <div className="flex items-center gap-2">
                                         <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                          {item.accounts_in_transaction || item.target_account_ids?.length || 1} Slave Agents
+                                          {item.accounts_in_transaction || item.target_accounts?.length || item.target_account_ids?.length || 1} Slave Agents
                                         </span>
                                         <button
                                           type="button"
@@ -642,11 +702,63 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                       </div>
                                     </div>
                                     {showHistoryPlanAgents[idx] && (() => {
-                                      const targetIds = item.target_account_ids || [];
-                                      const planAgents = slaveAgentsList.filter((agent: any) => 
-                                        targetIds.includes(agent.id)
-                                      );
-                                      
+                                      // 1. If backend resolved explicit target_accounts for this transaction, use them directly
+                                      let planAgents: any[] = [];
+                                      if (Array.isArray(item.target_accounts) && item.target_accounts.length > 0) {
+                                        planAgents = item.target_accounts;
+                                      } else {
+                                        const rawIds = item.target_account_ids && item.target_account_ids.length > 0
+                                          ? item.target_account_ids
+                                          : (item.target_slave_id ? [item.target_slave_id] : []);
+
+                                        // Build a comprehensive pool of all known agents (deployed slaves, raw slaves, and master agent)
+                                        const agentPool: any[] = [
+                                          ...slaveAgentsList.filter(a => a.isDeployed),
+                                          ...allFleetSlaves.map((s, sIdx) => ({
+                                            id: s.id,
+                                            agent_id: s.agentId || s.agent_id || `@${s.id}`,
+                                            name: s.name || `Slave Agent #${sIdx + 1}`,
+                                            avatar_url: s.avatar || s.avatar_url,
+                                            isDeployed: true,
+                                            status: s.status || 'active'
+                                          })),
+                                          ...(masterAgent ? [{
+                                            id: masterAgent.id,
+                                            agent_id: masterAgent.agentId || masterAgent.id,
+                                            name: masterAgent.name || 'Master Agent',
+                                            avatar_url: masterAgent.avatar,
+                                            isDeployed: true,
+                                            status: 'active'
+                                          }] : [])
+                                        ];
+
+                                        const poolMap = new Map<string, any>();
+                                        for (const a of agentPool) {
+                                          if (a.id) poolMap.set(String(a.id).toLowerCase(), a);
+                                          if (a.agent_id) poolMap.set(String(a.agent_id).toLowerCase(), a);
+                                          if (a.agentId) poolMap.set(String(a.agentId).toLowerCase(), a);
+                                          if (a.name) poolMap.set(String(a.name).toLowerCase(), a);
+                                        }
+
+                                        if (rawIds.length > 0) {
+                                          planAgents = rawIds.map((tid: string, tIdx: number) => {
+                                            const key = String(tid || '').trim().toLowerCase();
+                                            const match = poolMap.get(key);
+                                            if (match) return match;
+                                            return {
+                                              id: tid,
+                                              agent_id: tid,
+                                              name: tid.startsWith('usr_') ? `Slave Agent #${tIdx + 1}` : tid,
+                                              avatar_url: undefined,
+                                              isDeployed: true,
+                                              status: 'active'
+                                            };
+                                          });
+                                        } else {
+                                          planAgents = slaveAgentsList.filter((a: any) => a.isDeployed);
+                                        }
+                                      }
+
                                       return (
                                         <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2 mt-2">
                                           <div className="flex items-center justify-between text-[10px] font-bold text-[#141414]">
@@ -654,14 +766,20 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                             <span className="text-[9px] font-mono text-[#141414]/70">Selected Plan Roster</span>
                                           </div>
                                           <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
-                                            {planAgents.map((agent: any) => (
-                                              <div key={agent.id} className="p-2 bg-white border border-[#141414] flex items-center gap-2 text-xs">
-                                                <AgentAvatar isSlave={true} id={agent.agent_id || agent.id} name={agent.name} className="w-5 h-5" />
+                                            {planAgents.map((agent: any, aIdx: number) => (
+                                              <div key={agent.id || aIdx} className="p-2 bg-white border border-[#141414] flex items-center gap-2 text-xs">
+                                                <AgentAvatar 
+                                                  isSlave={agent.id !== masterAgent?.id && agent.agent_id !== masterAgent?.agentId} 
+                                                  id={agent.agent_id || agent.id} 
+                                                  name={agent.name} 
+                                                  avatar={agent.avatar || agent.avatar_url}
+                                                  className="w-5 h-5 shrink-0" 
+                                                />
                                                 <div className="flex-1 min-w-0">
                                                   <p className="font-bold uppercase text-[10px] truncate">{agent.name}</p>
-                                                  <p className="text-[8px] text-neutral-500 font-mono">{agent.agent_id || agent.id}</p>
+                                                  <p className="text-[8px] text-neutral-500 font-mono truncate">{agent.agent_id || agent.id}</p>
                                                 </div>
-                                                <span className={`text-[8px] px-1.5 py-0.5 font-bold uppercase border ${agent.isDeployed ? 'bg-green-100 text-green-800 border-green-300' : 'bg-neutral-100 text-neutral-600 border-neutral-300'}`}>
+                                                <span className={`text-[8px] px-1.5 py-0.5 font-bold uppercase border shrink-0 ${agent.isDeployed ? 'bg-green-100 text-green-800 border-green-300' : 'bg-neutral-100 text-neutral-600 border-neutral-300'}`}>
                                                   {agent.isDeployed ? 'Deployed' : 'Idle'}
                                                 </span>
                                               </div>
