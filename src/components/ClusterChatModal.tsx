@@ -1042,7 +1042,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                                   <p className="text-xs font-black uppercase truncate">
                                     {m.name || mId}
                                   </p>
-                                  {m.hasCapabilityIncrement && (
+                                  {m.hasCapabilityIncrement && !m.isMaster && !m.is_master_primary && m.account_type !== 'master' && (
                                     <span className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.2 border border-[#141414]">CAPPED</span>
                                   )}
                                 </div>

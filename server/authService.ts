@@ -596,6 +596,7 @@ export function normalizeUserRecord(raw: any, authUser?: any): UserRecord {
     is_master_primary: !Boolean((raw.master_id && raw.master_id !== raw.id) || (raw.masterUserId && raw.masterUserId !== raw.id) || (raw.email && raw.email.includes('+AMR-')) || raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true),
     isMasterPrimary: !Boolean((raw.master_id && raw.master_id !== raw.id) || (raw.masterUserId && raw.masterUserId !== raw.id) || (raw.email && raw.email.includes('+AMR-')) || raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true),
     isMasterUser: !Boolean((raw.master_id && raw.master_id !== raw.id) || (raw.masterUserId && raw.masterUserId !== raw.id) || (raw.email && raw.email.includes('+AMR-')) || raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true),
+    hasCapabilityIncrement: Boolean((raw.master_id && raw.master_id !== raw.id) || (raw.masterUserId && raw.masterUserId !== raw.id) || (raw.email && raw.email.includes('+AMR-')) || raw.account_type === 'slave' || raw.role === 'slave' || raw.is_slave === true || raw.isSlave === true) ? Boolean(raw.hasCapabilityIncrement) : false,
   };
 }
 

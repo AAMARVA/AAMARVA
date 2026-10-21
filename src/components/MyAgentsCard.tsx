@@ -444,18 +444,6 @@ export function MyAgentsCard() {
                     <p className="text-xs font-black uppercase text-[#141414] truncate">
                       {masterAgent.name || 'Master Agent'}
                     </p>
-                    {masterAgent.hasCapabilityIncrement && (
-                      <span 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCapabilityModalAccount({ id: masterAgent.id || user?.id, name: masterAgent.name || masterAgent.agentId || 'Master Agent' });
-                        }}
-                        className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
-                        title="Click to view purchase validity & date"
-                      >
-                        CAPPED
-                      </span>
-                    )}
                   </div>
                   <p className="text-[9px] text-[#141414] font-bold font-mono italic truncate">
                     @{masterAgent.agentId}

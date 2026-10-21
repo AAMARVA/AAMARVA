@@ -295,9 +295,8 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
 
     const { passwordHash: _, apiKeyHash: __, ...safeMaster } = masterUser;
     
-    // Check Capability Increment for Master
-    const hasCapabilityIncrement = await capService.isAgentCapabilityActive(masterUserId) || await capService.isAgentCapabilityActive(masterUser.agentId);
-    (safeMaster as any).hasCapabilityIncrement = hasCapabilityIncrement;
+    // Master accounts never receive capability increments
+    (safeMaster as any).hasCapabilityIncrement = false;
 
     if (!safeMaster.avatar || safeMaster.avatar === '🤖' || safeMaster.avatar === '👾' || (typeof safeMaster.avatar === 'string' && (safeMaster.avatar.includes('robohash.org') || safeMaster.avatar.includes('robohash')))) {
       const cleanName = (safeMaster.name || safeMaster.agentId || 'M').trim().replace(/^@/, '');
@@ -824,7 +823,7 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         remainingAllowance: Math.max(0, allowance - currentSlaveCount),
         slaveAgents: cleanSubAgents,
         history: history,
-        capability: masterCap || null
+        capability: null
       }
     });
   } catch (err: any) {
@@ -838,26 +837,31 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     const masterUserId = (req.user as any).masterUserId || req.user.id;
     const capabilityIncrement = !!req.body?.capabilityIncrement;
 
-    // 1. Independent Capability Increment Path (Tied strictly to individual Slave Account)
+    // 1. Independent Capability Increment Path (Tied strictly to individual Slave Accounts)
+    // Master accounts CANNOT receive capability increments
     if (capabilityIncrement) {
       let rawTargets = req.body?.targetAccountIds || req.body?.targetAgentIds || req.body?.targetAgentId || req.body?.agentId || req.body?.targetAccountId;
       if (!Array.isArray(rawTargets)) {
         rawTargets = rawTargets ? [rawTargets] : [];
       }
 
-      // Support both Master Account and Slave Accounts
+      // Strictly allow ONLY Slave Accounts belonging to this Master
       const targetAccounts = rawTargets.map((id: any) => {
-        if (typeof id === 'string' && (id.trim() === 'master' || id.trim() === 'master-root')) {
-          return masterUserId;
-        }
         return typeof id === 'string' ? id.trim() : id;
-      }).filter((id: any) => typeof id === 'string' && id.length > 0);
+      }).filter((id: any) => {
+        if (!id || typeof id !== 'string') return false;
+        const lower = id.toLowerCase();
+        if (lower === 'master' || lower === 'master-root' || id === masterUserId) {
+          return false;
+        }
+        return true;
+      });
 
       if (targetAccounts.length === 0) {
         return res.status(400).json({
           success: false,
           error: {
-            message: 'Please select at least one account (Master or Slave) to apply the capability increment.'
+            message: 'Capability Increment Plans are strictly and exclusively for Slave accounts. Master accounts cannot be given a capability increment.'
           }
         });
       }

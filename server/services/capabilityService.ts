@@ -26,8 +26,52 @@ export class CapabilityService {
   public static getInstance(): CapabilityService {
     if (!CapabilityService.instance) {
       CapabilityService.instance = new CapabilityService();
+      CapabilityService.instance.cleanMasterCapabilityContamination();
     }
     return CapabilityService.instance;
+  }
+
+  /**
+   * Cleans any erroneous capability increment artifacts from Master accounts.
+   * Master accounts must NEVER be contaminated with slave capability plans.
+   */
+  public async cleanMasterCapabilityContamination(): Promise<void> {
+    try {
+      const { getSupabaseClient } = await import('../supabase.js');
+      const sb = getSupabaseClient();
+      const { data: users } = await sb.from('users').select('*');
+      if (!users || !Array.isArray(users)) return;
+
+      for (const u of users) {
+        const isMaster = Boolean(
+          u.account_type === 'master' ||
+          u.is_master_primary === true ||
+          u.role === 'master' ||
+          (!u.master_id && u.id) ||
+          u.master_id === u.id
+        );
+        if (isMaster) {
+          if (u.id) {
+            this.capabilityCache.delete(u.id);
+            this.capabilityCache.delete(String(u.id).toLowerCase());
+          }
+          if (u.agentId) {
+            this.capabilityCache.delete(u.agentId);
+            this.capabilityCache.delete(String(u.agentId).toLowerCase());
+          }
+
+          if (u.plan === 'slave_capability' || u.hasCapabilityIncrement) {
+            await sb.from('users').update({
+              plan: null,
+              plan_status: null,
+              hasCapabilityIncrement: false
+            }).eq('id', u.id);
+          }
+
+          await sb.from('master_plan_entitlements').delete().eq('master_account_id', u.id).eq('plan_type', 'slave_capability');
+        }
+      }
+    } catch (e) {}
   }
 
   private async acquireLock(targetId: string): Promise<() => void> {
@@ -49,6 +93,7 @@ export class CapabilityService {
   /**
    * Retrieves authoritative capability entitlement for a specific Slave Agent.
    * Strictly resolves by requesting agent/user identifier — NEVER inherits from the Master.
+   * MASTER ACCOUNTS CAN NEVER HAVE CAPABILITY INCREMENTS.
    */
   public async getAgentCapability(agentIdentifier: string, bypassCache = false): Promise<CapabilityEntitlement | null> {
     if (!agentIdentifier) return null;
@@ -86,6 +131,32 @@ export class CapabilityService {
       if (!canonicalUser) {
         const { data: uByName } = await sb.from('users').select('*').ilike('name', trimmed).maybeSingle();
         canonicalUser = uByName;
+      }
+
+      // Hard Rule: Master accounts CAN NEVER have capability increments!
+      if (canonicalUser) {
+        const isMaster = Boolean(
+          canonicalUser.account_type === 'master' ||
+          canonicalUser.is_master_primary === true ||
+          canonicalUser.role === 'master' ||
+          (!canonicalUser.master_id && canonicalUser.id) ||
+          canonicalUser.master_id === canonicalUser.id
+        );
+        if (isMaster) {
+          if (canonicalUser.plan === 'slave_capability' || canonicalUser.hasCapabilityIncrement) {
+            try {
+              await sb.from('users').update({
+                plan: null,
+                plan_status: null,
+                hasCapabilityIncrement: false
+              }).eq('id', canonicalUser.id);
+            } catch (cleanErr) {}
+          }
+          this.invalidateCapabilityCache(trimmed);
+          if (canonicalUser.id) this.invalidateCapabilityCache(canonicalUser.id);
+          if (canonicalUser.agentId) this.invalidateCapabilityCache(canonicalUser.agentId);
+          return null;
+        }
       }
 
       const candidateIds = Array.from(new Set([trimmed, canonicalUser?.id, canonicalUser?.agentId].filter(Boolean)));
@@ -198,10 +269,11 @@ export class CapabilityService {
         for (const ev of eventRecord) {
           try {
             const parsed = typeof ev.details === 'string' ? JSON.parse(ev.details) : ev.details;
+            // CRITICAL: Do NOT match ev.user_id: that is the master purchaser/actor, not the target slave!
             const matchesId = candidateIds.some(cid => 
               parsed?.agent_id === cid || 
               parsed?.user_id === cid || 
-              ev.user_id === cid ||
+              parsed?.target_slave_id === cid ||
               (Array.isArray(parsed?.target_account_ids) && parsed.target_account_ids.includes(cid))
             );
             if (matchesId) {
@@ -234,7 +306,7 @@ export class CapabilityService {
         }
       }
 
-      // 4. Fallback lookup in users table for plan_expires_at, plan_created_at, or hasCapabilityIncrement
+      // 4. Fallback lookup in users table for plan_expires_at, plan_created_at, or hasCapabilityIncrement (SLAVE ACCOUNTS ONLY)
       const targetUserRecord = canonicalUser || (await (async () => {
         for (const cand of candidateIds) {
           const { data: u } = await sb.from('users').select('*').or(`id.eq.${cand},agentId.eq.${cand}`).maybeSingle();
@@ -243,8 +315,16 @@ export class CapabilityService {
         return null;
       })());
 
+      const isSlaveRecord = targetUserRecord && Boolean(
+        targetUserRecord.master_id && 
+        targetUserRecord.master_id !== targetUserRecord.id && 
+        !targetUserRecord.is_master_primary && 
+        targetUserRecord.account_type !== 'master' && 
+        targetUserRecord.role !== 'master'
+      );
+
       if (
-        targetUserRecord && 
+        isSlaveRecord &&
         (
           targetUserRecord.plan_expires_at ||
           targetUserRecord.hasCapabilityIncrement ||
@@ -288,8 +368,10 @@ export class CapabilityService {
   /**
    * Fast Boolean check used by SecurityService rate-limiting.
    * Returns true ONLY if the specific requesting Slave has an active, non-expired entitlement.
+   * ALWAYS returns false for Master accounts.
    */
   public async isAgentCapabilityActive(agentIdentifier: string): Promise<boolean> {
+    if (!agentIdentifier) return false;
     const ent = await this.getAgentCapability(agentIdentifier);
     return !!(ent && ent.status === 'active' && new Date(ent.expires_at).getTime() > Date.now());
   }
@@ -299,7 +381,7 @@ export class CapabilityService {
    * 
    * Strict Constraints:
    * - Must target a specific Slave Account.
-   * - Cannot attach to Master Account.
+   * - Cannot attach to Master Account under any circumstances.
    * - Must not modify Master/Slave allowance.
    * - Must not modify Master plan or validity.
    * - Must not affect any other Slave.
@@ -319,6 +401,13 @@ export class CapabilityService {
       throw new Error('Capability purchase must target a specific Slave Account.');
     }
 
+    const trimmedTarget = String(targetSlaveIdentifier).trim();
+
+    // STRICT ARCHITECTURE RULE: Master accounts CAN NEVER be given a capability increment!
+    if (trimmedTarget.toLowerCase() === 'master' || trimmedTarget.toLowerCase() === 'master-root' || trimmedTarget === masterUserId) {
+      throw new Error('Capability Increment Plans are strictly and exclusively for Slave accounts. Master accounts cannot be given a capability increment.');
+    }
+
     const releaseLock = await this.acquireLock(targetSlaveIdentifier);
 
     try {
@@ -326,59 +415,61 @@ export class CapabilityService {
       const sb = getSupabaseClient();
 
       // 1. Authoritative Validation: Look up target in users table
-      const trimmedTarget = String(targetSlaveIdentifier).trim();
       let targetUser: any = null;
-      const isMasterTarget = trimmedTarget.toLowerCase() === 'master' || trimmedTarget === masterUserId;
 
-      if (isMasterTarget) {
-        const { data: mUser } = await sb
-          .from('users')
-          .select('id, agentId, name, master_id, is_master_primary, status')
-          .eq('id', masterUserId)
-          .maybeSingle();
-        targetUser = mUser;
-      } else {
-        // Multi-attribute lookup: check id first, then agentId, then name
-        const { data: uById } = await sb
-          .from('users')
-          .select('id, agentId, name, master_id, is_master_primary, status')
-          .eq('id', trimmedTarget)
-          .maybeSingle();
-        targetUser = uById;
+      // Multi-attribute lookup: check id first, then agentId, then name
+      const { data: uById } = await sb
+        .from('users')
+        .select('id, agentId, name, master_id, is_master_primary, account_type, role, status')
+        .eq('id', trimmedTarget)
+        .maybeSingle();
+      targetUser = uById;
 
-        if (!targetUser) {
-          const { data: uByAgentId } = await sb
-            .from('users')
-            .select('id, agentId, name, master_id, is_master_primary, status')
-            .ilike('agentId', trimmedTarget)
-            .maybeSingle();
-          targetUser = uByAgentId;
-        }
-        if (!targetUser) {
-          const { data: uByName } = await sb
-            .from('users')
-            .select('id, agentId, name, master_id, is_master_primary, status')
-            .ilike('name', trimmedTarget)
-            .maybeSingle();
-          targetUser = uByName;
-        }
-        if (!targetUser && trimmedTarget.startsWith('@')) {
-          const stripped = trimmedTarget.slice(1);
-          const { data: uByStripped } = await sb
-            .from('users')
-            .select('id, agentId, name, master_id, is_master_primary, status')
-            .or(`agentId.ilike.${stripped},name.ilike.${stripped}`)
-            .maybeSingle();
-          targetUser = uByStripped;
-        }
+      if (!targetUser) {
+        const { data: uByAgentId } = await sb
+          .from('users')
+          .select('id, agentId, name, master_id, is_master_primary, account_type, role, status')
+          .ilike('agentId', trimmedTarget)
+          .maybeSingle();
+        targetUser = uByAgentId;
+      }
+      if (!targetUser) {
+        const { data: uByName } = await sb
+          .from('users')
+          .select('id, agentId, name, master_id, is_master_primary, account_type, role, status')
+          .ilike('name', trimmedTarget)
+          .maybeSingle();
+        targetUser = uByName;
+      }
+      if (!targetUser && trimmedTarget.startsWith('@')) {
+        const stripped = trimmedTarget.slice(1);
+        const { data: uByStripped } = await sb
+          .from('users')
+          .select('id, agentId, name, master_id, is_master_primary, account_type, role, status')
+          .or(`agentId.ilike.${stripped},name.ilike.${stripped}`)
+          .maybeSingle();
+        targetUser = uByStripped;
       }
 
       if (!targetUser) {
-        throw new Error(`Target Account '${targetSlaveIdentifier}' not found in database.`);
+        throw new Error(`Target Slave Account '${targetSlaveIdentifier}' not found in database.`);
       }
 
-      // Verify ownership: Target slave must belong to this master (unless target is master itself)
-      if (targetUser.id !== masterUserId && targetUser.master_id && targetUser.master_id !== masterUserId) {
+      const isTargetMaster = Boolean(
+        targetUser.id === masterUserId ||
+        targetUser.is_master_primary === true ||
+        targetUser.account_type === 'master' ||
+        targetUser.role === 'master' ||
+        !targetUser.master_id ||
+        targetUser.master_id === targetUser.id
+      );
+
+      if (isTargetMaster) {
+        throw new Error('Capability Increment Plans are strictly and exclusively for Slave accounts. Master accounts cannot be given a capability increment.');
+      }
+
+      // Verify ownership: Target slave must belong to this master
+      if (targetUser.master_id !== masterUserId) {
         throw new Error(`Slave Agent is registered under a different Master account. Unauthorized.`);
       }
 

@@ -676,20 +676,22 @@ export class MasterAccountService {
           try { details = JSON.parse(details); } catch (e) {}
         }
         const validityDays = details?.validity_days || details?.metadata?.validity_days_extended || 30;
-        const rawTargetIds = details?.target_account_ids || (details?.target_slave_id ? [details.target_slave_id] : (ev.user_id ? [ev.user_id] : []));
-        const targetAccountIds: string[] = Array.isArray(rawTargetIds) ? rawTargetIds : [rawTargetIds];
-        const count = details?.accounts_count || targetAccountIds.length || 1;
+        const rawTargetIds = details?.target_account_ids || (details?.target_slave_id ? [details.target_slave_id] : (details?.agent_id ? [details.agent_id] : []));
+        const targetAccountIds: string[] = (Array.isArray(rawTargetIds) ? rawTargetIds : [rawTargetIds])
+          .map((id: any) => String(id || '').trim())
+          .filter((id: string) => id && id.toLowerCase() !== 'master' && id !== masterId);
+        const count = details?.accounts_count || targetAccountIds.length || (details?.target_accounts?.length || 1);
         const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
 
-        // Resolve exact target_accounts objects
+        // Resolve exact target_accounts objects (strictly for slave agents, never the master)
         let resolvedTargetAccounts: any[] = [];
         if (Array.isArray(details?.target_accounts) && details.target_accounts.length > 0) {
-          resolvedTargetAccounts = details.target_accounts;
+          resolvedTargetAccounts = details.target_accounts.filter((a: any) => a.id !== masterId && a.agent_id !== masterId);
         } else {
           resolvedTargetAccounts = targetAccountIds.map((targetId: string, tIdx: number) => {
             const trimmed = String(targetId).trim().toLowerCase();
             const found = userLookupMap.get(trimmed);
-            if (found) {
+            if (found && found.id !== masterId) {
               return {
                 id: found.id,
                 agent_id: found.agentId || found.id,
@@ -706,20 +708,22 @@ export class MasterAccountService {
               isDeployed: true,
               status: 'active'
             };
-          });
+          }).filter((a: any) => a.id !== masterId && a.agent_id !== masterId);
         }
+
+        const effectiveCount = resolvedTargetAccounts.length > 0 ? resolvedTargetAccounts.length : (targetAccountIds.length > 0 ? targetAccountIds.length : count);
 
         formattedCapabilities.push({
           id: ev.id,
           plan_name: 'Capability Increment Plan',
-          plan_subtitle: `Rate-Limit Increment (${count} ${count === 1 ? 'Account' : 'Accounts'} in Transaction, +${validityDays} Days)`,
+          plan_subtitle: `Rate-Limit Increment (${effectiveCount} ${effectiveCount === 1 ? 'Account' : 'Accounts'} in Transaction, +${validityDays} Days)`,
           plan_type: 'slave_capability',
           action_type: 'capability_increment',
-          allowance_accounts: count,
-          accounts_in_transaction: count,
+          allowance_accounts: effectiveCount,
+          accounts_in_transaction: effectiveCount,
           target_account_ids: targetAccountIds,
           target_accounts: resolvedTargetAccounts,
-          amount: 100 * count,
+          amount: 100 * effectiveCount,
           currency: 'USD',
           created_at: ev.created_at,
           expires_at: details?.expires_at || null,
@@ -741,7 +745,9 @@ export class MasterAccountService {
         if (typeof details === 'string') {
           try { details = JSON.parse(details); } catch (e) {}
         }
-        return slaveIds.includes(ev.user_id) || slaveIds.includes(details?.user_id) || details?.master_id === masterId || ev.user_id === masterId;
+        const targetId = details?.target_slave_id || details?.agent_id || (ev.user_id !== masterId ? ev.user_id : null) || (details?.user_id !== masterId ? details?.user_id : null);
+        if (!targetId || targetId === masterId) return false;
+        return slaveIds.includes(targetId) || details?.master_id === masterId;
       });
 
       const seenIndiv = new Set<string>();
@@ -757,9 +763,11 @@ export class MasterAccountService {
         // Skip if this event was part of an already included batch
         if (details?.batch_id && seenBatchIds.has(details.batch_id)) continue;
 
+        const targetId = details?.target_slave_id || details?.agent_id || (ev.user_id !== masterId ? ev.user_id : null) || (details?.user_id !== masterId ? details?.user_id : null);
+        if (!targetId || targetId === masterId) continue;
+
         const validityDays = details?.metadata?.validity_days_extended || details?.validity_days || 30;
         const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > Date.now() : true;
-        const targetId = ev.user_id || details?.user_id || details?.agent_id;
         const targetUserFound = userLookupMap.get(String(targetId || '').trim().toLowerCase());
         const targetName = details?.metadata?.target_slave_name || targetUserFound?.name || details?.agent_id || 'Slave Agent';
 

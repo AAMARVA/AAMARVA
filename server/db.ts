@@ -33,6 +33,7 @@ export interface UserRecord {
   role?: string;
   is_slave?: boolean;
   isSlave?: boolean;
+  hasCapabilityIncrement?: boolean;
 }
 
 export interface RefreshTokenRecord {

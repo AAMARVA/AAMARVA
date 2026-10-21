@@ -303,6 +303,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             type: 'success',
             text: `Capability Increment Plan activated for ${targetName}! Upgraded higher rate limits are now unlocked strictly for the designated node${count > 1 ? 's' : ''}.`
           });
+          setTargetCapabilityAccountIds([]);
         } else if (effectiveAction === 'add_accounts') {
           const effectiveAddOn = Math.max(1, addAccountsCount);
           setAddAccountsCount(effectiveAddOn);
@@ -416,7 +417,11 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           {/* Capability Increment Block */}
           <button
             type="button"
-            onClick={() => setActiveModal('capability')}
+            onClick={() => {
+              setActiveModal('capability');
+              setTargetCapabilityAccountIds([]);
+              setPurchaseStatusMsg(null);
+            }}
             className="bg-[#141414] hover:bg-[#1f1f1f] text-white p-4 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)] hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer text-left block"
           >
             <div className="flex items-center justify-between mb-1.5">
@@ -642,25 +647,27 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                         <button
                                           type="button"
                                           onClick={() => {
-                                            setShowHistoryPlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }));
+                                            const key = item.id || `perf_${idx}`;
+                                            setShowHistoryPlanAgents(prev => ({ ...prev, [key]: !prev[key] }));
                                           }}
                                           className="text-[9px] font-black uppercase bg-[#141414] text-white px-2.5 py-1 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1 cursor-pointer hover:bg-neutral-800 transition-all"
                                         >
-                                          <span>View Accounts {showHistoryPlanAgents[idx] ? '▲' : '▼'}</span>
+                                          <span>View Accounts {showHistoryPlanAgents[item.id || `perf_${idx}`] ? '▲' : '▼'}</span>
                                         </button>
                                       </div>
                                     </div>
-                                    {showHistoryPlanAgents[idx] && (() => {
-                                      // 1. If backend resolved explicit target_accounts for this transaction, use them directly
+                                    {showHistoryPlanAgents[item.id || `perf_${idx}`] && (() => {
+                                      // 1. If backend resolved explicit target_accounts for this transaction, use them directly (filter out master)
                                       let planAgents: any[] = [];
                                       if (Array.isArray(item.target_accounts) && item.target_accounts.length > 0) {
-                                        planAgents = item.target_accounts;
+                                        planAgents = item.target_accounts.filter((a: any) => a.id !== masterAgent?.id && a.agent_id !== masterAgent?.agentId);
                                       } else {
-                                        const rawIds = item.target_account_ids && item.target_account_ids.length > 0
+                                        const rawIds = (item.target_account_ids && item.target_account_ids.length > 0
                                           ? item.target_account_ids
-                                          : (item.target_slave_id ? [item.target_slave_id] : []);
+                                          : (item.target_slave_id ? [item.target_slave_id] : []))
+                                          .filter((id: string) => id && id !== masterAgent?.id && id !== masterAgent?.agentId && id.toLowerCase() !== 'master');
 
-                                        // Build a comprehensive pool of all known agents (deployed slaves, raw slaves, and master agent)
+                                        // Strictly pool slave agents only (never master)
                                         const agentPool: any[] = [
                                           ...slaveAgentsList.filter(a => a.isDeployed),
                                           ...allFleetSlaves.map((s, sIdx) => ({
@@ -670,15 +677,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                             avatar_url: s.avatar || s.avatar_url,
                                             isDeployed: true,
                                             status: s.status || 'active'
-                                          })),
-                                          ...(masterAgent ? [{
-                                            id: masterAgent.id,
-                                            agent_id: masterAgent.agentId || masterAgent.id,
-                                            name: masterAgent.name || 'Master Agent',
-                                            avatar_url: masterAgent.avatar,
-                                            isDeployed: true,
-                                            status: 'active'
-                                          }] : [])
+                                          }))
                                         ];
 
                                         const poolMap = new Map<string, any>();

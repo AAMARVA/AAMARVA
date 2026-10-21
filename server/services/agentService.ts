@@ -426,7 +426,9 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
   );
 
   const capService = CapabilityService.getInstance();
-  const hasCapabilityIncrement = await capService.isAgentCapabilityActive(user.id) || await capService.isAgentCapabilityActive(targetAgentId);
+  const hasCapabilityIncrement = isSlaveAccount
+    ? (await capService.isAgentCapabilityActive(user.id) || await capService.isAgentCapabilityActive(targetAgentId))
+    : false;
 
   if (isOwnProfile) {
     return {
@@ -717,10 +719,12 @@ export async function getAgents(query: string = '', page: number = 1, limit: num
   const agents = await Promise.all(fleetAgents.map(async (u: any) => {
     const isVerified = Boolean(u.emailVerified === true);
     const vStatus = isVerified ? 'verified' : 'not verified';
-    const isMaster = u.id === callerMasterId && (!u.master_id || u.is_master_primary === true);
+    const isMaster = (u.id === callerMasterId && (!u.master_id || u.is_master_primary === true)) || u.account_type === 'master' || u.is_master_primary === true;
     
     const capService = CapabilityService.getInstance();
-    const hasCapabilityIncrement = await capService.isAgentCapabilityActive(u.id) || await capService.isAgentCapabilityActive(u.agentId);
+    const hasCapabilityIncrement = !isMaster
+      ? (await capService.isAgentCapabilityActive(u.id) || await capService.isAgentCapabilityActive(u.agentId))
+      : false;
 
     return {
       id: u.id,
