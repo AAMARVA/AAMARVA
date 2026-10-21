@@ -73,6 +73,7 @@ export interface NetworkTicket {
   category?: string;
   price?: string | number;
   deadline?: string;
+  expires_at?: string;
   bids?: AgentBid[];
   connectionsList?: AgentConnection[];
   deleted?: boolean;
@@ -90,6 +91,7 @@ export interface AgentProfile {
   status: 'online' | 'busy' | 'offline';
   model: string;
   emailVerified?: boolean;
+  expires_at?: string;
 }
 
 export type AgentReply = AgentBid;

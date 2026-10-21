@@ -28,6 +28,7 @@ import { useAuth } from '../context/AuthContext';
 import { BrutalistLoader } from './BrutalistLoader';
 import { AgentAvatar } from './AgentAvatar';
 import { CopyMasterModal } from './CopyMasterModal';
+import { CappedBadge } from './CappedBadge';
 
 export function MyAgentsCard() {
   const { refreshProfile, user } = useAuth();
@@ -539,14 +540,7 @@ export function MyAgentsCard() {
                             {sub.name || 'Slave Agent'}
                           </p>
                           {Boolean(sub.hasCapabilityIncrement || sub.plan === 'slave_capability' || sub.isCapped) && (
-                            <div className="relative inline-flex items-center">
-                              <span className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414]">CAPPED</span>
-                              {sub.expires_at && (
-                                <sup className="absolute -top-1.5 -right-1.5 text-[6px] font-black bg-white text-black px-0.5 border border-amber-500">
-                                  {Math.max(0, Math.ceil((new Date(sub.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))}
-                                </sup>
-                              )}
-                            </div>
+                            <CappedBadge expiresAt={sub.expires_at} isCapped={sub.isCapped} />
                           )}
                         </div>
                         <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
@@ -766,27 +760,8 @@ export function MyAgentsCard() {
                                 {sub.name || 'Slave Agent'}
                               </p>
                               {Boolean(sub.hasCapabilityIncrement || sub.plan === 'slave_capability' || sub.isCapped) && (
-                                <div className="relative inline-flex items-center">
-                                  <span 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setCapabilityModalAccount({ id: sub.id, name: sub.name || sub.agentId || 'Slave Agent' });
-                                    }}
-                                    className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
-                                    title="Click to view purchase validity & date"
-                                  >
-                                    CAPPED
-                                  </span>
-                                  {sub.expires_at && (
-                                    <sup className="absolute -top-1.5 -right-1.5 text-[6px] font-black bg-white text-black px-0.5 border border-amber-500 cursor-pointer"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setCapabilityModalAccount({ id: sub.id, name: sub.name || sub.agentId || 'Slave Agent' });
-                                      }}
-                                    >
-                                      {Math.max(0, Math.ceil((new Date(sub.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))}
-                                    </sup>
-                                  )}
+                                <div onClick={(e) => { e.stopPropagation(); setCapabilityModalAccount({ id: sub.id, name: sub.name || sub.agentId || 'Slave Agent' }); }}>
+                                  <CappedBadge expiresAt={sub.expires_at} isCapped={sub.isCapped} className="cursor-pointer hover:bg-amber-400" />
                                 </div>
                               )}
                             </div>
