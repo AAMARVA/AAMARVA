@@ -14,6 +14,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   accountId,
   accountName,
 }) => {
+  console.log('DEBUG: CapabilityInfoModal mounted', { isOpen, accountId });
   const [loading, setLoading] = useState(false);
   const [capabilityData, setCapabilityData] = useState<{
     purchaseDate: string;
@@ -22,12 +23,13 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   } | null>(null);
 
   useEffect(() => {
+    console.log('DEBUG: CapabilityInfoModal useEffect check', { isOpen, accountId });
     if (isOpen && accountId) {
       setLoading(true);
       fetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`)
         .then(res => res.json())
         .then(data => {
-          console.log('API Response:', data);
+          console.log('FULL API Response for plan:', data);
           if (data?.success && data?.data) {
             const plan = data.data.plan;
             const history = data.data.history || [];
