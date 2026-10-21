@@ -572,20 +572,9 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                       <span className="text-[#141414]/60 text-[10px] uppercase font-bold">
                                         {isAddon ? 'Capacity Added:' : 'Plan Accounts:'}
                                       </span>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                          {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setShowScalePlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }));
-                                          }}
-                                          className="text-[9px] font-black uppercase bg-[#141414] text-white px-2.5 py-1 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1 cursor-pointer hover:bg-neutral-800 transition-all"
-                                        >
-                                          <span>View Accounts {showScalePlanAgents[idx] ? '▲' : '▼'}</span>
-                                        </button>
-                                      </div>
+                                      <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                                        {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
+                                      </span>
                                     </div>
                                     <div className="flex justify-between">
                                       <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Plan Valuation:</span>
@@ -597,46 +586,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                       <span className="text-[#141414]/60 uppercase">Date Purchased:</span>
                                       <span className="text-[#141414] font-mono">{new Date(item.created_at).toLocaleString()}</span>
                                     </div>
-                                    {showScalePlanAgents[idx] && (() => {
-                                      const deployedSlaves = slaveAgentsList.filter(a => a.isDeployed);
-                                      const planAgents = deployedSlaves.length > 0 ? deployedSlaves : allFleetSlaves.map((s, sIdx) => ({
-                                        id: s.id,
-                                        agent_id: s.agentId || s.agent_id || `@${s.id}`,
-                                        name: s.name || `Slave Agent #${sIdx + 1}`,
-                                        avatar_url: s.avatar || s.avatar_url,
-                                        isDeployed: true,
-                                        status: s.status || 'active'
-                                      }));
-
-                                      return (
-                                        <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2 mt-2">
-                                          <div className="flex items-center justify-between text-[10px] font-bold text-[#141414]">
-                                            <span>INCLUDED FLEET ROSTER ({planAgents.length} AGENTS)</span>
-                                            <span className="text-[9px] font-mono text-[#141414]/70">Fleet Coverage</span>
-                                          </div>
-                                          <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
-                                            {planAgents.map((agent: any, aIdx: number) => (
-                                              <div key={agent.id || aIdx} className="p-2 bg-white border border-[#141414] flex items-center gap-2 text-xs">
-                                                <AgentAvatar 
-                                                  isSlave={agent.id !== masterAgent?.id && agent.agent_id !== masterAgent?.agentId} 
-                                                  id={agent.agent_id || agent.id} 
-                                                  name={agent.name} 
-                                                  avatar={agent.avatar || agent.avatar_url}
-                                                  className="w-5 h-5 shrink-0" 
-                                                />
-                                                <div className="flex-1 min-w-0">
-                                                  <p className="font-bold uppercase text-[10px] truncate">{agent.name}</p>
-                                                  <p className="text-[8px] text-neutral-500 font-mono truncate">{agent.agent_id || agent.id}</p>
-                                                </div>
-                                                <span className={`text-[8px] px-1.5 py-0.5 font-bold uppercase border shrink-0 ${agent.isDeployed ? 'bg-green-100 text-green-800 border-green-300' : 'bg-neutral-100 text-neutral-600 border-neutral-300'}`}>
-                                                  {agent.isDeployed ? 'Deployed' : 'Idle'}
-                                                </span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      );
-                                    })()}
                                   </div>
                                 </div>
                               );
