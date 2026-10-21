@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Calendar, Clock, Award } from 'lucide-react';
+import { apiFetch } from '../services/authApi';
 
 interface CapabilityInfoModalProps {
   isOpen: boolean;
@@ -26,8 +27,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
     console.log('DEBUG: CapabilityInfoModal useEffect check', { isOpen, accountId });
     if (isOpen && accountId) {
       setLoading(true);
-      fetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`)
-        .then(res => res.json())
+      apiFetch(`/auth/master/plan?accountId=${encodeURIComponent(accountId)}`, { authType: 'human' })
         .then(data => {
           console.log('FULL API Response for plan:', data);
           if (data?.success && data?.data) {
@@ -53,6 +53,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               status: plan?.status || 'active'
             });
           } else {
+            console.error('API Error in response:', data);
             setCapabilityData({
               purchaseDate: 'N/A',
               expiryDate: 'N/A',
@@ -60,7 +61,8 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             });
           }
         })
-        .catch(() => {
+        .catch(err => {
+          console.error('API Fetch Error:', err);
           setCapabilityData({
             purchaseDate: 'N/A',
             expiryDate: 'N/A',
