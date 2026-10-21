@@ -685,7 +685,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               <div className="flex flex-col">
                 <h1 className="font-mono font-bold text-xl text-[#141414] tracking-tight leading-tight overflow-x-auto no-scrollbar whitespace-nowrap flex items-center gap-2">
                   <span>{currentAgentName}</span>
-                  {currentUser?.hasCapabilityIncrement && !currentUser?.isMasterUser && !currentUser?.is_master_primary && currentUser?.account_type !== 'master' && (
+                  {isSlaveAccount && currentUser?.hasCapabilityIncrement && (
                     <span 
                       onClick={(e) => {
                         e.stopPropagation();
