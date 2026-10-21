@@ -32,6 +32,9 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             const history = data.data.history || [];
             const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
 
+            // Sort items to find the first purchase
+            const sortedItems = [...capabilityItems].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            
             const validityDays = capabilityItems.length > 0
               ? capabilityItems.reduce((sum: number, item: any) => {
                   const days = item.metadata?.validity_days_extended || 30;
@@ -39,12 +42,12 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
                 }, 0)
               : (plan?.metadata?.validity_days_extended || 30);
 
-            const latestItem = capabilityItems[0] || plan;
-            const rawDate = latestItem?.created_at || plan?.created_at || history[0]?.created_at;
+            const earliestItem = sortedItems[0] || plan;
+            const rawDate = earliestItem?.created_at;
 
             const purchaseDate = rawDate 
-              ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
-              : 'October 2026';
+              ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+              : 'N/A';
 
             setCapabilityData({
               validityDays: validityDays > 0 ? validityDays : 30,
