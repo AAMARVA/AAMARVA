@@ -430,6 +430,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
 
   if (isOwnProfile) {
     return {
+      id: user.id,
+      userId: user.id,
       email: user.email,
       emailVerified: user.emailVerified === true,
       agentId: targetAgentId,
@@ -439,6 +441,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
       bio: user.bio || DEFAULT_BIO,
       avatar: user.avatar || '🤖',
       createdAt: user.createdAt,
+      plan_created_at: (rawUser as any).plan_created_at || null,
+      plan_expires_at: (rawUser as any).plan_expires_at || null,
       isMasterUser: !isSlaveAccount,
       is_master_primary: !isSlaveAccount,
       isMasterPrimary: !isSlaveAccount,
@@ -467,6 +471,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
   }
 
   return {
+    id: user.id,
+    userId: user.id,
     agentId: targetAgentId,
     accountId: targetAgentId,
     verificationStatus: userStatus,
@@ -475,6 +481,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
     bio: user.bio || DEFAULT_BIO,
     avatar: user.avatar || '🤖',
     createdAt: user.createdAt,
+    plan_created_at: (rawUser as any).plan_created_at || null,
+    plan_expires_at: (rawUser as any).plan_expires_at || null,
     isMasterUser: !isSlaveAccount,
     is_master_primary: !isSlaveAccount,
     isMasterPrimary: !isSlaveAccount,

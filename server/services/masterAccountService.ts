@@ -748,59 +748,42 @@ export class MasterAccountService {
           const isActive = new Date(planExpires).getTime() > Date.now();
 
           const synthesized: any[] = [];
-          if (allowance > 10) {
-            const addOnCount = allowance - 10;
-            synthesized.push({
-              id: `addon_${plan.id}`,
-              plan_name: 'Master & Slave Agent Plan',
-              plan_subtitle: `Capacity Add-On (+${addOnCount} Accounts)`,
-              plan_type: 'master_slave_scale',
-              action_type: 'add_accounts',
-              allowance_accounts: allowance,
-              accounts_in_transaction: addOnCount,
-              added_accounts: addOnCount,
-              tier: 'scale',
-              status: isActive ? 'active' : 'expired',
-              is_active: isActive,
-              amount: Math.round(addOnCount * 2.5),
-              currency: 'USD',
-              created_at: planCreated,
-              expires_at: planExpires,
-              metadata: { action_type: 'add_accounts', accounts_bought: addOnCount }
-            });
-          }
-
+          const addOnCount = Math.max(0, allowance - 10);
           synthesized.push({
-            id: `base_${plan.id}`,
+            id: `plan_${plan.id}`,
             plan_name: 'Master & Slave Agent Plan',
-            plan_subtitle: 'Base Fleet Roster (10 Accounts)',
+            plan_subtitle: addOnCount > 0 ? `Fleet Roster (${allowance} Accounts: 10 Base + ${addOnCount} Add-On)` : `Base Fleet Roster (10 Accounts)`,
             plan_type: 'master_slave_scale',
-            action_type: 'new_plan',
-            allowance_accounts: 10,
-            accounts_in_transaction: 10,
-            added_accounts: 10,
+            action_type: addOnCount > 0 ? 'scale_fleet' : 'new_plan',
+            allowance_accounts: allowance,
+            accounts_in_transaction: allowance,
+            added_accounts: allowance,
             tier: 'scale',
             status: isActive ? 'active' : 'expired',
             is_active: isActive,
-            amount: 50,
+            amount: 50 + addOnCount * 2.5,
             currency: 'USD',
             created_at: planCreated,
             expires_at: planExpires,
-            metadata: { action_type: 'new_plan', accounts_bought: 10 }
+            metadata: { action_type: addOnCount > 0 ? 'scale_fleet' : 'new_plan', allowance, addOnCount }
           });
 
           masterHistory = synthesized;
         }
       } else {
-        const seenTitles = new Set<string>();
-        const groupedEvents: Record<string, any[]> = {};
+        // Group events that occur within 5 seconds of each other into the same transaction
+        const groups: Array<{ keyTimestamp: string; events: any[] }> = [];
         for (const ev of eventsList) {
-          const timestamp = ev.created_at;
-          if (!groupedEvents[timestamp]) groupedEvents[timestamp] = [];
-          groupedEvents[timestamp].push(ev);
+          const evTime = new Date(ev.created_at).getTime();
+          const existingGroup = groups.find(g => Math.abs(new Date(g.keyTimestamp).getTime() - evTime) < 5000);
+          if (existingGroup) {
+            existingGroup.events.push(ev);
+          } else {
+            groups.push({ keyTimestamp: ev.created_at, events: [ev] });
+          }
         }
 
-        masterHistory = Object.entries(groupedEvents).map(([timestamp, events]) => {
+        masterHistory = groups.map(({ keyTimestamp: timestamp, events }) => {
           // Combine details from all events in the same transaction
           const combinedDetails = events.reduce((acc, ev) => {
             let details = ev.details;

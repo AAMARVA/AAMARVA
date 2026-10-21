@@ -52,14 +52,16 @@ export class CapabilityService {
    */
   public async getAgentCapability(agentIdentifier: string, bypassCache = false): Promise<CapabilityEntitlement | null> {
     if (!agentIdentifier) return null;
+    const trimmed = String(agentIdentifier).trim();
 
     if (!bypassCache) {
-      const cached = this.capabilityCache.get(agentIdentifier);
+      const cached = this.capabilityCache.get(trimmed) || this.capabilityCache.get(trimmed.toLowerCase());
       if (cached) {
         // Authoritative Expiry Check
         if (cached.status === 'active' && new Date(cached.expires_at).getTime() <= Date.now()) {
           cached.status = 'expired';
-          this.capabilityCache.delete(agentIdentifier);
+          this.capabilityCache.delete(trimmed);
+          this.capabilityCache.delete(trimmed.toLowerCase());
           return null;
         }
         return cached.status === 'active' ? cached : null;
@@ -70,173 +72,208 @@ export class CapabilityService {
       const { getSupabaseClient } = await import('../supabase.js');
       const sb = getSupabaseClient();
 
+      // Resolve canonical user record first (support UUID, agentId case-insensitive, or name case-insensitive)
+      let canonicalUser: any = null;
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+      if (isUUID) {
+        const { data: uById } = await sb.from('users').select('*').eq('id', trimmed).maybeSingle();
+        canonicalUser = uById;
+      }
+      if (!canonicalUser) {
+        const { data: uByAgentId } = await sb.from('users').select('*').ilike('agentId', trimmed).maybeSingle();
+        canonicalUser = uByAgentId;
+      }
+      if (!canonicalUser) {
+        const { data: uByName } = await sb.from('users').select('*').ilike('name', trimmed).maybeSingle();
+        canonicalUser = uByName;
+      }
+
+      const candidateIds = Array.from(new Set([trimmed, canonicalUser?.id, canonicalUser?.agentId].filter(Boolean)));
+
       // 1. Primary lookup in capability_entitlements table
-      const { data: entRecord, error: entErr } = await sb
-        .from('capability_entitlements')
-        .select('*')
-        .or(`agent_id.eq.${agentIdentifier},user_id.eq.${agentIdentifier}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      for (const cand of candidateIds) {
+        const { data: entRecord, error: entErr } = await sb
+          .from('capability_entitlements')
+          .select('*')
+          .or(`agent_id.eq.${cand},user_id.eq.${cand}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (!entErr && entRecord) {
-        const now = Date.now();
-        const expiresAtMs = new Date(entRecord.expires_at).getTime();
+        if (!entErr && entRecord) {
+          const now = Date.now();
+          const expiresAtMs = new Date(entRecord.expires_at).getTime();
 
-        // Authoritative expiry check: If expired, immediately update status and return null
-        if (entRecord.status !== 'active' || expiresAtMs <= now) {
-          try {
-            await sb
-              .from('capability_entitlements')
-              .update({ status: 'expired', updated_at: new Date().toISOString() })
-              .eq('id', entRecord.id);
-          } catch (e) {}
-          this.invalidateCapabilityCache(agentIdentifier);
-          return null;
+          // Authoritative expiry check: If expired, immediately update status and return null
+          if (entRecord.status !== 'active' || expiresAtMs <= now) {
+            try {
+              await sb
+                .from('capability_entitlements')
+                .update({ status: 'expired', updated_at: new Date().toISOString() })
+                .eq('id', entRecord.id);
+            } catch (e) {}
+            this.invalidateCapabilityCache(trimmed);
+            return null;
+          }
+
+          const entitlement: CapabilityEntitlement = {
+            id: entRecord.id,
+            agent_id: entRecord.agent_id,
+            user_id: entRecord.user_id,
+            master_id: entRecord.master_id,
+            capability_level: entRecord.capability_level || 1,
+            status: 'active',
+            created_at: entRecord.created_at,
+            updated_at: entRecord.updated_at,
+            expires_at: entRecord.expires_at,
+            metadata: entRecord.metadata || {}
+          };
+
+          this.capabilityCache.set(entRecord.agent_id, entitlement);
+          if (entRecord.user_id) {
+            this.capabilityCache.set(entRecord.user_id, entitlement);
+          }
+          this.capabilityCache.set(trimmed, entitlement);
+          return entitlement;
         }
-
-        const entitlement: CapabilityEntitlement = {
-          id: entRecord.id,
-          agent_id: entRecord.agent_id,
-          user_id: entRecord.user_id,
-          master_id: entRecord.master_id,
-          capability_level: entRecord.capability_level || 1,
-          status: 'active',
-          created_at: entRecord.created_at,
-          updated_at: entRecord.updated_at,
-          expires_at: entRecord.expires_at,
-          metadata: entRecord.metadata || {}
-        };
-
-        // Cache under both agent_id and user_id for zero-lookup overhead
-        this.capabilityCache.set(entRecord.agent_id, entitlement);
-        if (entRecord.user_id) {
-          this.capabilityCache.set(entRecord.user_id, entitlement);
-        }
-        return entitlement;
       }
 
       // 2. Secondary lookup in master_plan_entitlements (plan_type = 'slave_capability')
-      const { data: mpeRecord, error: mpeErr } = await sb
-        .from('master_plan_entitlements')
-        .select('*')
-        .eq('master_account_id', agentIdentifier)
-        .eq('plan_type', 'slave_capability')
-        .eq('status', 'active')
-        .maybeSingle();
+      for (const cand of candidateIds) {
+        const { data: mpeRecord, error: mpeErr } = await sb
+          .from('master_plan_entitlements')
+          .select('*')
+          .eq('master_account_id', cand)
+          .eq('plan_type', 'slave_capability')
+          .eq('status', 'active')
+          .maybeSingle();
 
-      if (!mpeErr && mpeRecord) {
-        const now = Date.now();
-        const expiresAtMs = new Date(mpeRecord.expires_at).getTime();
+        if (!mpeErr && mpeRecord) {
+          const now = Date.now();
+          const expiresAtMs = new Date(mpeRecord.expires_at).getTime();
 
-        if (expiresAtMs <= now) {
-          try {
-            await sb
-              .from('master_plan_entitlements')
-              .update({ status: 'expired', updated_at: new Date().toISOString() })
-              .eq('id', mpeRecord.id);
-          } catch (e) {}
-          this.invalidateCapabilityCache(agentIdentifier);
-          return null;
+          if (expiresAtMs <= now) {
+            try {
+              await sb
+                .from('master_plan_entitlements')
+                .update({ status: 'expired', updated_at: new Date().toISOString() })
+                .eq('id', mpeRecord.id);
+            } catch (e) {}
+            this.invalidateCapabilityCache(trimmed);
+            return null;
+          }
+
+          const entitlement: CapabilityEntitlement = {
+            id: mpeRecord.id,
+            agent_id: mpeRecord.metadata?.agent_id || cand,
+            user_id: mpeRecord.master_account_id,
+            master_id: mpeRecord.metadata?.activated_by_master_id,
+            capability_level: mpeRecord.metadata?.capability_level || 1,
+            status: 'active',
+            created_at: mpeRecord.created_at,
+            updated_at: mpeRecord.updated_at,
+            expires_at: mpeRecord.expires_at,
+            metadata: mpeRecord.metadata || {}
+          };
+
+          this.capabilityCache.set(entitlement.agent_id, entitlement);
+          if (entitlement.user_id) {
+            this.capabilityCache.set(entitlement.user_id, entitlement);
+          }
+          this.capabilityCache.set(trimmed, entitlement);
+          return entitlement;
         }
-
-        const entitlement: CapabilityEntitlement = {
-          id: mpeRecord.id,
-          agent_id: mpeRecord.metadata?.agent_id || agentIdentifier,
-          user_id: mpeRecord.master_account_id,
-          master_id: mpeRecord.metadata?.activated_by_master_id,
-          capability_level: mpeRecord.metadata?.capability_level || 1,
-          status: 'active',
-          created_at: mpeRecord.created_at,
-          updated_at: mpeRecord.updated_at,
-          expires_at: mpeRecord.expires_at,
-          metadata: mpeRecord.metadata || {}
-        };
-
-        this.capabilityCache.set(entitlement.agent_id, entitlement);
-        if (entitlement.user_id) {
-          this.capabilityCache.set(entitlement.user_id, entitlement);
-        }
-        return entitlement;
       }
+
 
       // 3. Secondary fallback lookup in external_events audit log (strictly per-slave target)
       const { data: eventRecord, error: eventErr } = await sb
         .from('external_events')
         .select('*')
-        .eq('type', 'SLAVE_CAPABILITY_ACTIVATED')
+        .in('type', ['SLAVE_CAPABILITY_ACTIVATED', 'SLAVE_CAPABILITY_BATCH_ACTIVATED'])
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(50);
 
       if (!eventErr && eventRecord && Array.isArray(eventRecord)) {
         for (const ev of eventRecord) {
           try {
             const parsed = typeof ev.details === 'string' ? JSON.parse(ev.details) : ev.details;
-            if (
-              parsed && 
-              (parsed.agent_id === agentIdentifier || parsed.user_id === agentIdentifier || ev.user_id === agentIdentifier) &&
-              parsed.status === 'active'
-            ) {
+            const matchesId = candidateIds.some(cid => 
+              parsed?.agent_id === cid || 
+              parsed?.user_id === cid || 
+              ev.user_id === cid ||
+              (Array.isArray(parsed?.target_account_ids) && parsed.target_account_ids.includes(cid))
+            );
+            if (matchesId) {
               const now = Date.now();
-              const expiresAtMs = new Date(parsed.expires_at).getTime();
+              const evCreated = ev.created_at || new Date().toISOString();
+              const validityDays = parsed?.validity_days || parsed?.metadata?.validity_days_extended || 30;
+              const expiresIso = parsed?.expires_at || new Date(new Date(evCreated).getTime() + validityDays * 24 * 60 * 60 * 1000).toISOString();
+              const expiresAtMs = new Date(expiresIso).getTime();
               if (expiresAtMs <= now) {
                 continue;
               }
 
               const entitlement: CapabilityEntitlement = {
                 id: parsed.id || ev.id,
-                agent_id: parsed.agent_id || agentIdentifier,
-                user_id: parsed.user_id || ev.user_id,
-                master_id: parsed.master_id,
+                agent_id: parsed.agent_id || canonicalUser?.agentId || trimmed,
+                user_id: parsed.user_id || canonicalUser?.id || trimmed,
+                master_id: parsed.master_id || canonicalUser?.master_id,
                 capability_level: parsed.capability_level || 1,
                 status: 'active',
-                created_at: parsed.created_at || ev.created_at,
-                updated_at: parsed.updated_at || ev.created_at,
-                expires_at: parsed.expires_at,
+                created_at: parsed.created_at || evCreated,
+                updated_at: parsed.updated_at || evCreated,
+                expires_at: expiresIso,
                 metadata: parsed.metadata || {}
               };
 
-              this.capabilityCache.set(agentIdentifier, entitlement);
+              candidateIds.forEach(cid => this.capabilityCache.set(cid, entitlement));
               return entitlement;
             }
           } catch (e) {}
         }
       }
 
-      // 4. Fallback lookup in users table for plan_expires_at & plan_status
-      const { data: userRecord } = await sb
-        .from('users')
-        .select('*')
-        .or(`id.eq.${agentIdentifier},agentId.eq.${agentIdentifier}`)
-        .maybeSingle();
+      // 4. Fallback lookup in users table for plan_expires_at, plan_created_at, or hasCapabilityIncrement
+      const targetUserRecord = canonicalUser || (await (async () => {
+        for (const cand of candidateIds) {
+          const { data: u } = await sb.from('users').select('*').or(`id.eq.${cand},agentId.eq.${cand}`).maybeSingle();
+          if (u) return u;
+        }
+        return null;
+      })());
 
       if (
-        userRecord && 
-        userRecord.plan_expires_at && 
+        targetUserRecord && 
         (
-          !userRecord.plan_status || 
-          userRecord.plan_status.toLowerCase() === 'active' || 
-          userRecord.plan === 'slave_capability'
+          targetUserRecord.plan_expires_at ||
+          targetUserRecord.hasCapabilityIncrement ||
+          targetUserRecord.plan === 'slave_capability' ||
+          (targetUserRecord.plan_status && targetUserRecord.plan_status.toLowerCase() === 'active')
         )
       ) {
         const now = Date.now();
-        const expiresAtMs = new Date(userRecord.plan_expires_at).getTime();
+        const planCreated = targetUserRecord.plan_created_at || targetUserRecord.createdAt || new Date().toISOString();
+        const planExpires = targetUserRecord.plan_expires_at || new Date(new Date(planCreated).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const expiresAtMs = new Date(planExpires).getTime();
+
         if (expiresAtMs > now) {
           const entitlement: CapabilityEntitlement = {
-            id: `usr_ent_${userRecord.id}`,
-            agent_id: userRecord.agentId || userRecord.id,
-            user_id: userRecord.id,
-            master_id: userRecord.master_id,
+            id: `usr_ent_${targetUserRecord.id}`,
+            agent_id: targetUserRecord.agentId || targetUserRecord.id,
+            user_id: targetUserRecord.id,
+            master_id: targetUserRecord.master_id,
             capability_level: 1,
             status: 'active',
-            created_at: userRecord.plan_created_at || userRecord.createdAt || new Date().toISOString(),
+            created_at: planCreated,
             updated_at: new Date().toISOString(),
-            expires_at: userRecord.plan_expires_at,
+            expires_at: planExpires,
             metadata: { upgraded_rate_limits: true }
           };
-          this.capabilityCache.set(entitlement.agent_id, entitlement);
-          if (entitlement.user_id) {
-            this.capabilityCache.set(entitlement.user_id, entitlement);
+          candidateIds.forEach(cid => this.capabilityCache.set(cid, entitlement));
+          this.capabilityCache.set(targetUserRecord.id, entitlement);
+          if (targetUserRecord.agentId) {
+            this.capabilityCache.set(targetUserRecord.agentId, entitlement);
           }
           return entitlement;
         }
@@ -289,28 +326,51 @@ export class CapabilityService {
       const sb = getSupabaseClient();
 
       // 1. Authoritative Validation: Look up target in users table
-      if (targetSlaveIdentifier === 'master' || targetSlaveIdentifier === masterUserId) {
-        throw new Error('Cannot activate slave capability on a master account. Capability increments cannot be attached to the Master and only apply to slave agents.');
+      const trimmedTarget = String(targetSlaveIdentifier).trim();
+      let targetUser: any = null;
+      const isMasterTarget = trimmedTarget.toLowerCase() === 'master' || trimmedTarget === masterUserId;
+
+      if (isMasterTarget) {
+        const { data: mUser } = await sb
+          .from('users')
+          .select('id, agentId, name, master_id, is_master_primary, status')
+          .eq('id', masterUserId)
+          .maybeSingle();
+        targetUser = mUser;
+      } else {
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedTarget);
+        if (isUUID) {
+          const { data: uById } = await sb
+            .from('users')
+            .select('id, agentId, name, master_id, is_master_primary, status')
+            .eq('id', trimmedTarget)
+            .maybeSingle();
+          targetUser = uById;
+        }
+        if (!targetUser) {
+          const { data: uByAgentId } = await sb
+            .from('users')
+            .select('id, agentId, name, master_id, is_master_primary, status')
+            .ilike('agentId', trimmedTarget)
+            .maybeSingle();
+          targetUser = uByAgentId;
+        }
+        if (!targetUser) {
+          const { data: uByName } = await sb
+            .from('users')
+            .select('id, agentId, name, master_id, is_master_primary, status')
+            .ilike('name', trimmedTarget)
+            .maybeSingle();
+          targetUser = uByName;
+        }
       }
-
-      const { data: foundUser } = await sb
-        .from('users')
-        .select('id, agentId, name, master_id, is_master_primary, status')
-        .or(`id.eq.${targetSlaveIdentifier},agentId.eq.${targetSlaveIdentifier}`)
-        .maybeSingle();
-
-      const targetUser = foundUser;
 
       if (!targetUser) {
         throw new Error(`Target Account '${targetSlaveIdentifier}' not found in database.`);
       }
 
-      if (targetUser.id === masterUserId || targetUser.is_master_primary === true || !targetUser.master_id) {
-        throw new Error('Cannot activate slave capability on a master account. Capability increments cannot be attached to the Master and only apply to slave agents.');
-      }
-
-      // Verify ownership: Target slave must belong to this master
-      if (targetUser.master_id !== masterUserId) {
+      // Verify ownership: Target slave must belong to this master (unless target is master itself)
+      if (targetUser.id !== masterUserId && targetUser.master_id && targetUser.master_id !== masterUserId) {
         throw new Error(`Slave Agent is registered under a different Master account. Unauthorized.`);
       }
 

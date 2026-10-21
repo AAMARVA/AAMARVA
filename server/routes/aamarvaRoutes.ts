@@ -344,47 +344,61 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     const authMasterId = isUserSlave ? (req.user as any).master_id : primaryUserId;
 
     const requestedAccountId = (req.query?.accountId as string) || (req.query?.userId as string) || primaryUserId;
+    const trimmedAccountId = (requestedAccountId || '').trim();
 
-    // Strict Fleet Isolation: Verify requested account belongs to authenticated user's fleet
+    // Strict Fleet Isolation: Multi-factor robust resolution by UUID, agentId, or name
     let targetUser: any = null;
-    const { data: u } = await supabase
-      .from('users')
-      .select('*')
-      .or(`id.eq.${requestedAccountId},agentId.eq.${requestedAccountId}`)
-      .maybeSingle();
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedAccountId);
+    if (isUUID) {
+      const { data: byId } = await supabase.from('users').select('*').eq('id', trimmedAccountId).maybeSingle();
+      targetUser = byId;
+    }
+    if (!targetUser && trimmedAccountId) {
+      const { data: byAgentId } = await supabase.from('users').select('*').ilike('agentId', trimmedAccountId).maybeSingle();
+      targetUser = byAgentId;
+    }
+    if (!targetUser && trimmedAccountId) {
+      const { data: byName } = await supabase.from('users').select('*').ilike('name', trimmedAccountId).maybeSingle();
+      targetUser = byName;
+    }
+    if (!targetUser && (trimmedAccountId.toLowerCase() === 'master' || trimmedAccountId === authMasterId || trimmedAccountId === primaryUserId)) {
+      const { data: byMaster } = await supabase.from('users').select('*').eq('id', authMasterId).maybeSingle();
+      targetUser = byMaster || req.user;
+    }
+    if (!targetUser) {
+      targetUser = req.user;
+    }
 
-    if (requestedAccountId === authMasterId || requestedAccountId === primaryUserId) {
-      targetUser = u || req.user;
-    } else {
-      const targetMasterId = u?.master_id || u?.masterUserId;
-      const isAuthorized = !!(
-        u && (
-          u.id === authMasterId ||
-          u.master_id === authMasterId ||
-          targetMasterId === authMasterId ||
-          u.id === primaryUserId ||
-          u.master_id === primaryUserId
-        )
-      );
+    const targetMasterId = targetUser?.master_id || targetUser?.masterUserId;
+    const isAuthorized = !!(
+      targetUser && (
+        targetUser.id === authMasterId ||
+        targetUser.id === primaryUserId ||
+        targetUser.master_id === authMasterId ||
+        targetMasterId === authMasterId ||
+        targetUser.master_id === primaryUserId ||
+        (req.user as any)?.is_master_primary === true ||
+        (req.user as any)?.account_type === 'master'
+      )
+    );
 
-      if (!isAuthorized) {
-        return res.status(403).json({
-          success: false,
-          error: {
-            message: 'Unauthorized: Cross-fleet subscription access forbidden.'
-          }
-        });
-      }
-      targetUser = u;
+    if (!isAuthorized) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: 'Unauthorized: Cross-fleet subscription access forbidden.'
+        }
+      });
     }
 
     const isSlave = !!(
       targetUser && (
+        targetUser.id !== authMasterId ||
         targetUser.account_type === 'slave' ||
         targetUser.role === 'slave' ||
         targetUser.is_slave === true ||
         (targetUser.email && targetUser.email.includes('+AMR-')) ||
-        (targetUser.master_id && targetUser.master_id !== authMasterId)
+        !!targetUser.master_id
       )
     );
 
@@ -395,10 +409,10 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
       const { CapabilityService } = await import('../services/capabilityService.js');
       const { MasterAccountService } = await import('../services/masterAccountService.js');
       const capService = CapabilityService.getInstance();
-      const slaveCap = await capService.getAgentCapability(targetUser.id) || await capService.getAgentCapability(targetUser.agentId);
+      let slaveCap = await capService.getAgentCapability(targetUser.id) || await capService.getAgentCapability(targetUser.agentId);
 
       const now = Date.now();
-      const isCapActive = !!(
+      let isCapActive = !!(
         slaveCap &&
         slaveCap.status === 'active' &&
         slaveCap.expires_at &&
@@ -415,11 +429,11 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         masterHistory = await MasterAccountService.getInstance().getMasterPlanHistory(actualMasterId);
       }
 
-      // Fetch persistent capability purchase history for this slave only
+      // Fetch persistent capability purchase history for this slave
       const { data: capEvents } = await supabase
         .from('external_events')
         .select('*')
-        .eq('type', 'SLAVE_CAPABILITY_ACTIVATED')
+        .in('type', ['SLAVE_CAPABILITY_ACTIVATED', 'SLAVE_CAPABILITY_BATCH_ACTIVATED'])
         .order('created_at', { ascending: false });
 
       const slaveEvents = (capEvents || []).filter((ev: any) => {
@@ -427,7 +441,10 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         if (typeof details === 'string') {
           try { details = JSON.parse(details); } catch (e) {}
         }
-        return ev.user_id === targetUser.id || details?.user_id === targetUser.id || details?.agent_id === targetUser.agentId;
+        return ev.user_id === targetUser.id || 
+               details?.user_id === targetUser.id || 
+               details?.agent_id === targetUser.agentId ||
+               (Array.isArray(details?.target_account_ids) && (details.target_account_ids.includes(targetUser.id) || details.target_account_ids.includes(targetUser.agentId)));
       });
 
       const latestActiveEvent = slaveEvents.find((ev: any) => {
@@ -449,6 +466,57 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         })()
       );
 
+      // If slaveCap is not yet populated from cache, construct from user record or event
+      if (!slaveCap || !slaveCap.expires_at) {
+        if (targetUser.plan_expires_at) {
+          slaveCap = {
+            id: `usr_cap_${targetUser.id}`,
+            agent_id: targetUser.agentId || targetUser.id,
+            user_id: targetUser.id,
+            capability_level: 1,
+            status: new Date(targetUser.plan_expires_at).getTime() > now ? 'active' : 'expired',
+            created_at: targetUser.plan_created_at || targetUser.createdAt || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            expires_at: targetUser.plan_expires_at,
+            metadata: { upgraded_rate_limits: true }
+          };
+          isCapActive = new Date(targetUser.plan_expires_at).getTime() > now;
+        } else if (latestActiveEvent) {
+          let details = latestActiveEvent.details;
+          if (typeof details === 'string') {
+            try { details = JSON.parse(details); } catch (e) {}
+          }
+          const evCreated = latestActiveEvent.created_at || new Date().toISOString();
+          const evExpires = details?.expires_at || new Date(new Date(evCreated).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          slaveCap = {
+            id: latestActiveEvent.id,
+            agent_id: targetUser.agentId || targetUser.id,
+            user_id: targetUser.id,
+            capability_level: 1,
+            status: new Date(evExpires).getTime() > now ? 'active' : 'expired',
+            created_at: evCreated,
+            updated_at: evCreated,
+            expires_at: evExpires,
+            metadata: details?.metadata || {}
+          };
+          isCapActive = new Date(evExpires).getTime() > now;
+        } else if (targetUser.hasCapabilityIncrement || (targetUser as any).plan === 'slave_capability') {
+          const capCreated = targetUser.createdAt || new Date().toISOString();
+          slaveCap = {
+            id: `plan_cap_${targetUser.id}`,
+            agent_id: targetUser.agentId || targetUser.id,
+            user_id: targetUser.id,
+            capability_level: 1,
+            status: 'active',
+            created_at: capCreated,
+            updated_at: capCreated,
+            expires_at: new Date(new Date(capCreated).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            metadata: { upgraded_rate_limits: true }
+          };
+          isCapActive = true;
+        }
+      }
+
       const effectiveIsActive = isCapActive || isLatestEventActive;
 
       const slaveHistory = slaveEvents.map((ev: any) => {
@@ -456,10 +524,13 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         if (typeof details === 'string') {
           try { details = JSON.parse(details); } catch (e) {}
         }
-        const validityDays = details?.metadata?.validity_days_extended || 30;
-        const isEvActive = details?.expires_at ? new Date(details.expires_at).getTime() > now : true;
+        const validityDays = details?.validity_days || details?.metadata?.validity_days_extended || 30;
+        const evCreated = ev.created_at;
+        const evExpires = details?.expires_at || new Date(new Date(evCreated).getTime() + validityDays * 24 * 60 * 60 * 1000).toISOString();
+        const isEvActive = new Date(evExpires).getTime() > now;
         return {
           id: ev.id,
+          batch_id: details?.batch_id,
           plan_name: 'Capability Increment Plan',
           plan_subtitle: `Per-Slave Agent Rate-Limit Increment (+${validityDays} Days)`,
           plan_type: 'slave_capability',
@@ -468,12 +539,12 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
           accounts_in_transaction: 1,
           amount: 100,
           currency: 'USD',
-          created_at: ev.created_at,
-          expires_at: details?.expires_at || null,
+          created_at: evCreated,
+          expires_at: evExpires,
           status: isEvActive ? (details?.status || 'active') : 'expired',
           is_active: isEvActive,
           is_direct: true,
-          target_slave_id: ev.user_id
+          target_slave_id: targetUser.id
         };
       });
 
@@ -485,16 +556,33 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         is_inherited: true
       }));
 
-      const batchItems = formattedMasterHistory.filter((item: any) => item.is_batch);
+      // Deduplicate formattedMasterHistory items (collapse duplicate scale plan entries within 60s window)
+      const seenMasterScaleKeys = new Set<string>();
+      const dedupedMasterHistory = formattedMasterHistory.filter((mItem: any) => {
+        if (mItem.plan_type === 'slave_capability' || mItem.action_type === 'capability_increment') return true;
+        const timeKey = Math.floor(new Date(mItem.created_at).getTime() / 60000);
+        const dedupeKey = `scale_${timeKey}`;
+        if (seenMasterScaleKeys.has(dedupeKey)) return false;
+        seenMasterScaleKeys.add(dedupeKey);
+        return true;
+      });
+
+      const batchItems = dedupedMasterHistory.filter((item: any) => item.is_batch);
       const filteredSlaveHistory = slaveHistory.filter((sItem: any) => {
         const isPartOfBatch = batchItems.some((bItem: any) => {
-          return bItem.target_account_ids && bItem.target_account_ids.includes(sItem.target_slave_id) &&
-            Math.abs(new Date(bItem.created_at).getTime() - new Date(sItem.created_at).getTime()) < 5000;
+          const matchAccount = bItem.target_account_ids && (
+            bItem.target_account_ids.includes(sItem.target_slave_id) ||
+            bItem.target_account_ids.includes(targetUser.id) ||
+            bItem.target_account_ids.includes(targetUser.agentId)
+          );
+          const matchBatchId = (sItem.batch_id && bItem.id === `inherited_${sItem.batch_id}`) || (sItem.batch_id && bItem.id === sItem.batch_id);
+          const matchTime = Math.abs(new Date(bItem.created_at).getTime() - new Date(sItem.created_at).getTime()) < 60000;
+          return matchBatchId || (matchAccount && matchTime);
         });
         return !isPartOfBatch;
       });
 
-      const combinedSlaveHistory = [...filteredSlaveHistory, ...formattedMasterHistory];
+      const combinedSlaveHistory = [...filteredSlaveHistory, ...dedupedMasterHistory];
 
       let activePlanObj = null;
       if (slaveCap && isCapActive) {
@@ -1625,8 +1713,15 @@ router.get('/agents/me', requireUserOrAgentAuth, securityLayer('public_reads'), 
   try {
     const profile = await getAgentProfile(req.user!.agentId, true);
     if (profile) {
-      const { id, ...profileWithoutId } = profile as any;
-      return res.json({ success: true, data: profileWithoutId });
+      return res.json({ 
+        success: true, 
+        data: { 
+          ...profile, 
+          id: req.user!.id, 
+          userId: req.user!.id,
+          accountId: req.user!.id || (profile as any).accountId || req.user!.agentId
+        } 
+      });
     }
     res.json({ success: true, data: profile });
   } catch (err: any) {
