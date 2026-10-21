@@ -37,10 +37,6 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             const rawDate = latestItem?.created_at || latestItem?.createdAt || plan?.created_at || plan?.createdAt || history[0]?.created_at || history[0]?.createdAt;
             const rawExpiry = latestItem?.expires_at || latestItem?.expiresAt || plan?.expires_at || plan?.expiresAt || history[0]?.expires_at || history[0]?.expiresAt;
 
-            console.log('LatestItem:', latestItem);
-            console.log('RawDate:', rawDate);
-            console.log('RawExpiry:', rawExpiry);
-
             const purchaseDate = rawDate 
               ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
               : 'N/A';

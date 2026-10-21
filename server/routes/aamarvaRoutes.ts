@@ -449,8 +449,8 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         status: 'active',
         allowance_accounts: 1,
         tier: 'capability',
-        created_at: slaveEvents[0].created_at || targetUser.created_at,
-        expires_at: slaveEvents[0].details?.expires_at || null,
+        created_at: slaveEvents[0].created_at || slaveEvents[0].createdAt || targetUser.created_at || targetUser.createdAt,
+        expires_at: slaveEvents[0].details?.expires_at || slaveEvents[0].details?.expiresAt || null,
         metadata: slaveEvents[0].details?.metadata || { validity_days_extended: 30 }
       } : {
         id: `plan_${targetUser.id}`,
