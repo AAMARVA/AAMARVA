@@ -12,14 +12,12 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({ expiresAt, isCapped, c
   const daysLeft = expiresAt ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
 
   return (
-    <div className={`relative inline-flex items-center ${className}`}>
+    <div className={`inline-flex items-center ${className} gap-1`}>
       <span className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414]">
         CAPPED
       </span>
       {daysLeft !== null && (
-        <sup className="absolute -top-3 -right-3 text-[12px] font-black text-black">
-          {daysLeft}
-        </sup>
+        <span className="font-mono text-[8px] font-black">{daysLeft}</span>
       )}
     </div>
   );
