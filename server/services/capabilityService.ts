@@ -210,7 +210,15 @@ export class CapabilityService {
         .or(`id.eq.${agentIdentifier},agentId.eq.${agentIdentifier}`)
         .maybeSingle();
 
-      if (userRecord && userRecord.plan_status === 'active' && userRecord.plan_expires_at) {
+      if (
+        userRecord && 
+        userRecord.plan_expires_at && 
+        (
+          !userRecord.plan_status || 
+          userRecord.plan_status.toLowerCase() === 'active' || 
+          userRecord.plan === 'slave_capability'
+        )
+      ) {
         const now = Date.now();
         const expiresAtMs = new Date(userRecord.plan_expires_at).getTime();
         if (expiresAtMs > now) {

@@ -200,7 +200,10 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
 
         if (Array.isArray(res.data.history)) {
           let history = [...res.data.history];
-          if (res.data.inheritedPlan && !history.find(h => h.id === res.data.inheritedPlan.id)) {
+          if (
+            res.data.inheritedPlan && 
+            !history.some(h => h.id === res.data.inheritedPlan.id || h.id === `inherited_${res.data.inheritedPlan.id}` || h.is_inherited)
+          ) {
             history.unshift(res.data.inheritedPlan);
           }
           setPlanHistory(history);
@@ -507,11 +510,34 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                   {/* Scale Plan Tab Content */}
                   {subscriptionTab === 'scale' && (
                     <div className="space-y-3">
-                      {planHistory && planHistory.filter(item => !(item.plan_type === 'slave_capability' || item.action_type === 'capability_increment' || item.plan_name?.includes('Capability'))).length > 0 ? (
-                        <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
-                          {planHistory
-                            .filter(item => !(item.plan_type === 'slave_capability' || item.action_type === 'capability_increment' || item.plan_name?.includes('Capability')))
-                            .map((item, idx) => {
+                      {(() => {
+                        const seenScaleKeys = new Set<string>();
+                        const scaleItems = (planHistory || [])
+                          .filter(item => !(item.plan_type === 'slave_capability' || item.action_type === 'capability_increment' || item.plan_name?.includes('Capability')))
+                          .filter(item => {
+                            const cleanId = String(item.id || '').replace(/^inherited_/, '');
+                            const dedupeKey = cleanId && !cleanId.startsWith('box_') && !cleanId.startsWith('plan_box_') 
+                              ? cleanId 
+                              : `${item.created_at}_${item.accounts_in_transaction || item.allowance_accounts}_${item.amount}`;
+                            if (seenScaleKeys.has(dedupeKey)) return false;
+                            seenScaleKeys.add(dedupeKey);
+                            return true;
+                          });
+
+                        if (scaleItems.length === 0) {
+                          return (
+                            <div className="p-6 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] text-center space-y-2">
+                              <Layers className="w-6 h-6 text-[#141414]/40 mx-auto" />
+                              <p className="text-xs font-mono font-bold text-[#141414] uppercase">
+                                No Scale Plans Found
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
+                            {scaleItems.map((item, idx) => {
                               const isAddon = item.action_type === 'add_accounts' || item.plan_subtitle?.includes('Capacity') || item.plan_name?.includes('Add-On');
                               const subtitle = item.plan_subtitle || (isAddon ? 'Capacity Add-On (+10 Accounts)' : 'Base Fleet Roster (10 Accounts)');
                               return (
@@ -555,15 +581,9 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                 </div>
                               );
                             })}
-                        </div>
-                      ) : (
-                        <div className="p-6 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] text-center space-y-2">
-                          <Layers className="w-6 h-6 text-[#141414]/40 mx-auto" />
-                          <p className="text-xs font-mono font-bold text-[#141414] uppercase">
-                            No Scale Plans Found
-                          </p>
-                        </div>
-                      )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 

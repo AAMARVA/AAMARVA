@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Calendar, Clock, Award } from 'lucide-react';
+import { apiFetch } from '../services/authApi';
 
 interface CapabilityInfoModalProps {
   isOpen: boolean;
@@ -24,18 +25,20 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   useEffect(() => {
     if (isOpen && accountId) {
       setLoading(true);
-      fetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`)
-        .then(res => res.json())
+      apiFetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`, { authType: 'human' })
         .then(data => {
           if (data?.success && data?.data) {
+            const cap = data.data.capability;
             const plan = data.data.plan;
-            const history = data.data.history || [];
+            const history = Array.isArray(data.data.history) ? data.data.history : [];
 
-            // Directly read authoritative per-account entitlement fields, preferring active plan or latest history
-            const activeEntitlement = (plan && plan.status === 'active') ? plan : history.find((h: any) => h.is_active === true) || history[0];
-            
-            const rawDate = activeEntitlement?.created_at;
-            const rawExpiry = activeEntitlement?.expires_at;
+            // Directly read authoritative per-account capability entitlement
+            const target = (cap && cap.expires_at) 
+              ? cap 
+              : (plan && plan.expires_at ? plan : (history.find((h: any) => h.expires_at) || history[0]));
+
+            const rawDate = target?.created_at || cap?.created_at || plan?.created_at;
+            const rawExpiry = target?.expires_at || cap?.expires_at || plan?.expires_at;
 
             const purchaseDate = rawDate 
               ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
@@ -45,12 +48,10 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               ? new Date(rawExpiry).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
               : 'N/A';
 
-
-
             setCapabilityData({
               purchaseDate,
               expiryDate,
-              status: plan?.status || 'active'
+              status: target?.status || plan?.status || 'active'
             });
           } else {
             setCapabilityData({
@@ -60,7 +61,8 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             });
           }
         })
-        .catch(() => {
+        .catch(err => {
+          console.warn('[CapabilityInfoModal] Failed to fetch capability plan:', err);
           setCapabilityData({
             purchaseDate: 'N/A',
             expiryDate: 'N/A',

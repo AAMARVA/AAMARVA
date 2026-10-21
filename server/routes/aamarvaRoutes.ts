@@ -558,6 +558,7 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
           masterId: actualMasterId,
           inheritedPlan: inheritedPlanObj,
           plan: activePlanObj,
+          capability: slaveCap || activePlanObj,
           active: effectiveIsActive || isMasterActive,
           status: (effectiveIsActive || isMasterActive) ? 'active' : 'inactive',
           allowance: 0,
@@ -593,6 +594,8 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     const isActive = !!(masterPlan && masterPlan.status === 'active' && !isExpired);
     const allowance = isActive ? (masterPlan?.allowance_accounts || 0) : 0;
     const history = await MasterAccountService.getInstance().getMasterPlanHistory(masterUserId);
+    const { CapabilityService } = await import('../services/capabilityService.js');
+    const masterCap = await CapabilityService.getInstance().getAgentCapability(masterUserId) || await CapabilityService.getInstance().getAgentCapability(targetUser?.agentId || masterUserId);
 
     let rawBlocks = masterPlan?.metadata?.blocks || [];
     if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) {
@@ -673,7 +676,8 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         currentSlaveAgentsCount: currentSlaveCount,
         remainingAllowance: Math.max(0, allowance - currentSlaveCount),
         slaveAgents: cleanSubAgents,
-        history: history
+        history: history,
+        capability: masterCap || null
       }
     });
   } catch (err: any) {
