@@ -26,6 +26,7 @@ import {
 import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
 import { useAuth } from '../context/AuthContext';
+import { CapabilityInfoModal } from './CapabilityInfoModal';
 
 interface LoadoutsBoxProps {
   agentId?: string;
@@ -74,6 +75,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
 
   // Previously owned slave agents list
   const [slaveAgentsList, setSlaveAgentsList] = useState<any[]>([]);
+  const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
   const [showActivePlanAgents, setShowActivePlanAgents] = useState<{ [key: string]: boolean }>({});
   const [showQueuedPlanAgents, setShowQueuedPlanAgents] = useState<{ [key: number]: boolean }>({});
   const [showHistoryPlanAgents, setShowHistoryPlanAgents] = useState<{ [key: number]: boolean }>({});
@@ -608,6 +610,21 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                       <span className="text-[#141414]/60 uppercase">Date Purchased:</span>
                                       <span className="text-[#141414] font-mono">{new Date(item.created_at).toLocaleString()}</span>
                                     </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const targetId = item.target_account_ids?.[0] || item.account_id || slaveAgentsList[0]?.id;
+                                        if (targetId) {
+                                          setCapabilityModalAccount({
+                                            id: targetId,
+                                            name: item.plan_name || 'Capability Increment Plan'
+                                          });
+                                        }
+                                      }}
+                                      className="w-full mt-2 py-1.5 px-3 bg-amber-400 text-black font-black text-[10px] uppercase tracking-wider border border-[#141414] hover:bg-amber-300 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 transition-all text-center flex items-center justify-center gap-1.5"
+                                    >
+                                      <span>View Account</span>
+                                    </button>
                                   </div>
                                 </div>
                               );
@@ -1410,6 +1427,12 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           </div>
         </div>
       )}
+      <CapabilityInfoModal
+        isOpen={!!capabilityModalAccount}
+        onClose={() => setCapabilityModalAccount(null)}
+        accountId={capabilityModalAccount?.id}
+        accountName={capabilityModalAccount?.name}
+      />
     </div>
   );
 };
