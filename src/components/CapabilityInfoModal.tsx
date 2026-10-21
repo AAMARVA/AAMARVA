@@ -27,21 +27,67 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      const pDate = propPurchaseDate
-        ? new Date(propPurchaseDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-        : 'N/A';
-      
-      const eDate = propExpiryDate
-        ? new Date(propExpiryDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-        : (propPurchaseDate ? new Date(new Date(propPurchaseDate).getTime() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A');
+      if (propPurchaseDate && propExpiryDate) {
+        setCapabilityData({
+          purchaseDate: new Date(propPurchaseDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          expiryDate: new Date(propExpiryDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          status: 'active'
+        });
+        return;
+      }
 
-      setCapabilityData({
-        purchaseDate: pDate,
-        expiryDate: eDate,
-        status: 'active'
-      });
+      if (accountId) {
+        setLoading(true);
+        fetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data?.success && data?.data) {
+              const plan = data.data.plan;
+              const history = data.data.history || [];
+              const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
+
+              const latestItem = capabilityItems[0] || plan;
+              const rawDate = latestItem?.created_at || plan?.created_at || history[0]?.created_at;
+              const rawExpiry = latestItem?.expires_at || plan?.expires_at || history[0]?.expires_at;
+
+              const purchaseDate = rawDate 
+                ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
+                : 'N/A';
+
+              const expiryDate = rawExpiry
+                ? new Date(rawExpiry).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : (rawDate ? new Date(new Date(rawDate).getTime() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A');
+
+              setCapabilityData({
+                purchaseDate,
+                expiryDate,
+                status: plan?.status || 'active'
+              });
+            } else {
+              setCapabilityData({
+                purchaseDate: 'N/A',
+                expiryDate: 'N/A',
+                status: 'active'
+              });
+            }
+          })
+          .catch(() => {
+            setCapabilityData({
+              purchaseDate: 'N/A',
+              expiryDate: 'N/A',
+              status: 'active'
+            });
+          })
+          .finally(() => setLoading(false));
+      } else {
+        setCapabilityData({
+          purchaseDate: 'N/A',
+          expiryDate: 'N/A',
+          status: 'active'
+        });
+      }
     }
-  }, [isOpen, propPurchaseDate, propExpiryDate]);
+  }, [isOpen, accountId, propPurchaseDate, propExpiryDate]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -89,7 +135,12 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
           </div>
         </div>
 
-        <div className="space-y-3 mb-5">
+        {loading ? (
+          <div className="py-8 text-center text-xs text-[#141414]/60 uppercase animate-pulse">
+            Loading validity info...
+          </div>
+        ) : (
+          <div className="space-y-3 mb-5">
             <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-[#141414]" />
@@ -110,6 +161,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               </span>
             </div>
           </div>
+        )}
 
         <button
           type="button"
