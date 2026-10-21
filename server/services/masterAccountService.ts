@@ -674,6 +674,7 @@ export class MasterAccountService {
             action_type: 'capability_increment',
             allowance_accounts: count,
             accounts_in_transaction: count,
+            target_account_ids: details?.target_account_ids || [],
             amount: 100 * count,
             currency: 'USD',
             created_at: ev.created_at,

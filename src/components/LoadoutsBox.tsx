@@ -560,11 +560,43 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                     <strong className="text-[#141414] font-black">Capability Boost</strong>
                                   </div>
                                   <div className="flex items-center justify-between">
+                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Purchase Date:</span>
+                                    <strong className="text-[#141414] font-black">
+                                      {capPlan.created_at ? new Date(capPlan.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
+                                    </strong>
+                                  </div>
+                                  <div className="flex items-center justify-between">
                                     <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Valid Until:</span>
                                     <strong className="text-[#141414] font-black">{getFormattedExpiryDate(capPlan)}</strong>
                                   </div>
+                                  <div className="flex items-center justify-between pt-1 border-t border-[#141414]/10">
+                                    <span className="text-[#141414]/60 uppercase text-[10px] font-bold">Targeted Accounts:</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowHistoryPlanAgents(prev => ({ ...prev, [`cap_${idx}`]: !prev[`cap_${idx}`] }))}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#F5F4F0] hover:bg-neutral-200 border border-[#141414] text-[#141414] font-black cursor-pointer transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] text-[10px]"
+                                    >
+                                      <span>View Accounts ({capPlan.accounts_in_transaction || capPlan.target_account_ids?.length || 1})</span>
+                                      <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showHistoryPlanAgents[`cap_${idx}`] ? 'rotate-180' : ''}`} />
+                                    </button>
+                                  </div>
+
+                                  {showHistoryPlanAgents[`cap_${idx}`] && (
+                                    <div className="mt-2 p-2 bg-[#F5F4F0] border border-[#141414] space-y-1.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] max-h-[140px] overflow-y-auto">
+                                      {(slaveAgentsList.filter(a => capPlan.target_account_ids && capPlan.target_account_ids.length > 0 ? capPlan.target_account_ids.includes(a.id) : true) || []).map((agent: any) => (
+                                        <div key={agent.id} className="p-1 bg-white border border-[#141414] flex items-center gap-2 text-[10px]">
+                                          <AgentAvatar name={agent.name} avatar={agent.avatar} id={agent.agentId} className="w-5 h-5 border border-[#141414] shrink-0" />
+                                          <div className="min-w-0 flex-1 text-left font-mono truncate">
+                                            <span className="font-bold uppercase block truncate">{agent.name}</span>
+                                            <span className="text-[8px] text-[#141414]/70 block truncate">@{agent.agentId}</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
+
                             ))}
                         </div>
                       ) : (
