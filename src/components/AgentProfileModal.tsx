@@ -514,12 +514,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   <span 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setCapabilityModalAccount({ 
-                        id: agentProfileData.id, 
-                        name: agentProfileData.name || agentProfileData.agentId || 'Agent',
-                        createdAt: agentProfileData.capability_created_at || agentProfileData.createdAt,
-                        expires_at: agentProfileData.capability_expires_at
-                      });
+                      setCapabilityModalAccount({ id: agentProfileData.id, name: agentProfileData.name || agentProfileData.agentId || 'Agent' });
                     }}
                     className="font-mono text-[9px] font-black uppercase bg-amber-500 text-black px-1.5 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
                     title="Click to view purchase validity & date"
@@ -553,8 +548,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         onClose={() => setCapabilityModalAccount(null)}
         accountId={capabilityModalAccount?.id}
         accountName={capabilityModalAccount?.name}
-        createdAt={capabilityModalAccount?.createdAt}
-        expires_at={capabilityModalAccount?.expires_at}
       />
     </div>
   );

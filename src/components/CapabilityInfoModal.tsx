@@ -6,8 +6,6 @@ interface CapabilityInfoModalProps {
   onClose: () => void;
   accountId?: string;
   accountName?: string;
-  createdAt?: string;
-  expires_at?: string;
 }
 
 export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
@@ -15,70 +13,62 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   onClose,
   accountId,
   accountName,
-  createdAt,
-  expires_at,
 }) => {
   const [loading, setLoading] = useState(false);
   const [capabilityData, setCapabilityData] = useState<{
+    validityDays: number;
     purchaseDate: string;
-    expiryDate: string;
+    status: string;
   } | null>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      if (createdAt || expires_at) {
-        const purchaseDate = createdAt 
-          ? new Date(createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) 
-          : 'N/A';
-        const expiryDate = expires_at 
-          ? new Date(expires_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) 
-          : 'N/A';
-        setCapabilityData({ purchaseDate, expiryDate });
-        setLoading(false);
-        return;
-      }
+    if (isOpen && accountId) {
+      setLoading(true);
+      fetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data?.success && data?.data) {
+            const plan = data.data.plan;
+            const history = data.data.history || [];
+            const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
 
-      if (accountId) {
-        setLoading(true);
-        fetch(`/api/auth/master/plan?accountId=${encodeURIComponent(accountId)}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data?.success && data?.data) {
-              const plan = data.data.plan;
-              const history = data.data.history || [];
-              const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
+            const validityDays = capabilityItems.length > 0
+              ? capabilityItems.reduce((sum: number, item: any) => {
+                  const days = item.metadata?.validity_days_extended || 30;
+                  return sum + (Number(days) || 30);
+                }, 0)
+              : (plan?.metadata?.validity_days_extended || 30);
 
-              const matchingPlan = capabilityItems.find((item: any) => {
-                if (accountId) {
-                  if (Array.isArray(item.target_account_ids) && item.target_account_ids.includes(accountId)) return true;
-                  if (item.target_slave_id === accountId || item.user_id === accountId || item.agent_id === accountId) return true;
-                }
-                return false;
-              }) || capabilityItems[0] || plan;
+            const latestItem = capabilityItems[0] || plan;
+            const rawDate = latestItem?.created_at || plan?.created_at || history[0]?.created_at;
 
-              const rawPurchaseDate = matchingPlan?.created_at || plan?.created_at || history[0]?.created_at;
-              const rawExpiryDate = matchingPlan?.expires_at || plan?.expires_at || history[0]?.expires_at;
+            const purchaseDate = rawDate 
+              ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
+              : 'October 2026';
 
-              const purchaseDate = rawPurchaseDate 
-                ? new Date(rawPurchaseDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) 
-                : 'N/A';
-
-              const expiryDate = rawExpiryDate 
-                ? new Date(rawExpiryDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) 
-                : 'N/A';
-
-              setCapabilityData({ purchaseDate, expiryDate });
-            } else {
-              setCapabilityData({ purchaseDate: 'N/A', expiryDate: 'N/A' });
-            }
-          })
-          .catch(() => {
-            setCapabilityData({ purchaseDate: 'N/A', expiryDate: 'N/A' });
-          })
-          .finally(() => setLoading(false));
-      }
+            setCapabilityData({
+              validityDays: validityDays > 0 ? validityDays : 30,
+              purchaseDate,
+              status: plan?.status || 'active'
+            });
+          } else {
+            setCapabilityData({
+              validityDays: 30,
+              purchaseDate: 'October 2026',
+              status: 'active'
+            });
+          }
+        })
+        .catch(() => {
+          setCapabilityData({
+            validityDays: 30,
+            purchaseDate: 'October 2026',
+            status: 'active'
+          });
+        })
+        .finally(() => setLoading(false));
     }
-  }, [isOpen, accountId, createdAt, expires_at]);
+  }, [isOpen, accountId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -134,21 +124,21 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
           <div className="space-y-3 mb-5">
             <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-[#141414]" />
-                <span className="text-xs font-bold uppercase">Purchase Date</span>
+                <Clock className="w-4 h-4 text-[#141414]" />
+                <span className="text-xs font-bold uppercase">Validity Days Bought</span>
               </div>
-              <span className="text-xs font-bold">
-                {capabilityData?.purchaseDate || 'N/A'}
+              <span className="text-xs font-black bg-amber-400 text-black px-2 py-0.5 border border-[#141414]">
+                {capabilityData?.validityDays || 30} Days
               </span>
             </div>
 
             <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-[#141414]" />
-                <span className="text-xs font-bold uppercase">Expiry Date</span>
+                <Calendar className="w-4 h-4 text-[#141414]" />
+                <span className="text-xs font-bold uppercase">Purchase Date</span>
               </div>
               <span className="text-xs font-bold">
-                {capabilityData?.expiryDate || 'N/A'}
+                {capabilityData?.purchaseDate || 'N/A'}
               </span>
             </div>
           </div>

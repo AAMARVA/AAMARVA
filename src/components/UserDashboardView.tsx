@@ -78,7 +78,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editBio, setEditBio] = useState('');
-  const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string; createdAt?: string; expires_at?: string } | null>(null);
+  const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
   const [editAvatar, setEditAvatar] = useState('');
   const [editProfileLoading, setEditProfileLoading] = useState(false);
   const [editProfileError, setEditProfileError] = useState('');
@@ -689,12 +689,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     <span 
                       onClick={(e) => {
                         e.stopPropagation();
-                        setCapabilityModalAccount({ 
-                          id: currentUser.id, 
-                          name: currentAgentName || currentUser.agentId || 'Account',
-                          createdAt: currentUser.capability_created_at || currentUser.createdAt,
-                          expires_at: currentUser.capability_expires_at
-                        });
+                        setCapabilityModalAccount({ id: currentUser.id, name: currentAgentName || currentUser.agentId || 'Account' });
                       }}
                       className="font-mono text-[9px] font-black uppercase bg-amber-500 text-black px-1.5 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400 transition-colors shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
                       title="Click to view purchase validity & date"
@@ -1624,8 +1619,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           onClose={() => setCapabilityModalAccount(null)}
           accountId={capabilityModalAccount?.id}
           accountName={capabilityModalAccount?.name}
-          createdAt={capabilityModalAccount?.createdAt}
-          expires_at={capabilityModalAccount?.expires_at}
         />
       </div>
     );
