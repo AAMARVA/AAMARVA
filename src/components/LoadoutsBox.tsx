@@ -651,7 +651,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                           <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
                                             {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
                                           </span>
-                                          {(isAddon || item.plan_type === 'slave_capability') && (
+                                          {item.plan_type === 'slave_capability' && (
                                             <button
                                               type="button"
                                               onClick={() => setShowHistoryPlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }))}
