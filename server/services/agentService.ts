@@ -426,7 +426,10 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
   );
 
   const capService = CapabilityService.getInstance();
-  const hasCapabilityIncrement = await capService.isAgentCapabilityActive(user.id) || await capService.isAgentCapabilityActive(targetAgentId);
+  const capEnt = await capService.getAgentCapability(user.id) || await capService.getAgentCapability(targetAgentId);
+  const hasCapabilityIncrement = !!(capEnt && capEnt.status === 'active' && new Date(capEnt.expires_at).getTime() > Date.now());
+  const capability_created_at = capEnt?.created_at || null;
+  const capability_expires_at = capEnt?.expires_at || null;
 
   if (isOwnProfile) {
     return {
@@ -447,6 +450,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
       is_slave: isSlaveAccount,
       isSlave: isSlaveAccount,
       hasCapabilityIncrement,
+      capability_created_at,
+      capability_expires_at,
       master_id: rawUser.master_id || null,
       masterUserId: rawUser.master_id || null,
       e2eePublicKey,
@@ -483,6 +488,8 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
     is_slave: isSlaveAccount,
     isSlave: isSlaveAccount,
     hasCapabilityIncrement,
+    capability_created_at,
+    capability_expires_at,
     e2eePublicKeyFingerprint,
     e2eeIdentityKey,
     posts: formattedPosts,
