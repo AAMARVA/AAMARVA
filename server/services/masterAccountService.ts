@@ -852,10 +852,12 @@ export class MasterAccountService {
             metadata: meta
           };
         }).filter((item) => {
-            if (seenTitles.has(item.plan_subtitle)) {
+            // Deduplicate based on ID if present (same event), otherwise use a combination of subtitle and timestamp bucket
+            const dedupeKey = item.id || `${item.plan_subtitle}_${new Date(item.created_at).getTime()}`;
+            if (seenTitles.has(dedupeKey)) {
                 return false;
             }
-            seenTitles.add(item.plan_subtitle);
+            seenTitles.add(dedupeKey);
             return true;
         });
       }
