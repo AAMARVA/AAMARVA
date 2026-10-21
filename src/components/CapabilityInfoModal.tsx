@@ -32,7 +32,12 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             const history = data.data.history || [];
             const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
 
-            const latestItem = capabilityItems[0] || plan;
+            console.log('DEBUG: accountId:', accountId);
+            console.log('DEBUG: data:', data);
+
+            const activeItem = capabilityItems.find(item => item.status === 'active');
+            const latestItem = activeItem || capabilityItems[0] || plan;
+            console.log('DEBUG: latestItem', latestItem);
             const purchaseDate = latestItem?.created_at 
               ? new Date(latestItem.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
               : 'N/A';
