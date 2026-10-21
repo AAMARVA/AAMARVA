@@ -29,11 +29,15 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
       setLoading(true);
       apiFetch(`/auth/master/plan?accountId=${encodeURIComponent(accountId)}`, { authType: 'human' })
         .then(data => {
-          console.log('FULL API Response for plan:', data);
-          if (data?.success && data?.data) {
-            const plan = data.data.plan;
-            const history = data.data.history || [];
+          console.log('DEBUG: Full API Data:', data);
+          if (data?.success) {
+            const plan = data.data?.plan;
+            const history = data.data?.history || [];
+            console.log('DEBUG: Parsed Plan:', plan);
+            console.log('DEBUG: Parsed History:', history);
+            
             const capabilityItems = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment' || h.plan_name?.includes('Capability'));
+            console.log('DEBUG: Capability Items:', capabilityItems);
 
             const latestItem = capabilityItems[0] || plan;
             const rawDate = latestItem?.created_at || latestItem?.createdAt || plan?.created_at || plan?.createdAt || history[0]?.created_at || history[0]?.createdAt;
