@@ -217,7 +217,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     setTargetCapabilityAccountIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
   const selectAllCapabilityAccounts = () => {
-    setTargetCapabilityAccountIds(slaveAgentsList.filter(a => a.isDeployed && !a.hasCapabilityIncrement).map(a => a.id));
+    setTargetCapabilityAccountIds(slaveAgentsList.filter(a => a.isDeployed).map(a => a.id));
   };
   const deselectAllCapabilityAccounts = () => {
     setTargetCapabilityAccountIds([]);
@@ -899,9 +899,9 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                             </span>
                           </div>
                           
-                          {slaveAgentsList.filter(a => a.isDeployed && !a.hasCapabilityIncrement).length > 0 ? (
+                          {slaveAgentsList.filter(a => a.isDeployed).length > 0 ? (
                             <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 scrollbar-thin">
-                              {slaveAgentsList.filter(a => a.isDeployed && !a.hasCapabilityIncrement).map((agent) => {
+                              {slaveAgentsList.filter(a => a.isDeployed).map((agent) => {
                                 const isSelected = targetCapabilityAccountIds.includes(agent.id);
                                 return (
                                   <div
