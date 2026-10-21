@@ -347,21 +347,27 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
 
     // Strict Fleet Isolation: Verify requested account belongs to authenticated user's fleet
     let targetUser: any = null;
+    const { data: u } = await supabase
+      .from('users')
+      .select('*')
+      .or(`id.eq.${requestedAccountId},agentId.eq.${requestedAccountId}`)
+      .maybeSingle();
+
     if (requestedAccountId === authMasterId || requestedAccountId === primaryUserId) {
-      const { data: u } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', requestedAccountId)
-        .maybeSingle();
       targetUser = u || req.user;
     } else {
-      const { data: u } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', requestedAccountId)
-        .maybeSingle();
+      const targetMasterId = u?.master_id || u?.masterUserId;
+      const isAuthorized = !!(
+        u && (
+          u.id === authMasterId ||
+          u.master_id === authMasterId ||
+          targetMasterId === authMasterId ||
+          u.id === primaryUserId ||
+          u.master_id === primaryUserId
+        )
+      );
 
-      if (!u || (u.id !== authMasterId && u.master_id !== authMasterId)) {
+      if (!isAuthorized) {
         return res.status(403).json({
           success: false,
           error: {
