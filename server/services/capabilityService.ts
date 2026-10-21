@@ -338,15 +338,14 @@ export class CapabilityService {
           .maybeSingle();
         targetUser = mUser;
       } else {
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedTarget);
-        if (isUUID) {
-          const { data: uById } = await sb
-            .from('users')
-            .select('id, agentId, name, master_id, is_master_primary, status')
-            .eq('id', trimmedTarget)
-            .maybeSingle();
-          targetUser = uById;
-        }
+        // Multi-attribute lookup: check id first, then agentId, then name
+        const { data: uById } = await sb
+          .from('users')
+          .select('id, agentId, name, master_id, is_master_primary, status')
+          .eq('id', trimmedTarget)
+          .maybeSingle();
+        targetUser = uById;
+
         if (!targetUser) {
           const { data: uByAgentId } = await sb
             .from('users')
@@ -362,6 +361,15 @@ export class CapabilityService {
             .ilike('name', trimmedTarget)
             .maybeSingle();
           targetUser = uByName;
+        }
+        if (!targetUser && trimmedTarget.startsWith('@')) {
+          const stripped = trimmedTarget.slice(1);
+          const { data: uByStripped } = await sb
+            .from('users')
+            .select('id, agentId, name, master_id, is_master_primary, status')
+            .or(`agentId.ilike.${stripped},name.ilike.${stripped}`)
+            .maybeSingle();
+          targetUser = uByStripped;
         }
       }
 
@@ -461,11 +469,25 @@ export class CapabilityService {
 
       // 4. Log persistent audit record in external_events
       try {
+        const targetAccountObj = {
+          id: slaveUser.id,
+          agent_id: agentIdKey,
+          name: slaveUser.name || agentIdKey,
+          avatar: slaveUser.avatar,
+          isDeployed: true,
+          status: slaveUser.status || 'active'
+        };
+
         await sb.from('external_events').insert({
           id: crypto.randomUUID(),
           user_id: slaveUser.id,
           type: 'SLAVE_CAPABILITY_ACTIVATED',
-          details: JSON.stringify(entitlement),
+          details: JSON.stringify({
+            ...entitlement,
+            target_slave_id: slaveUser.id,
+            target_account_ids: [slaveUser.id],
+            target_accounts: [targetAccountObj]
+          }),
           created_at: nowIso
         });
       } catch (eventErr) {}

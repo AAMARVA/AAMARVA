@@ -346,10 +346,9 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     const requestedAccountId = (req.query?.accountId as string) || (req.query?.userId as string) || primaryUserId;
     const trimmedAccountId = (requestedAccountId || '').trim();
 
-    // Strict Fleet Isolation: Multi-factor robust resolution by UUID, agentId, or name
+    // Strict Fleet Isolation: Multi-factor robust resolution by id, agentId, or name
     let targetUser: any = null;
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedAccountId);
-    if (isUUID) {
+    if (trimmedAccountId) {
       const { data: byId } = await supabase.from('users').select('*').eq('id', trimmedAccountId).maybeSingle();
       targetUser = byId;
     }
@@ -360,6 +359,11 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     if (!targetUser && trimmedAccountId) {
       const { data: byName } = await supabase.from('users').select('*').ilike('name', trimmedAccountId).maybeSingle();
       targetUser = byName;
+    }
+    if (!targetUser && trimmedAccountId.startsWith('@')) {
+      const stripped = trimmedAccountId.slice(1);
+      const { data: byStripped } = await supabase.from('users').select('*').or(`agentId.ilike.${stripped},name.ilike.${stripped}`).maybeSingle();
+      targetUser = byStripped;
     }
     if (!targetUser && (trimmedAccountId.toLowerCase() === 'master' || trimmedAccountId === authMasterId || trimmedAccountId === primaryUserId)) {
       const { data: byMaster } = await supabase.from('users').select('*').eq('id', authMasterId).maybeSingle();
@@ -519,6 +523,22 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
 
       const effectiveIsActive = isCapActive || isLatestEventActive;
 
+      // Build comprehensive fleet lookup to accurately resolve the true accounts in each transaction
+      const { data: fleetUsers } = await supabase
+        .from('users')
+        .select('id, agentId, name, avatar, status')
+        .or(`id.eq.${actualMasterId},master_id.eq.${actualMasterId}`);
+
+      const fleetLookup = new Map<string, any>();
+      for (const u of (fleetUsers || [])) {
+        if (u.id) fleetLookup.set(String(u.id).toLowerCase(), u);
+        if (u.agentId) fleetLookup.set(String(u.agentId).toLowerCase(), u);
+        if (u.name) fleetLookup.set(String(u.name).toLowerCase(), u);
+      }
+      if (targetUser?.id) fleetLookup.set(String(targetUser.id).toLowerCase(), targetUser);
+      if (targetUser?.agentId) fleetLookup.set(String(targetUser.agentId).toLowerCase(), targetUser);
+      if (targetUser?.name) fleetLookup.set(String(targetUser.name).toLowerCase(), targetUser);
+
       const slaveHistory = slaveEvents.map((ev: any) => {
         let details = ev.details;
         if (typeof details === 'string') {
@@ -528,18 +548,42 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         const evCreated = ev.created_at;
         const evExpires = details?.expires_at || new Date(new Date(evCreated).getTime() + validityDays * 24 * 60 * 60 * 1000).toISOString();
         const isEvActive = new Date(evExpires).getTime() > now;
-        const rawTargetIds = details?.target_account_ids || (details?.target_slave_id ? [details.target_slave_id] : [targetUser.id]);
+
+        // Authoritatively extract target accounts from details, falling back to event target or fleet lookup
+        const rawTargetIds = details?.target_account_ids || 
+          (details?.target_slave_id ? [details.target_slave_id] : null) ||
+          (details?.user_id ? [details.user_id] : null) ||
+          (details?.agent_id ? [details.agent_id] : null) ||
+          (ev.user_id && ev.user_id !== actualMasterId ? [ev.user_id] : [targetUser.id]);
         const targetIds: string[] = Array.isArray(rawTargetIds) ? rawTargetIds : [rawTargetIds];
+
         const targetAccounts = Array.isArray(details?.target_accounts) && details.target_accounts.length > 0
-          ? details.target_accounts
-          : targetIds.map((tid: string) => ({
-              id: tid,
-              agent_id: tid === targetUser.id ? (targetUser.agentId || targetUser.id) : tid,
-              name: tid === targetUser.id ? (targetUser.name || targetUser.agentId || 'Slave Agent') : tid,
-              avatar: tid === targetUser.id ? targetUser.avatar : undefined,
-              isDeployed: true,
-              status: 'active'
-            }));
+          ? details.target_accounts.map((acc: any) => {
+              const matched = fleetLookup.get(String(acc.id || '').toLowerCase()) ||
+                              fleetLookup.get(String(acc.agent_id || '').toLowerCase()) ||
+                              fleetLookup.get(String(acc.name || '').toLowerCase());
+              return {
+                id: matched?.id || acc.id,
+                agent_id: matched?.agentId || acc.agent_id || acc.id,
+                name: matched?.name || acc.name || 'Slave Agent',
+                avatar: matched?.avatar || acc.avatar,
+                isDeployed: true,
+                status: matched?.status || acc.status || 'active'
+              };
+            })
+          : targetIds.map((tid: string) => {
+              const matched = fleetLookup.get(String(tid).toLowerCase());
+              return {
+                id: matched?.id || tid,
+                agent_id: matched?.agentId || matched?.agent_id || details?.agent_id || tid,
+                name: matched?.name || details?.metadata?.target_slave_name || matched?.agentId || 'Slave Agent',
+                avatar: matched?.avatar,
+                isDeployed: true,
+                status: matched?.status || 'active'
+              };
+            });
+
+        const targetSlaveId = targetAccounts[0]?.id || targetIds[0] || details?.user_id || targetUser.id;
 
         return {
           id: ev.id,
@@ -559,7 +603,7 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
           status: isEvActive ? (details?.status || 'active') : 'expired',
           is_active: isEvActive,
           is_direct: true,
-          target_slave_id: targetUser.id
+          target_slave_id: targetSlaveId
         };
       });
 
@@ -826,20 +870,22 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
       const nowIso = new Date().toISOString();
       const activatedList = [];
       const activatedAccountsDetails = [];
+      const supabase = getSupabaseClient();
       for (const accountId of targetAccounts) {
         const cap = await capService.activateSlaveCapability(masterUserId, accountId, { validityDays });
         activatedList.push(cap);
+        const { data: uInfo } = await supabase.from('users').select('avatar').eq('id', cap.user_id).maybeSingle();
         activatedAccountsDetails.push({
           id: cap.user_id,
           agent_id: cap.agent_id,
           name: cap.metadata?.target_slave_name || cap.agent_id,
+          avatar: uInfo?.avatar,
           isDeployed: true,
           status: 'active'
         });
       }
 
       try {
-        const supabase = getSupabaseClient();
         await supabase.from('external_events').insert({
           id: batchId,
           user_id: masterUserId,
@@ -847,7 +893,7 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
           details: JSON.stringify({
             batch_id: batchId,
             master_id: masterUserId,
-            target_account_ids: targetAccounts,
+            target_account_ids: activatedAccountsDetails.map(a => a.id),
             target_accounts: activatedAccountsDetails,
             accounts_count: targetAccounts.length,
             validity_days: validityDays,
