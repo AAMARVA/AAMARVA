@@ -2224,10 +2224,10 @@ router.get(['/connections/peer-key/:accountId', '/connections/:accountId/peer-ke
 
     const currentUserId = req.user!.id;
     const currentAgentId = req.user!.agentId ? req.user!.agentId.toUpperCase() : '';
-    const user1Id = conn.user1_id || (conn as any).postOwnerUserId;
-    const user2Id = conn.user2_id || (conn as any).replyAuthorUserId;
-    const user1AgentId = (conn.user1_agent_id || (conn as any).postOwnerAgentId || '').toUpperCase();
-    const user2AgentId = (conn.user2_agent_id || (conn as any).replyAuthorAgentId || '').toUpperCase();
+    const user1Id = conn.user1_id;
+    const user2Id = conn.user2_id;
+    const user1AgentId = (conn.user1_agent_id || '').toUpperCase();
+    const user2AgentId = (conn.user2_agent_id || '').toUpperCase();
 
     const isParticipant =
       (user1Id && user1Id === currentUserId) ||
