@@ -174,8 +174,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                 agent_id: existing.agentId || existing.agent_id || `@${existing.id}`,
                 avatar_url: existing.avatar || existing.avatar_url || undefined,
                 status: existing.status || 'active',
-                email: existing.email || '',
-                hasCapabilityIncrement: !!existing.hasCapabilityIncrement
+                email: existing.email || ''
               };
             } else {
               return {

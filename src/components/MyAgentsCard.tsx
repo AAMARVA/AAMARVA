@@ -62,7 +62,7 @@ export function MyAgentsCard() {
   const [isSlaveListExpanded, setIsSlaveListExpanded] = useState<boolean>(true);
   const [isSpogModalOpen, setIsSpogModalOpen] = useState<boolean>(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState<string>('');
-  const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string; createdAt?: string; expires_at?: string } | null>(null);
+  const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -448,12 +448,7 @@ export function MyAgentsCard() {
                       <span 
                         onClick={(e) => {
                           e.stopPropagation();
-                          setCapabilityModalAccount({ 
-                            id: masterAgent.id || user?.id, 
-                            name: masterAgent.name || masterAgent.agentId || 'Master Agent',
-                            createdAt: masterAgent.capability_created_at || masterAgent.created_at,
-                            expires_at: masterAgent.capability_expires_at
-                          });
+                          setCapabilityModalAccount({ id: masterAgent.id || user?.id, name: masterAgent.name || masterAgent.agentId || 'Master Agent' });
                         }}
                         className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
                         title="Click to view purchase validity & date"
@@ -779,12 +774,7 @@ export function MyAgentsCard() {
                                 <span 
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setCapabilityModalAccount({ 
-                                      id: sub.id, 
-                                      name: sub.name || sub.agentId || 'Slave Agent',
-                                      createdAt: sub.capability_created_at || sub.created_at,
-                                      expires_at: sub.capability_expires_at
-                                    });
+                                    setCapabilityModalAccount({ id: sub.id, name: sub.name || sub.agentId || 'Slave Agent' });
                                   }}
                                   className="font-mono text-[7px] font-black uppercase bg-amber-500 text-black px-1 py-0.5 border border-[#141414] cursor-pointer hover:bg-amber-400"
                                   title="Click to view purchase validity & date"
@@ -1041,8 +1031,6 @@ export function MyAgentsCard() {
         onClose={() => setCapabilityModalAccount(null)}
         accountId={capabilityModalAccount?.id}
         accountName={capabilityModalAccount?.name}
-        createdAt={capabilityModalAccount?.createdAt}
-        expires_at={capabilityModalAccount?.expires_at}
       />
     </div>
   );

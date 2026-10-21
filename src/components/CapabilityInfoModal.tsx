@@ -18,7 +18,6 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   const [capabilityData, setCapabilityData] = useState<{
     validityDays: number;
     purchaseDate: string;
-    expiryDate: string;
     status: string;
   } | null>(null);
 
@@ -47,22 +46,15 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               ? new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) 
               : 'October 2026';
 
-            const rawExpiryDate = latestItem?.expires_at || plan?.expires_at;
-            const expiryDate = rawExpiryDate
-              ? new Date(rawExpiryDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-              : 'N/A';
-
             setCapabilityData({
               validityDays: validityDays > 0 ? validityDays : 30,
               purchaseDate,
-              expiryDate,
               status: plan?.status || 'active'
             });
           } else {
             setCapabilityData({
               validityDays: 30,
               purchaseDate: 'October 2026',
-              expiryDate: 'N/A',
               status: 'active'
             });
           }
@@ -71,7 +63,6 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
           setCapabilityData({
             validityDays: 30,
             purchaseDate: 'October 2026',
-            expiryDate: 'N/A',
             status: 'active'
           });
         })
@@ -134,10 +125,10 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
             <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-[#141414]" />
-                <span className="text-xs font-bold uppercase">Expiry Date</span>
+                <span className="text-xs font-bold uppercase">Validity Days Bought</span>
               </div>
               <span className="text-xs font-black bg-amber-400 text-black px-2 py-0.5 border border-[#141414]">
-                {capabilityData?.expiryDate || 'N/A'}
+                {capabilityData?.validityDays || 30} Days
               </span>
             </div>
 
