@@ -40,8 +40,8 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               return false;
             }) || capabilityItems[0] || plan;
 
-            const rawPurchaseDate = matchingPlan?.created_at || plan?.created_at;
-            const rawExpiryDate = matchingPlan?.expires_at || plan?.expires_at;
+            const rawPurchaseDate = matchingPlan?.created_at || plan?.created_at || history[0]?.created_at;
+            const rawExpiryDate = matchingPlan?.expires_at || plan?.expires_at || history[0]?.expires_at;
 
             const purchaseDate = rawPurchaseDate 
               ? new Date(rawPurchaseDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) 

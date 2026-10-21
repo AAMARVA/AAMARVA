@@ -341,7 +341,7 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     const { data: targetUser } = await supabase
       .from('users')
       .select('*')
-      .eq('id', requestedAccountId)
+      .or(`id.eq.${requestedAccountId},agentId.eq.${requestedAccountId},name.eq.${requestedAccountId}`)
       .maybeSingle();
 
     const isSlave = !!(
