@@ -595,12 +595,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                   </div>
                                   <div className="text-[11px] text-[#141414]/75 space-y-1.5">
                                     <div className="flex justify-between">
-                                      <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Plan Accounts:</span>
-                                      <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                        {item.accounts_in_transaction || item.target_account_ids?.length || 1} Slave Agents
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
                                       <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Plan Valuation:</span>
                                       <strong className="text-[#141414] font-black">
                                         ${item.amount || 100} {item.currency || 'USD'}
@@ -610,21 +604,45 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                       <span className="text-[#141414]/60 uppercase">Date Purchased:</span>
                                       <span className="text-[#141414] font-mono">{new Date(item.created_at).toLocaleString()}</span>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const targetId = item.target_account_ids?.[0] || item.account_id || slaveAgentsList[0]?.id;
-                                        if (targetId) {
-                                          setCapabilityModalAccount({
-                                            id: targetId,
-                                            name: item.plan_name || 'Capability Increment Plan'
-                                          });
-                                        }
-                                      }}
-                                      className="w-full mt-2 py-1.5 px-3 bg-amber-400 text-black font-black text-[10px] uppercase tracking-wider border border-[#141414] hover:bg-amber-300 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 transition-all text-center flex items-center justify-center gap-1.5"
-                                    >
-                                      <span>View Account</span>
-                                    </button>
+                                    <div className="flex justify-between items-center pt-1.5 border-t border-[#141414]/15">
+                                      <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Plan Accounts:</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                                          {item.accounts_in_transaction || item.target_account_ids?.length || 1} Slave Agents
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setShowHistoryPlanAgents(prev => ({ ...prev, [idx]: !prev[idx] }));
+                                          }}
+                                          className="text-[9px] font-black uppercase bg-[#141414] text-white px-2.5 py-1 border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1 cursor-pointer hover:bg-neutral-800 transition-all"
+                                        >
+                                          <span>View Accounts {showHistoryPlanAgents[idx] ? '▲' : '▼'}</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                    {showHistoryPlanAgents[idx] && (
+                                      <div className="p-3 bg-[#E4E3E0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2 mt-2">
+                                        <div className="flex items-center justify-between text-[10px] font-bold text-[#141414]">
+                                          <span>INCLUDED FLEET ROSTER ({slaveAgentsList.filter(a => a.isDeployed).length} DEPLOYED / {slaveAgentsList.length} TOTAL)</span>
+                                          <span className="text-[9px] font-mono text-[#141414]/70">Available: {slaveAgentsList.filter(a => !a.isDeployed).length} / {slaveAgentsList.length}</span>
+                                        </div>
+                                        <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                                          {slaveAgentsList.map((agent: any) => (
+                                            <div key={agent.id} className="p-2 bg-white border border-[#141414] flex items-center gap-2 text-xs">
+                                              <AgentAvatar agentId={agent.id} agentName={agent.name} className="w-5 h-5" />
+                                              <div className="flex-1 min-w-0">
+                                                <p className="font-bold uppercase text-[10px] truncate">{agent.name}</p>
+                                                <p className="text-[8px] text-neutral-500 font-mono">{agent.id}</p>
+                                              </div>
+                                              <span className={`text-[8px] px-1.5 py-0.5 font-bold uppercase border ${agent.isDeployed ? 'bg-green-100 text-green-800 border-green-300' : 'bg-neutral-100 text-neutral-600 border-neutral-300'}`}>
+                                                {agent.isDeployed ? 'Deployed' : 'Idle'}
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               );
