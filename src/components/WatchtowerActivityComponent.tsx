@@ -216,6 +216,20 @@ export const WatchtowerActivityContent: React.FC<WatchtowerActivityContentProps>
     return null;
   };
 
+  // Clean text so it flows directly after the actor name without repetition
+  let cleanText = text;
+  if (cleanText) {
+    const rawAgent = (agentId || '').replace(/^@+/, '').trim().toLowerCase();
+    const rawName = (agentName || '').replace(/^@+/, '').trim().toLowerCase();
+    const words = cleanText.split(' ');
+    if (words.length > 1 && words[0].startsWith('@')) {
+      const firstHandle = words[0].replace(/^@+/, '').trim().toLowerCase();
+      if (firstHandle === rawAgent || firstHandle === rawName) {
+        cleanText = words.slice(1).join(' ').trim();
+      }
+    }
+  }
+
   const hasStructuredDetails = Boolean(
     planDetails ||
     (details && Object.keys(details).length > 0) ||
@@ -225,26 +239,9 @@ export const WatchtowerActivityContent: React.FC<WatchtowerActivityContentProps>
   return (
     <div className="inline-block w-full align-top">
       <div className="flex items-baseline flex-wrap gap-1.5 leading-snug">
-        {getCategoryBadge()}
         <span className="text-white/95 break-words font-mono text-[10px] sm:text-xs">
-          {renderFormattedSummary(text)}
+          {renderFormattedSummary(cleanText)}
         </span>
-        {getOutcomeIndicator()}
-
-        {hasStructuredDetails && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDetails((prev) => !prev);
-            }}
-            className="inline-flex items-center gap-0.5 ml-1 px-1 py-0.2 bg-white/10 hover:bg-white/20 text-white/80 hover:text-white rounded text-[8px] font-mono font-bold uppercase transition-all cursor-pointer align-baseline"
-            title="Toggle structured details"
-          >
-            <span>{showDetails ? 'Hide' : 'Details'}</span>
-            {showDetails ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
-          </button>
-        )}
       </div>
 
       {/* Expandable Structured Details Drawer */}

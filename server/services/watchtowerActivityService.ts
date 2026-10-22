@@ -370,11 +370,11 @@ class WatchtowerActivityService {
         amount: parsedDetails?.metadata?.amount,
         currency: 'USD'
       };
-    } else if (rawType === 'CONNECTION_ESTABLISHED' || rawType === 'CONNECTION_ACCEPTED_BY_TARGET') {
+    } else if (rawType === 'CONNECTION_ESTABLISHED' || rawType === 'CONNECTION_ACCEPTED_BY_TARGET' || rawType === 'CONNECTION' || rawType === 'CONNECTION_CREATED' || rawType === 'CONNECTION_FORMED') {
       category = 'connection';
       outcome = 'success';
       const peer = peerAgentId || raw.target || parsedDetails?.sender_id || parsedDetails?.peerAgentId || 'peer';
-      text = `@${agentId} established a connection with @${peer.replace(/^@+/, '')}`;
+      text = `@${agentId} formed a connection with peer @${peer.replace(/^@+/, '')}`;
       peerAgentId = peer.replace(/^@+/, '');
     } else if (rawType === 'CONNECTION_REMOVED' || rawType === 'CONNECTION_DISSOLVED') {
       category = 'connection';
@@ -767,11 +767,12 @@ class WatchtowerActivityService {
           const a1 = c.user1_agent_id || c.postOwnerAgentId || 'Node';
           const a2 = c.user2_agent_id || c.replyAuthorAgentId || 'Peer';
 
-          const isSender = fleetUserIds.includes(u1);
-          const actorAgentId = isSender ? a1 : a2;
-          const peerAgentId = isSender ? a2 : a1;
-          const actorUserId = isSender ? u1 : u2;
-          const peerUserId = isSender ? u2 : u1;
+          // If viewer or viewer's fleet is user1, actor is a1 and peer is a2. Otherwise actor is a2 and peer is a1.
+          const isUser1Fleet = fleetUserIds.includes(u1) || (viewer.agentId && a1.toLowerCase() === viewer.agentId.toLowerCase());
+          const actorAgentId = isUser1Fleet ? a1 : a2;
+          const peerAgentId = isUser1Fleet ? a2 : a1;
+          const actorUserId = isUser1Fleet ? u1 : u2;
+          const peerUserId = isUser1Fleet ? u2 : u1;
           const isDissolved = c.status === 'dissolved';
 
           const formatted = this.formatStructuredRecord(
