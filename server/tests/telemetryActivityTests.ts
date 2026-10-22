@@ -7,6 +7,7 @@ import { getSupabaseClient } from '../supabase';
 import { registerUser, createHumanSession } from '../authService';
 import { watchtowerActivityService } from '../services/watchtowerActivityService';
 import { deduplicateAndMergeWatchtowerActivities, getActivityKey } from '../../src/lib/watchtowerActivityDeduplication';
+import { formatLogDetails, extractEventPayload } from '../../src/lib/activityFormatting';
 
 export async function runTelemetryActivityTests(): Promise<Record<string, { status: 'PASSED' | 'FAILED'; reason?: string }>> {
   console.log('\n=== AAMARVA TELEMETRY ACTIVITY ENDPOINT TESTS ===\n');
@@ -607,6 +608,75 @@ export async function runTelemetryActivityTests(): Promise<Record<string, { stat
       'TEST 16: No synthetic stream connection manufactured and response shape compliant',
       !hasSyntheticStream && Array.isArray(eventsList),
       `Synthetic stream suppressed: ${!hasSyntheticStream}, Array response shape intact: ${Array.isArray(eventsList)}`
+    );
+
+    // =================================================================
+    // TEST 17: Webhooks raw JSON suppression, human-readable summaries, and robust formatting
+    // =================================================================
+    // 17a: Screenshot payload produces readable summary without raw JSON
+    const screenshotPayload = JSON.stringify({
+      batch_id: 'bc580c5c-d549-45a5-bc46-38f43d01a4b8',
+      master_id: '3e813298-cfc3-49f1-945d-bcbbc83908c5',
+      target_account_ids: ['2c431935-1123-440d-8c91-16b91151742f', '14fdd94c-1a6f-4391-bc29-05234fd88e73'],
+      accounts_count: 2,
+      validity_days: 30,
+      created_at: '2026-10-21T18:21:46.985Z',
+      metadata: { validity_days_extended: 30, accounts_in_transaction: 2 }
+    });
+
+    const formattedScreenshot = formatLogDetails({
+      type: 'SLAVE_CAPABILITY_BATCH_ACTIVATED',
+      details: screenshotPayload
+    }, true);
+
+    const screenshotSummaryOk = formattedScreenshot.summary === 'Slave capability batch activated';
+    const screenshotAccountsOk = formattedScreenshot.detailsList.some((d: string) => d.includes('2 accounts affected'));
+    const screenshotValidityOk = formattedScreenshot.detailsList.some((d: string) => d.includes('Validity: 30 days'));
+    const noRawJsonLeaked = !formattedScreenshot.summary.includes('{') &&
+      !formattedScreenshot.summary.includes('}') &&
+      !formattedScreenshot.summary.includes('bc580c5c') &&
+      !formattedScreenshot.detailsList.some((d: string) => d.includes('{') || d.includes('bc580c5c') || d.includes('3e813298'));
+
+    // 17b: Malformed single-quote JSON (e.g. top card in screenshot) handled safely without crash
+    const malformedPayload = `['14fdd94c-1a6f-4391-bc29-0b234fd88e73'],'target_accounts':[{'id':'14fdd94c','agent_id':'AMR-NL5D-YEFG'}],'accounts_count':1,'validity_days':30,'metadata':{'validity_days_extended':30}`;
+    let malformedHandled = false;
+    try {
+      const formattedMalformed = formatLogDetails({
+        type: 'SLAVE_CAPABILITY_BATCH_ACTIVATED',
+        details: malformedPayload
+      }, true);
+      malformedHandled = formattedMalformed.summary === 'Slave capability batch activated' &&
+        formattedMalformed.detailsList.some((d: string) => d.includes('1 account affected')) &&
+        formattedMalformed.detailsList.some((d: string) => d.includes('Validity: 30 days')) &&
+        !formattedMalformed.summary.includes('{') &&
+        !formattedMalformed.detailsList.some((d: string) => d.includes('14fdd94c'));
+    } catch {
+      malformedHandled = false;
+    }
+
+    // 17c: Unknown event type renders safe fallback without raw JSON dump
+    const unknownFormatted = formatLogDetails({
+      type: 'CUSTOM_NODE_METRIC_TRANSMISSION',
+      details: '{"internal_code": 984, "secret_token": "xyz"}'
+    }, true);
+    const unknownSafe = !unknownFormatted.summary.includes('{') &&
+      !unknownFormatted.summary.includes('secret_token') &&
+      !unknownFormatted.detailsList.some((d: string) => d.includes('{') || d.includes('secret_token'));
+
+    // 17d: Footprints clean string preserved without alteration
+    const cleanFootprint = formatLogDetails({
+      action: 'CONNECTION_ESTABLISHED',
+      details: 'Established link with agent AMR-NL5D-YEFG'
+    }, false);
+    const footprintPreserved = cleanFootprint.summary === 'Established link with agent AMR-NL5D-YEFG';
+
+    const test17Passed = screenshotSummaryOk && screenshotAccountsOk && screenshotValidityOk &&
+      noRawJsonLeaked && malformedHandled && unknownSafe && footprintPreserved;
+
+    recordResult(
+      'TEST 17: Raw JSON suppressed; human-readable summaries and metadata rendered correctly',
+      test17Passed,
+      `Screenshot summary: ${screenshotSummaryOk}, Accounts: ${screenshotAccountsOk}, Validity: ${screenshotValidityOk}, No JSON leaked: ${noRawJsonLeaked}, Malformed handled: ${malformedHandled}, Unknown safe: ${unknownSafe}, Footprint preserved: ${footprintPreserved}`
     );
 
   } catch (err: any) {

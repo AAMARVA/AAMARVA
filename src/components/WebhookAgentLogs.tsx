@@ -6,6 +6,7 @@ import { BrutalistLoader } from './BrutalistLoader';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { useAuth } from '../context/AuthContext';
 import { getAccountKey, getActivityCache, setActivityCache } from '../lib/appStateCache';
+import { formatLogDetails } from '../lib/activityFormatting';
 
 interface LogItem {
   id: string;
@@ -397,25 +398,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
   };
 
   const getLogDescription = (log: LogItem) => {
-    if (activeTab === 'footprints') {
-      if (typeof log.details === 'string' && log.details.trim()) return log.details.trim();
-      if (log.details && typeof log.details === 'object' && log.details.message) return log.details.message;
-      const key = (log.action || '').toUpperCase();
-      return log.endpoint || FOOTPRINT_ENDPOINTS[key] || 'POST /api/agent/footprints';
-    }
-    const key = (log.type || log.action || '').toUpperCase();
-    if (typeof log.details === 'string' && log.details.trim()) return log.details.trim();
-    if (log.details && typeof log.details === 'object') {
-      if (log.details.message) return log.details.message;
-      if (log.details.details) return log.details.details;
-    }
-    if (PRE_WRITTEN_DESCRIPTIONS[key]) {
-      return PRE_WRITTEN_DESCRIPTIONS[key];
-    }
-    if (log.senderId) {
-      return `Encrypted telemetry received from candidate node @${log.senderId}`;
-    }
-    return 'Autonomous network event received and processed.';
+    return formatLogDetails(log, activeTab === 'webhooks').summary;
   };
 
   const parseEndpoint = (rawEndpoint?: string, actionKey?: string, isWebhook = false) => {
@@ -683,28 +666,43 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     const isThreadTarget = isPostTarget || isReplyTarget;
     const isClusterTarget = actionKey.includes('CLUSTER') || (targetStr && (targetStr.startsWith('cluster_') || targetStr.startsWith('cls_'))) || Boolean(log.details?.clusterId);
     const entities = resolveLogEntities(log);
-    const description = getLogDescription(log);
+    const { summary, detailsList } = formatLogDetails(log, isWebhook);
     const fullEndpoint = parseEndpoint(log.endpoint, isWebhook ? (log.type || log.action) : (log.action || log.type), isWebhook);
 
     return (
       <div key={log.id} className="p-3.5 bg-[#1e1e1e] border border-white/10 text-xs space-y-2.5 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] hover:border-white/15 transition-all duration-150">
         {/* Row 1: Action Title & Time */}
         <div className="flex justify-between items-center border-b border-white/10 pb-1.5 font-black tracking-wider text-xs text-white/90">
-          <div className="flex items-center gap-1.5">
-            <span className={isWebhook ? "text-blue-400" : "text-amber-400"}>{isWebhook ? '◆' : '●'}</span>
-            <span>{title}</span>
-          </div>
+          <span>{title}</span>
           <span className="text-[10px] text-white/50 font-medium">{timeStr}</span>
         </div>
 
         {/* Row 2: Description & Payload (prominent for webhook events and footprints with details) */}
         {isWebhook ? (
           <div className="text-[11px] text-white/90 font-sans leading-relaxed">
-            {description}
+            <div>{summary}</div>
+            {detailsList.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-white/70 font-mono mt-1">
+                {detailsList.map((item, idx) => (
+                  <span key={idx} className="bg-white/5 border border-white/10 px-1.5 py-0.5">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-        ) : log.details ? (
+        ) : (log.details || detailsList.length > 0) ? (
           <div className="text-[11px] text-white/80 font-sans leading-relaxed">
-            {typeof log.details === 'string' ? log.details : JSON.stringify(log.details)}
+            <div>{summary}</div>
+            {detailsList.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-white/70 font-mono mt-1">
+                {detailsList.map((item, idx) => (
+                  <span key={idx} className="bg-white/5 border border-white/10 px-1.5 py-0.5">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         ) : null}
 
