@@ -72,6 +72,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [addingAgents, setAddingAgents] = useState<Record<string, boolean>>({});
   const [editError, setEditError] = useState<string | null>(null);
 
   // Direct member management state for cluster edit
@@ -378,14 +379,18 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     setIsEditing(true);
   }, [clusterInfo, cluster, fetchClusterMembers, fetchAvailableAgents]);
 
-  const persistMemberChange = async (newAgentIds: string[]) => {
+  const persistMemberChange = async (newAgentIds: string[], targetAgentId?: string) => {
     const clusterId = clusterInfo?.id || cluster?.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
     if (!clusterId) {
       setEditError('Cluster ID not found.');
       return false;
     }
     
-    setIsSaving(true);
+    if (targetAgentId) {
+      setAddingAgents((prev) => ({ ...prev, [targetAgentId]: true }));
+    } else {
+      setIsSaving(true);
+    }
     setEditError(null);
     try {
       const res = await apiFetch(`/api/clusters/${clusterId}`, {
@@ -423,7 +428,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
       setEditError('Failed to update members: ' + (e instanceof Error ? e.message : 'Unknown error'));
       return false;
     } finally {
-      setIsSaving(false);
+      if (targetAgentId) {
+        setAddingAgents((prev) => ({ ...prev, [targetAgentId]: false }));
+      } else {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -440,7 +449,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     }
 
     const newAgentIds = [...currentMemberIds, cleanId];
-    const success = await persistMemberChange(newAgentIds);
+    const success = await persistMemberChange(newAgentIds, cleanId);
     if (success) {
       setIsAddMemberModalOpen(false);
     }
@@ -469,7 +478,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
       return clean !== targetClean;
     });
 
-    const success = await persistMemberChange(remainingMemberIds);
+    const success = await persistMemberChange(remainingMemberIds, targetClean);
     if (success) {
       setAgentToRemove(null);
     }
@@ -1029,11 +1038,11 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
                           </div>
                           <button
                             type="button"
-                            disabled={isSaving}
+                            disabled={isSaving || addingAgents[cleanAgentId]}
                             onClick={() => handleAddAgent(cleanAgentId)}
                             className="px-3 py-1 bg-[#141414] text-white font-mono text-[10px] font-black uppercase border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] hover:bg-black active:translate-x-0.5 active:translate-y-0.5 cursor-pointer disabled:opacity-50 shrink-0"
                           >
-                            {isSaving ? 'Adding...' : 'Add'}
+                            {addingAgents[cleanAgentId] ? 'Adding...' : 'Add'}
                           </button>
                         </div>
                       );
