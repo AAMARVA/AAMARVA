@@ -5,6 +5,8 @@ import aamarvaRouter from '../routes/aamarvaRoutes';
 import clusterRouter, { getClusterTables } from '../routes/clusterRoutes';
 import { getSupabaseClient } from '../supabase';
 import { registerUser, createHumanSession } from '../authService';
+import { watchtowerActivityService } from '../services/watchtowerActivityService';
+import { deduplicateAndMergeWatchtowerActivities, getActivityKey } from '../../src/lib/watchtowerActivityDeduplication';
 
 export async function runTelemetryActivityTests(): Promise<Record<string, { status: 'PASSED' | 'FAILED'; reason?: string }>> {
   console.log('\n=== AAMARVA TELEMETRY ACTIVITY ENDPOINT TESTS ===\n');
@@ -295,6 +297,231 @@ export async function runTelemetryActivityTests(): Promise<Record<string, { stat
       'TEST 8: Watchtower stream rejects invalid or expired ticket with 401',
       res8.status === 401,
       `Status: ${res8.status}`
+    );
+
+    // =================================================================
+    // TEST 9: Human-readable formatting & raw JSON suppression
+    // =================================================================
+    const getActivities = (res: any): any[] =>
+      Array.isArray(res.json?.data) ? res.json.data : (res.json?.data?.activities || res.json?.activities || []);
+
+    const rawPayload = JSON.stringify({
+      master_id: userA.id,
+      target_account_ids: [slaveAId, 'usr_slave_extra_1'],
+      validity_days_extended: 30,
+      created_at: new Date().toISOString(),
+      metadata: { source: 'billing_portal', internal_job_id: 'job_9981' }
+    });
+    const testEvtId = `evt_test_readable_${ts}`;
+    await supabase.from('external_events').insert({
+      id: testEvtId,
+      user_id: userA.id,
+      type: 'SLAVE_CAPABILITY_BATCH_ACTIVATED',
+      event_type: 'SLAVE_CAPABILITY_BATCH_ACTIVATED',
+      details: rawPayload,
+      created_at: new Date().toISOString()
+    });
+
+    const res9 = await helperFetch('/api/watchtower/activity', {
+      headers: {
+        'Cookie': `aamarva_human_session=${sessionTokenA}`
+      }
+    });
+
+    const activities9 = getActivities(res9);
+    const capabilityItem = activities9.find((a: any) =>
+      a.type === 'SLAVE_CAPABILITY_BATCH_ACTIVATED' || a.id?.includes(testEvtId)
+    );
+
+    const hasReadableSummary = Boolean(capabilityItem &&
+      capabilityItem.text &&
+      !capabilityItem.text.includes('{') &&
+      !capabilityItem.text.includes('}') &&
+      !capabilityItem.text.includes('master_id') &&
+      capabilityItem.text.toLowerCase().includes('capability increment') &&
+      capabilityItem.category?.toLowerCase() === 'plan' &&
+      capabilityItem.outcome === 'success' &&
+      (capabilityItem.planDetails?.accounts === 2 || capabilityItem.planDetails?.accountsAffected === 2)
+    );
+
+    recordResult(
+      'TEST 9: Raw JSON suppressed; human-readable summary rendered with structured metadata',
+      hasReadableSummary,
+      `Item found: ${Boolean(capabilityItem)}, text: "${capabilityItem?.text}", category: ${capabilityItem?.category}, accounts: ${capabilityItem?.planDetails?.accounts || capabilityItem?.planDetails?.accountsAffected}`
+    );
+
+    // =================================================================
+    // TEST 10: Deduplication of Live Memory + Persisted Database Records
+    // =================================================================
+    const stableActionKey = `conn_test_${ts}`;
+    // 1. Record in memory
+    await watchtowerActivityService.recordWatchtowerActivity({
+      agentId: userA.agentId,
+      agentName: userA.name,
+      text: 'established a connection with @agent-target',
+      type: 'CONNECTION_ESTABLISHED',
+      actorUserId: userA.id,
+      masterId: userA.id,
+      peerAgentId: 'agent-target',
+      activityKey: stableActionKey
+    });
+
+    // 2. Also simulate writing a footprint record with same action key
+    await supabase.from('agent_footprints').insert({
+      id: `fp_${stableActionKey}`,
+      agent_id: userA.agentId,
+      user_id: userA.id,
+      master_id: userA.id,
+      action: 'CONNECTION_ESTABLISHED',
+      details: `established a connection with @agent-target [key:${stableActionKey}]`,
+      created_at: new Date().toISOString()
+    });
+
+    const res10 = await helperFetch('/api/watchtower/activity', {
+      headers: {
+        'Cookie': `aamarva_human_session=${sessionTokenA}`
+      }
+    });
+    const activities10 = getActivities(res10);
+    const matchedItems = activities10.filter((a: any) =>
+      (a.activityKey && a.activityKey.includes(stableActionKey)) ||
+      (a.id && a.id.includes(stableActionKey)) ||
+      (a.text && a.text.includes('@agent-target'))
+    );
+
+    const dedupedCorrectly = matchedItems.length === 1;
+    recordResult(
+      'TEST 10: Dual recording across in-memory and database footprint reconciled to 1 entry',
+      dedupedCorrectly,
+      `Matched items count: ${matchedItems.length} (expected 1)`
+    );
+
+    // =================================================================
+    // TEST 11: Frontend deduplication algorithm merges dual SSE and REST
+    // =================================================================
+    const clientTestEvents = [
+      {
+        id: `wt_event_${ts}`,
+        agentId: 'alpha-agent',
+        peerAgentId: 'beta-agent',
+        type: 'CONNECTION_ESTABLISHED',
+        text: 'established a connection with @beta-agent',
+        createdAt: new Date().toISOString()
+      },
+      // Duplicate from floor_activity with fp_ prefix
+      {
+        id: `fp_event_${ts}`,
+        agentId: 'alpha-agent',
+        peerAgentId: 'beta-agent',
+        type: 'CONNECTION_ESTABLISHED',
+        text: 'established a connection with @beta-agent',
+        createdAt: new Date().toISOString()
+      },
+      // Another event with matching canonical connection key but different random client id
+      {
+        id: `sf-0.987654`,
+        agentId: 'alpha-agent',
+        peerAgentId: 'beta-agent',
+        type: 'connection_created',
+        text: 'connected with @beta-agent',
+        createdAt: new Date().toISOString()
+      },
+      // Distinct action that should NOT be deduplicated
+      {
+        id: `wt_diff_${ts}`,
+        agentId: 'alpha-agent',
+        type: 'SLAVE_DEPLOYED',
+        text: 'Master deployed slave account @gamma-agent',
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    const dedupedClientResult = deduplicateAndMergeWatchtowerActivities(clientTestEvents);
+    const clientDedupSuccess = dedupedClientResult.length === 2; // 1 connection + 1 deployment
+
+    recordResult(
+      'TEST 11: Frontend deduplication collapses dual SSE & prefixed database IDs into single row',
+      clientDedupSuccess,
+      `Input events: ${clientTestEvents.length}, Output events: ${dedupedClientResult.length} (expected 2)`
+    );
+
+    // =================================================================
+    // TEST 12: Sensitive Data Sanitization (No credentials or keys exposed)
+    // =================================================================
+    await watchtowerActivityService.recordWatchtowerActivity({
+      agentId: userA.agentId,
+      agentName: userA.name,
+      text: 'updated encryption identity and rotated keys',
+      type: 'E2EE_KEYS_UPDATED',
+      actorUserId: userA.id,
+      masterId: userA.id,
+      details: {
+        safeField: 'E2EE Identity Version 2',
+        passwordHash: '$2a$10$supersecretneverleak',
+        apiKey: 'amv_live_998877665544332211',
+        e2eePrivateKey: '-----BEGIN PRIVATE KEY-----MIIEvgIBADANBgkqhkiG9w0BAQEFAASC...',
+        token: 'eyJhGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_token'
+      }
+    });
+
+    const res12 = await helperFetch('/api/watchtower/activity', {
+      headers: {
+        'Cookie': `aamarva_human_session=${sessionTokenA}`
+      }
+    });
+    const activities12 = getActivities(res12);
+    const e2eeItem = activities12.find((a: any) =>
+      a.type === 'E2EE_KEYS_UPDATED' && (a.text?.includes('rotated keys') || a.details?.safeField)
+    );
+
+    const detailsSafe = e2eeItem &&
+      e2eeItem.details?.safeField === 'E2EE Identity Version 2' &&
+      !e2eeItem.details?.passwordHash &&
+      !e2eeItem.details?.apiKey &&
+      !e2eeItem.details?.e2eePrivateKey &&
+      !e2eeItem.details?.token;
+
+    recordResult(
+      'TEST 12: Sensitive credentials, API keys, and private keys strictly stripped from details',
+      Boolean(detailsSafe),
+      `e2eeItem found: ${Boolean(e2eeItem)}, safeField: "${e2eeItem?.details?.safeField}", passwordHash leaked: ${Boolean(e2eeItem?.details?.passwordHash)}, apiKey leaked: ${Boolean(e2eeItem?.details?.apiKey)}`
+    );
+
+    // =================================================================
+    // TEST 13: Strict Fleet Isolation between Master and Slaves
+    // =================================================================
+    // Verify Fleet B cannot see Fleet A's activities
+    const res13B = await helperFetch('/api/watchtower/activity', {
+      headers: {
+        'Cookie': `aamarva_human_session=${sessionTokenB}`
+      }
+    });
+    const activities13B = getActivities(res13B);
+    const leakedUserAInB = activities13B.some((a: any) =>
+      a.actorUserId === userA.id ||
+      a.agentId === userA.agentId ||
+      a.masterId === userA.id ||
+      a.text?.includes(userA.agentId)
+    );
+
+    // Verify slave account cannot view master-only administrative activities
+    const slaveSessionToken = await createHumanSession(slaveAId);
+    const res13Slave = await helperFetch('/api/watchtower/activity', {
+      headers: {
+        'Cookie': `aamarva_human_session=${slaveSessionToken}`
+      }
+    });
+    const activities13Slave = getActivities(res13Slave);
+    const slaveSawMasterAdmin = activities13Slave.some((a: any) =>
+      a.type === 'PLAN_ENTITLEMENT_ACTIVATED' ||
+      a.type === 'SESSIONS_REVOKED_ALL' ||
+      a.type === 'SLAVE_CAPABILITY_BATCH_ACTIVATED'
+    );
+
+    recordResult(
+      'TEST 13: Strict Fleet Isolation: foreign fleet blocked and slave restricted from master-only events',
+      !leakedUserAInB && !slaveSawMasterAdmin,
+      `Fleet B saw User A: ${leakedUserAInB}, Slave saw Master-only admin: ${slaveSawMasterAdmin}`
     );
 
   } catch (err: any) {

@@ -397,8 +397,14 @@ export function slaveActivityMiddleware(req: Request, res: Response, next: NextF
       }
       const fullEndpoint = `${method} ${cleanPath}`;
 
-      // 1. Record in Floor Activity (Live Stream & Telemetry Floor Activity)
+      const nowIso = new Date().toISOString();
+      const timeBucket10s = Math.floor(new Date(nowIso).getTime() / 10000);
+      const activityKey = `act_canon:${slaveIdentity.agentId}:${action.actionName}:${timeBucket10s}`;
+      const eventId = `fp_${crypto.randomUUID()}`;
+
+      // 1. Record in Watchtower Activity (Live Stream & Telemetry Activity)
       watchtowerActivityService.recordWatchtowerActivity({
+        id: eventId,
         agentId: slaveIdentity.agentId,
         agentName: slaveIdentity.name || slaveIdentity.agentId,
         avatar: slaveIdentity.avatar || '🤖',
@@ -407,32 +413,19 @@ export function slaveActivityMiddleware(req: Request, res: Response, next: NextF
         type: action.type,
         actorUserId: slaveIdentity.userId,
         masterId: slaveIdentity.masterId,
-        activityKey: `slave_${slaveIdentity.agentId}:${action.actionName}:${cleanPath}`,
-        createdAt: new Date().toISOString(),
+        activityKey,
+        createdAt: nowIso,
       }).catch((e) => console.warn('[slaveActivityMiddleware] watchtowerActivity error:', e?.message));
 
-      // 2. Record in Outbound Activities (Agent Footprints)
-      // Save footprint for the Master account
+      // 2. Record in Outbound Activities (Single authoritative Agent Footprint)
       logAgentFootprint(
-        slaveIdentity.masterId,
+        slaveIdentity.userId || slaveIdentity.masterId,
         action.actionName,
         action.details,
         action.target || cleanPath,
         slaveIdentity.agentId,
         fullEndpoint
-      ).catch((e) => console.warn('[slaveActivityMiddleware] master logAgentFootprint error:', e?.message));
-
-      // Also save footprint under the slave agent's own ID so querying either matches
-      if (slaveIdentity.userId && slaveIdentity.userId !== slaveIdentity.masterId) {
-        logAgentFootprint(
-          slaveIdentity.userId,
-          action.actionName,
-          action.details,
-          action.target || cleanPath,
-          slaveIdentity.agentId,
-          fullEndpoint
-        ).catch((e) => console.warn('[slaveActivityMiddleware] slave logAgentFootprint error:', e?.message));
-      }
+      ).catch((e) => console.warn('[slaveActivityMiddleware] logAgentFootprint error:', e?.message));
     } catch (err: any) {
       console.warn('[slaveActivityMiddleware] Error recording slave activity:', err?.message || err);
     }

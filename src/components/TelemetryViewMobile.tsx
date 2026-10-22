@@ -350,20 +350,7 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     return d.toLocaleDateString();
   };
 
-  const rawFloorLogs: Array<{
-    id: string;
-    activityKey?: string;
-    entityId?: string;
-    agentName: string;
-    agentId?: string;
-    emailVerified?: boolean;
-    avatar?: string;
-    text: string;
-    type: string;
-    peerName?: string;
-    cluster?: any;
-    createdAt?: string;
-  }> = [];
+  const rawFloorLogs: any[] = [];
 
   serverFloorLogs.forEach((sf: any) => {
     if (!sf || !sf.text) return;
@@ -371,8 +358,11 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     const key = sf.agentId ? normalizeId(sf.agentId) : '';
     const resolved = key ? masterNameMap[key] : null;
     const displayName = resolved && !isTechnicalName(resolved.name) ? resolved.name : (sf.agentName || sf.agentId || 'Agent');
+    const stableId = sf.id || `sf_${sf.activityKey || `${sf.agentId || 'agent'}_${sf.type || 'act'}_${sf.createdAt || ''}`}`;
+
     rawFloorLogs.push({
-      id: sf.id || `sf-${Math.random()}`,
+      ...sf,
+      id: stableId,
       activityKey: sf.activityKey,
       entityId: sf.entityId,
       agentName: displayName,
@@ -381,6 +371,13 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
       avatar: resolved?.avatar || sf.avatar || undefined,
       text: sf.text,
       type: sf.type || (sf.text.includes('registered') ? 'AGENT_REGISTERED' : 'activity'),
+      category: sf.category,
+      outcome: sf.outcome,
+      status: sf.status,
+      planDetails: sf.planDetails,
+      details: sf.details,
+      technicalDetails: sf.technicalDetails,
+      peerAgentId: sf.peerAgentId,
       createdAt: sf.createdAt || new Date().toISOString(),
       peerName: sf.peerName,
       cluster: sf.cluster,

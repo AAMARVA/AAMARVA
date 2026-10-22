@@ -13,11 +13,27 @@ export interface WatchtowerActivityRecord {
   emailVerified?: boolean;
   text: string;
   type: string;
+  category?: 'connection' | 'account' | 'cluster' | 'plan' | 'security' | 'tool' | 'general';
   peerName?: string;
   peerAgentId?: string;
   peerUserId?: string;
+  actorRole?: 'master' | 'slave' | 'agent';
+  peerRole?: 'master' | 'slave' | 'agent';
+  outcome?: 'success' | 'failed' | 'pending' | 'info';
+  status?: string;
   cluster?: any;
   post?: any;
+  planDetails?: {
+    planName?: string;
+    actionType?: string;
+    accounts?: number;
+    amount?: number;
+    currency?: string;
+    validityDays?: number;
+    targetAccountIds?: string[];
+  };
+  details?: any;
+  technicalDetails?: any;
   createdAt: string;
   actorUserId?: string;
   masterId?: string;
@@ -34,6 +50,77 @@ export interface WatchtowerViewerContext {
   isMaster: boolean;
 }
 
+/**
+ * Strips all sensitive credentials, secret tokens, password hashes, and private keys.
+ */
+export function sanitizeStructuredDetails(obj: any): any {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeStructuredDetails);
+
+  const sensitiveKeywords = [
+    'password', 'passwordhash', 'apikey', 'apikeyhash', 'apikeyfingerprint',
+    'secret', 'token', 'refreshtoken', 'privatekey', 'recoverykey',
+    'seed', 'credential', 'authheader', 'hash', 'signature'
+  ];
+
+  const sanitized: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const lowerKey = key.toLowerCase();
+    if (sensitiveKeywords.some((s) => lowerKey.includes(s))) {
+      continue;
+    }
+    if (typeof value === 'object' && value !== null) {
+      sanitized[key] = sanitizeStructuredDetails(value);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
+/**
+ * Builds a deterministic canonical key for activity deduplication across live & historical sources.
+ */
+export function buildCanonicalKey(
+  type: string,
+  actor: string,
+  peer: string | undefined,
+  createdAt: string,
+  explicitId?: string
+): string {
+  const normType = (type || 'activity').toLowerCase().trim();
+  const normActor = (actor || 'agent').replace(/^@+/, '').toLowerCase().trim();
+  const normPeer = (peer || '').replace(/^@+/, '').toLowerCase().trim();
+  const timeMs = new Date(createdAt || Date.now()).getTime();
+  const timeBucket10s = Math.floor(timeMs / 10000);
+
+  const cleanId = explicitId ? explicitId.replace(/^(fp_|wt_|conn_|evt_)/, '') : '';
+  const isRandomId = !cleanId || cleanId.includes('0.') || cleanId.includes('Math') || cleanId.length < 8;
+
+  if (normType.includes('connection')) {
+    const pair = [normActor, normPeer].filter(Boolean).sort().join('<->');
+    const action = normType.includes('dissolv') || normType.includes('remov') ? 'dissolved' : 'established';
+    return `conn_canon:${pair}:${action}:${timeBucket10s}`;
+  }
+
+  if (normType.includes('capability') || normType.includes('plan')) {
+    if (!isRandomId) {
+      return `plan_canon:${cleanId}`;
+    }
+    return `plan_canon:${normActor}:${normType}:${timeBucket10s}`;
+  }
+
+  if (normType.includes('cluster')) {
+    return `cluster_canon:${normActor}:${normType}:${normPeer}:${timeBucket10s}`;
+  }
+
+  if (!isRandomId) {
+    return `act_canon:${cleanId}`;
+  }
+
+  return `act_canon:${normActor}:${normType}:${normPeer}:${timeBucket10s}`;
+}
+
 class WatchtowerActivityService {
   private recentActivities: WatchtowerActivityRecord[] = [];
   private sseClients: Map<Response, WatchtowerViewerContext> = new Map();
@@ -42,8 +129,7 @@ class WatchtowerActivityService {
 
   /**
    * Checks whether a specific activity record is authorized to be viewed by a given viewer.
-   * Strict account-level isolation:
-   * - Unauthenticated viewer: False
+   * Strict fleet-level isolation:
    * - Master viewer: Can see their own activity and activities within their own fleet of slave agents.
    *   Can NEVER see another master's fleet activity.
    * - Slave viewer: Can ONLY see their own authorized activity and events involving their own node.
@@ -69,7 +155,6 @@ class WatchtowerActivityService {
     if (viewer.isMaster) {
       // Must not see another master's fleet activity unless this master or its fleet is the target/peer
       if (rMasterId && rMasterId !== vMasterId) {
-        // Allow if this master or one of its slave nodes is explicitly the peer/target of the other actor
         if (rPeerMasterId && rPeerMasterId === vMasterId) {
           return true;
         }
@@ -79,7 +164,7 @@ class WatchtowerActivityService {
         }
         // If it's a cluster event, allow if this master or its slave is a cluster member
         if (record.cluster && (record.cluster.memberAgentIds || record.cluster.members)) {
-          const members: string[] = (record.cluster.memberAgentIds || record.cluster.members || []).map((m: any) => 
+          const members: string[] = (record.cluster.memberAgentIds || record.cluster.members || []).map((m: any) =>
             String(typeof m === 'string' ? m : (m.agentId || m.id || '')).replace(/^@+/, '').toLowerCase().trim()
           );
           if ((vAgentId && members.includes(vAgentId)) || (vUserId && members.includes(vUserId))) {
@@ -109,7 +194,7 @@ class WatchtowerActivityService {
 
       // Cluster membership check for master
       if (record.cluster && (record.cluster.memberAgentIds || record.cluster.members)) {
-        const members: string[] = (record.cluster.memberAgentIds || record.cluster.members || []).map((m: any) => 
+        const members: string[] = (record.cluster.memberAgentIds || record.cluster.members || []).map((m: any) =>
           String(typeof m === 'string' ? m : (m.agentId || m.id || '')).replace(/^@+/, '').toLowerCase().trim()
         );
         if ((vAgentId && members.includes(vAgentId)) || (vUserId && members.includes(vUserId))) {
@@ -121,24 +206,20 @@ class WatchtowerActivityService {
     }
 
     // 2. If viewer is a Slave Agent Account
-    // Slaves can NEVER see master-only operations
     if (record.isMasterOnly) {
       return false;
     }
 
-    // Slave can see events where the slave itself is the actor
     if (rActorUserId === vUserId || (vAgentId && rAgentId === vAgentId)) {
       return true;
     }
 
-    // Slave can see events where the slave itself is the target / recipient
     if (rPeerUserId === vUserId || (vAgentId && rPeerAgentId === vAgentId)) {
       return true;
     }
 
-    // Slave can see cluster events if the slave is explicitly in the cluster
     if (record.cluster && (record.cluster.memberAgentIds || record.cluster.members)) {
-      const members: string[] = (record.cluster.memberAgentIds || record.cluster.members || []).map((m: any) => 
+      const members: string[] = (record.cluster.memberAgentIds || record.cluster.members || []).map((m: any) =>
         String(typeof m === 'string' ? m : (m.agentId || m.id || '')).replace(/^@+/, '').toLowerCase().trim()
       );
       if (vAgentId && members.includes(vAgentId)) {
@@ -146,14 +227,13 @@ class WatchtowerActivityService {
       }
     }
 
-    // Otherwise, slave cannot see private events of other slaves or other fleets
     return false;
   }
 
   /**
    * Resolves the master ID for an agent or user ID with in-memory caching.
    */
-  private async resolveMasterIdForActor(agentOrUserId: string): Promise<string | null> {
+  public async resolveMasterIdForActor(agentOrUserId: string): Promise<string | null> {
     if (!agentOrUserId) return null;
     const clean = agentOrUserId.replace(/^@+/, '').toLowerCase().trim();
     if (this.agentMasterCache.has(clean)) {
@@ -179,6 +259,261 @@ class WatchtowerActivityService {
   }
 
   /**
+   * Converts any raw event or database row into a structured, human-readable WatchtowerActivityRecord.
+   */
+  public formatStructuredRecord(
+    raw: any,
+    agentProfileMap: Record<string, any> = {},
+    source: 'live' | 'footprint' | 'external_event' | 'connection' = 'live'
+  ): WatchtowerActivityRecord | null {
+    if (!raw) return null;
+
+    const id = raw.id || `wt_${crypto.randomUUID()}`;
+    const createdAt = raw.createdAt || raw.created_at || new Date().toISOString();
+    const rawType = (raw.type || raw.action || 'activity').toUpperCase();
+
+    // Parse details safely
+    let parsedDetails: any = raw.details;
+    if (typeof parsedDetails === 'string') {
+      const trimmed = parsedDetails.trim();
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          parsedDetails = JSON.parse(trimmed);
+        } catch {}
+      }
+    }
+
+    const actorUserId = raw.actorUserId || raw.user_id || raw.userId;
+    let agentId = raw.agentId || raw.agent_id || (actorUserId ? agentProfileMap[actorUserId]?.agentId : undefined) || 'AGENT';
+    agentId = agentId.replace(/^@+/, '');
+    const prof = agentProfileMap[actorUserId] || agentProfileMap[agentId.toLowerCase()];
+
+    const agentName = prof?.name || raw.agentName || raw.agent_name || agentId;
+    const avatar = prof?.avatar || raw.avatar || '🤖';
+    const emailVerified = prof?.emailVerified ?? Boolean(raw.emailVerified);
+
+    let peerAgentId = (raw.peerAgentId || raw.peer_agent_id || raw.target || '').replace(/^@+/, '') || undefined;
+    let peerUserId = raw.peerUserId || raw.peer_user_id || undefined;
+    let peerName = raw.peerName || raw.peer_name || peerAgentId || undefined;
+
+    if (!peerAgentId && typeof raw.details === 'string') {
+      const matchPeer = raw.details.match(/@([a-zA-Z0-9_-]+)/);
+      if (matchPeer) {
+        peerAgentId = matchPeer[1];
+      }
+    }
+    if (!raw.activityKey && typeof raw.details === 'string') {
+      const keyMatch = raw.details.match(/\[key:([^\]]+)\]/);
+      if (keyMatch) {
+        raw.activityKey = keyMatch[1];
+      }
+    }
+
+    let category: WatchtowerActivityRecord['category'] = 'general';
+    let outcome: WatchtowerActivityRecord['outcome'] = 'info';
+    let text = typeof raw.text === 'string' && raw.text.trim() ? raw.text.trim() : '';
+    let planDetails: WatchtowerActivityRecord['planDetails'] = raw.planDetails;
+    let cluster = raw.cluster;
+
+    // Detect if text is a raw serialized JSON dump (e.g. from external_events)
+    const isTextRawJson = text.startsWith('{') && text.endsWith('}') && (text.includes('master_id') || text.includes('validity_days') || text.includes('batch_id'));
+    if (isTextRawJson && !parsedDetails) {
+      try {
+        parsedDetails = JSON.parse(text);
+      } catch {}
+      text = '';
+    }
+
+    // Determine category, outcome, and human-readable text
+    if (rawType.includes('CAPABILITY_BATCH') || rawType === 'SLAVE_CAPABILITY_BATCH_ACTIVATED') {
+      category = 'plan';
+      outcome = 'success';
+      const count = parsedDetails?.accounts_count || parsedDetails?.target_account_ids?.length || parsedDetails?.metadata?.accounts_in_transaction || 1;
+      const days = parsedDetails?.validity_days || parsedDetails?.metadata?.validity_days_extended || 30;
+      text = `Master activated Capability Increment (+${days} Days) for ${count} slave account${count === 1 ? '' : 's'}`;
+      planDetails = {
+        planName: 'Capability Increment Plan',
+        actionType: 'capability_increment',
+        accounts: count,
+        accountsAffected: count,
+        validityDays: days,
+        targetAccountIds: parsedDetails?.target_account_ids || []
+      };
+    } else if (rawType.includes('CAPABILITY') || rawType === 'SLAVE_CAPABILITY_ACTIVATED') {
+      category = 'plan';
+      outcome = 'success';
+      const days = parsedDetails?.validity_days || parsedDetails?.metadata?.validity_days_extended || 30;
+      const targetAccount = peerAgentId || parsedDetails?.agent_id || parsedDetails?.user_id || agentId;
+      text = `Activated Capability Increment (+${days} Days) for @${targetAccount.replace(/^@+/, '')}`;
+      planDetails = {
+        planName: 'Capability Increment Plan',
+        actionType: 'capability_increment',
+        accounts: 1,
+        validityDays: days
+      };
+    } else if (rawType.includes('PLAN_ENTITLEMENT') || rawType === 'PLAN_ENTITLEMENT_ACTIVATED') {
+      category = 'plan';
+      outcome = 'success';
+      const planName = parsedDetails?.plan_name || 'Master & Slave Agent Plan';
+      const allowance = parsedDetails?.allowance_accounts || 10;
+      const actionType = parsedDetails?.metadata?.action_type || parsedDetails?.action_type || 'activation';
+      const added = parsedDetails?.metadata?.added_accounts || parsedDetails?.metadata?.accounts_bought || 0;
+      if (actionType === 'add_accounts' || added > 0) {
+        text = `Master expanded fleet capacity (+${added || 10} Accounts, ${allowance} total)`;
+      } else {
+        text = `Master activated ${planName} (${allowance} Accounts total)`;
+      }
+      planDetails = {
+        planName,
+        actionType,
+        accounts: allowance,
+        amount: parsedDetails?.metadata?.amount,
+        currency: 'USD'
+      };
+    } else if (rawType === 'CONNECTION_ESTABLISHED' || rawType === 'CONNECTION_ACCEPTED_BY_TARGET') {
+      category = 'connection';
+      outcome = 'success';
+      const peer = peerAgentId || raw.target || parsedDetails?.sender_id || parsedDetails?.peerAgentId || 'peer';
+      text = `@${agentId} established a connection with @${peer.replace(/^@+/, '')}`;
+      peerAgentId = peer.replace(/^@+/, '');
+    } else if (rawType === 'CONNECTION_REMOVED' || rawType === 'CONNECTION_DISSOLVED') {
+      category = 'connection';
+      outcome = 'info';
+      const peer = peerAgentId || raw.target || parsedDetails?.sender_id || parsedDetails?.peerAgentId || 'peer';
+      text = `@${agentId} removed its connection with @${peer.replace(/^@+/, '')}`;
+      peerAgentId = peer.replace(/^@+/, '');
+    } else if (rawType === 'CONNECTION_REQUEST_SENT') {
+      category = 'connection';
+      outcome = 'pending';
+      const peer = peerAgentId || raw.target || 'peer';
+      text = `@${agentId} sent a connection request to @${peer.replace(/^@+/, '')}`;
+      peerAgentId = peer.replace(/^@+/, '');
+    } else if (rawType === 'SLAVE_CREATED' || rawType === 'SLAVE_DEPLOYED' || rawType === 'AGENT_REGISTERED') {
+      category = 'account';
+      outcome = 'success';
+      if (peerAgentId && peerAgentId !== agentId) {
+        text = `Master deployed slave account @${peerAgentId.replace(/^@+/, '')}`;
+      } else if (raw.isMasterOnly || raw.masterId) {
+        text = `Master deployed slave account @${agentId}`;
+      } else {
+        text = `@${agentId} registered on the floor`;
+      }
+    } else if (rawType === 'SLAVE_UNDEPLOYED' || rawType === 'SLAVE_DELETED') {
+      category = 'account';
+      outcome = 'info';
+      const targetAccount = peerAgentId || agentId;
+      text = `Master undeployed slave account @${targetAccount.replace(/^@+/, '')}`;
+    } else if (rawType === 'API_KEY_ROTATED' || rawType === 'API_KEY_ROTATION_REQUESTED') {
+      category = 'security';
+      outcome = 'success';
+      const targetAccount = peerAgentId || agentId;
+      text = `API key rotated for @${targetAccount.replace(/^@+/, '')}`;
+    } else if (rawType === 'E2EE_KEYS_UPDATED' || rawType === 'INITIALIZE_SLAVE_E2EE') {
+      category = 'security';
+      outcome = 'success';
+      const targetAccount = peerAgentId || agentId;
+      text = `@${targetAccount.replace(/^@+/, '')} updated encryption identity`;
+    } else if (rawType === 'WHITELIST_UPDATED') {
+      category = 'security';
+      outcome = 'success';
+      const count = parsedDetails?.networksCount || (Array.isArray(parsedDetails?.whitelisted_networks) ? parsedDetails.whitelisted_networks.length : undefined);
+      text = count ? `Updated network access perimeter (${count} networks configured)` : `Updated network access perimeter`;
+    } else if (rawType === 'CLUSTER_CREATED') {
+      category = 'cluster';
+      outcome = 'success';
+      const cName = cluster?.name || parsedDetails?.name || 'Cluster';
+      text = `@${agentId} created cluster "${cName}"`;
+    } else if (rawType === 'CLUSTER_MEMBER_ADDED' || rawType === 'CLUSTER_JOINED') {
+      category = 'cluster';
+      outcome = 'success';
+      const cName = cluster?.name || parsedDetails?.name || 'Cluster';
+      if (peerAgentId && peerAgentId !== agentId) {
+        text = `@${agentId} added @${peerAgentId.replace(/^@+/, '')} to cluster "${cName}"`;
+      } else {
+        text = `@${agentId} joined cluster "${cName}"`;
+      }
+    } else if (rawType === 'CLUSTER_MEMBER_REMOVED' || rawType === 'CLUSTER_LEFT' || rawType === 'CLUSTER_DISBANDED') {
+      category = 'cluster';
+      outcome = 'info';
+      const cName = cluster?.name || parsedDetails?.name || 'Cluster';
+      if (rawType === 'CLUSTER_DISBANDED') {
+        text = `@${agentId} disbanded cluster "${cName}"`;
+      } else if (peerAgentId && peerAgentId !== agentId) {
+        text = `@${agentId} removed @${peerAgentId.replace(/^@+/, '')} from cluster "${cName}"`;
+      } else {
+        text = `@${agentId} left cluster "${cName}"`;
+      }
+    } else if (rawType === 'CLUSTER_MESSAGE_SENT' || rawType === 'CLUSTER_MESSAGE_RECEIVED') {
+      category = 'cluster';
+      outcome = 'success';
+      const cName = cluster?.name || parsedDetails?.name || 'Cluster';
+      text = `@${agentId} sent a message in cluster "${cName}"`;
+    } else if (rawType === 'MESSAGE_SENT' || rawType === 'MESSAGE_RECEIVED') {
+      category = 'general';
+      outcome = 'success';
+      const peer = peerAgentId || 'peer';
+      text = rawType === 'MESSAGE_SENT'
+        ? `@${agentId} transmitted encrypted message to @${peer.replace(/^@+/, '')}`
+        : `@${agentId} received encrypted message from @${peer.replace(/^@+/, '')}`;
+    } else if (rawType === 'PROFILE_UPDATED' || rawType === 'AGENT_PROFILE_UPDATED') {
+      category = 'account';
+      outcome = 'success';
+      text = `@${agentId} updated its profile`;
+    } else if (rawType.includes('TOOL') || rawType.includes('MCP')) {
+      category = 'tool';
+      outcome = 'success';
+      const toolName = parsedDetails?.toolName || parsedDetails?.toolId || 'Tool';
+      text = `@${agentId} invoked tool "${toolName}"`;
+    } else if (!text) {
+      // Safe fallback for unclassified records: readable summary, never raw JSON
+      if (parsedDetails && typeof parsedDetails === 'object') {
+        const actionLabel = parsedDetails.action || parsedDetails.event || rawType.replace(/_/g, ' ').toLowerCase();
+        text = `@${agentId} completed ${actionLabel}`;
+      } else {
+        text = `@${agentId} executed ${rawType.replace(/_/g, ' ').toLowerCase()}`;
+      }
+    }
+
+    // Clean any lingering technical brackets or serialized JSON in text
+    if (text.startsWith('{') && text.endsWith('}')) {
+      text = `@${agentId} performed fleet operation (${rawType.toLowerCase()})`;
+    }
+
+    const activityKey = raw.activityKey || buildCanonicalKey(rawType, agentId, peerAgentId, createdAt, raw.id);
+    const sanitizedTechDetails = sanitizeStructuredDetails(typeof parsedDetails === 'object' ? parsedDetails : undefined);
+
+    return {
+      id,
+      activityKey,
+      entityId: raw.entityId,
+      agentId,
+      agentName,
+      avatar,
+      emailVerified,
+      text,
+      type: rawType,
+      category,
+      peerName,
+      peerAgentId,
+      peerUserId,
+      actorRole: raw.actorRole,
+      peerRole: raw.peerRole,
+      outcome,
+      status: raw.status || (outcome === 'success' ? 'ACTIVE' : undefined),
+      cluster,
+      post: raw.post,
+      planDetails,
+      details: sanitizedTechDetails,
+      technicalDetails: sanitizedTechDetails,
+      createdAt,
+      actorUserId,
+      masterId: raw.masterId,
+      peerMasterId: raw.peerMasterId,
+      isMasterOnly: Boolean(raw.isMasterOnly)
+    };
+  }
+
+  /**
    * Records a new activity on Watchtower and broadcasts it via SSE to all authorized clients.
    */
   public async recordWatchtowerActivity(activity: Partial<WatchtowerActivityRecord> & { text: string }): Promise<WatchtowerActivityRecord> {
@@ -195,27 +530,13 @@ class WatchtowerActivityService {
       peerMasterId = await this.resolveMasterIdForActor(activity.peerUserId || activity.peerAgentId || '') || undefined;
     }
 
-    const record: WatchtowerActivityRecord = {
+    const record = this.formatStructuredRecord({
+      ...activity,
       id,
-      activityKey: activity.activityKey || id,
-      entityId: activity.entityId,
-      agentId: activity.agentId || 'AGENT',
-      agentName: activity.agentName || activity.agentId || 'Agent',
-      avatar: activity.avatar || '🤖',
-      emailVerified: Boolean(activity.emailVerified),
-      text: activity.text,
-      type: activity.type || 'activity',
-      peerName: activity.peerName,
-      peerAgentId: activity.peerAgentId,
-      peerUserId: activity.peerUserId,
-      peerMasterId,
-      cluster: activity.cluster,
-      post: activity.post,
-      createdAt,
-      actorUserId: activity.actorUserId,
       masterId,
-      isMasterOnly: Boolean(activity.isMasterOnly),
-    };
+      peerMasterId,
+      createdAt
+    })!;
 
     // Store in ring buffer, deduplicating if identical activityKey exists
     const existingIndex = this.recentActivities.findIndex(
@@ -234,7 +555,7 @@ class WatchtowerActivityService {
     // Broadcast SSE event to all connected watchtower/floor stream clients that are authorized to view it
     const payloadWatchtower = `event: watchtower_activity\ndata: ${JSON.stringify(record)}\n\n`;
     const payloadFloor = `event: floor_activity\ndata: ${JSON.stringify(record)}\n\n`;
-    
+
     for (const [client, viewer] of Array.from(this.sseClients.entries())) {
       try {
         if (this.isRecordAuthorizedForViewer(record, viewer)) {
@@ -246,7 +567,7 @@ class WatchtowerActivityService {
       }
     }
 
-    // Also persist in agent_footprints if not already persisted
+    // Persist in agent_footprints with stable ID and readable text
     try {
       if (record.actorUserId || record.masterId) {
         const supabase = getSupabaseClient();
@@ -265,7 +586,7 @@ class WatchtowerActivityService {
       }
     } catch (e) {}
 
-    // Also notify realtime service if agent is known
+    // Notify realtime service if agent is known
     try {
       if (record.agentId) {
         realtimeService.notifyAccount(record.agentId, {
@@ -302,9 +623,9 @@ class WatchtowerActivityService {
     const isMaster = viewer.isMaster;
 
     // 1. Resolve fleet user IDs and agent IDs
-    let fleetUserIds = [vUserId];
-    let fleetAgentIds = viewer.agentId ? [viewer.agentId] : [];
-    const agentProfileMap: Record<string, { name: string; avatar?: string; agentId?: string; emailVerified?: boolean }> = {};
+    const fleetUserIds = [vUserId];
+    const fleetAgentIds = viewer.agentId ? [viewer.agentId] : [];
+    const agentProfileMap: Record<string, { name: string; avatar?: string; agentId?: string; emailVerified?: boolean; role?: 'master' | 'slave' }> = {};
 
     try {
       if (isMaster) {
@@ -322,6 +643,7 @@ class WatchtowerActivityService {
               avatar: s.avatar,
               agentId: s.agentId,
               emailVerified: Boolean(s.emailVerified),
+              role: 'slave'
             };
             if (s.agentId) {
               agentProfileMap[s.agentId.toLowerCase()] = agentProfileMap[s.id];
@@ -330,19 +652,20 @@ class WatchtowerActivityService {
         }
       }
 
-      // Also get the viewer user profile if not yet in map
+      // Viewer user profile
       const { data: viewerUser } = await supabase
         .from('users')
-        .select('id, agentId, name, avatar, emailVerified')
+        .select('id, agentId, name, avatar, emailVerified, account_type, is_master_primary')
         .eq('id', vUserId)
         .maybeSingle();
 
       if (viewerUser) {
         agentProfileMap[viewerUser.id] = {
-          name: viewerUser.name || viewerUser.agentId || 'Operator',
+          name: viewerUser.name || viewerUser.agentId || (isMaster ? 'Master Account' : 'Operator'),
           avatar: viewerUser.avatar,
           agentId: viewerUser.agentId,
           emailVerified: Boolean(viewerUser.emailVerified),
+          role: isMaster ? 'master' : 'slave'
         };
         if (viewerUser.agentId) {
           agentProfileMap[viewerUser.agentId.toLowerCase()] = agentProfileMap[viewerUser.id];
@@ -371,72 +694,25 @@ class WatchtowerActivityService {
 
       if (!fpErr && footprints && Array.isArray(footprints)) {
         for (const fp of footprints) {
-          const act = (fp.action || '').toUpperCase();
-          const target = fp.target || '';
-          const details = fp.details || '';
-          const uId = fp.user_id || fp.userId;
-          const aId = fp.agent_id || fp.agentId || agentProfileMap[uId]?.agentId || 'AGENT';
-          const prof = agentProfileMap[uId] || agentProfileMap[aId?.toLowerCase()];
-
-          let text = details;
-          let type = 'activity';
-
-          if (act === 'CONNECTION_ESTABLISHED') {
-            type = 'connection';
-            text = details || `formed a connection with peer @${target || 'peer'}`;
-          } else if (act === 'CONNECTION_REMOVED') {
-            type = 'connection';
-            text = details || `removed connection with peer @${target || 'peer'}`;
-          } else if (act === 'CONNECTION_REQUEST_SENT') {
-            type = 'request';
-            text = details || `sent a connection handshake request to @${target || 'peer'}`;
-          } else if (act === 'MESSAGE_SENT') {
-            type = 'activity';
-            text = 'transmitted encrypted transmission to peer';
-          } else if (act === 'E2EE_KEYS_UPDATED') {
-            type = 'activity';
-            text = 'registered its E2EE cryptographic identity';
-          } else if (act === 'PROFILE_UPDATED') {
-            type = 'AGENT_PROFILE_UPDATED';
-            text = 'updated its profile';
-          } else if (act === 'CLUSTER_CREATED') {
-            type = 'CLUSTER_CREATED';
-            text = 'created a new Cluster enclave';
-          } else if (act === 'CLUSTER_JOINED') {
-            type = 'CLUSTER_JOINED';
-            text = 'joined Cluster enclave';
-          } else if (act === 'CLUSTER_MESSAGE_SENT') {
-            type = 'cluster';
-            text = 'transmitted an encrypted message inside Cluster enclave';
-          } else if (act === 'CLUSTER_INVITE_SENT') {
-            type = 'cluster';
-            text = 'sent an invitation to join Cluster enclave';
+          const formatted = this.formatStructuredRecord(
+            {
+              ...fp,
+              masterId: vMasterId,
+              actorUserId: fp.user_id || fp.userId,
+              peerAgentId: fp.target,
+              type: fp.action
+            },
+            agentProfileMap,
+            'footprint'
+          );
+          if (formatted) {
+            historicalRecords.push(formatted);
           }
-
-          let canonicalActivityKey = `fp:${fp.id || `${act}:${target}:${fp.created_at}`}`;
-          if (act === 'CONNECTION_ESTABLISHED' || act === 'CONNECTION_REMOVED') {
-            const canonicalTimestamp = Math.floor(new Date(fp.created_at || new Date().toISOString()).getTime() / 1000);
-            canonicalActivityKey = `conn_canonical:${aId}:${target}:${act === 'CONNECTION_ESTABLISHED' ? 'established' : 'dissolved'}:${canonicalTimestamp}`;
-          }
-          historicalRecords.push({
-            id: fp.id || `fp_${Math.random()}`,
-            activityKey: canonicalActivityKey,
-            agentId: aId,
-            agentName: prof?.name || aId,
-            avatar: prof?.avatar || '🤖',
-            emailVerified: prof?.emailVerified ?? false,
-            text,
-            type,
-            createdAt: fp.created_at || new Date().toISOString(),
-            actorUserId: uId,
-            masterId: vMasterId,
-            peerAgentId: target ? target.replace(/^@/, '') : undefined,
-          });
         }
       }
     } catch (e) {}
 
-    // 3. Query persistent external_events (inbound events)
+    // 3. Query persistent external_events (inbound & audit events)
     try {
       let evtQuery = supabase.from('external_events').select('*');
       if (isMaster) {
@@ -455,55 +731,20 @@ class WatchtowerActivityService {
 
       if (!evtErr && extEvents && Array.isArray(extEvents)) {
         for (const ev of extEvents) {
-          const evType = (ev.type || '').toUpperCase();
-          const sender = ev.sender_id || ev.senderId || 'peer_node';
           const uId = ev.user_id || ev.userId;
-          const prof = agentProfileMap[uId];
-
-          let text = ev.details || '';
-          let type = 'activity';
-
-          if (evType === 'CONNECTION_ACCEPTED_BY_TARGET') {
-            type = 'connection';
-            text = `formed a connection with peer @${sender}`;
-          } else if (evType === 'CONNECTION_DISSOLVED') {
-            type = 'connection';
-            text = `peer @${sender} terminated connection link`;
-          } else if (evType === 'MESSAGE_RECEIVED') {
-            type = 'activity';
-            text = `received encrypted payload from peer @${sender}`;
-          } else if (evType === 'CLUSTER_MEMBER_JOINED') {
-            type = 'CLUSTER_JOINED';
-            text = `a member joined Cluster enclave`;
-          } else if (evType === 'CLUSTER_MESSAGE_RECEIVED') {
-            type = 'cluster';
-            text = `received encrypted message inside Cluster enclave`;
-          }
-
-          const actorAgentId = agentProfileMap[uId]?.agentId || 'UNKNOWN_AGENT';
-          const peerAgentId = sender;
-          
-          let canonicalActivityKey = `evt:${ev.id || `${evType}:${sender}:${ev.created_at}`}`;
-          if (evType === 'CONNECTION_ACCEPTED_BY_TARGET' || evType === 'CONNECTION_DISSOLVED') {
-            const canonicalTimestamp = Math.floor(new Date(ev.created_at || new Date().toISOString()).getTime() / 1000);
-            canonicalActivityKey = `conn_canonical:${actorAgentId}:${peerAgentId}:${evType === 'CONNECTION_ACCEPTED_BY_TARGET' ? 'established' : 'dissolved'}:${canonicalTimestamp}`;
-          }
-
-          if (text) {
-            historicalRecords.push({
-              id: ev.id || `evt_${Math.random()}`,
-              activityKey: canonicalActivityKey,
-              agentId: actorAgentId,
-              agentName: sender,
-              avatar: '🤖',
-              emailVerified: false,
-              text,
-              type,
-              createdAt: ev.created_at || new Date().toISOString(),
-              peerUserId: uId,
-              peerMasterId: vMasterId,
+          const formatted = this.formatStructuredRecord(
+            {
+              ...ev,
               masterId: vMasterId,
-            });
+              actorUserId: uId,
+              peerAgentId: ev.sender_id || ev.senderId,
+              type: ev.type || ev.event_type || ev.action
+            },
+            agentProfileMap,
+            'external_event'
+          );
+          if (formatted) {
+            historicalRecords.push(formatted);
           }
         }
       }
@@ -531,31 +772,28 @@ class WatchtowerActivityService {
           const peerAgentId = isSender ? a2 : a1;
           const actorUserId = isSender ? u1 : u2;
           const peerUserId = isSender ? u2 : u1;
-          const prof = agentProfileMap[actorUserId] || agentProfileMap[actorAgentId.toLowerCase()];
-
           const isDissolved = c.status === 'dissolved';
-          const text = isDissolved
-            ? `removed its connection with @${peerAgentId}`
-            : `formed a connection with peer @${peerAgentId}`;
 
-          const canonicalTimestamp = Math.floor(new Date(c.createdAt || c.created_at || new Date().toISOString()).getTime() / 1000);
-          const activityKey = `conn_canonical:${actorAgentId}:${peerAgentId}:${isDissolved ? 'dissolved' : 'established'}:${canonicalTimestamp}`;
-          historicalRecords.push({
-            id: `conn_${c.id}`,
-            activityKey,
-            agentId: actorAgentId,
-            agentName: prof?.name || actorAgentId,
-            avatar: prof?.avatar || '🤖',
-            emailVerified: prof?.emailVerified ?? false,
-            text,
-            type: 'connection',
-            peerAgentId,
-            peerName: peerAgentId,
-            createdAt: c.createdAt || c.created_at || new Date().toISOString(),
-            actorUserId,
-            peerUserId,
-            masterId: vMasterId,
-          });
+          const formatted = this.formatStructuredRecord(
+            {
+              id: `conn_${c.id}`,
+              action: isDissolved ? 'CONNECTION_REMOVED' : 'CONNECTION_ESTABLISHED',
+              type: 'connection',
+              agentId: actorAgentId,
+              peerAgentId,
+              actorUserId,
+              peerUserId,
+              masterId: vMasterId,
+              status: c.status,
+              createdAt: c.createdAt || c.created_at
+            },
+            agentProfileMap,
+            'connection'
+          );
+
+          if (formatted) {
+            historicalRecords.push(formatted);
+          }
         }
       }
     } catch (e) {}
@@ -566,24 +804,44 @@ class WatchtowerActivityService {
     // Combine and deduplicate
     const combined = [...inMemoryFiltered, ...historicalRecords];
     const seenKeys = new Set<string>();
+    const seenIds = new Set<string>();
     const deduplicated: WatchtowerActivityRecord[] = [];
 
     for (const item of combined) {
       if (!item || !item.text) continue;
-      const key = item.activityKey || item.id || `${item.agentId}:${item.type}:${item.text}:${item.createdAt}`;
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        // Ensure record satisfies viewer authorization
-        if (this.isRecordAuthorizedForViewer(item, viewer)) {
-          deduplicated.push(item);
-        }
+      const cleanId = item.id ? item.id.replace(/^(fp_|wt_|conn_|evt_|sf_)/, '').trim().toLowerCase() : '';
+      const canonicalKey = buildCanonicalKey(item.type, item.agentId, item.peerAgentId, item.createdAt, item.id);
+      const customKey = item.activityKey ? item.activityKey.toLowerCase() : '';
+
+      if (cleanId && cleanId.length >= 8 && seenIds.has(cleanId)) {
+        continue;
+      }
+      if (customKey && seenKeys.has(customKey)) {
+        continue;
+      }
+      if (canonicalKey && seenKeys.has(canonicalKey)) {
+        continue;
+      }
+
+      if (cleanId && cleanId.length >= 8) {
+        seenIds.add(cleanId);
+      }
+      if (customKey) {
+        seenKeys.add(customKey);
+      }
+      if (canonicalKey) {
+        seenKeys.add(canonicalKey);
+      }
+
+      if (this.isRecordAuthorizedForViewer(item, viewer)) {
+        deduplicated.push(item);
       }
     }
 
     // Sort chronologically descending
     deduplicated.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
-    // Merge these into this.recentActivities so SSE and in-memory caches stay warm
+    // Update recent ring buffer with newly formatted unique records
     for (const d of deduplicated.slice(0, this.maxActivities)) {
       const idx = this.recentActivities.findIndex(
         (a) => (a.activityKey && a.activityKey === d.activityKey) || a.id === d.id
@@ -592,7 +850,6 @@ class WatchtowerActivityService {
         this.recentActivities.push(d);
       }
     }
-    // Re-sort recentActivities
     this.recentActivities.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     if (this.recentActivities.length > this.maxActivities) {
       this.recentActivities.splice(this.maxActivities);
@@ -603,7 +860,6 @@ class WatchtowerActivityService {
 
   /**
    * Returns a scoped copy of recent watchtower activities for an authenticated viewer.
-   * If viewer is not provided or unauthenticated, returns an empty list (fail-closed).
    */
   public getRecentWatchtowerActivity(viewer?: WatchtowerViewerContext): WatchtowerActivityRecord[] {
     if (!viewer || !viewer.userId) {
@@ -616,14 +872,12 @@ class WatchtowerActivityService {
     return this.getRecentWatchtowerActivity(viewer);
   }
 
-
   /**
    * Registers an authenticated client for Server-Sent Events (SSE).
    */
   public registerWatchtowerStreamClient(res: Response, viewer: WatchtowerViewerContext): void {
     this.sseClients.set(res, viewer);
 
-    // Initial handshake packet with strictly authorized recent buffer
     try {
       const authorizedRecent = this.getRecentWatchtowerActivity(viewer).slice(0, 50);
       const handshake = `event: handshake\ndata: ${JSON.stringify({

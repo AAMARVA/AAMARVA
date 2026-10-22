@@ -962,6 +962,28 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
         });
       } catch (e) {}
 
+      watchtowerActivityService.recordWatchtowerActivity({
+        id: `wt_cap_${batchId}`,
+        activityKey: `plan_canon:${batchId}`,
+        agentId: (req.user as any)?.agentId || 'Master',
+        agentName: req.user?.name || 'Master Account',
+        avatar: req.user?.avatar || '🤖',
+        type: 'SLAVE_CAPABILITY_BATCH_ACTIVATED',
+        category: 'plan',
+        outcome: 'success',
+        text: `Master activated Capability Increment (+${validityDays} Days) for ${activatedList.length} slave account${activatedList.length > 1 ? 's' : ''}`,
+        actorUserId: masterUserId,
+        masterId: masterUserId,
+        planDetails: {
+          planName: 'Capability Increment Plan',
+          actionType: 'capability_increment',
+          accounts: activatedList.length,
+          validityDays,
+          targetAccountIds: activatedAccountsDetails.map(a => a.agent_id || a.id)
+        },
+        createdAt: nowIso
+      }).catch(console.warn);
+
       const { MasterAccountService } = await import('../services/masterAccountService.js');
       const existingMasterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
 
@@ -1002,6 +1024,33 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     } as any);
 
     masterService.invalidateMasterPlanCache(masterUserId);
+
+    const isAddOn = actionType === 'add_accounts' || (entitlement.metadata?.added_accounts && entitlement.metadata.added_accounts > 0);
+    const planSummaryText = isAddOn 
+      ? `Master expanded fleet capacity (+${entitlement.metadata?.added_accounts || targetAccounts} accounts, ${entitlement.allowance_accounts} total)`
+      : `Master activated ${entitlement.plan_name || 'Master & Slave Agent Plan'} (${entitlement.allowance_accounts} accounts total)`;
+
+    watchtowerActivityService.recordWatchtowerActivity({
+      id: `wt_plan_${entitlement.id}`,
+      activityKey: `plan_canon:${entitlement.id}`,
+      agentId: (req.user as any)?.agentId || 'Master',
+      agentName: req.user?.name || 'Master Account',
+      avatar: req.user?.avatar || '🤖',
+      type: 'PLAN_ENTITLEMENT_ACTIVATED',
+      category: 'plan',
+      outcome: 'success',
+      text: planSummaryText,
+      actorUserId: masterUserId,
+      masterId: masterUserId,
+      planDetails: {
+        planName: entitlement.plan_name,
+        actionType: isAddOn ? 'add_accounts' : 'new_plan',
+        accounts: entitlement.allowance_accounts,
+        amount: entitlement.metadata?.amount,
+        currency: 'USD'
+      },
+      createdAt: new Date().toISOString()
+    }).catch(console.warn);
 
     return res.json({
       success: true,
@@ -1272,10 +1321,15 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
         agentName: subAgentRecord.name,
         avatar: subAgentRecord.avatar,
         emailVerified: false,
-        text: 'registered on the floor',
-        type: 'AGENT_REGISTERED',
+        text: `Master deployed slave account @${agentId}`,
+        type: 'SLAVE_DEPLOYED',
+        category: 'account',
+        outcome: 'success',
         entityId: subAgentId,
-        activityKey: `reg:${agentId}`
+        actorUserId: masterUserId,
+        masterId: masterUserId,
+        peerAgentId: agentId,
+        activityKey: `deploy_${agentId}`
       }).catch(console.warn);
 
       return {
@@ -1302,6 +1356,25 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
       createdRecords.push(...results);
     }
     (req as any).alreadyRecordedSlaveActivity = true;
+
+    if (createdRecords.length > 1) {
+      watchtowerActivityService.recordWatchtowerActivity({
+        agentId: (req.user as any)?.agentId || 'Master',
+        agentName: req.user?.name || 'Master Account',
+        avatar: req.user?.avatar || '🤖',
+        type: 'SLAVE_BULK_DEPLOYED',
+        category: 'account',
+        outcome: 'success',
+        text: `Master completed bulk deployment of ${createdRecords.length} slave accounts`,
+        actorUserId: masterUserId,
+        masterId: masterUserId,
+        activityKey: `bulk_deploy_${masterUserId}_${Math.floor(Date.now() / 10000)}`,
+        details: {
+          deployedCount: createdRecords.length,
+          agentIds: createdRecords.map((r: any) => r.agentId)
+        }
+      }).catch(console.warn);
+    }
 
     if (createdRecords.length === 1) {
       return res.status(201).json({
@@ -1385,6 +1458,20 @@ router.post(['/auth/master/rotate-sub-agent-key', '/v1/auth/master/rotate-sub-ag
     if (updateErr) {
       throw new Error(`Database rotation failed: ${updateErr.message}`);
     }
+
+    watchtowerActivityService.recordWatchtowerActivity({
+      agentId: subAgent.agentId,
+      agentName: subAgent.name || subAgent.agentId,
+      avatar: subAgent.avatar || '🤖',
+      type: 'API_KEY_ROTATED',
+      category: 'security',
+      outcome: 'success',
+      text: `API key rotated for @${subAgent.agentId}`,
+      peerAgentId: subAgent.agentId,
+      actorUserId: masterUserId,
+      masterId: masterUserId,
+      activityKey: `rotate_${subAgent.agentId}_${Math.floor(Date.now() / 10000)}`
+    }).catch(console.warn);
 
     return res.json({
       success: true,
@@ -1470,6 +1557,20 @@ router.post(
           e2eeKeyUpdatedAt: new Date().toISOString()
         }
       });
+
+      watchtowerActivityService.recordWatchtowerActivity({
+        agentId: subAgent.agentId,
+        agentName: subAgent.name || subAgent.agentId,
+        avatar: subAgent.avatar || '🤖',
+        type: 'E2EE_KEYS_UPDATED',
+        category: 'security',
+        outcome: 'success',
+        text: `@${subAgent.agentId} updated encryption identity`,
+        peerAgentId: subAgent.agentId,
+        actorUserId: masterUserId,
+        masterId: masterUserId,
+        activityKey: `e2ee_${subAgent.agentId}_${Math.floor(Date.now() / 10000)}`
+      }).catch(console.warn);
 
       return res.json({
         success: true,
@@ -1568,6 +1669,30 @@ router.post(['/auth/master/undeploy-slave-agent', '/v1/auth/master/undeploy-slav
       throw new Error(`Failed to remove agent: ${delErr.message}`);
     }
 
+    try {
+      await watchtowerActivityService.recordWatchtowerActivity({
+        agentId: (req.user as any).agentId || masterUserId,
+        agentName: (req.user as any).name || 'Master',
+        avatar: (req.user as any).avatar,
+        emailVerified: Boolean((req.user as any).emailVerified),
+        text: `Master undeployed slave account @${subAgent.agentId || subAgent.name}`,
+        type: 'SLAVE_UNDEPLOYED',
+        actorUserId: masterUserId,
+        masterId: masterUserId,
+        peerUserId: subAgent.id,
+        peerAgentId: subAgent.agentId || subAgent.name,
+        peerName: subAgent.name || subAgent.agentId,
+        details: {
+          slaveAgentId: subAgent.agentId,
+          slaveName: subAgent.name,
+          slotRestored: true,
+        },
+        activityKey: `slave_undeployed:${subAgent.id}:${Math.floor(Date.now() / 10000)}`
+      });
+    } catch (e) {
+      console.warn('Failed to record slave undeploy watchtower activity:', e);
+    }
+
     return res.json({
       success: true,
       message: `Slave agent ${subAgent.name || subAgent.agentId} undeployed successfully. Allowance slot has been restored.`
@@ -1609,6 +1734,30 @@ router.post(['/auth/master/logout-slave-agent', '/v1/auth/master/logout-slave-ag
       .from('refresh_tokens')
       .update({ isRevoked: true })
       .eq('userId', slaveAgentId);
+
+    try {
+      await watchtowerActivityService.recordWatchtowerActivity({
+        agentId: (req.user as any).agentId || masterUserId,
+        agentName: (req.user as any).name || 'Master',
+        avatar: (req.user as any).avatar,
+        emailVerified: Boolean((req.user as any).emailVerified),
+        text: `Master logged out slave account @${subAgent.agentId || subAgent.name}`,
+        type: 'SLAVE_LOGGED_OUT',
+        actorUserId: masterUserId,
+        masterId: masterUserId,
+        peerUserId: subAgent.id,
+        peerAgentId: subAgent.agentId || subAgent.name,
+        peerName: subAgent.name || subAgent.agentId,
+        details: {
+          slaveAgentId: subAgent.agentId,
+          slaveName: subAgent.name,
+          action: 'FORCE_GLOBAL_LOGOUT'
+        },
+        activityKey: `slave_logout:${subAgent.id}:${Math.floor(Date.now() / 10000)}`
+      });
+    } catch (e) {
+      console.warn('Failed to record slave logout watchtower activity:', e);
+    }
 
     return res.json({
       success: true,
@@ -1669,6 +1818,23 @@ router.post(['/auth/sessions/logout-all', '/v1/auth/sessions/logout-all'], requi
         eventType: 'SESSIONS_REVOKED_ALL',
         actionSource: 'IDENTITY',
         details: { message: 'User requested global logout for all devices and sessions' }
+      });
+    } catch (e) {}
+
+    try {
+      await watchtowerActivityService.recordWatchtowerActivity({
+        agentId: req.user!.agentId || req.user!.id,
+        agentName: req.user!.name,
+        avatar: req.user!.avatar,
+        emailVerified: Boolean(req.user!.emailVerified),
+        text: 'revoked all active sessions and refresh tokens',
+        type: 'SESSIONS_REVOKED_ALL',
+        actorUserId: req.user!.id,
+        masterId: (req.user as any).masterId || req.user!.id,
+        details: {
+          action: 'GLOBAL_LOGOUT_ALL_SESSIONS'
+        },
+        activityKey: `sessions_revoked:${req.user!.id}:${Math.floor(Date.now() / 10000)}`
       });
     } catch (e) {}
 
@@ -3397,7 +3563,7 @@ router.get(['/floor/activity', '/v1/floor/activity', '/watchtower/activity', '/v
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required.' } });
     }
     const data = await watchtowerActivityService.fetchWatchtowerActivitiesForViewer(viewer);
-    res.json({ success: true, data });
+    res.json({ success: true, data, activities: data });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
   }
