@@ -745,6 +745,8 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                     {isSlaveAccount && Boolean(currentUser?.hasCapabilityIncrement || currentUser?.plan === 'slave_capability' || currentUser?.isCapped) && (
                       <CappedBadge 
                         isCapped={true}
+                        size="md"
+                        expiresAt={currentUser?.capability_expires_at || currentUser?.expires_at || currentUser?.expiresAt}
                         className="cursor-pointer transition-transform active:translate-x-0.5 active:translate-y-0.5"
                         onClick={(e) => {
                           e.stopPropagation();
