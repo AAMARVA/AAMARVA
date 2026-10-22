@@ -923,7 +923,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </button>
           </div>
 
-          <div className={`grid grid-cols-1 md:grid-cols-3 ${isSlaveAccount ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-4`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
               <div className="flex justify-between items-center">
                 <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Email</span>

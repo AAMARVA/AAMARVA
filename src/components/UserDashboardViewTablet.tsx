@@ -999,7 +999,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
             </div>
           </div>
 
-          <div className={`grid grid-cols-1 md:grid-cols-3 ${isSlaveAccount ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-4`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Email Address */}
             <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
               <div className="flex justify-between items-center">
@@ -1061,7 +1061,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                         setPasswordResetError('');
                         setPasswordResetSuccess('');
                         setShowPasswordChangeModal(true);
-                      }}
+                      }} 
                       className="text-[#141414]/60 hover:text-black font-bold uppercase text-[10px] underline"
                     >
                       Change Password
@@ -1071,29 +1071,31 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
               </div>
             )}
 
-            {/* Agent API Key */}
-            <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
-              </div>
-              <div className="flex flex-col gap-4 flex-grow">
-                <div className="flex-grow" />
-                <div className="flex justify-center items-center gap-2 border-t pt-2 border-[#141414]/20">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewApiKey(null);
-                      setRotationError('');
-                      setShowRotateModal(true);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#141414]/20 hover:border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider transition-all shadow-[1px_1px_0px_0px_rgba(20,20,20,0.1)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
-                  >
-                    <RotateCw className="w-3 h-3" />
-                    Rotate API Key
-                  </button>
+            {/* Agent API Key (Only displayed for slave accounts, not master account) */}
+            {isSlaveAccount && (
+              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex-grow flex flex-col">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
+                </div>
+                <div className="flex flex-col gap-4 flex-grow">
+                  <div className="flex-grow" />
+                  <div className="flex justify-center items-center gap-2 border-t pt-2 border-[#141414]/20">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewApiKey(null);
+                        setRotationError('');
+                        setShowRotateModal(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#141414]/20 hover:border-[#141414] hover:bg-[#E4E3E0] text-[10px] font-black uppercase tracking-wider transition-all shadow-[1px_1px_0px_0px_rgba(20,20,20,0.1)] hover:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+                    >
+                      <RotateCw className="w-3 h-3" />
+                      Rotate API Key
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
           </div>
 
