@@ -16,6 +16,7 @@ import { useAuth } from './context/AuthContext.tsx';
 import { apiFetch } from './services/authApi.ts';
 import { supabase } from './lib/supabase.ts';
 import { AccessGateway } from './components/AccessGateway.tsx';
+import { usePosts, useRecentConnections } from './services/dataService.ts';
 
 // Code-split heavy secondary views and modals to optimize initial bundle size and FCP
 const CommandPitView = React.lazy(() => import('./components/CommandPitView').then(m => ({ default: m.CommandPitView })));
@@ -442,37 +443,74 @@ export default function App() {
     }
   };
 
+  const { data: postsData, isLoading: isPostsLoading, refetch: refetchPosts } = usePosts(isAuthenticated, true);
+  const { data: recentConnectionsData, refetch: refetchRecentConnections } = useRecentConnections(isAuthenticated, true);
+
   useEffect(() => {
-    if (!isAuthenticated) return;
-    fetchPosts();
-    // Sustainable polling: fetch every 15 seconds only if the tab is visible
-    const intervalId = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        fetchPosts();
-        fetchRecentConnections();
-      }
-    }, 15000);
+    if (postsData) {
+      // Map postsData to NetworkTicket format as done previously
+      const mappedPosts: NetworkTicket[] = postsData.map((p: any) => ({
+        id: p.id,
+        ticketId: p.ticketId || p.id,
+        postId: p.postId || p.id,
+        agentName: p.agentName || 'Agent',
+        agentId: p.agentId,
+        avatar: p.avatar || undefined,
+        content: p.content,
+        timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+        createdAt: p.createdAt,
+        rawMinutesAgo: p.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 60000)) : 0,
+        bidsCount: p.bidsCount ?? p.repliesCount ?? (p.bids ? p.bids.length : 0),
+        repliesCount: p.repliesCount ?? p.bidsCount ?? (p.bids ? p.bids.length : 0),
+        connectionsCount: typeof p.connectionsCount === 'number' ? p.connectionsCount : (Array.isArray(p.connectionsList) ? p.connectionsList.length : 0),
+        verified: p.emailVerified === true,
+        emailVerified: p.emailVerified === true,
+        verificationStatus: p.verificationStatus || (p.emailVerified ? 'verified' : 'not verified'),
+        status: 'active',
+        type: p.type || 'intake',
+        category: p.category,
+        bids: Array.isArray(p.bids || p.replies) ? (p.bids || p.replies).map((r: any) => ({
+          id: r.id,
+          bidId: r.bidId || r.id,
+          replyId: r.replyId || r.id,
+          agentName: r.agentName || r.author?.displayName || 'Agent',
+          agentId: r.agentId || r.author?.agentId,
+          avatar: r.avatar || r.author?.avatar || undefined,
+          content: r.content,
+          timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (r.timestamp || 'Just now'),
+          createdAt: r.createdAt,
+          emailVerified: r.emailVerified === true,
+          verificationStatus: r.verificationStatus || (r.emailVerified ? 'verified' : 'not verified'),
+        })) : [],
+        connectionsList: Array.isArray(p.connectionsList) ? p.connectionsList.map((c: any) => ({
+          id: c.id,
+          postId: c.postId,
+          ticketId: c.ticketId || c.postId,
+          replyId: c.replyId,
+          bidId: c.bidId || c.replyId,
+          agentName: c.agentName || c.replyAuthorAgentName || 'Connected Agent',
+          agentId: c.agentId || c.replyAuthorAgentId,
+          avatar: c.avatar || c.replyAuthorAvatar || undefined,
+          postOwnerAgentName: c.postOwnerAgentName,
+          postOwnerAgentId: c.postOwnerAgentId,
+          postOwnerEmailVerified: c.postOwnerEmailVerified === true,
+          replyAuthorEmailVerified: c.replyAuthorEmailVerified === true,
+          emailVerified: c.emailVerified === true,
+          verificationStatus: c.verificationStatus || (c.emailVerified ? 'verified' : 'not verified'),
+          createdAt: c.createdAt,
+        })) : [],
+      }));
+      setPosts(mappedPosts);
+      setIsInitialLoading(false);
+      hasInitialLoadedRef.current = true;
+    }
+  }, [postsData]);
 
-    // Instant sync when the user refocuses the window/tab
-    const handleFocus = () => {
-      fetchPosts();
-    };
-    window.addEventListener('focus', handleFocus);
-
-    // Sync immediately when visibility transitions to visible
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchPosts();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [isAuthenticated, user]);
+  useEffect(() => {
+    if (recentConnectionsData) {
+      setRecentConnections(recentConnectionsData);
+    }
+  }, [recentConnectionsData]);
 
 
 
