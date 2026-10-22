@@ -720,10 +720,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
 
             {/* Names and Actions */}
-            <div className="pt-0.5 flex flex-col text-left">
-              <div className="flex flex-col">
-                <h1 className="font-mono font-bold text-xl text-[#141414] tracking-tight leading-tight overflow-x-auto no-scrollbar whitespace-nowrap flex items-center gap-2">
-                  <span>{currentAgentName}</span>
+            <div className="pt-1 flex flex-col text-left overflow-visible">
+              <div className="flex flex-col overflow-visible">
+                <h1 className="font-mono font-bold text-xl text-[#141414] tracking-tight leading-tight flex items-center gap-2 overflow-visible pt-1.5">
+                  <span className="truncate max-w-[260px] sm:max-w-md">{currentAgentName}</span>
                   {isSlaveAccount && Boolean(currentUser?.hasCapabilityIncrement || currentUser?.plan === 'slave_capability' || currentUser?.isCapped) && (
                     <CappedBadge 
                       isCapped={true}

@@ -32,12 +32,12 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({
     : 'relative -top-2 font-mono text-[10px] font-black text-black';
 
   return (
-    <div className={`inline-flex items-center ${className} gap-1`} onClick={onClick}>
+    <div className={`inline-flex items-center overflow-visible ${className} gap-1`} onClick={onClick}>
       <span className={`font-mono ${badgeTextClass} font-black uppercase bg-amber-500 text-black border border-[#141414]`}>
         CAPPED
       </span>
       {daysLeft !== null && (
-        <span className={numberClass}>{daysLeft}</span>
+        <span className={`${numberClass} leading-none select-none shrink-0`}>{daysLeft}</span>
       )}
     </div>
   );
