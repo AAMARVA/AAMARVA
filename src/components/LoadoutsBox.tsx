@@ -271,8 +271,10 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
         payload.actionType = 'new_plan';
         payload.validityDays = 30;
       } else if (effectiveAction === 'add_accounts') {
-        // Consider only the new accounts being bought (e.g. 10) and add only those to the existing fleet
-        const effectiveAddOn = Math.max(1, addAccountsCount);
+        // Enforce strict minimum of 10 accounts under any condition for adding accounts
+        const parsedInput = parseInt(addAccountsRaw, 10);
+        const resolvedCount = !isNaN(parsedInput) ? parsedInput : addAccountsCount;
+        const effectiveAddOn = Math.max(10, resolvedCount);
         payload.actionType = 'add_accounts';
         payload.addOnAccounts = effectiveAddOn;
         payload.totalAccounts = (currentPlan?.allowance_accounts || 0) + effectiveAddOn;
@@ -1074,15 +1076,14 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto font-mono">
                             <button
                               type="button"
-                              disabled={addAccountsCount <= 1}
+                              disabled={addAccountsCount <= 10}
                               onClick={() => {
-                                const step = addAccountsCount <= 10 ? 1 : 10;
-                                const next = Math.max(1, addAccountsCount - step);
+                                const next = Math.max(10, addAccountsCount - 10);
                                 setAddAccountsCount(next);
                                 setAddAccountsRaw(String(next));
                               }}
                               className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
-                              title={addAccountsCount <= 1 ? 'Minimum 1 account reached' : 'Decrease accounts'}
+                              title={addAccountsCount <= 10 ? 'Minimum 10 accounts reached' : 'Decrease accounts'}
                             >
                               -
                             </button>
@@ -1090,25 +1091,25 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                             <div className="flex items-center border-2 border-[#141414] bg-neutral-50 px-2 h-8">
                               <input
                                 type="number"
-                                min={1}
-                                max={Math.max(1, 1000 - (currentPlan?.allowance_accounts || 0))}
+                                min={10}
+                                max={Math.max(10, 1000 - (currentPlan?.allowance_accounts || 0))}
                                 value={addAccountsRaw}
                                 onChange={(e) => {
                                   const raw = e.target.value;
                                   setAddAccountsRaw(raw);
                                   const val = parseInt(raw, 10);
                                   if (!isNaN(val)) {
-                                    setAddAccountsCount(val < 1 ? 1 : Math.min(1000 - (currentPlan?.allowance_accounts || 0), val));
+                                    setAddAccountsCount(val < 10 ? 10 : Math.min(1000 - (currentPlan?.allowance_accounts || 0), val));
                                   }
                                 }}
                                 onBlur={() => {
                                   const parsed = parseInt(addAccountsRaw, 10);
-                                  const maxVal = Math.max(1, 1000 - (currentPlan?.allowance_accounts || 0));
-                                  if (isNaN(parsed) || parsed < 1) {
-                                    setAddAccountsCount(1);
-                                    setAddAccountsRaw('1');
+                                  const maxVal = Math.max(10, 1000 - (currentPlan?.allowance_accounts || 0));
+                                  if (isNaN(parsed) || parsed < 10) {
+                                    setAddAccountsCount(10);
+                                    setAddAccountsRaw('10');
                                   } else {
-                                    const clamped = Math.min(maxVal, Math.max(1, parsed));
+                                    const clamped = Math.min(maxVal, Math.max(10, parsed));
                                     setAddAccountsCount(clamped);
                                     setAddAccountsRaw(String(clamped));
                                   }
@@ -1122,8 +1123,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                               type="button"
                               disabled={(currentPlan?.allowance_accounts || 0) + addAccountsCount >= 1000}
                               onClick={() => {
-                                const step = addAccountsCount < 10 ? 1 : 10;
-                                const next = Math.min(1000 - (currentPlan?.allowance_accounts || 0), addAccountsCount + step);
+                                const next = Math.min(1000 - (currentPlan?.allowance_accounts || 0), addAccountsCount + 10);
                                 setAddAccountsCount(next);
                                 setAddAccountsRaw(String(next));
                               }}
@@ -1137,7 +1137,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
 
                         {/* Add-on Pricing Box */}
                         {(() => {
-                          const effectiveAddOn = Math.max(1, addAccountsCount);
+                          const effectiveAddOn = Math.max(10, addAccountsCount);
                           const cost = effectiveAddOn * 2.5;
                           const formattedCost = cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2);
                           return (
@@ -1155,7 +1155,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                   </span>
                                 </div>
                                 <span className="text-[9.5px] text-[#141414]/60 block font-mono">
-                                  Adding {effectiveAddOn} account{effectiveAddOn === 1 ? '' : 's'} @ $2.50/acc
+                                  Adding {effectiveAddOn} accounts @ $2.50/acc
                                 </span>
                               </div>
 
@@ -1333,7 +1333,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           <span>PERSISTING TO DATABASE...</span>
                         </>
                       ) : currentPlan?.status === 'active' ? (
-                        <span>BUY FOR (${(Math.max(1, addAccountsCount) * 2.5 % 1 === 0 ? (Math.max(1, addAccountsCount) * 2.5).toFixed(0) : (Math.max(1, addAccountsCount) * 2.5).toFixed(2))} USD)</span>
+                        <span>BUY FOR (${(Math.max(10, addAccountsCount) * 2.5 % 1 === 0 ? (Math.max(10, addAccountsCount) * 2.5).toFixed(0) : (Math.max(10, addAccountsCount) * 2.5).toFixed(2))} USD)</span>
                       ) : (
                         <span>BUY FOR (${totalPrice} USD)</span>
                       )}

@@ -384,8 +384,8 @@ export class MasterAccountService {
         accountsBoughtThisTransaction = Math.max(10, options?.extendAccountsCount || sanitizedAllowance);
       } else if (options?.actionType === 'add_accounts') {
         accountsBoughtThisTransaction = options?.addOnAccounts 
-          ? Math.max(1, Math.floor(options.addOnAccounts))
-          : Math.max(1, Math.floor(requestedAllowance > currentAllowance ? requestedAllowance - currentAllowance : requestedAllowance));
+          ? Math.max(10, Math.floor(options.addOnAccounts))
+          : Math.max(10, Math.floor(requestedAllowance > currentAllowance ? requestedAllowance - currentAllowance : requestedAllowance));
         sanitizedAllowance = Math.min(1000, currentAllowance + accountsBoughtThisTransaction);
       } else {
         // Direct allowance specification or 'new_plan' (clamped between 10 and 1000)
