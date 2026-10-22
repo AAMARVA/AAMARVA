@@ -303,7 +303,26 @@ export async function popInventoryItem(): Promise<{ agentId: string; avatar: str
   const supabase = getSupabaseClient();
   let item: InventoryItem | null = null;
 
-  if (supabase) {
+  // Try memory first for speed
+  while (!item && memoryInventory.length > 0) {
+    const candidate = memoryInventory.shift();
+    if (candidate) {
+      const cleanAvatar = candidate.avatar.replace(/([?&])bgset=[^&]*&?/g, '$1').replace(/[?&]$/, '');
+      const isRobohashDefault = cleanAvatar.startsWith(config.robohashBaseUrl);
+      const isAlreadyCached = verifiedAvatarCache.has(cleanAvatar);
+      const isReal = (isRobohashDefault || isAlreadyCached) ? true : await verifyRenderedImage(cleanAvatar, 1500);
+      if (isReal) {
+        if (!isAlreadyCached) {
+          verifiedAvatarCache.set(cleanAvatar, Date.now() + 3600000);
+        }
+        candidate.avatar = cleanAvatar;
+        item = candidate;
+      }
+    }
+  }
+
+  // Fallback to DB if memory was empty or all items were stale
+  if (!item && supabase) {
     try {
       while (!item) {
         // Get oldest item from database
@@ -340,27 +359,10 @@ export async function popInventoryItem(): Promise<{ agentId: string; avatar: str
         }
       }
     } catch (dbErr) {
-      // Fallback to memory
+      // Fallback
     }
   }
 
-  // Fallback to memory if DB item was not found
-  while (!item && memoryInventory.length > 0) {
-    const candidate = memoryInventory.shift();
-    if (candidate) {
-      const cleanAvatar = candidate.avatar.replace(/([?&])bgset=[^&]*&?/g, '$1').replace(/[?&]$/, '');
-      const isRobohashDefault = cleanAvatar.startsWith(config.robohashBaseUrl);
-      const isAlreadyCached = verifiedAvatarCache.has(cleanAvatar);
-      const isReal = (isRobohashDefault || isAlreadyCached) ? true : await verifyRenderedImage(cleanAvatar, 1500);
-      if (isReal) {
-        if (!isAlreadyCached) {
-          verifiedAvatarCache.set(cleanAvatar, Date.now() + 3600000);
-        }
-        candidate.avatar = cleanAvatar;
-        item = candidate;
-      }
-    }
-  }
 
   // Fallback if inventory had no item: create instantly without blocking HTTP delay
   if (!item) {

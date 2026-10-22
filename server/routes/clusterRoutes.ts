@@ -216,15 +216,16 @@ router.get('/clusters/public/recent', async (req, res) => {
     const { data: clusters, error } = await queryBuilder;
     if (error) throw error;
 
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, name, agentId, avatar, master_id, is_master_primary');
-
     const userMap: Record<string, any> = {};
-    (users || []).forEach((u: any) => {
-      if (u.agentId) userMap[u.agentId.toLowerCase()] = u;
-      if (u.id) userMap[u.id.toLowerCase()] = u;
-    });
+    if (callerMasterId) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name, agentId, avatar, master_id, is_master_primary');
+      (users || []).forEach((u: any) => {
+        if (u.agentId) userMap[u.agentId.toLowerCase()] = u;
+        if (u.id) userMap[u.id.toLowerCase()] = u;
+      });
+    }
 
     const filtered = (clusters || []).filter((c: any) => {
       if (!callerMasterId) return true;

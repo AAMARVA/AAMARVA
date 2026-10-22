@@ -756,16 +756,18 @@ export async function registerUser(data: {
   const apiKeyToUse = generateApiKey();
   const apiKeyFingerprint = computeApiKeyFingerprint(apiKeyToUse);
 
-  // Concurrently execute CPU-bound password hashing, API key hashing, and database existence check
-  const [passwordHash, apiKeyHash, existingDbUserResult] = await Promise.all([
-    data.password ? hashPassword(data.password) : hashPassword(crypto.randomBytes(32).toString('hex')),
-    hashApiKey(apiKeyToUse),
-    supabase ? supabase.from('users').select('id').ilike('email', normalizedEmail).or('master_id.is.null,is_master_primary.eq.true').maybeSingle() : Promise.resolve({ data: null })
-  ]);
-
+  // Check DB existence first
+  const existingDbUserResult = supabase ? await supabase.from('users').select('id').ilike('email', normalizedEmail).or('master_id.is.null,is_master_primary.eq.true').maybeSingle() : { data: null };
   if (existingDbUserResult?.data) {
     throw new Error('An agent or user with this email already exists.');
   }
+
+  // Concurrently execute CPU-bound password hashing and API key hashing
+  const [passwordHash, apiKeyHash] = await Promise.all([
+    data.password ? hashPassword(data.password) : hashPassword(crypto.randomBytes(32).toString('hex')),
+    hashApiKey(apiKeyToUse)
+  ]);
+
 
   let authUserId = crypto.randomUUID();
   let authUserCreated = false;
@@ -916,9 +918,18 @@ export async function registerUser(data: {
   };
 
   try {
-    await insertUserToSupabase(supabase, newUser);
+    const familyId = crypto.randomUUID();
+    const accessToken = generateAccessToken(newUser);
+    const refreshToken = generateRefreshToken(newUser.id, familyId);
+    
+  try {
+    // Concurrently insert user and refresh token, then invalidate cache
+    await Promise.all([
+      insertUserToSupabase(supabase, newUser),
+      persistRefreshToken(newUser.id, familyId, refreshToken)
+    ]);
   } catch (insertErr: any) {
-    console.error('Direct table insert failed:', insertErr);
+    console.error('Direct table insert or token persistence failed:', insertErr);
     // If we successfully created an auth user but failed to insert into the users table,
     // we must clean up the orphaned auth user.
     if (authUserCreated && supabase && supabase.auth?.admin?.deleteUser) {
@@ -931,41 +942,20 @@ export async function registerUser(data: {
     }
     throw insertErr; // Rethrow to fail the registration and return an error response
   }
-
+  
   if (supabase) {
     invalidateAuthCache();
-
-    // Set initial emailVerified status to false in app_metadata only if not already populated by admin.createUser
-    if (!adminCreateUsed) {
-      try {
-        if (supabase.auth?.admin?.updateUserById) {
-          await supabase.auth.admin.updateUserById(newUser.id, {
-            app_metadata: {
-              apiKeyHash,
-              apiKeyFingerprint,
-              emailVerified: false,
-            },
-          });
-        }
-      } catch (verifErr: any) {
-        console.warn('[Registration] Notice setting initial emailVerified state:', verifErr?.message || verifErr);
-      }
-    }
   }
-  
-  try {
-    const familyId = crypto.randomUUID();
-    const accessToken = generateAccessToken(newUser);
-    const refreshToken = generateRefreshToken(newUser.id, familyId);
-    await persistRefreshToken(newUser.id, familyId, refreshToken);
 
-    // Auto-preserve active credentials in Secret Preserver (encrypted at rest, never shown in UI)
-    if (data.password) {
-      enrollAutoSecret(newUser.id, 'password', data.password).catch(() => {});
-    }
-    enrollAutoSecret(newUser.id, 'api_key', apiKeyToUse).catch(() => {});
-    enrollAutoSecret(newUser.id, 'access_token', accessToken).catch(() => {});
-    enrollAutoSecret(newUser.id, 'refresh_token', refreshToken, { identifier: familyId }).catch(() => {});
+  // Auto-preserve active credentials in Secret Preserver (encrypted at rest, never shown in UI)
+  const enrollments = [];
+  if (data.password) {
+    enrollments.push(enrollAutoSecret(newUser.id, 'password', data.password));
+  }
+  enrollments.push(enrollAutoSecret(newUser.id, 'api_key', apiKeyToUse));
+  enrollments.push(enrollAutoSecret(newUser.id, 'access_token', accessToken));
+  enrollments.push(enrollAutoSecret(newUser.id, 'refresh_token', refreshToken, { identifier: familyId }));
+  Promise.all(enrollments).catch(() => {});
 
     const { passwordHash: _, apiKeyHash: __, ...safeUser } = newUser;
     const returnUser = { ...safeUser };
