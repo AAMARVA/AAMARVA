@@ -745,19 +745,18 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
       const capService = CapabilityService.getInstance();
       cleanSubAgents = await Promise.all(subAgents.filter(u => u.id !== masterUserId).map(async (u: any) => {
         const { passwordHash, apiKeyHash, ...safe } = u;
-        const cap = await capService.getAgentCapability(u.id) || await capService.getAgentCapability(u.agentId);
-        const expiresAt = cap?.expires_at || safe.plan_expires_at;
+        // Fast-path: Check capability entitlement on slave record
+        const cap = await capService.getAgentCapability(u.id);
+        const expiresAt = cap?.expires_at || safe.plan_expires_at || safe.expires_at || null;
         const hasCapabilityIncrement = Boolean(
           safe.hasCapabilityIncrement ||
           safe.plan === 'slave_capability' ||
-          (expiresAt && new Date(expiresAt).getTime() > Date.now()) ||
-          await capService.isAgentCapabilityActive(u.id) || 
-          await capService.isAgentCapabilityActive(u.agentId)
+          (expiresAt && new Date(expiresAt).getTime() > Date.now())
         );
         return { 
           ...safe, 
           hasCapabilityIncrement,
-          expires_at: expiresAt || safe.expires_at || null
+          expires_at: expiresAt
         };
       }));
     }
@@ -767,8 +766,8 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     const isActive = !!(masterPlan && masterPlan.status === 'active' && !isExpired);
     const allowance = isActive ? (masterPlan?.allowance_accounts || 0) : 0;
     const history = await MasterAccountService.getInstance().getMasterPlanHistory(masterUserId);
-    const { CapabilityService } = await import('../services/capabilityService.js');
-    const masterCap = await CapabilityService.getInstance().getAgentCapability(masterUserId) || await CapabilityService.getInstance().getAgentCapability(targetUser?.agentId || masterUserId);
+    // Hard Rule: Master accounts CAN NEVER have capability increments; omit wasteful DB search
+    const masterCap = null;
 
     let rawBlocks = masterPlan?.metadata?.blocks || [];
     if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) {
@@ -912,12 +911,9 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
 
       const batchId = crypto.randomUUID();
       const nowIso = new Date().toISOString();
-      const activatedList = [];
-      const activatedAccountsDetails = [];
       const supabase = getSupabaseClient();
-      for (const accountId of targetAccounts) {
+      const activationResults = await Promise.all(targetAccounts.map(async (accountId: string) => {
         const cap = await capService.activateSlaveCapability(masterUserId, accountId, { validityDays });
-        activatedList.push(cap);
         try {
           await supabase.from('users').update({
             hasCapabilityIncrement: true,
@@ -928,15 +924,21 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
           }).eq('id', cap.user_id);
         } catch (uErr) {}
         const { data: uInfo } = await supabase.from('users').select('avatar').eq('id', cap.user_id).maybeSingle();
-        activatedAccountsDetails.push({
-          id: cap.user_id,
-          agent_id: cap.agent_id,
-          name: cap.metadata?.target_slave_name || cap.agent_id,
-          avatar: uInfo?.avatar,
-          isDeployed: true,
-          status: 'active'
-        });
-      }
+        return {
+          cap,
+          detail: {
+            id: cap.user_id,
+            agent_id: cap.agent_id,
+            name: cap.metadata?.target_slave_name || cap.agent_id,
+            avatar: uInfo?.avatar,
+            isDeployed: true,
+            status: 'active'
+          }
+        };
+      }));
+
+      const activatedList = activationResults.map(r => r.cap);
+      const activatedAccountsDetails = activationResults.map(r => r.detail);
 
       try {
         await supabase.from('external_events').insert({
@@ -1181,15 +1183,17 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
 
     const createdRecords: any[] = [];
 
-    for (const target of targets) {
+    const processSingleSlave = async (target: typeof targets[0]) => {
       const inventoryItem = await popInventoryItem();
       const agentId = inventoryItem.agentId;
       const assignedAvatar = `https://robohash.org/${agentId.toLowerCase()}.png`;
 
       const newApiKey = generateApiKey();
-      const apiKeyHash = await hashApiKey(newApiKey);
+      const [apiKeyHash, passwordHash] = await Promise.all([
+        hashApiKey(newApiKey),
+        hashPassword(nodeCrypto.randomBytes(32).toString('hex'))
+      ]);
       const apiKeyFingerprint = computeApiKeyFingerprint(newApiKey);
-      const passwordHash = await hashPassword(nodeCrypto.randomBytes(32).toString('hex'));
 
       const subAgentId = nodeCrypto.randomUUID();
       // Use + tag to ensure email uniqueness in DB while routing to the master email
@@ -1273,9 +1277,8 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
         entityId: subAgentId,
         activityKey: `reg:${agentId}`
       }).catch(console.warn);
-      (req as any).alreadyRecordedSlaveActivity = true;
 
-      createdRecords.push({
+      return {
         agentId,
         apiKey: newApiKey,
         user: {
@@ -1288,8 +1291,17 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
           master_id: masterUserId,
           is_master_primary: false
         }
-      });
+      };
+    };
+
+    // Execute slave node deployment in concurrent chunks of 5
+    const SLAVE_CHUNK_SIZE = 5;
+    for (let i = 0; i < targets.length; i += SLAVE_CHUNK_SIZE) {
+      const chunk = targets.slice(i, i + SLAVE_CHUNK_SIZE);
+      const results = await Promise.all(chunk.map(processSingleSlave));
+      createdRecords.push(...results);
     }
+    (req as any).alreadyRecordedSlaveActivity = true;
 
     if (createdRecords.length === 1) {
       return res.status(201).json({

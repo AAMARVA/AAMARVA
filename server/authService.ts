@@ -744,29 +744,35 @@ export async function registerUser(data: {
     }
   }
 
-  // Generate unique API Key
-  const apiKeyToUse = generateApiKey();
+  // Validate password strength immediately before executing costly crypto and network calls
   if (data.password) {
     const passVal = validatePasswordStrength(data.password);
     if (!passVal.valid) {
       throw new Error(passVal.message || 'Password must be at least 12 characters long.');
     }
   }
-  const passwordHash = data.password ? await hashPassword(data.password) : await hashPassword(crypto.randomBytes(32).toString('hex'));
-  const apiKeyHash = await hashApiKey(apiKeyToUse);
+
+  // Generate unique API Key
+  const apiKeyToUse = generateApiKey();
   const apiKeyFingerprint = computeApiKeyFingerprint(apiKeyToUse);
+
+  // Concurrently execute CPU-bound password hashing, API key hashing, and database existence check
+  const [passwordHash, apiKeyHash, existingDbUserResult] = await Promise.all([
+    data.password ? hashPassword(data.password) : hashPassword(crypto.randomBytes(32).toString('hex')),
+    hashApiKey(apiKeyToUse),
+    supabase ? supabase.from('users').select('id').ilike('email', normalizedEmail).or('master_id.is.null,is_master_primary.eq.true').maybeSingle() : Promise.resolve({ data: null })
+  ]);
+
+  if (existingDbUserResult?.data) {
+    throw new Error('An agent or user with this email already exists.');
+  }
 
   let authUserId = crypto.randomUUID();
   let authUserCreated = false;
+  let adminCreateUsed = false;
 
   // 1. Create in Supabase Auth first if possible to satisfy foreign key constraints
   if (supabase) {
-    // Pre-check: If user already exists in the database table, fail early with standard duplicate error
-    const { data: existingDbUser } = await supabase.from('users').select('id').ilike('email', normalizedEmail).or('master_id.is.null,is_master_primary.eq.true').maybeSingle();
-    if (existingDbUser) {
-      throw new Error('An agent or user with this email already exists.');
-    }
-
     try {
       if (supabase.auth?.admin?.createUser) {
         let createdAuthUser: any = null;
@@ -858,6 +864,7 @@ export async function registerUser(data: {
         if (createdAuthUser?.user?.id) {
           authUserId = createdAuthUser.user.id;
           authUserCreated = true;
+          adminCreateUsed = true;
         }
       } else if (supabase.auth?.signUp) {
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
@@ -928,19 +935,21 @@ export async function registerUser(data: {
   if (supabase) {
     invalidateAuthCache();
 
-    // Set initial emailVerified status to false in app_metadata
-    try {
-      if (supabase.auth?.admin?.updateUserById) {
-        await supabase.auth.admin.updateUserById(newUser.id, {
-          app_metadata: {
-            apiKeyHash,
-            apiKeyFingerprint,
-            emailVerified: false,
-          },
-        });
+    // Set initial emailVerified status to false in app_metadata only if not already populated by admin.createUser
+    if (!adminCreateUsed) {
+      try {
+        if (supabase.auth?.admin?.updateUserById) {
+          await supabase.auth.admin.updateUserById(newUser.id, {
+            app_metadata: {
+              apiKeyHash,
+              apiKeyFingerprint,
+              emailVerified: false,
+            },
+          });
+        }
+      } catch (verifErr: any) {
+        console.warn('[Registration] Notice setting initial emailVerified state:', verifErr?.message || verifErr);
       }
-    } catch (verifErr: any) {
-      console.warn('[Registration] Notice setting initial emailVerified state:', verifErr?.message || verifErr);
     }
   }
   
@@ -997,7 +1006,20 @@ async function findUserByAgentId(agentId: string) {
   const term = (agentId || '').trim();
   if (!term) return null;
 
-  // Search by agentId (case-insensitive in database if collation is correct, but we'll try variations)
+  // 1. Direct route: If input term is an email address, check email directly (1 roundtrip instead of 3)
+  if (term.includes('@')) {
+    const { data: byEmail } = await supabase.from('users').select('*').ilike('email', term).maybeSingle();
+    if (byEmail) return byEmail;
+  }
+
+  // 2. Direct route: If input term is a UUID, check id directly
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(term);
+  if (isUUID) {
+    const { data: byId } = await supabase.from('users').select('*').eq('id', term).maybeSingle();
+    if (byId) return byId;
+  }
+
+  // 3. Search by agentId (case-insensitive in database if collation is correct, but we'll try variations)
   const { data: user } = await supabase
     .from('users')
     .select('*')
@@ -1006,15 +1028,17 @@ async function findUserByAgentId(agentId: string) {
 
   if (user) return user;
 
-  // Fallback to searching by id
-  const { data: byId } = await supabase.from('users').select('*').eq('id', term).maybeSingle();
-  if (byId) return byId;
+  // Fallbacks if not already checked
+  if (!isUUID) {
+    const { data: byId } = await supabase.from('users').select('*').eq('id', term).maybeSingle();
+    if (byId) return byId;
+  }
 
-  // Fallback to searching by email for human operator accounts
-  if (term.includes('@')) {
+  if (!term.includes('@')) {
     const { data: byEmail } = await supabase.from('users').select('*').ilike('email', term).maybeSingle();
     if (byEmail) return byEmail;
   }
+
   return null;
 }
 

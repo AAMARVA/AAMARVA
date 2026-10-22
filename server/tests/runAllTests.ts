@@ -35,7 +35,7 @@ async function runAll() {
         const entries = Object.entries(res);
         const failedEntry = entries.find(([k, v]: [string, any]) => v === false || v?.status === 'FAILED' || v?.passed === false);
         if (failedEntry) {
-          console.error('[FAILURE] Test suite ' + s.name + ' reported failures in entry:', failedEntry);
+          console.error('[FAILURE] Test suite ' + s.name + ' reported failures in entry:', JSON.stringify(failedEntry, null, 2));
           hasFailure = true;
         }
       }

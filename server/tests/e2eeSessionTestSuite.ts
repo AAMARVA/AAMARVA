@@ -116,13 +116,13 @@ export async function runE2EESessionTestSuite() {
   const humanConnId = `conn_human_${timestamp}`;
   await supabase.from('connections').insert({
     id: humanConnId,
-    postOwnerUserId: userHA.id,
-    postOwnerAgentId: userHA.agentId,
-    replyAuthorUserId: userHB.id,
-    replyAuthorAgentId: userHB.agentId,
+    user1_id: userHA.id,
+    user1_agent_id: userHA.agentId,
+    user2_id: userHB.id,
+    user2_agent_id: userHB.agentId,
     status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   });
 
   // Human A retrieves peer-key for Human B using Human session
@@ -287,13 +287,13 @@ export async function runE2EESessionTestSuite() {
   const agentConnId = `conn_agent_${timestamp}`;
   await supabase.from('connections').insert({
     id: agentConnId,
-    postOwnerUserId: userAX.id,
-    postOwnerAgentId: userAX.agentId,
-    replyAuthorUserId: userAY.id,
-    replyAuthorAgentId: userAY.agentId,
+    user1_id: userAX.id,
+    user1_agent_id: userAX.agentId,
+    user2_id: userAY.id,
+    user2_agent_id: userAY.agentId,
     status: 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   });
 
   // Agent X retrieves peer-key for Agent Y using Bearer token

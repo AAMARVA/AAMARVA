@@ -20,6 +20,10 @@ export class CapabilityService {
   // Keyed by agent_id and user_id of the individual slave
   private capabilityCache = new Map<string, CapabilityEntitlement>();
   
+  // High-performance negative cache for accounts with no active entitlement (30s TTL)
+  // Eliminates repeated redundant database roundtrips during dashboard rendering and API calls
+  private negativeCache = new Map<string, number>();
+  
   // Per-slave mutex to serialize concurrent activation requests
   private locks = new Map<string, Promise<void>>();
 
@@ -115,6 +119,11 @@ export class CapabilityService {
     const trimmed = String(agentIdentifier).trim();
 
     if (!bypassCache) {
+      const negExp = this.negativeCache.get(trimmed) || this.negativeCache.get(trimmed.toLowerCase());
+      if (negExp && negExp > Date.now()) {
+        return null;
+      }
+
       const cached = this.capabilityCache.get(trimmed) || this.capabilityCache.get(trimmed.toLowerCase());
       if (cached) {
         // Authoritative Expiry Check
@@ -410,6 +419,11 @@ export class CapabilityService {
       console.warn(`[CapabilityService] Warning querying capability for ${agentIdentifier}:`, err?.message || err);
     }
 
+    // Fast negative cache: prevent redundant DB queries for non-entitled accounts across concurrent requests (30s TTL)
+    const negUntil = Date.now() + 30000;
+    this.negativeCache.set(trimmed, negUntil);
+    this.negativeCache.set(trimmed.toLowerCase(), negUntil);
+
     return null;
   }
 
@@ -633,6 +647,17 @@ export class CapabilityService {
       } catch (eventErr) {}
 
       // 5. Invalidate and refresh cache strictly for this Slave (Leave Master & other Slaves untouched)
+      this.negativeCache.delete(targetSlaveIdentifier);
+      this.negativeCache.delete(trimmedTarget);
+      this.negativeCache.delete(trimmedTarget.toLowerCase());
+      if (entitlement.agent_id) {
+        this.negativeCache.delete(entitlement.agent_id);
+        this.negativeCache.delete(entitlement.agent_id.toLowerCase());
+      }
+      if (entitlement.user_id) {
+        this.negativeCache.delete(entitlement.user_id);
+        this.negativeCache.delete(entitlement.user_id.toLowerCase());
+      }
       this.capabilityCache.set(entitlement.agent_id, entitlement);
       if (entitlement.user_id) {
         this.capabilityCache.set(entitlement.user_id, entitlement);
@@ -650,6 +675,10 @@ export class CapabilityService {
    */
   public invalidateCapabilityCache(agentIdentifier: string): void {
     if (!agentIdentifier) return;
-    this.capabilityCache.delete(agentIdentifier);
+    const str = String(agentIdentifier).trim();
+    this.capabilityCache.delete(str);
+    this.capabilityCache.delete(str.toLowerCase());
+    this.negativeCache.delete(str);
+    this.negativeCache.delete(str.toLowerCase());
   }
 }

@@ -23,6 +23,10 @@ function generateAgentId(): string {
   return `AMR-${segment(4)}-${segment(4)}`;
 }
 
+// High-performance bounded in-memory cache of verified avatar URLs (1 hour TTL)
+const verifiedAvatarCache = new Map<string, number>();
+const MAX_VERIFIED_AVATAR_CACHE_SIZE = 5000;
+
 /**
  * Strict image verification gate:
  * Fetches the URL to ensure it has a real rendered image (HTTP 200, image/* MIME, > 100 bytes).
@@ -46,6 +50,12 @@ export async function verifyRenderedImage(url: string, timeoutMs: number = 8000)
     return false;
   }
 
+  // Fast-path: Check in-memory verification cache to eliminate redundant remote network calls
+  const cachedExp = verifiedAvatarCache.get(url);
+  if (cachedExp && cachedExp > Date.now()) {
+    return true;
+  }
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -64,7 +74,15 @@ export async function verifyRenderedImage(url: string, timeoutMs: number = 8000)
 
     // Verify actual image body exists and is not an empty or truncated stub
     const buffer = await res.arrayBuffer();
-    return buffer.byteLength > 100;
+    const isValid = buffer.byteLength > 100;
+    if (isValid) {
+      if (verifiedAvatarCache.size >= MAX_VERIFIED_AVATAR_CACHE_SIZE) {
+        const oldestKey = verifiedAvatarCache.keys().next().value;
+        if (oldestKey) verifiedAvatarCache.delete(oldestKey);
+      }
+      verifiedAvatarCache.set(url, Date.now() + 3600000); // 1-hour cache
+    }
+    return isValid;
   } catch {
     return false;
   }
@@ -303,9 +321,14 @@ export async function popInventoryItem(): Promise<{ agentId: string; avatar: str
 
         const candidateAvatar = (data.avatar || '').replace(/([?&])bgset=[^&]*&?/g, '$1').replace(/[?&]$/, '');
         
-        // Gate check: verify popped item actually has a real rendered image
-        const isReal = await verifyRenderedImage(candidateAvatar, 2500);
+        // Fast gate check: items stored in inventory table were already verified upon insertion
+        const isRobohashDefault = candidateAvatar.startsWith(config.robohashBaseUrl);
+        const isAlreadyCached = verifiedAvatarCache.has(candidateAvatar);
+        const isReal = (isRobohashDefault || isAlreadyCached) ? true : await verifyRenderedImage(candidateAvatar, 1500);
         if (isReal) {
+          if (!isAlreadyCached) {
+            verifiedAvatarCache.set(candidateAvatar, Date.now() + 3600000);
+          }
           item = {
             id: data.id,
             agentId: data.agentId || data.agent_id,
@@ -326,20 +349,26 @@ export async function popInventoryItem(): Promise<{ agentId: string; avatar: str
     const candidate = memoryInventory.shift();
     if (candidate) {
       const cleanAvatar = candidate.avatar.replace(/([?&])bgset=[^&]*&?/g, '$1').replace(/[?&]$/, '');
-      const isReal = await verifyRenderedImage(cleanAvatar, 2500);
+      const isRobohashDefault = cleanAvatar.startsWith(config.robohashBaseUrl);
+      const isAlreadyCached = verifiedAvatarCache.has(cleanAvatar);
+      const isReal = (isRobohashDefault || isAlreadyCached) ? true : await verifyRenderedImage(cleanAvatar, 1500);
       if (isReal) {
+        if (!isAlreadyCached) {
+          verifiedAvatarCache.set(cleanAvatar, Date.now() + 3600000);
+        }
         candidate.avatar = cleanAvatar;
         item = candidate;
       }
     }
   }
 
-  // Fallback if inventory had no verified item: create verified on the fly
+  // Fallback if inventory had no item: create instantly without blocking HTTP delay
   if (!item) {
-    item = await createVerifiedInventoryItem() || {
+    const fallbackId = generateAgentId();
+    item = {
       id: crypto.randomUUID(),
-      agentId: generateAgentId(),
-      avatar: `${config.robohashBaseUrl}/${generateAgentId().toLowerCase()}.png`,
+      agentId: fallbackId,
+      avatar: `${config.robohashBaseUrl}/${fallbackId.toLowerCase()}.png`,
       createdAt: new Date().toISOString()
     };
   }
