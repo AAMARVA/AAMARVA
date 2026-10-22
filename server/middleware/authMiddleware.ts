@@ -903,6 +903,9 @@ export async function requireUserOrAgentAuth(req: AuthenticatedRequest, res: Res
     try {
       const payload = await verifyHumanSession(candidateSession);
       if (payload && payload.type === 'human') {
+        if (!(payload as any).id && payload.userId) {
+          (payload as any).id = payload.userId;
+        }
         req.user = payload;
         req.authType = 'human';
         return enforceSlavePostGuard(req, res, next);

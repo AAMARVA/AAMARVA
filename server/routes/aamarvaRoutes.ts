@@ -4189,68 +4189,83 @@ function getEndpointForAction(action: string, target?: string): string {
 router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sb = getSupabaseClient();
-    const userId = req.user!.id;
-    const agentId = req.user!.agentId || userId;
+    const callerUserId = (req.user as any)!.id || (req.user as any)!.userId;
+    const callerAgentId = req.user!.agentId || callerUserId;
+    const callerMasterId = (req.user as any)?.masterUserId || (req.user as any)?.master_id || callerUserId;
+
+    const isSlave = Boolean(
+      (callerMasterId && callerMasterId !== callerUserId) ||
+      (req.user?.email && typeof req.user.email === 'string' && req.user.email.includes('+AMR-')) ||
+      req.user?.account_type === 'slave' ||
+      req.user?.role === 'slave' ||
+      req.user?.is_slave === true ||
+      req.user?.isSlave === true
+    );
 
     const targetAgentHeader = req.headers['x-target-agent-id'] as string | undefined;
     const queryAgentId = (targetAgentHeader || req.query.agentId || req.query.agent_id) as string | undefined;
     const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
 
-    let targetUserId = userId;
-    let targetAgentId = agentId;
-    if (queryAgentId && queryAgentId.trim().toLowerCase() !== agentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
-      try {
-        const { data: slaveMatch } = await sb
-          .from('users')
-          .select('id, agentId')
-          .eq('id', queryAgentId.trim())
-          .eq('master_id', userId)
-          .maybeSingle();
+    let targetUserId = callerUserId;
+    let targetAgentId = callerAgentId;
 
-        if (slaveMatch) {
-          targetUserId = slaveMatch.id;
-          targetAgentId = slaveMatch.agentId || queryAgentId.trim();
-        } else {
-          const { data: slaveMatchByAgentId } = await sb
+    const requestedTarget = (queryAgentId || queryUserId || '').trim();
+
+    if (requestedTarget) {
+      const isTargetSelf = 
+        requestedTarget.toLowerCase() === callerUserId.toLowerCase() ||
+        requestedTarget.toLowerCase() === callerAgentId.toLowerCase();
+
+      if (isSlave) {
+        // A slave agent may access ONLY its own activity
+        if (!isTargetSelf) {
+          return res.status(403).json({
+            success: false,
+            error: {
+              code: 'UNAUTHORIZED',
+              message: 'Unauthorized: Slave agents cannot access activity records of other accounts.'
+            }
+          });
+        }
+      } else {
+        // Master account: can access self or subordinate agents within its own fleet
+        if (!isTargetSelf) {
+          let slaveMatch: any = null;
+          const { data: matchById } = await sb
             .from('users')
-            .select('id, agentId')
-            .eq('agentId', queryAgentId.trim())
-            .eq('master_id', userId)
+            .select('id, agentId, master_id')
+            .eq('id', requestedTarget)
             .maybeSingle();
-          if (slaveMatchByAgentId) {
-            targetUserId = slaveMatchByAgentId.id;
-            targetAgentId = slaveMatchByAgentId.agentId || queryAgentId.trim();
-          } else {
-            targetUserId = queryAgentId.trim();
-            targetAgentId = queryAgentId.trim();
+          slaveMatch = matchById;
+          if (!slaveMatch) {
+            const { data: matchByAgentId } = await sb
+              .from('users')
+              .select('id, agentId, master_id')
+              .ilike('agentId', requestedTarget)
+              .maybeSingle();
+            slaveMatch = matchByAgentId;
           }
-        }
-      } catch (e) {}
-    } else if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
-      try {
-        const { data: slaveMatch } = await sb
-          .from('users')
-          .select('id, agentId')
-          .eq('id', queryUserId.trim())
-          .eq('master_id', userId)
-          .maybeSingle();
 
-        if (slaveMatch) {
+          if (!slaveMatch || (slaveMatch.master_id !== callerUserId && slaveMatch.master_id !== callerMasterId && slaveMatch.id !== callerUserId)) {
+            return res.status(403).json({
+              success: false,
+              error: {
+                code: 'UNAUTHORIZED',
+                message: 'Unauthorized: Cannot access activity records outside your fleet.'
+              }
+            });
+          }
           targetUserId = slaveMatch.id;
-          targetAgentId = slaveMatch.agentId || targetAgentId;
+          targetAgentId = slaveMatch.agentId || slaveMatch.id;
         }
-      } catch (e) {}
+      }
     }
 
     let footprints: any[] = [];
     const clusterTables = await getClusterTables(sb);
     try {
       let fpQuery = sb.from('agent_footprints').select('*');
-      if (queryAgentId && queryAgentId.trim() !== targetUserId) {
-        fpQuery = fpQuery.or(`user_id.eq.${targetUserId},agent_id.ilike.${queryAgentId.trim()}`);
-      } else {
-        fpQuery = fpQuery.eq('user_id', targetUserId);
-      }
+      fpQuery = fpQuery.or(`user_id.eq.${targetUserId},agent_id.ilike.${targetAgentId}`);
       const { data, error } = await fpQuery
         .order('created_at', { ascending: false })
         .limit(50);
@@ -4274,8 +4289,8 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
         // Also resolve agent profiles for matched requests
         const targetAgentIds = new Set<string>();
         Object.values(reqMap).forEach((r: any) => {
-          if (r.senderUserId === userId && r.receiverAgentId) targetAgentIds.add(r.receiverAgentId);
-          else if (r.receiverUserId === userId && r.senderAgentId) targetAgentIds.add(r.senderAgentId);
+          if (r.senderUserId === callerUserId && r.receiverAgentId) targetAgentIds.add(r.receiverAgentId);
+          else if (r.receiverUserId === callerUserId && r.senderAgentId) targetAgentIds.add(r.senderAgentId);
         });
 
         // Also check if any item details contains "handshake with agent AMR-..."
@@ -4322,7 +4337,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
           }
 
           if (matchedReq) {
-            targetAgentId = (matchedReq.senderUserId === userId ? matchedReq.receiverAgentId : matchedReq.senderAgentId) || targetAgentId;
+            targetAgentId = (matchedReq.senderUserId === callerUserId ? matchedReq.receiverAgentId : matchedReq.senderAgentId) || targetAgentId;
             requestId = matchedReq.id || requestId;
           }
 
@@ -4520,57 +4535,76 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
 router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_reads'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sb = getSupabaseClient();
-    const userId = req.user!.id;
-    const agentId = req.user!.agentId || userId;
+    const callerUserId = (req.user as any)!.id || (req.user as any)!.userId;
+    const callerAgentId = req.user!.agentId || callerUserId;
+    const callerMasterId = (req.user as any)?.masterUserId || (req.user as any)?.master_id || callerUserId;
+
+    const isSlave = Boolean(
+      (callerMasterId && callerMasterId !== callerUserId) ||
+      (req.user?.email && typeof req.user.email === 'string' && req.user.email.includes('+AMR-')) ||
+      req.user?.account_type === 'slave' ||
+      req.user?.role === 'slave' ||
+      req.user?.is_slave === true ||
+      req.user?.isSlave === true
+    );
 
     const targetAgentHeader = req.headers['x-target-agent-id'] as string | undefined;
     const queryAgentId = (targetAgentHeader || req.query.agentId || req.query.agent_id) as string | undefined;
     const queryUserId = (req.query.userId || req.query.user_id) as string | undefined;
 
-    let targetUserId = userId;
-    let targetAgentId = agentId;
-    if (queryAgentId && queryAgentId.trim().toLowerCase() !== agentId.toLowerCase() && queryAgentId.trim().toLowerCase() !== userId.toLowerCase()) {
-      try {
-        const { data: slaveMatch } = await sb
-          .from('users')
-          .select('id, agentId')
-          .eq('id', queryAgentId.trim())
-          .eq('master_id', userId)
-          .maybeSingle();
+    let targetUserId = callerUserId;
+    let targetAgentId = callerAgentId;
 
-        if (slaveMatch) {
-          targetUserId = slaveMatch.id;
-          targetAgentId = slaveMatch.agentId || queryAgentId.trim();
-        } else {
-          const { data: slaveMatchByAgentId } = await sb
+    const requestedTarget = (queryAgentId || queryUserId || '').trim();
+
+    if (requestedTarget) {
+      const isTargetSelf = 
+        requestedTarget.toLowerCase() === callerUserId.toLowerCase() ||
+        requestedTarget.toLowerCase() === callerAgentId.toLowerCase();
+
+      if (isSlave) {
+        // A slave agent may access ONLY its own inbound webhook activity
+        if (!isTargetSelf) {
+          return res.status(403).json({
+            success: false,
+            error: {
+              code: 'UNAUTHORIZED',
+              message: 'Unauthorized: Slave agents cannot access activity records of other accounts.'
+            }
+          });
+        }
+      } else {
+        // Master account: can access self or subordinate agents within its own fleet
+        if (!isTargetSelf) {
+          let slaveMatch: any = null;
+          const { data: matchById } = await sb
             .from('users')
-            .select('id, agentId')
-            .eq('agentId', queryAgentId.trim())
-            .eq('master_id', userId)
+            .select('id, agentId, master_id')
+            .eq('id', requestedTarget)
             .maybeSingle();
-          if (slaveMatchByAgentId) {
-            targetUserId = slaveMatchByAgentId.id;
-            targetAgentId = slaveMatchByAgentId.agentId || queryAgentId.trim();
-          } else {
-            targetUserId = queryAgentId.trim();
-            targetAgentId = queryAgentId.trim();
+          slaveMatch = matchById;
+          if (!slaveMatch) {
+            const { data: matchByAgentId } = await sb
+              .from('users')
+              .select('id, agentId, master_id')
+              .ilike('agentId', requestedTarget)
+              .maybeSingle();
+            slaveMatch = matchByAgentId;
           }
-        }
-      } catch (e) {}
-    } else if (queryUserId && queryUserId.trim().toLowerCase() !== userId.toLowerCase()) {
-      try {
-        const { data: slaveMatch } = await sb
-          .from('users')
-          .select('id, agentId')
-          .eq('id', queryUserId.trim())
-          .eq('master_id', userId)
-          .maybeSingle();
 
-        if (slaveMatch) {
+          if (!slaveMatch || (slaveMatch.master_id !== callerUserId && slaveMatch.master_id !== callerMasterId && slaveMatch.id !== callerUserId)) {
+            return res.status(403).json({
+              success: false,
+              error: {
+                code: 'UNAUTHORIZED',
+                message: 'Unauthorized: Cannot access activity records outside your fleet.'
+              }
+            });
+          }
           targetUserId = slaveMatch.id;
-          targetAgentId = slaveMatch.agentId || targetAgentId;
+          targetAgentId = slaveMatch.agentId || slaveMatch.id;
         }
-      } catch (e) {}
+      }
     }
 
     let events: any[] = [];
@@ -4583,14 +4617,23 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
         .order('created_at', { ascending: false })
         .limit(100);
       if (!error && data && data.length > 0) {
-        const footprintActions = [
+        const outboundActions = [
           'POST_DELETED', 'REPLY_DELETED',
           'CONNECTION_ESTABLISHED', 'CONNECTION_REMOVED', 'CONNECTION_REQUEST_SENT',
-          'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED', 'COUNTER_PARTY_REVIEW', 'PEER_REVIEW'
+          'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED', 'COUNTER_PARTY_REVIEW', 'PEER_REVIEW',
+          'MESSAGE_SENT', 'CLUSTER_MESSAGE_SENT', 'CLUSTER_CREATED'
         ];
         
         events = data
-          .filter((item: any) => !footprintActions.includes(item.type))
+          .filter((item: any) => {
+            if (outboundActions.includes(item.type)) return false;
+            // Inbound webhook event must strictly represent activity received from external peers or systems
+            const sender = (item.sender_id || item.senderId || '').toLowerCase();
+            if (sender && (sender === targetAgentId.toLowerCase() || sender === targetUserId.toLowerCase())) {
+              return false;
+            }
+            return true;
+          })
           .map((item: any) => ({
             id: item.id,
             type: item.type || item.event_type,
@@ -4782,29 +4825,6 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
                 timestamp: ma.joinedAt || ma.joined_at || new Date().toISOString()
               });
             }
-          });
-        }
-      }
-    } catch (e) {}
-
-    // 8. Stream initialization event for the target agent
-    try {
-      const { data: userRec } = await sb
-        .from('users')
-        .select('id, agentId, createdAt, created_at')
-        .eq('id', targetUserId)
-        .maybeSingle();
-      if (userRec) {
-        const key = `NODE_ACTIVATED:${userRec.id}`;
-        if (!seenEventKeys.has(key)) {
-          seenEventKeys.add(key);
-          dynamicEvents.push({
-            id: `evt_node_${userRec.id}`,
-            type: 'STREAM_CONNECTED',
-            senderId: 'AAMARVA_CORE',
-            targetId: userRec.agentId || userRec.id,
-            details: `Autonomous webhook listener and cryptographic channels initialized for @${userRec.agentId || 'agent'}`,
-            timestamp: userRec.createdAt || userRec.created_at || new Date().toISOString()
           });
         }
       }

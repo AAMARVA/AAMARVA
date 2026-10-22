@@ -524,6 +524,91 @@ export async function runTelemetryActivityTests(): Promise<Record<string, { stat
       `Fleet B saw User A: ${leakedUserAInB}, Slave saw Master-only admin: ${slaveSawMasterAdmin}`
     );
 
+    // =================================================================
+    // TEST 14: Footprints Outbound Tracking & Strict Authorization
+    // =================================================================
+    // 14a. Master A can query its subordinate slave's footprints
+    const res14Master = await helperFetch(`/api/agent/footprints?agentId=${slaveAId}`, {
+      headers: { 'Cookie': `aamarva_human_session=${sessionTokenA}` }
+    });
+    const masterQuerySubordinateOk = res14Master.status === 200 && Array.isArray(res14Master.json?.data);
+
+    // 14b. Foreign Master B cannot query Fleet A's slave footprints (must receive 403)
+    const res14Foreign = await helperFetch(`/api/agent/footprints?agentId=${slaveAId}`, {
+      headers: { 'Cookie': `aamarva_human_session=${sessionTokenB}` }
+    });
+    const foreignBlocked403 = res14Foreign.status === 403;
+
+    // 14c. Slave A cannot query another account or foreign agent footprints
+    const res14SlaveForeign = await helperFetch(`/api/agent/footprints?agentId=${userB.id}`, {
+      headers: { 'Cookie': `aamarva_human_session=${slaveSessionToken}` }
+    });
+    const slaveBlocked403 = res14SlaveForeign.status === 403;
+
+    recordResult(
+      'TEST 14: Footprints outbound tracking and strict fleet authorization',
+      masterQuerySubordinateOk && foreignBlocked403 && slaveBlocked403,
+      `Master authorized: ${masterQuerySubordinateOk}, Foreign blocked (403): ${foreignBlocked403}, Slave cross-account blocked (403): ${slaveBlocked403}`
+    );
+
+    // =================================================================
+    // TEST 15: Webhook Events Inbound Tracking & Strict Authorization
+    // =================================================================
+    // 15a. Foreign Master B cannot query Fleet A's inbound webhook events (must receive 403)
+    const res15Foreign = await helperFetch(`/api/webhooks/events?agentId=${slaveAId}`, {
+      headers: { 'Cookie': `aamarva_human_session=${sessionTokenB}` }
+    });
+    const webhooksForeignBlocked403 = res15Foreign.status === 403;
+
+    // 15b. Slave A cannot query another account's webhook events
+    const res15SlaveBlocked = await helperFetch(`/api/webhooks/events?agentId=${userB.id}`, {
+      headers: { 'Cookie': `aamarva_human_session=${slaveSessionToken}` }
+    });
+    const webhooksSlaveBlocked403 = res15SlaveBlocked.status === 403;
+
+    // 15c. Inbound webhook events strictly exclude sender's own outbound actions
+    await supabase.from('external_events').insert({
+      id: `evt_inbound_test_${ts}`,
+      user_id: userA.id,
+      sender_id: userB.agentId,
+      target_id: userA.agentId,
+      type: 'DIRECT_ENCRYPTED_MESSAGE_RECEIVED',
+      created_at: new Date().toISOString()
+    });
+    // Self-sent event should be filtered out from inbound
+    await supabase.from('external_events').insert({
+      id: `evt_self_test_${ts}`,
+      user_id: userA.id,
+      sender_id: userA.agentId,
+      target_id: userB.agentId,
+      type: 'DIRECT_ENCRYPTED_MESSAGE_RECEIVED',
+      created_at: new Date().toISOString()
+    });
+
+    const res15Events = await helperFetch('/api/webhooks/events', {
+      headers: { 'Cookie': `aamarva_human_session=${sessionTokenA}` }
+    });
+    const eventsList = res15Events.json?.data || [];
+    const containsInbound = eventsList.some((e: any) => e.id === `evt_inbound_test_${ts}`);
+    const selfFilteredOut = !eventsList.some((e: any) => e.id === `evt_self_test_${ts}`);
+
+    recordResult(
+      'TEST 15: Webhook events inbound tracking and strict fleet authorization',
+      webhooksForeignBlocked403 && webhooksSlaveBlocked403 && containsInbound && selfFilteredOut,
+      `Foreign blocked (403): ${webhooksForeignBlocked403}, Slave blocked (403): ${webhooksSlaveBlocked403}, Inbound captured: ${containsInbound}, Self filtered out: ${selfFilteredOut}`
+    );
+
+    // =================================================================
+    // TEST 16: Deduplication & No Synthetic Stream Connection
+    // =================================================================
+    // Ensure response shapes are compliant and no synthetic STREAM_CONNECTED was manufactured for empty account
+    const hasSyntheticStream = eventsList.some((e: any) => e.type === 'STREAM_CONNECTED' && e.senderId === 'AAMARVA_CORE');
+    recordResult(
+      'TEST 16: No synthetic stream connection manufactured and response shape compliant',
+      !hasSyntheticStream && Array.isArray(eventsList),
+      `Synthetic stream suppressed: ${!hasSyntheticStream}, Array response shape intact: ${Array.isArray(eventsList)}`
+    );
+
   } catch (err: any) {
     console.error('Fatal error during telemetry activity tests:', err);
     recordResult('Telemetry Activity Tests Execution', false, err.message);

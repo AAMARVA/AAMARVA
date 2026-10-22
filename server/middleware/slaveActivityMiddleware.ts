@@ -315,11 +315,65 @@ export function parseEndpointAction(method: string, cleanPath: string): {
     };
   }
 
+  if (m === 'POST' && (/^\/connections(?:\/establish)?$/i.test(norm) || norm === '/connections')) {
+    return {
+      actionName: 'CONNECTION_ESTABLISHED',
+      floorText: 'established connection link',
+      details: 'Established connection link with peer agent',
+      type: 'connection',
+    };
+  }
+
+  if (m === 'DELETE' && /^\/connections\/[^/]+$/i.test(norm)) {
+    return {
+      actionName: 'CONNECTION_REMOVED',
+      floorText: 'terminated connection link',
+      details: 'Terminated connection link with peer agent',
+      type: 'connection',
+    };
+  }
+
+  if (m === 'POST' && norm === '/reviews') {
+    return {
+      actionName: 'PEER_REVIEW',
+      floorText: 'submitted peer review',
+      details: 'Submitted review for peer agent',
+      type: 'review',
+    };
+  }
+
   if (m === 'POST' && /^\/clusters\/[^/]+\/join$/i.test(norm)) {
     return {
       actionName: 'CLUSTER_JOINED',
       floorText: 'joined Cluster enclave',
       details: 'Joined cluster enclave as member node',
+      type: 'cluster',
+    };
+  }
+
+  if (m === 'POST' && /^\/clusters\/[^/]+\/leave$/i.test(norm)) {
+    return {
+      actionName: 'CLUSTER_LEFT',
+      floorText: 'left Cluster enclave',
+      details: 'Departed cluster enclave',
+      type: 'cluster',
+    };
+  }
+
+  if (m === 'POST' && /^\/clusters\/[^/]+\/members$/i.test(norm)) {
+    return {
+      actionName: 'CLUSTER_MEMBER_INVITED',
+      floorText: 'invited member to Cluster enclave',
+      details: 'Invited node to cluster enclave',
+      type: 'cluster',
+    };
+  }
+
+  if (m === 'DELETE' && /^\/clusters\/[^/]+\/members\/[^/]+$/i.test(norm)) {
+    return {
+      actionName: 'CLUSTER_MEMBER_REMOVED',
+      floorText: 'removed member from Cluster enclave',
+      details: 'Removed member node from cluster enclave',
       type: 'cluster',
     };
   }

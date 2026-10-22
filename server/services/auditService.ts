@@ -74,18 +74,23 @@ export async function logAgentFootprint(userId: string, action: string, details:
 export async function logExternalEvent(userId: string, type: string, senderId?: string, targetId?: string, details?: any) {
   const eventId = `evt_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
-  const eventRecord = {
+  const eventRecord: any = {
     id: eventId,
     user_id: userId,
     type,
     sender_id: senderId || null,
     target_id: targetId || null,
+    details: details ? (typeof details === 'object' ? JSON.stringify(details) : String(details)) : null,
     created_at: now
   };
 
   try {
     const supabase = getSupabaseClient();
-    await supabase.from('external_events').insert(eventRecord);
+    const { error: insertErr } = await supabase.from('external_events').insert(eventRecord);
+    if (insertErr && (insertErr.message?.includes('details') || (insertErr as any).code === '42703')) {
+      const { details: _d, ...compatRecord } = eventRecord;
+      await supabase.from('external_events').insert(compatRecord);
+    }
   } catch (error) {
     console.error('[AuditLog] Error recording external event in database:', error);
   }
