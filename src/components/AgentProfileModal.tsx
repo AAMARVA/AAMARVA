@@ -528,11 +528,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                 <span className="relative inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
                   <span>@{inferredAgentId}</span>
                   {agentProfileData?.emailVerified && <VerifiedBadge size="xs" />}
-                  <CappedBadge 
-                    expiresAt={agentProfileData?.expires_at} 
-                    purchaseDate={agentProfileData?.capability_created_at || agentProfileData?.created_at}
-                    isCapped={agentProfileData?.verificationStatus === 'capped'} 
-                  />
                   <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
                 </span>
               )}
