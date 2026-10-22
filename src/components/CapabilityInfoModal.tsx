@@ -19,9 +19,19 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
   const [capabilityData, setCapabilityData] = useState<{
     purchaseDate: string;
     expiryDate: string;
-    daysLeft: string;
+    rawPurchaseDate: string | null;
+    rawExpiryDate: string | null;
     status: string;
   } | null>(null);
+  const [currentTimestamp, setCurrentTimestamp] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(() => {
+      setCurrentTimestamp(Date.now());
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && accountId) {
@@ -38,7 +48,13 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               ? cap 
               : (plan && plan.expires_at ? plan : (history.find((h: any) => h.expires_at) || history[0]));
 
-            const rawDate = target?.created_at || cap?.created_at || plan?.created_at;
+            // Find earliest capability activation in history to identify true original purchase timestamp
+            const capabilityHistory = history.filter((h: any) => h.plan_type === 'slave_capability' || h.action_type === 'capability_increment');
+            const earliestPurchase = capabilityHistory.length > 0
+              ? capabilityHistory[capabilityHistory.length - 1]?.created_at
+              : null;
+
+            const rawDate = earliestPurchase || target?.created_at || cap?.created_at || plan?.created_at;
             const rawExpiry = target?.expires_at || cap?.expires_at || plan?.expires_at;
 
             const purchaseDate = rawDate 
@@ -49,28 +65,19 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
               ? new Date(rawExpiry).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
               : 'N/A';
 
-            let daysLeft = 'N/A';
-            if (rawExpiry) {
-              const diffTime = new Date(rawExpiry).getTime() - Date.now();
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              if (diffDays <= 0) {
-                daysLeft = '0 Days (Expired)';
-              } else {
-                daysLeft = `${diffDays} ${diffDays === 1 ? 'Day' : 'Days'}`;
-              }
-            }
-
             setCapabilityData({
               purchaseDate,
               expiryDate,
-              daysLeft,
+              rawPurchaseDate: rawDate || null,
+              rawExpiryDate: rawExpiry || null,
               status: target?.status || plan?.status || 'active'
             });
           } else {
             setCapabilityData({
               purchaseDate: 'N/A',
               expiryDate: 'N/A',
-              daysLeft: 'N/A',
+              rawPurchaseDate: null,
+              rawExpiryDate: null,
               status: 'active'
             });
           }
@@ -80,13 +87,47 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
           setCapabilityData({
             purchaseDate: 'N/A',
             expiryDate: 'N/A',
-            daysLeft: 'N/A',
+            rawPurchaseDate: null,
+            rawExpiryDate: null,
             status: 'active'
           });
         })
         .finally(() => setLoading(false));
     }
   }, [isOpen, accountId]);
+
+  const daysLeftText = React.useMemo(() => {
+    if (!capabilityData?.rawExpiryDate) return 'N/A';
+    const expDate = new Date(capabilityData.rawExpiryDate);
+    if (isNaN(expDate.getTime())) return 'N/A';
+
+    const now = new Date(currentTimestamp);
+    if (expDate.getTime() <= now.getTime()) {
+      return '0 Days (Expired)';
+    }
+
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfExpiry = new Date(expDate.getFullYear(), expDate.getMonth(), expDate.getDate()).getTime();
+
+    let remainingDays = Math.max(0, Math.round((startOfExpiry - startOfToday) / (1000 * 60 * 60 * 24)));
+
+    if (capabilityData.rawPurchaseDate) {
+      const purchDate = new Date(capabilityData.rawPurchaseDate);
+      if (!isNaN(purchDate.getTime())) {
+        const startOfPurchase = new Date(purchDate.getFullYear(), purchDate.getMonth(), purchDate.getDate()).getTime();
+        const totalSpan = Math.round((startOfExpiry - startOfPurchase) / (1000 * 60 * 60 * 24));
+        const elapsed = Math.max(0, Math.floor((startOfToday - startOfPurchase) / (1000 * 60 * 60 * 24)));
+        remainingDays = Math.max(0, totalSpan - elapsed);
+      }
+    }
+
+    if (remainingDays === 0) {
+      const hoursLeft = Math.max(1, Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60)));
+      return `< 1 Day (${hoursLeft}h Left)`;
+    }
+
+    return `${remainingDays} ${remainingDays === 1 ? 'Day' : 'Days'}`;
+  }, [capabilityData, currentTimestamp]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -166,7 +207,7 @@ export const CapabilityInfoModal: React.FC<CapabilityInfoModalProps> = ({
                 <span className="text-xs font-bold uppercase">Days Left</span>
               </div>
               <span className="text-xs font-bold">
-                {capabilityData?.daysLeft || 'N/A'}
+                {daysLeftText}
               </span>
             </div>
           </div>

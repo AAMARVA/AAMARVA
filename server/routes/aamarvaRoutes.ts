@@ -795,9 +795,21 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
 
     let assignedCursor = 0;
     const enrichedPlanBlocks = rawBlocks.map((b: any, idx: number) => {
-      const expTime = new Date(b.expires_at).getTime();
+      const expDate = new Date(b.expires_at);
+      const expTime = expDate.getTime();
       const isAct = expTime > now;
-      const daysLeft = Math.max(0, Math.ceil((expTime - now) / (1000 * 60 * 60 * 24)));
+      const startOfToday = new Date(new Date(now).getFullYear(), new Date(now).getMonth(), new Date(now).getDate()).getTime();
+      const startOfExpiry = new Date(expDate.getFullYear(), expDate.getMonth(), expDate.getDate()).getTime();
+      let daysLeft = Math.max(0, Math.round((startOfExpiry - startOfToday) / (1000 * 60 * 60 * 24)));
+      if (b.created_at) {
+        const purchDate = new Date(b.created_at);
+        if (!isNaN(purchDate.getTime())) {
+          const startOfPurchase = new Date(purchDate.getFullYear(), purchDate.getMonth(), purchDate.getDate()).getTime();
+          const totalSpan = Math.round((startOfExpiry - startOfPurchase) / (1000 * 60 * 60 * 24));
+          const elapsed = Math.max(0, Math.floor((startOfToday - startOfPurchase) / (1000 * 60 * 60 * 24)));
+          daysLeft = Math.max(0, totalSpan - elapsed);
+        }
+      }
       const bAllowance = b.allowance || 10;
       const bSlaves = cleanSubAgents.slice(assignedCursor, assignedCursor + bAllowance);
       const slotStart = assignedCursor + 1;

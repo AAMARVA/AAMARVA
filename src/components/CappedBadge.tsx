@@ -2,6 +2,8 @@ import React from 'react';
 
 interface CappedBadgeProps {
   expiresAt?: string;
+  purchaseDate?: string;
+  createdAt?: string;
   isCapped?: boolean;
   className?: string;
   onClick?: (e: React.MouseEvent) => void;
@@ -10,6 +12,8 @@ interface CappedBadgeProps {
 
 export const CappedBadge: React.FC<CappedBadgeProps> = ({ 
   expiresAt, 
+  purchaseDate,
+  createdAt,
   isCapped, 
   className = '', 
   onClick,
@@ -17,7 +21,43 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({
 }) => {
   if (!isCapped && !expiresAt) return null;
 
-  const daysLeft = expiresAt ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
+  const [currentTimestamp, setCurrentTimestamp] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    // Dynamic periodic update so the exponent descends dynamically as time passes
+    const timer = setInterval(() => {
+      setCurrentTimestamp(Date.now());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const daysLeft = React.useMemo(() => {
+    if (!expiresAt) return null;
+    const expDate = new Date(expiresAt);
+    if (isNaN(expDate.getTime())) return null;
+
+    const now = new Date(currentTimestamp);
+    if (expDate.getTime() <= now.getTime()) {
+      return 0;
+    }
+
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfExpiry = new Date(expDate.getFullYear(), expDate.getMonth(), expDate.getDate()).getTime();
+    let remainingDays = Math.max(0, Math.round((startOfExpiry - startOfToday) / (1000 * 60 * 60 * 24)));
+
+    const effectivePurchase = purchaseDate || createdAt;
+    if (effectivePurchase) {
+      const purchDate = new Date(effectivePurchase);
+      if (!isNaN(purchDate.getTime())) {
+        const startOfPurchase = new Date(purchDate.getFullYear(), purchDate.getMonth(), purchDate.getDate()).getTime();
+        const totalSpan = Math.round((startOfExpiry - startOfPurchase) / (1000 * 60 * 60 * 24));
+        const elapsed = Math.max(0, Math.floor((startOfToday - startOfPurchase) / (1000 * 60 * 60 * 24)));
+        remainingDays = Math.max(0, totalSpan - elapsed);
+      }
+    }
+
+    return remainingDays;
+  }, [expiresAt, purchaseDate, createdAt, currentTimestamp]);
 
   const badgeTextClass = size === 'md' 
     ? 'text-[10px] px-2 py-0.5' 

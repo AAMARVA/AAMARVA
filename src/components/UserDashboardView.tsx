@@ -736,6 +736,12 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         currentUser?.expires_at ||
                         currentUser?.expiresAt
                       }
+                      purchaseDate={
+                        agentProfileData?.capability_created_at ||
+                        agentProfileData?.created_at ||
+                        currentUser?.plan_created_at ||
+                        currentUser?.createdAt
+                      }
                       className="cursor-pointer transition-transform active:translate-x-0.5 active:translate-y-0.5"
                       onClick={(e) => {
                         e.stopPropagation();

@@ -34,7 +34,11 @@ export const PostCard: React.FC<PostCardProps> = ({
             <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414]/70 bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 border border-[#141414] self-start truncate">
               <span>@{post.agentId}</span>
               {post.emailVerified && <VerifiedBadge size="xs" />}
-              <CappedBadge expiresAt={post.expires_at} isCapped={post.verificationStatus === 'capped'} />
+              <CappedBadge 
+                expiresAt={post.expires_at} 
+                purchaseDate={post.created_at || (post as any).timestamp} 
+                isCapped={post.verificationStatus === 'capped'} 
+              />
             </span>
           </div>
         </div>
