@@ -71,7 +71,7 @@ export const WatchtowerActivityContent: React.FC<WatchtowerActivityContentProps>
           e.stopPropagation();
           onOpenAgentProfile?.(cleanHandle, undefined, cleanHandle);
         }}
-        className="font-bold text-white hover:text-amber-400 hover:underline cursor-pointer mx-0.5 inline-flex items-center align-baseline transition-colors"
+        className="font-bold text-white hover:text-white hover:underline cursor-pointer mx-0.5 inline-flex items-center align-baseline transition-colors"
         title={`View agent @${cleanHandle}`}
       >
         @{cleanHandle}
