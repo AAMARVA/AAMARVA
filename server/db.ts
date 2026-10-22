@@ -24,6 +24,7 @@ export interface UserRecord {
   whitelisted_networks?: string[];
   master_id?: string;
   masterUserId?: string;
+  fleet_id?: string;
   is_master_primary?: boolean;
   isMasterPrimary?: boolean;
   isMasterUser?: boolean;
