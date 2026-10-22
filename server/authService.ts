@@ -665,10 +665,6 @@ export async function insertUserToSupabase(supabase: any, newUser: UserRecord) {
     bio: newUser.bio || DEFAULT_BIO,
     emailVerified: false,
     whitelisted_networks: (newUser as any).whitelisted_networks || [],
-    account_type: (newUser as any).account_type || 'master',
-    role: (newUser as any).role || 'master',
-    fleet_id: (newUser as any).fleet_id || null,
-    master_id: (newUser as any).master_id || null,
     createdAt: newUser.createdAt,
     updatedAt: newUser.updatedAt,
   };
@@ -692,8 +688,6 @@ export async function registerUser(data: {
   bio?: string;
   appUrl?: string;
   whitelisted_networks?: any;
-  fleetId?: string;
-  fleet_id?: string;
 }, clientIp?: string): Promise<{
   agentId: string;
   apiKey: string;
@@ -716,56 +710,6 @@ export async function registerUser(data: {
   ).trim();
 
   const supabase = getSupabaseClient();
-
-  const rawFleetId = (data.fleetId || (data as any).fleet_id || '').trim();
-  let affiliatedFleetOwner: any = null;
-
-  if (rawFleetId) {
-    if (!supabase) {
-      throw new Error('Database service unavailable. Unable to verify Fleet ID.');
-    }
-
-    // 1. Locate the fleet owner by agentId, id, or email
-    const { data: fleetOwner, error: fleetErr } = await supabase
-      .from('users')
-      .select('id, agentId, name, email, status, account_type')
-      .or(`agentId.eq.${rawFleetId},id.eq.${rawFleetId},email.ilike.${rawFleetId}`)
-      .maybeSingle();
-
-    if (fleetErr || !fleetOwner) {
-      throw new Error(`Fleet ID "${rawFleetId}" not found. Please verify the Fleet ID and try again.`);
-    }
-
-    if (fleetOwner.status !== 'active') {
-      throw new Error(`Fleet operator for "${rawFleetId}" is currently ${fleetOwner.status}. Registration refused.`);
-    }
-
-    // 2. Authoritative slot check: Verify the fleet has an available/empty Master Account slot
-    const { MasterAccountService } = await import('./services/masterAccountService.js');
-    const masterService = MasterAccountService.getInstance();
-    const fleetPlan = await masterService.getMasterPlan(fleetOwner.id, true);
-
-    const totalMasterSlots = fleetPlan?.allowance_master_slots || fleetPlan?.metadata?.allowance_master_slots || 0;
-
-    if (!fleetPlan || fleetPlan.status !== 'active' || totalMasterSlots <= 0) {
-      throw new Error(`Fleet "${rawFleetId}" does not have any Master Account slots enabled. Please contact the fleet administrator.`);
-    }
-
-    // 3. Count already registered master accounts under this fleet
-    const { data: existingMasters } = await supabase
-      .from('users')
-      .select('id')
-      .or(`fleet_id.eq.${fleetOwner.id},and(master_id.eq.${fleetOwner.id},account_type.eq.master)`)
-      .neq('id', fleetOwner.id);
-
-    const usedMasterSlots = Array.isArray(existingMasters) ? existingMasters.length : 0;
-
-    if (usedMasterSlots >= totalMasterSlots) {
-      throw new Error(`No empty Master Account slots available in Fleet "${rawFleetId}". All ${totalMasterSlots} slot(s) are occupied.`);
-    }
-
-    affiliatedFleetOwner = fleetOwner;
-  }
 
   const generateId = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -960,10 +904,6 @@ export async function registerUser(data: {
     bio: (data.bio || '').trim() || DEFAULT_BIO,
     emailVerified: false,
     whitelisted_networks,
-    account_type: 'master',
-    role: 'master',
-    fleet_id: affiliatedFleetOwner ? affiliatedFleetOwner.id : undefined,
-    master_id: affiliatedFleetOwner ? affiliatedFleetOwner.id : undefined,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };

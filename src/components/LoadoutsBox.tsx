@@ -21,8 +21,7 @@ import {
   Bot,
   CheckSquare,
   Square,
-  Search,
-  Copy
+  Search
 } from 'lucide-react';
 import { apiFetch } from '../services/authApi';
 import { AgentAvatar } from './AgentAvatar';
@@ -73,21 +72,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   // Active Plan Management: Buy new accounts on top
   const [addAccountsCount, setAddAccountsCount] = useState<number>(10);
   const [addAccountsRaw, setAddAccountsRaw] = useState<string>('10');
-
-  // Master Account Slots Management
-  const [addMasterSlotsCount, setAddMasterSlotsCount] = useState<number>(0);
-  const [addMasterSlotsRaw, setAddMasterSlotsRaw] = useState<string>('0');
-  const [coMasterAgents, setCoMasterAgents] = useState<any[]>([]);
-  const [masterSlotsInfo, setMasterSlotsInfo] = useState<{ total: number; used: number; available: number }>({ total: 0, used: 0, available: 0 });
-  const [copiedFleetId, setCopiedFleetId] = useState<boolean>(false);
-
-  const handleCopyFleetId = (fleetIdToCopy: string) => {
-    if (!fleetIdToCopy) return;
-    navigator.clipboard.writeText(fleetIdToCopy).then(() => {
-      setCopiedFleetId(true);
-      setTimeout(() => setCopiedFleetId(false), 2500);
-    }).catch(() => {});
-  };
 
   // Previously owned slave agents list
   const [slaveAgentsList, setSlaveAgentsList] = useState<any[]>([]);
@@ -152,12 +136,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
         if (accRes.data.masterAgent) {
           setMasterAgent(accRes.data.masterAgent);
         }
-        if (Array.isArray(accRes.data.coMasterAgents)) {
-          setCoMasterAgents(accRes.data.coMasterAgents);
-        }
-        if (accRes.data.masterSlots) {
-          setMasterSlotsInfo(accRes.data.masterSlots);
-        }
         if (Array.isArray(accRes.data.subAgents)) {
           fetchedSlaves = accRes.data.subAgents;
         } else if (Array.isArray(accRes.data.slaveAgents)) {
@@ -175,13 +153,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           setInheritedPlan(res.data.inheritedPlan);
         } else {
           setInheritedPlan(null);
-        }
-
-        if (Array.isArray(res.data.coMasterAgents)) {
-          setCoMasterAgents(res.data.coMasterAgents);
-        }
-        if (res.data.masterSlots) {
-          setMasterSlotsInfo(res.data.masterSlots);
         }
 
         if (fetchedSlaves.length === 0 && Array.isArray(res.data.slaveAgents)) {
@@ -275,7 +246,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
     };
   }, [agentId]);
 
-  const handleBuyPlan = async (actionOverride?: 'add_accounts' | 'new_plan' | 'add_master_slots', isCapability: boolean = false) => {
+  const handleBuyPlan = async (actionOverride?: 'add_accounts' | 'new_plan', isCapability: boolean = false) => {
     if (purchasing) return;
     setPurchasing(true);
     setPurchaseStatusMsg(null);
@@ -299,18 +270,17 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
       if (isCapability) {
         payload.actionType = 'new_plan';
         payload.validityDays = 30;
-      } else if (effectiveAction === 'add_accounts' || effectiveAction === 'add_master_slots') {
+      } else if (effectiveAction === 'add_accounts') {
+        // Enforce strict minimum of 10 accounts under any condition for adding accounts
         const parsedInput = parseInt(addAccountsRaw, 10);
         const resolvedCount = !isNaN(parsedInput) ? parsedInput : addAccountsCount;
-        const effectiveAddOn = Math.max(0, resolvedCount);
-        payload.actionType = effectiveAddOn > 0 ? 'add_accounts' : 'add_master_slots';
+        const effectiveAddOn = Math.max(10, resolvedCount);
+        payload.actionType = 'add_accounts';
         payload.addOnAccounts = effectiveAddOn;
-        payload.addMasterSlots = addMasterSlotsCount;
         payload.totalAccounts = (currentPlan?.allowance_accounts || 0) + effectiveAddOn;
       } else {
         payload.actionType = 'new_plan';
         payload.totalAccounts = totalAccounts;
-        payload.addMasterSlots = addMasterSlotsCount;
       }
 
       const res = await apiFetch('/api/auth/master/buy-plan', {
@@ -336,27 +306,19 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             text: `Capability Increment Plan activated for ${targetName}! Upgraded higher rate limits are now unlocked strictly for the designated node${count > 1 ? 's' : ''}.`
           });
           setTargetCapabilityAccountIds([]);
-        } else if (effectiveAction === 'add_accounts' || effectiveAction === 'add_master_slots') {
-          const effectiveAddOn = Math.max(0, addAccountsCount);
-          setAddAccountsCount(Math.max(10, effectiveAddOn));
-          setAddAccountsRaw(String(Math.max(10, effectiveAddOn)));
-          const purchasedMasters = addMasterSlotsCount;
-          setAddMasterSlotsCount(0);
-          setAddMasterSlotsRaw('0');
-          const details: string[] = [];
-          if (effectiveAddOn > 0) details.push(`+${effectiveAddOn} slave account(s)`);
-          if (purchasedMasters > 0) details.push(`+${purchasedMasters} master account slot(s)`);
+        } else if (effectiveAction === 'add_accounts') {
+          const effectiveAddOn = Math.max(1, addAccountsCount);
+          setAddAccountsCount(effectiveAddOn);
+          setAddAccountsRaw(String(effectiveAddOn));
           setPurchaseStatusMsg({
             type: 'success',
-            text: `Successfully added ${details.join(' and ')} to your fleet! Total active slave allowance: ${res.data.plan.allowance_accounts}, total master slots: ${res.data.plan.allowance_master_slots || (masterSlotsInfo.total + purchasedMasters)}.`
+            text: `Successfully added +${effectiveAddOn} account(s) to your fleet! Total active allowance is now ${res.data.plan.allowance_accounts} accounts.`
           });
         } else {
           setPurchaseStatusMsg({
             type: 'success',
-            text: `Plan activated! Database confirmed: ${res.data.plan.allowance_accounts} Slave Agents & ${res.data.plan.allowance_master_slots || addMasterSlotsCount} Master Slots.`
+            text: `Plan activated! Database confirmed: ${res.data.plan.allowance_accounts} Slave Agents allowance.`
           });
-          setAddMasterSlotsCount(0);
-          setAddMasterSlotsRaw('0');
         }
       } else {
         const errorText = res?.error?.message || 'Unable to process plan request. Please try again.';
@@ -592,9 +554,8 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                         return (
                           <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
                             {scaleItems.map((item, idx) => {
-                              const isMasterSlot = item.action_type === 'add_master_slots' || item.plan_type === 'master_slot_addon' || (item.master_slots && !item.allowance);
                               const isAddon = item.action_type === 'add_accounts' || item.plan_subtitle?.includes('Capacity') || item.plan_name?.includes('Add-On');
-                              const subtitle = item.plan_subtitle || (isMasterSlot ? `Master Slot Expansion (+${item.master_slots || 1} Slot)` : (isAddon ? 'Capacity Add-On (+10 Accounts)' : 'Base Fleet Roster (10 Accounts)'));
+                              const subtitle = item.plan_subtitle || (isAddon ? 'Capacity Add-On (+10 Accounts)' : 'Base Fleet Roster (10 Accounts)');
                               return (
                                 <div
                                   key={item.id || idx}
@@ -603,29 +564,29 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                   <div className="flex items-center justify-between pb-1.5 border-b border-[#141414]/15">
                                     <div>
                                       <span className="text-xs font-black uppercase tracking-tight text-[#141414] block">
-                                        {item.plan_name || (isMasterSlot ? 'Master Account Slot Plan' : 'Master & Slave Agent Plan')}
+                                        {item.plan_name || 'Master & Slave Agent Plan'}
                                       </span>
                                       <span className="text-[10px] font-bold text-[#141414]/70 uppercase block mt-0.5">
                                         {subtitle}
                                       </span>
                                     </div>
                                     <span className="px-2 py-0.5 bg-[#F5F4F0] border border-[#141414] text-[9px] font-black uppercase text-[#141414] shrink-0">
-                                      {isMasterSlot ? 'Master Slot' : (isAddon ? 'Add-On' : 'Base')}
+                                      {isAddon ? 'Add-On' : 'Base'}
                                     </span>
                                   </div>
                                   <div className="text-[11px] text-[#141414]/75 space-y-1.5">
                                     <div className="flex justify-between items-center">
                                       <span className="text-[#141414]/60 text-[10px] uppercase font-bold">
-                                        {isMasterSlot ? 'Master Slots Added:' : (isAddon ? 'Capacity Added:' : 'Plan Accounts:')}
+                                        {isAddon ? 'Capacity Added:' : 'Plan Accounts:'}
                                       </span>
                                       <span className="text-[9px] font-bold text-[#141414] bg-neutral-100 px-2 py-0.5 border border-[#141414]/20 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                                        {isMasterSlot ? `+${item.master_slots || 1} Master Slot(s)` : (isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`)}
+                                        {isAddon ? `+${item.accounts_in_transaction || item.added_accounts || 10} Accounts` : `${item.accounts_in_transaction || 10} Slave Agents`}
                                       </span>
                                     </div>
                                     <div className="flex justify-between">
                                       <span className="text-[#141414]/60 text-[10px] uppercase font-bold">Plan Valuation:</span>
                                       <strong className="text-[#141414] font-black">
-                                        ${item.amount || (isMasterSlot ? (item.master_slots || 1) * 50 : (50 + Math.max(0, item.allowance_accounts - 10) * 2.5))} {item.currency || 'USD'}
+                                        ${item.amount || (50 + Math.max(0, item.allowance_accounts - 10) * 2.5)} {item.currency || 'USD'}
                                       </strong>
                                     </div>
                                     <div className="flex justify-between text-[10px] text-[#141414] font-bold pt-1.5 border-t border-[#141414]/15">
@@ -1102,104 +1063,13 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                   {/* Active Plan Management Options when already subscribed */}
                   {currentPlan?.status === 'active' ? (
                     <div className="space-y-4 text-left">
-                      {/* Fleet Identity & Master Slot Deployment Console */}
-                      <div className="bg-[#141414] text-white p-4 border-2 border-[#141414] space-y-3 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Bot className="w-4 h-4 text-white" />
-                            <span className="text-xs font-black uppercase tracking-wider font-mono">
-                              Fleet ID & Master Slot Deployment
-                            </span>
-                          </div>
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 border ${
-                            (masterSlotsInfo.available || Math.max(0, (currentPlan?.allowance_master_slots || 0) - coMasterAgents.length)) > 0
-                              ? 'bg-emerald-400 text-black border-emerald-500'
-                              : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-                          }`}>
-                            {(masterSlotsInfo.available || Math.max(0, (currentPlan?.allowance_master_slots || 0) - coMasterAgents.length))} Slot{(masterSlotsInfo.available || Math.max(0, (currentPlan?.allowance_master_slots || 0) - coMasterAgents.length)) === 1 ? '' : 's'} Empty
-                          </span>
-                        </div>
-
-                        <div className="p-2.5 bg-white text-[#141414] border border-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono">
-                          <div className="min-w-0">
-                            <span className="text-[9px] font-black uppercase text-[#141414]/60 block">FLEET ID (Share to Deploy Master)</span>
-                            <span className="text-sm font-black tracking-wider break-all text-[#141414]">
-                              {masterAgent?.agentId || user?.agentId || currentPlan?.master_account_id}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyFleetId(masterAgent?.agentId || user?.agentId || currentPlan?.master_account_id)}
-                            className="px-3 py-1.5 bg-[#141414] text-white hover:bg-neutral-800 text-[10px] font-black uppercase tracking-wider shrink-0 flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,0.5)]"
-                          >
-                            {copiedFleetId ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-400" />
-                                <span>COPIED!</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                <span>COPY FLEET ID</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2 text-center font-mono">
-                          <div className="p-2 bg-white/5 border border-white/10">
-                            <span className="text-[8px] text-white/60 uppercase block">Total Slots</span>
-                            <span className="text-sm font-black text-white">{currentPlan?.allowance_master_slots || masterSlotsInfo.total || 0}</span>
-                          </div>
-                          <div className="p-2 bg-white/5 border border-white/10">
-                            <span className="text-[8px] text-white/60 uppercase block">Registered</span>
-                            <span className="text-sm font-black text-white">{coMasterAgents.length || masterSlotsInfo.used || 0}</span>
-                          </div>
-                          <div className="p-2 bg-white/5 border border-white/10">
-                            <span className="text-[8px] text-emerald-400 uppercase block">Empty / Ready</span>
-                            <span className="text-sm font-black text-emerald-400">
-                              {(masterSlotsInfo.available || Math.max(0, (currentPlan?.allowance_master_slots || 0) - coMasterAgents.length))}
-                            </span>
-                          </div>
-                        </div>
-
-                        <p className="text-[10px] text-white/80 font-sans leading-relaxed">
-                          To deploy a Master Account, share your Fleet ID. Operators register normally at /register and enter this Fleet ID to occupy an empty slot in your fleet.
-                        </p>
-
-                        {/* Co-master accounts list if any */}
-                        {coMasterAgents.length > 0 && (
-                          <div className="pt-2 border-t border-white/10 space-y-1.5">
-                            <span className="text-[9px] font-black uppercase text-white/60 tracking-wider">
-                              Registered Fleet Master Accounts ({coMasterAgents.length})
-                            </span>
-                            <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
-                              {coMasterAgents.map((cm: any) => (
-                                <div key={cm.id} className="p-1.5 bg-white/5 border border-white/10 flex items-center justify-between text-[10px] font-mono">
-                                  <div className="flex items-center gap-2">
-                                    <AgentAvatar
-                                      avatar={cm.avatar}
-                                      name={cm.name || cm.agentId}
-                                      className="w-4 h-4 rounded-none"
-                                    />
-                                    <span className="font-bold text-white">{cm.name || cm.agentId}</span>
-                                    <span className="text-white/50 text-[9px]">@{cm.agentId}</span>
-                                  </div>
-                                  <span className="text-emerald-400 font-bold text-[8.5px] uppercase">DEPLOYED MASTER</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Add Accounts On Top Configuration (Slave accounts) */}
+                      {/* Add Accounts On Top Configuration */}
                       <div className="bg-white border-2 border-[#141414] p-4 space-y-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div>
                             <span className="text-xs font-black uppercase tracking-wider block">Add Accounts On Top</span>
                             <span className="text-[10px] text-[#141414]/60 font-sans">
-                              Add slave accounts to fleet · Max 1,000 total accounts
+                              Add to current fleet · Max 1,000 total accounts
                             </span>
                           </div>
 
@@ -1304,116 +1174,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           );
                         })()}
                       </div>
-
-                      {/* Add Master Account Slots Configuration */}
-                      <div className="bg-white border-2 border-[#141414] p-4 space-y-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div>
-                            <span className="text-xs font-black uppercase tracking-wider block">Add Master Account Slots</span>
-                            <span className="text-[10px] text-[#141414]/60 font-sans">
-                              Add slots for master accounts in fleet · $50/slot
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto font-mono">
-                            <button
-                              type="button"
-                              disabled={addMasterSlotsCount <= 0}
-                              onClick={() => {
-                                const next = Math.max(0, addMasterSlotsCount - 1);
-                                setAddMasterSlotsCount(next);
-                                setAddMasterSlotsRaw(String(next));
-                              }}
-                              className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
-                              title={addMasterSlotsCount <= 0 ? 'Minimum 0 slots reached' : 'Decrease master slots'}
-                            >
-                              -
-                            </button>
-
-                            <div className="flex items-center border-2 border-[#141414] bg-neutral-50 px-2 h-8">
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={addMasterSlotsRaw}
-                                onChange={(e) => {
-                                  const raw = e.target.value;
-                                  setAddMasterSlotsRaw(raw);
-                                  const val = parseInt(raw, 10);
-                                  if (!isNaN(val)) {
-                                    setAddMasterSlotsCount(Math.max(0, Math.min(100, val)));
-                                  }
-                                }}
-                                onBlur={() => {
-                                  const parsed = parseInt(addMasterSlotsRaw, 10);
-                                  if (isNaN(parsed) || parsed < 0) {
-                                    setAddMasterSlotsCount(0);
-                                    setAddMasterSlotsRaw('0');
-                                  } else {
-                                    const clamped = Math.min(100, Math.max(0, parsed));
-                                    setAddMasterSlotsCount(clamped);
-                                    setAddMasterSlotsRaw(String(clamped));
-                                  }
-                                }}
-                                className="w-14 font-mono font-black text-xs text-center bg-transparent text-[#141414] focus:outline-none"
-                              />
-                              <span className="text-[9px] font-bold uppercase text-[#141414]/60 select-none ml-1">slot</span>
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={addMasterSlotsCount >= 100}
-                              onClick={() => {
-                                const next = addMasterSlotsCount + 1;
-                                setAddMasterSlotsCount(next);
-                                setAddMasterSlotsRaw(String(next));
-                              }}
-                              className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
-                              title="Increase master slots"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Master Slot Add-on Pricing Box */}
-                        {(() => {
-                          const cost = addMasterSlotsCount * 50;
-                          const currentMasterAllowance = currentPlan?.allowance_master_slots || masterSlotsInfo.total || 0;
-                          return (
-                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-3.5 bg-[#F5F4F0] border-2 border-[#141414]">
-                              <div className="space-y-0.5">
-                                <span className="text-[9px] font-black uppercase text-[#141414]/60 tracking-wider">
-                                  Master Slot Add-on Cost
-                                </span>
-                                <div className="flex items-baseline gap-1.5">
-                                  <span className="text-xl font-black text-[#141414] tabular-nums">
-                                    +${cost}
-                                  </span>
-                                  <span className="text-[10px] font-bold text-[#141414]/60 uppercase">
-                                    USD
-                                  </span>
-                                </div>
-                                <span className="text-[9.5px] text-[#141414]/60 block font-mono">
-                                  Adding {addMasterSlotsCount} master slot(s) @ $50/slot
-                                </span>
-                              </div>
-
-                              <div className="border-t sm:border-t-0 sm:border-l border-[#141414]/20 pt-2 sm:pt-0 sm:pl-4 text-left sm:text-right">
-                                <span className="text-[9px] font-black uppercase text-[#141414]/50">
-                                  Resulting Master Capacity
-                                </span>
-                                <span className="text-sm font-black text-[#141414] uppercase font-mono block">
-                                  {currentMasterAllowance + addMasterSlotsCount} Master Slots
-                                </span>
-                                <span className="text-[9px] text-emerald-700 font-bold block">
-                                  {currentMasterAllowance} Current + {addMasterSlotsCount} New
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
                     </div>
                   ) : (
                     /* Initial Plan Purchase Configuration for Inactive/Free users */
@@ -1508,78 +1268,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                         )}
                       </div>
 
-                      {/* Add Master Account Slots Configuration for New Plans */}
-                      <div className="bg-white border-2 border-[#141414] p-3 sm:p-3.5 space-y-2.5 text-left">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div>
-                            <span className="text-xs font-black uppercase tracking-wider block">Master Account Slots</span>
-                            <span className="text-[10px] text-[#141414]/60 font-sans">
-                              Add slots for master accounts in fleet · $50/slot
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto font-mono">
-                            <button
-                              type="button"
-                              disabled={addMasterSlotsCount <= 0}
-                              onClick={() => {
-                                const next = Math.max(0, addMasterSlotsCount - 1);
-                                setAddMasterSlotsCount(next);
-                                setAddMasterSlotsRaw(String(next));
-                              }}
-                              className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
-                              title={addMasterSlotsCount <= 0 ? 'Minimum 0 slots reached' : 'Decrease master slots'}
-                            >
-                              -
-                            </button>
-
-                            <div className="flex items-center border-2 border-[#141414] bg-neutral-50 px-2 h-8">
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={addMasterSlotsRaw}
-                                onChange={(e) => {
-                                  const raw = e.target.value;
-                                  setAddMasterSlotsRaw(raw);
-                                  const val = parseInt(raw, 10);
-                                  if (!isNaN(val)) {
-                                    setAddMasterSlotsCount(Math.max(0, Math.min(100, val)));
-                                  }
-                                }}
-                                onBlur={() => {
-                                  const parsed = parseInt(addMasterSlotsRaw, 10);
-                                  if (isNaN(parsed) || parsed < 0) {
-                                    setAddMasterSlotsCount(0);
-                                    setAddMasterSlotsRaw('0');
-                                  } else {
-                                    const clamped = Math.min(100, Math.max(0, parsed));
-                                    setAddMasterSlotsCount(clamped);
-                                    setAddMasterSlotsRaw(String(clamped));
-                                  }
-                                }}
-                                className="w-14 font-mono font-black text-xs text-center bg-transparent text-[#141414] focus:outline-none"
-                              />
-                              <span className="text-[9px] font-bold uppercase text-[#141414]/60 select-none ml-1">slot</span>
-                            </div>
-
-                            <button
-                              type="button"
-                              disabled={addMasterSlotsCount >= 100}
-                              onClick={() => {
-                                const next = addMasterSlotsCount + 1;
-                                setAddMasterSlotsCount(next);
-                                setAddMasterSlotsRaw(String(next));
-                              }}
-                              className="w-8 h-8 border-2 border-[#141414] bg-white hover:bg-[#141414] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center transition-colors cursor-pointer"
-                              title="Increase master slots"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
                       {/* Pricing Overview & Dynamic Display */}
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 bg-[#F5F4F0] border-2 border-[#141414] relative text-left">
                         <div className="space-y-1">
@@ -1588,14 +1276,14 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                           </span>
                           <div className="flex items-baseline gap-2">
                             <span className="text-2xl font-black text-[#141414] tabular-nums">
-                              ${totalPrice + (addMasterSlotsCount * 50)}
+                              ${totalPrice}
                             </span>
                             <span className="text-[10px] font-bold text-[#141414]/60 uppercase">
                               USD
                             </span>
                           </div>
                           <span className="text-[9px] text-[#141414]/60 block font-mono">
-                            Base 10 accounts: ${basePrice}{addonAccounts > 0 ? ` + Slave Add-on: $${addonPrice}` : ''}{addMasterSlotsCount > 0 ? ` + Master Slots (${addMasterSlotsCount}): $${addMasterSlotsCount * 50}` : ''}
+                            Base 10 accounts: ${basePrice}{addonAccounts > 0 ? ` + Add-on (${addonAccounts} accounts): $${addonPrice}` : ''}
                           </span>
                         </div>
 
@@ -1604,7 +1292,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                             ROSTER CAPACITY
                           </span>
                           <span className="text-sm font-black text-[#141414] uppercase font-mono tracking-tight">
-                            {totalAccounts} Slaves · {addMasterSlotsCount} Master Slots
+                            {totalAccounts} Slave Agents
                           </span>
                           <span className="text-[9px] text-[#141414]/60 block font-sans">
                             {addonAccounts > 0 ? `10 Base + ${addonAccounts} Add-on` : '10 Base Included'}
@@ -1633,33 +1321,23 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                       </div>
                     )}
 
-                    {(() => {
-                      const slaveCost = Math.max(10, addAccountsCount) * 2.5;
-                      const masterCost = addMasterSlotsCount * 50;
-                      const activeTotal = slaveCost + masterCost;
-                      const formattedActiveTotal = activeTotal % 1 === 0 ? activeTotal.toFixed(0) : activeTotal.toFixed(2);
-                      const initialTotal = totalPrice + (addMasterSlotsCount * 50);
-
-                      return (
-                        <button
-                          type="button"
-                          disabled={purchasing}
-                          onClick={() => handleBuyPlan()}
-                          className="w-full py-3.5 bg-[#141414] text-white hover:bg-black hover:text-white disabled:opacity-50 disabled:cursor-not-allowed border-2 border-[#141414] font-black uppercase text-xs tracking-widest shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all text-center cursor-pointer flex items-center justify-center gap-2"
-                        >
-                          {purchasing ? (
-                            <>
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              <span>PERSISTING TO DATABASE...</span>
-                            </>
-                          ) : currentPlan?.status === 'active' ? (
-                            <span>BUY FOR (${formattedActiveTotal} USD)</span>
-                          ) : (
-                            <span>BUY FOR (${initialTotal} USD)</span>
-                          )}
-                        </button>
-                      );
-                    })()}
+                    <button
+                      type="button"
+                      disabled={purchasing}
+                      onClick={() => handleBuyPlan()}
+                      className="w-full py-3.5 bg-[#141414] text-white hover:bg-black hover:text-white disabled:opacity-50 disabled:cursor-not-allowed border-2 border-[#141414] font-black uppercase text-xs tracking-widest shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all text-center cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {purchasing ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>PERSISTING TO DATABASE...</span>
+                        </>
+                      ) : currentPlan?.status === 'active' ? (
+                        <span>BUY FOR (${(Math.max(10, addAccountsCount) * 2.5 % 1 === 0 ? (Math.max(10, addAccountsCount) * 2.5).toFixed(0) : (Math.max(10, addAccountsCount) * 2.5).toFixed(2))} USD)</span>
+                      ) : (
+                        <span>BUY FOR (${totalPrice} USD)</span>
+                      )}
+                    </button>
                     {totalAccounts >= MAX_TOTAL_ACCOUNTS && (
                       <button
                         type="button"

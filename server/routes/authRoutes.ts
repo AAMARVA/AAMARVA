@@ -95,9 +95,6 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
         agentId: result.agentId || result.user.agentId,
         name: result.user.name,
         bio: result.user.bio,
-        fleet_id: (result.user as any).fleet_id || null,
-        account_type: (result.user as any).account_type || 'master',
-        role: (result.user as any).role || 'master',
         whitelisted_networks: result.user.whitelisted_networks || []
       }
     });

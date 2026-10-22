@@ -276,22 +276,17 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
       return res.status(404).json({ success: false, error: { message: 'Master user not found.' } });
     }
 
-    // 2. Fetch all members owned by or affiliated with this Master User / Fleet
-    const { data: fleetUsers, error: subErr } = await supabase
+    // 2. Fetch all Slave Agents owned by this Master User
+    const { data: subAgents, error: subErr } = await supabase
       .from('users')
       .select('*')
-      .or(`master_id.eq.${masterUserId},fleet_id.eq.${masterUserId}`);
-
-    const allMembers = (fleetUsers || []).filter((u: any) => u.id !== masterUserId);
-
-    const subAgents = allMembers.filter((u: any) => u.account_type === 'slave' || (u.master_id === masterUserId && u.account_type !== 'master'));
-    const coMasterRecords = allMembers.filter((u: any) => u.account_type === 'master' || u.role === 'master' || (u.fleet_id === masterUserId && u.account_type !== 'slave'));
+      .eq('master_id', masterUserId);
 
     const { CapabilityService } = await import('../services/capabilityService.js');
     const capService = CapabilityService.getInstance();
     let cleanSubAgents: any[] = [];
     if (subAgents && Array.isArray(subAgents)) {
-      cleanSubAgents = await Promise.all(subAgents.map(async (u: any) => {
+      cleanSubAgents = await Promise.all(subAgents.filter(u => u.id !== masterUserId).map(async (u: any) => {
         const { passwordHash, apiKeyHash, ...safe } = u;
         const cap = await capService.getAgentCapability(u.id) || await capService.getAgentCapability(u.agentId);
         const expiresAt = cap?.expires_at || safe.plan_expires_at;
@@ -310,11 +305,6 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
       }));
     }
 
-    const cleanCoMasters = coMasterRecords.map((u: any) => {
-      const { passwordHash, apiKeyHash, ...safe } = u;
-      return safe;
-    });
-
     const { passwordHash: _, apiKeyHash: __, ...safeMaster } = masterUser;
     
     // Master accounts never receive capability increments
@@ -332,29 +322,17 @@ router.get(['/auth/master/accounts', '/v1/auth/master/accounts'], requireHumanSe
     const { MasterAccountService } = await import('../services/masterAccountService.js');
     const masterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
 
-    const totalMasterSlots = masterPlan?.allowance_master_slots || masterPlan?.metadata?.allowance_master_slots || 0;
-    const usedMasterSlots = cleanCoMasters.length;
-    const availableMasterSlots = Math.max(0, totalMasterSlots - usedMasterSlots);
-
     return res.json({
       success: true,
       data: {
         masterAgent: safeMaster,
         subAgents: cleanSubAgents,
         slaveAgents: cleanSubAgents,
-        coMasterAgents: cleanCoMasters,
-        fleetId: safeMaster.agentId || masterUser.agentId || masterUserId,
-        masterSlots: {
-          total: totalMasterSlots,
-          used: usedMasterSlots,
-          available: availableMasterSlots
-        },
         activeAgentId: req.user.id,
         plan: masterPlan || {
           plan_name: 'Master & Slave Agent Plan',
           status: 'inactive',
-          allowance_accounts: 0,
-          allowance_master_slots: 0
+          allowance_accounts: 0
         }
       }
     });
@@ -755,21 +733,17 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
     const { MasterAccountService } = await import('../services/masterAccountService.js');
     const masterPlan = await MasterAccountService.getInstance().getMasterPlan(masterUserId);
 
-    // Fetch all members in this fleet (slave agents and co-master agents)
-    const { data: fleetUsers } = await supabase
+    // Fetch existing slave agents in this fleet
+    const { data: subAgents } = await supabase
       .from('users')
       .select('*')
-      .or(`master_id.eq.${masterUserId},fleet_id.eq.${masterUserId}`);
-
-    const allFleetMembers = (fleetUsers || []).filter((u: any) => u.id !== masterUserId);
-    const subAgents = allFleetMembers.filter((u: any) => u.account_type === 'slave' || (u.master_id === masterUserId && u.account_type !== 'master'));
-    const coMasterRecords = allFleetMembers.filter((u: any) => u.account_type === 'master' || u.role === 'master' || (u.fleet_id === masterUserId && u.account_type !== 'slave'));
+      .eq('master_id', masterUserId);
 
     let cleanSubAgents: any[] = [];
     if (subAgents && Array.isArray(subAgents)) {
       const { CapabilityService } = await import('../services/capabilityService.js');
       const capService = CapabilityService.getInstance();
-      cleanSubAgents = await Promise.all(subAgents.map(async (u: any) => {
+      cleanSubAgents = await Promise.all(subAgents.filter(u => u.id !== masterUserId).map(async (u: any) => {
         const { passwordHash, apiKeyHash, ...safe } = u;
         const cap = await capService.getAgentCapability(u.id) || await capService.getAgentCapability(u.agentId);
         const expiresAt = cap?.expires_at || safe.plan_expires_at;
@@ -787,20 +761,11 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         };
       }));
     }
-
-    const cleanCoMasters = coMasterRecords.map((u: any) => {
-      const { passwordHash, apiKeyHash, ...safe } = u;
-      return safe;
-    });
-
     const currentSlaveCount = cleanSubAgents.length;
     const now = Date.now();
     const isExpired = !!(masterPlan?.expires_at && new Date(masterPlan.expires_at).getTime() <= now);
     const isActive = !!(masterPlan && masterPlan.status === 'active' && !isExpired);
     const allowance = isActive ? (masterPlan?.allowance_accounts || 0) : 0;
-    const totalMasterSlots = masterPlan?.allowance_master_slots || masterPlan?.metadata?.allowance_master_slots || 0;
-    const usedMasterSlots = cleanCoMasters.length;
-    const availableMasterSlots = Math.max(0, totalMasterSlots - usedMasterSlots);
     const history = await MasterAccountService.getInstance().getMasterPlanHistory(masterUserId);
     const { CapabilityService } = await import('../services/capabilityService.js');
     const masterCap = await CapabilityService.getInstance().getAgentCapability(masterUserId) || await CapabilityService.getInstance().getAgentCapability(targetUser?.agentId || masterUserId);
@@ -875,13 +840,6 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         accountId: masterUserId,
         accountType: 'master',
         masterId: masterUserId,
-        fleetId: targetUser?.agentId || targetUser?.id || masterUserId,
-        masterSlots: {
-          total: totalMasterSlots,
-          used: usedMasterSlots,
-          available: availableMasterSlots
-        },
-        coMasterAgents: cleanCoMasters,
         plan: masterPlan || {
           id: `plan_${masterUserId}`,
           master_account_id: masterUserId,
@@ -889,7 +847,6 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
           plan_name: 'Master & Slave Agent Plan',
           status: 'inactive',
           allowance_accounts: 0,
-          allowance_master_slots: 0,
           tier: 'scale',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -901,7 +858,6 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
         active: isActive,
         status: isActive ? 'active' : 'inactive',
         allowance: allowance,
-        allowance_master_slots: totalMasterSlots,
         currentSlaveAgentsCount: currentSlaveCount,
         remainingAllowance: Math.max(0, allowance - currentSlaveCount),
         slaveAgents: cleanSubAgents,
@@ -1029,9 +985,8 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     const parsedAccounts = parseInt(rawAccounts, 10);
     const targetAccounts = isNaN(parsedAccounts) ? 10 : Math.min(1000, Math.max(10, parsedAccounts));
 
-    const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | 'add_master_slots' | undefined);
-    const addOnAccounts = req.body?.addOnAccounts !== undefined ? Math.max(0, parseInt(req.body.addOnAccounts, 10)) : undefined;
-    const addMasterSlots = req.body?.addMasterSlots !== undefined ? Math.max(0, parseInt(req.body.addMasterSlots, 10)) : undefined;
+    const actionType = req.body?.actionType as ('new_plan' | 'add_accounts' | undefined);
+    const addOnAccounts = req.body?.addOnAccounts ? Math.max(10, parseInt(req.body.addOnAccounts, 10)) : undefined;
     const targetBlockId = req.body?.targetBlockId;
     const planName = req.body?.planName;
 
@@ -1040,7 +995,6 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
     const entitlement = await masterService.activateMasterPlan(masterUserId, targetAccounts, {
       actionType,
       addOnAccounts,
-      addMasterSlots,
       targetBlockId,
       planName
     } as any);
@@ -1052,10 +1006,9 @@ router.post(['/auth/master/buy-plan', '/v1/auth/master/buy-plan', '/auth/master/
       data: {
         plan: entitlement,
         status: entitlement.status,
-        allowance: entitlement.allowance_accounts,
-        allowance_master_slots: entitlement.allowance_master_slots || 0
+        allowance: entitlement.allowance_accounts
       },
-      message: `Master & Slave Agent Plan (${entitlement.allowance_accounts} accounts, ${entitlement.allowance_master_slots || 0} master slots) activated successfully in database.`
+      message: `Master & Slave Agent Plan (${entitlement.allowance_accounts} accounts) activated successfully in database.`
     });
   } catch (err: any) {
     res.status(500).json({

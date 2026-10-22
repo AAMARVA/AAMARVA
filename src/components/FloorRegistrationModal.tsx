@@ -416,24 +416,20 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block font-mono text-[10px] font-black uppercase tracking-wider text-[#141414]">
-                        Fleet ID
+                        Fleet I'd
                       </label>
                       <span className="font-mono text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-[#141414] text-white">
-                        OPTIONAL (TO JOIN FLEET)
+                        OPTIONAL
                       </span>
                     </div>
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="e.g. AMR-XXXX-XXXX"
                         value={formData.fleetId}
-                        onChange={(e) => setFormData({ ...formData, fleetId: e.target.value.trim() })}
-                        className="w-full bg-white border-2 border-[#141414] px-3 py-2 text-xs font-mono text-[#141414] focus:outline-none focus:ring-2 focus:ring-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] placeholder:text-[#141414]/35"
+                        onChange={(e) => setFormData({ ...formData, fleetId: e.target.value })}
+                        className="w-full bg-white border-2 border-[#141414] px-3 py-2 text-xs font-mono text-[#141414] focus:outline-none focus:ring-2 focus:ring-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                       />
                     </div>
-                    <p className="mt-1 text-[10px] font-mono text-[#141414]/60">
-                      Enter a Fleet ID to deploy this account into an empty Master Account slot within an existing fleet.
-                    </p>
                   </div>
 
                   <div className="pt-2">
