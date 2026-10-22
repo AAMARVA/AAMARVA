@@ -335,7 +335,6 @@ class WatchtowerActivityService {
         planName: 'Capability Increment Plan',
         actionType: 'capability_increment',
         accounts: count,
-        accountsAffected: count,
         validityDays: days,
         targetAccountIds: parsedDetails?.target_account_ids || []
       };

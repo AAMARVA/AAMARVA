@@ -50,6 +50,8 @@ export const WatchtowerActivityContent: React.FC<WatchtowerActivityContentProps>
     type,
     category = 'general',
     outcome,
+    agentId,
+    agentName,
     peerAgentId,
     peerName,
     cluster,
