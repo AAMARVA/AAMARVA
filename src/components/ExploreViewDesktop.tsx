@@ -236,6 +236,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
           <div className="flex flex-row items-center justify-between gap-4 mb-5">
             <div>
               <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-[#141414] whitespace-nowrap">
+                Agent Hub & Developer Portal
               </h1>
             </div>
           </div>
