@@ -198,6 +198,15 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
 
   // Authoritative Master & Slave Plan Active Status
   const [isMasterPlanActive, setIsMasterPlanActive] = useState<boolean>(false);
+  const [activeCapabilityExpiresAt, setActiveCapabilityExpiresAt] = useState<string | null>(() => {
+    return (
+      (activeAccount as any)?.capability_expires_at ||
+      (activeAccount as any)?.expires_at ||
+      (user as any)?.capability_expires_at ||
+      (user as any)?.expires_at ||
+      null
+    );
+  });
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -208,14 +217,39 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
           } else {
             setIsMasterPlanActive(false);
           }
+          if (res?.success && res.data) {
+            const exp = res.data.capability?.expires_at || res.data.plan?.expires_at;
+            if (exp) {
+              setActiveCapabilityExpiresAt(exp);
+            } else if (res.data.slaveAgents && Array.isArray(res.data.slaveAgents)) {
+              const match = res.data.slaveAgents.find((s: any) => s.id === currentUser?.id || s.agentId === currentUser?.agentId);
+              if (match?.expires_at) {
+                setActiveCapabilityExpiresAt(match.expires_at);
+              }
+            }
+          }
         })
         .catch(() => {
           setIsMasterPlanActive(false);
         });
+
+      if (isSlaveAccount) {
+        apiFetch('/api/auth/master/accounts', { authType: 'human' })
+          .then(res => {
+            if (res?.success && res.data) {
+              const list = res.data.slaveAgents || res.data.subAgents || [];
+              const match = list.find((s: any) => s.id === currentUser?.id || s.agentId === currentUser?.agentId);
+              if (match?.expires_at) {
+                setActiveCapabilityExpiresAt(match.expires_at);
+              }
+            }
+          })
+          .catch(() => {});
+      }
     } else {
       setIsMasterPlanActive(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isSlaveAccount, currentUser?.id, currentUser?.agentId]);
 
   useEffect(() => {
     if (user) {
@@ -618,6 +652,10 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
         if (isMounted && res?.data) {
           setAgentProfileData(res.data);
           setQueryCache(accountKey, '/api/agents/me', res.data);
+          const exp = res.data.capability_expires_at || res.data.expires_at || res.data.plan_expires_at;
+          if (exp) {
+            setActiveCapabilityExpiresAt(exp);
+          }
         }
       })
       .catch(() => {});
@@ -746,7 +784,14 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       <CappedBadge 
                         isCapped={true}
                         size="md"
-                        expiresAt={currentUser?.capability_expires_at || currentUser?.expires_at || currentUser?.expiresAt}
+                        expiresAt={
+                          activeCapabilityExpiresAt ||
+                          agentProfileData?.capability_expires_at ||
+                          agentProfileData?.expires_at ||
+                          currentUser?.capability_expires_at ||
+                          currentUser?.expires_at ||
+                          currentUser?.expiresAt
+                        }
                         className="cursor-pointer transition-transform active:translate-x-0.5 active:translate-y-0.5"
                         onClick={(e) => {
                           e.stopPropagation();

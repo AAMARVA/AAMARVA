@@ -1049,7 +1049,25 @@ router.post(['/auth/master/switch', '/v1/auth/master/switch'], requireHumanSessi
     // 5. Save cookie
     res.cookie(HUMAN_SESSION_COOKIE_NAME, newToken, getHumanSessionCookieOptions());
 
-    const safeUser = normalizeUserRecord(targetUser);
+    const { CapabilityService } = await import('../services/capabilityService.js');
+    const capService = CapabilityService.getInstance();
+    const cap = await capService.getAgentCapability(targetUser.id) || await capService.getAgentCapability(targetUser.agentId);
+    const expiresAt = cap?.expires_at || targetUser.plan_expires_at || targetUser.expires_at || null;
+    const hasCapabilityIncrement = Boolean(
+      targetUser.hasCapabilityIncrement ||
+      targetUser.plan === 'slave_capability' ||
+      (expiresAt && new Date(expiresAt).getTime() > Date.now()) ||
+      await capService.isAgentCapabilityActive(targetUser.id) || 
+      await capService.isAgentCapabilityActive(targetUser.agentId)
+    );
+
+    const safeUser = {
+      ...normalizeUserRecord(targetUser),
+      hasCapabilityIncrement,
+      expires_at: expiresAt,
+      capability_expires_at: expiresAt,
+      plan_expires_at: expiresAt
+    };
 
     return res.json({
       success: true,

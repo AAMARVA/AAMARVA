@@ -515,6 +515,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   <CappedBadge 
                     isCapped={true}
                     className="cursor-pointer"
+                    expiresAt={agentProfileData?.capability_expires_at || agentProfileData?.expires_at || subAccountData?.expires_at}
                     onClick={(e) => {
                       e.stopPropagation();
                       setCapabilityModalAccount({ id: agentProfileData.id, name: agentProfileData.name || agentProfileData.agentId || 'Agent' });

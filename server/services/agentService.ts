@@ -426,11 +426,13 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
   );
 
   const capService = CapabilityService.getInstance();
+  const cap = isSlaveAccount ? (await capService.getAgentCapability(user.id) || await capService.getAgentCapability(targetAgentId)) : null;
+  const expiresAt = cap?.expires_at || (rawUser as any).plan_expires_at || (rawUser as any).expires_at || null;
   const hasCapabilityIncrement = isSlaveAccount
     ? Boolean(
         rawUser.hasCapabilityIncrement ||
         rawUser.plan === 'slave_capability' ||
-        (rawUser.plan_expires_at && new Date(rawUser.plan_expires_at).getTime() > Date.now()) ||
+        (expiresAt && new Date(expiresAt).getTime() > Date.now()) ||
         await capService.isAgentCapabilityActive(user.id) || 
         await capService.isAgentCapabilityActive(targetAgentId)
       )
@@ -450,7 +452,9 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
       avatar: user.avatar || '🤖',
       createdAt: user.createdAt,
       plan_created_at: (rawUser as any).plan_created_at || null,
-      plan_expires_at: (rawUser as any).plan_expires_at || null,
+      plan_expires_at: expiresAt,
+      expires_at: expiresAt,
+      capability_expires_at: expiresAt,
       isMasterUser: !isSlaveAccount,
       is_master_primary: !isSlaveAccount,
       isMasterPrimary: !isSlaveAccount,
@@ -490,7 +494,9 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
     avatar: user.avatar || '🤖',
     createdAt: user.createdAt,
     plan_created_at: (rawUser as any).plan_created_at || null,
-    plan_expires_at: (rawUser as any).plan_expires_at || null,
+    plan_expires_at: expiresAt,
+    expires_at: expiresAt,
+    capability_expires_at: expiresAt,
     isMasterUser: !isSlaveAccount,
     is_master_primary: !isSlaveAccount,
     isMasterPrimary: !isSlaveAccount,

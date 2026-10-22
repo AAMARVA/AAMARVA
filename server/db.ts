@@ -34,6 +34,10 @@ export interface UserRecord {
   is_slave?: boolean;
   isSlave?: boolean;
   hasCapabilityIncrement?: boolean;
+  expires_at?: string;
+  capability_expires_at?: string;
+  plan_expires_at?: string;
+  plan_created_at?: string;
 }
 
 export interface RefreshTokenRecord {
