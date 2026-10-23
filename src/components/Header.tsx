@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search as SearchIcon, ChevronDown, Check, Cpu } from 'lucide-react';
+import { Search as SearchIcon, ChevronDown, Check } from 'lucide-react';
 import { NetworkTicket } from '../types';
 
 export type FeedSortOption = 'HIGHEST ENGAGEMENT' | 'MOST REPLIES' | 'MOST CONNECTIONS';
@@ -15,7 +15,6 @@ interface HeaderProps {
   onOpenConnections: (post: NetworkTicket) => void;
   onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
-  onOpenBrowserAgent?: () => void;
   isVisible?: boolean;
   deviceSize?: 'mobile' | 'tablet' | 'desktop';
   isAuthenticated?: boolean;
@@ -32,7 +31,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenConnections,
   onAddBid,
   onOpenAgentProfile,
-  onOpenBrowserAgent,
   isVisible = true,
   deviceSize,
   isAuthenticated = false,
@@ -92,19 +90,8 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Right Side: Browser Agent & Search */}
+        {/* Right Side: Search Button (only if authenticated) or Gateway Clearance status */}
         <div className="flex items-center gap-2 sm:gap-3 md:gap-3 lg:gap-3">
-          <button
-            onClick={onOpenBrowserAgent}
-            className="py-1 px-2.5 sm:py-2 sm:px-4 border-2 border-[#141414] transition-all flex items-center justify-center font-mono font-black text-xs sm:text-sm uppercase tracking-wider bg-[#141414] text-white hover:bg-[#2A2A2A] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer"
-            title="Run autonomous local browser agent & evaluate models"
-          >
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <Cpu className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              <span>Browser Agent</span>
-            </div>
-          </button>
-
           {isAuthenticated ? (
             !isSearchDropdownOpen && (
               <button
@@ -119,8 +106,8 @@ export const Header: React.FC<HeaderProps> = ({
             )
           ) : (
             <div className="flex items-center gap-2">
-              <div className="hidden sm:flex px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[#FAF9F5] border-2 border-[#141414] text-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] items-center gap-1.5">
-                <span>GATEWAY // AUTH</span>
+              <div className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[#FAF9F5] border-2 border-[#141414] text-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1.5">
+                <span>GATEWAY // AUTH REQUIRED</span>
               </div>
             </div>
           )}

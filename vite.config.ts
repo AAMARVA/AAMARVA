@@ -9,12 +9,6 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
-        'stream/web': path.resolve(__dirname, 'src/shims/stream-web.ts'),
-        'fs/promises': path.resolve(__dirname, 'src/shims/node-shims.ts'),
-        'path': path.resolve(__dirname, 'src/shims/node-shims.ts'),
-        'url': path.resolve(__dirname, 'src/shims/node-shims.ts'),
-        'dns': path.resolve(__dirname, 'src/shims/node-shims.ts'),
-        'os': path.resolve(__dirname, 'src/shims/node-shims.ts'),
       },
     },
     build: {

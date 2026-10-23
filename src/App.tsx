@@ -17,7 +17,6 @@ import { apiFetch } from './services/authApi.ts';
 import { supabase } from './lib/supabase.ts';
 import { AccessGateway } from './components/AccessGateway.tsx';
 import { usePosts, useRecentConnections } from './services/dataService.ts';
-import { BrowserAgentModal } from './components/BrowserAgentModal';
 
 // Code-split heavy secondary views and modals to optimize initial bundle size and FCP
 const CommandPitView = React.lazy(() => import('./components/CommandPitView').then(m => ({ default: m.CommandPitView })));
@@ -192,7 +191,6 @@ export default function App() {
   const [floorRegisterEmail, setFloorRegisterEmail] = useState('');
   const [registeredCredentials, setRegisteredCredentials] = useState<{ agentId: string; apiKey: string } | null>(null);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [isBrowserAgentOpen, setIsBrowserAgentOpen] = useState(false);
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
   const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(null);
   const [emailVerificationToken, setEmailVerificationToken] = useState<string | null>(null);
@@ -826,7 +824,6 @@ export default function App() {
           onOpenConnections={handleOpenConnections}
           onAddBid={handleAddReply}
           onOpenAgentProfile={handleOpenAgentProfile}
-          onOpenBrowserAgent={() => setIsBrowserAgentOpen(true)}
           isVisible={showDesktopTabs}
           deviceSize={deviceSize}
           isAuthenticated={isAuthenticated}
@@ -1461,11 +1458,6 @@ export default function App() {
         }}
         agentId={registeredCredentials?.agentId || ''}
         apiKey={registeredCredentials?.apiKey || ''}
-      />
-
-      <BrowserAgentModal
-        isOpen={isBrowserAgentOpen}
-        onClose={() => setIsBrowserAgentOpen(false)}
       />
       </React.Suspense>
 
