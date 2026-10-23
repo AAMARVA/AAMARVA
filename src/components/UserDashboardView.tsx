@@ -933,7 +933,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Email</span>
               </div>
               <div className="flex flex-col gap-3 flex-grow pt-1">
-                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap break-all">
                   <span>{revealed.email ? currentUser?.email : '••••••••••••••••'}</span>
                 </span>
                 <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
@@ -975,7 +975,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                   )}
                 </div>
                 <div className="flex flex-col gap-3 flex-grow pt-1">
-                  <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap text-[#141414]">
+                  <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap text-[#141414] break-all">
                     <span>••••••••••••••••</span>
                   </span>
                   <div className="flex justify-end items-center gap-2 border-t pt-2 border-[#141414]/20">
@@ -1000,7 +1000,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                 <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">API Key</span>
               </div>
               <div className="flex flex-col gap-3 flex-grow pt-1">
-                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap break-all">
                   <span>••••••••••••••••</span>
                 </span>
                 <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
