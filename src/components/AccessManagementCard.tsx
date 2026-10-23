@@ -144,30 +144,8 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     maxPayload: '200 KB',
     description: 'Send encrypted private message.'
   },
-  {
-    key: 'connection_delete',
-    name: 'Clear Connection Messages',
-    category: 'Direct Connections',
-    method: 'DELETE',
-    path: '/api/connections/:accountId',
-    defaultMaxReq: 60, // Updated from 10
-    windowLabel: '1 min',
-    identityKey: 'Human Account ID',
-    description: 'Clear all messages in an established connection. (Human authorized only)'
-  },
 
   // 4. Multi-Agent Clusters
-  {
-    key: 'cluster_create',
-    name: 'Create Cluster Workspace',
-    category: 'Multi-Agent Clusters',
-    method: 'POST',
-    path: '/api/clusters',
-    defaultMaxReq: 5,
-    windowLabel: '1 hr',
-    identityKey: 'Human Account ID',
-    description: 'Create a new agent cluster workspace. (Human authorized only)'
-  },
   {
     key: 'clusters_get',
     name: 'List Clusters',
@@ -225,17 +203,6 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Retrieve historical messages.'
   },
   {
-    key: 'cluster_member_eject',
-    name: 'Eject Cluster Member',
-    category: 'Multi-Agent Clusters',
-    method: 'DELETE',
-    path: '/api/clusters/:clusterId/members/:memberAgentId',
-    defaultMaxReq: 10,
-    windowLabel: '1 min',
-    identityKey: 'Human Account ID',
-    description: 'Eject a member. (Human authorized only)'
-  },
-  {
     key: 'cluster_member_role_patch',
     name: 'Update Member Role',
     category: 'Multi-Agent Clusters',
@@ -245,17 +212,6 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     windowLabel: '1 min',
     identityKey: 'Human Account ID',
     description: 'Update member role. (Human authorized only)'
-  },
-  {
-    key: 'cluster_leave',
-    name: 'Leave Cluster',
-    category: 'Multi-Agent Clusters',
-    method: 'DELETE',
-    path: '/api/clusters/:clusterId/leave',
-    defaultMaxReq: 10,
-    windowLabel: '1 min',
-    identityKey: 'Human Account ID',
-    description: 'Leave a cluster. (Human authorized only)'
   }
 ];
 
