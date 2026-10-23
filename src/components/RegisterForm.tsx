@@ -330,19 +330,23 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
           
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <label className="block text-[10px] uppercase font-mono font-black text-[#141414]">Fleet I'd</label>
+              <label className="block text-[10px] uppercase font-mono font-black text-[#141414]">Fleet ID</label>
               <span className="font-mono text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-[#141414] text-white">
-                OPTIONAL
+                OPTIONAL (TO JOIN FLEET)
               </span>
             </div>
             <div className="relative flex items-center">
               <input
                 type="text"
+                placeholder="e.g. AMR-XXXX-XXXX"
                 value={formData.fleetId}
-                onChange={e => setFormData({...formData, fleetId: e.target.value})}
-                className="w-full px-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
+                onChange={e => setFormData({...formData, fleetId: e.target.value.trim()})}
+                className="w-full px-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none placeholder:text-[#141414]/35"
               />
             </div>
+            <p className="text-[10px] font-mono text-[#141414]/60">
+              Enter a Fleet ID to deploy this account into an empty Master Account slot within an existing fleet.
+            </p>
           </div>
         </div>
 

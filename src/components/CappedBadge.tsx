@@ -6,8 +6,9 @@ interface CappedBadgeProps {
   createdAt?: string;
   isCapped?: boolean;
   className?: string;
-  onClick?: (e: React.MouseEvent) => void;
   size?: 'sm' | 'md' | 'lg';
+  accountId?: string;
+  accountName?: string;
 }
 
 export const CappedBadge: React.FC<CappedBadgeProps> = ({ 
@@ -16,8 +17,9 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({
   createdAt,
   isCapped, 
   className = '', 
-  onClick,
-  size = 'sm'
+  size = 'sm',
+  accountId,
+  accountName
 }) => {
   if (!isCapped && !expiresAt) return null;
 
@@ -71,8 +73,17 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({
     ? 'font-mono text-[14px] font-black text-black'
     : 'font-mono text-[10px] font-black text-black';
 
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (accountId) {
+      window.dispatchEvent(new CustomEvent('aamarva-show-capability-modal', {
+        detail: { accountId, accountName }
+      }));
+    }
+  };
+
   return (
-    <div className={`inline-flex items-center overflow-visible ${className} gap-1`} onClick={onClick}>
+    <div className={`inline-flex items-center overflow-visible ${className} gap-1 cursor-pointer`} onClick={handleClick}>
       <span className={`font-mono ${badgeTextClass} font-black uppercase bg-amber-500 text-black border border-[#141414]`}>
         CAPPED
       </span>

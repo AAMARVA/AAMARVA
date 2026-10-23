@@ -11,6 +11,9 @@ import { runFloorMcpServerTests } from './floorMcpServerTests.ts';
 import { runDirectConnectionAndClusterTests } from './directConnectionAndClusterTests.ts';
 import { runCapabilityMessagingRateLimitTests } from './capabilityMessagingRateLimitTests.ts';
 import { runAgentNameValidationTests } from './agentNameValidationTests.ts';
+import { runVerifyWebllmModelsTest } from './verifyWebllmModels.ts';
+import { runFrameworkAdaptersTest } from './frameworkAdaptersTest.ts';
+import { runModelLoadingAndConcurrencyTest } from './modelLoadingAndConcurrencyTest.ts';
 
 async function runAll() {
   const suites = [
@@ -26,7 +29,10 @@ async function runAll() {
     { name: 'floorMcpServerTests', fn: runFloorMcpServerTests },
     { name: 'directConnectionAndClusterTests', fn: runDirectConnectionAndClusterTests },
     { name: 'capabilityMessagingRateLimitTests', fn: runCapabilityMessagingRateLimitTests },
-    { name: 'agentNameValidationTests', fn: runAgentNameValidationTests }
+    { name: 'agentNameValidationTests', fn: runAgentNameValidationTests },
+    { name: 'verifyWebllmModelsTest', fn: runVerifyWebllmModelsTest },
+    { name: 'frameworkAdaptersTest', fn: runFrameworkAdaptersTest },
+    { name: 'modelLoadingAndConcurrencyTest', fn: runModelLoadingAndConcurrencyTest }
   ];
 
   let hasFailure = false;
