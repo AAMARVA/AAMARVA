@@ -958,26 +958,28 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
             </div>
 
-            {isSlaveAccount ? (
-              <div className="hidden md:block" />
-            ) : (
-              <div className="p-3 bg-[#f0eee8] border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
-                <div className="flex justify-between items-center">
-                  <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Password</span>
-                  {isEditing.password && (
-                    <button 
-                      type="button" 
-                      onClick={() => setIsEditing(prev => ({ ...prev, password: false }))}
-                      className="text-[#141414]/60 hover:text-[#141414] font-bold text-xs font-bold"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-col gap-3 flex-grow pt-1">
-                  <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap text-[#141414] break-all">
+            <div className="p-3 bg-[#f0eee8] border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Password</span>
+                {!isSlaveAccount && isEditing.password && (
+                  <button 
+                    type="button" 
+                    onClick={() => setIsEditing(prev => ({ ...prev, password: false }))}
+                    className="text-[#141414]/60 hover:text-[#141414] font-bold text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col gap-3 flex-grow pt-1">
+                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap text-[#141414] break-all">
+                  {isSlaveAccount ? (
+                    <span className="text-[#141414]/50 italic">N/A</span>
+                  ) : (
                     <span>••••••••••••••••</span>
-                  </span>
+                  )}
+                </span>
+                {!isSlaveAccount && (
                   <div className="flex justify-end items-center gap-2 border-t pt-2 border-[#141414]/20">
                     <button 
                       type="button" 
@@ -991,9 +993,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       Change Password
                     </button>
                   </div>
-                </div>
+                )}
               </div>
-            )}
+            </div>
 
             <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
               <div className="flex justify-between items-center">
