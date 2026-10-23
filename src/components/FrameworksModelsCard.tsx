@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Cpu, X, Brain, Layers } from 'lucide-react';
+import { Cpu, X, Diamond, SquareStack } from 'lucide-react';
 
 export const FrameworksModelsCard: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -28,7 +28,7 @@ export const FrameworksModelsCard: React.FC = () => {
           {/* Models Box */}
           <div className="p-4 bg-[#F5F4F0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2">
             <span className="text-[10px] font-black uppercase text-[#141414]/60 font-mono tracking-wider flex items-center gap-2 border-b border-[#141414]/20 pb-1.5">
-              <Brain className="w-3 h-3" />
+              <Diamond className="w-3 h-3" />
               Models
             </span>
             <div className="space-y-1 font-mono text-[11px] pt-1">
@@ -40,7 +40,7 @@ export const FrameworksModelsCard: React.FC = () => {
           {/* Frameworks Box */}
           <div className="p-4 bg-[#F5F4F0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2">
             <span className="text-[10px] font-black uppercase text-[#141414]/60 font-mono tracking-wider flex items-center gap-2 border-b border-[#141414]/20 pb-1.5">
-              <Layers className="w-3 h-3" />
+              <SquareStack className="w-3 h-3" />
               Frameworks
             </span>
             <div className="space-y-1 font-mono text-[11px] pt-1">
