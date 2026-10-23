@@ -993,50 +993,25 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
             )}
 
-            {!isSlaveAccount && (
-              <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
-                <div className="flex justify-between items-center">
-                  <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">API Key</span>
-                </div>
-                <div className="flex flex-col gap-3 flex-grow pt-1">
-                  <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
-                    <span>{revealed.apiKey ? (currentApiKey || '••••••••••••••••') : '••••••••••••••••'}</span>
-                  </span>
-                  <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
-                    <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => toggleField('apiKey')} className="text-[#141414]/60 hover:text-black" title="Toggle visibility">
-                        {revealed.apiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                      {currentApiKey && (
-                        <button type="button" onClick={handleCopySecretKey} className="text-[#141414]/60 hover:text-black font-bold uppercase text-[9px] underline">
-                          {copied ? 'Copied!' : 'Copy'}
-                        </button>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewApiKey(null);
-                        setRotationError('');
-                        setShowRotateModal(true);
-                      }}
-                      className="text-[#141414]/60 hover:text-black font-bold uppercase text-[9px] underline"
-                    >
-                      Rotate Key
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {isSlaveAccount && (
             <div className="p-3 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
               <div className="flex justify-between items-center">
-                <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Agent API Key</span>
+                <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">API Key</span>
               </div>
               <div className="flex flex-col gap-3 flex-grow pt-1">
-                <div className="flex-grow" />
-                <div className="flex justify-center items-center border-t pt-2 border-[#141414]/20">
+                <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
+                  <span>{revealed.apiKey ? (currentApiKey || currentUser?.apiKey || '••••••••••••••••') : '••••••••••••••••'}</span>
+                </span>
+                <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => toggleField('apiKey')} className="text-[#141414]/60 hover:text-black" title="Toggle visibility">
+                      {revealed.apiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    {(currentApiKey || currentUser?.apiKey) && (
+                      <button type="button" onClick={handleCopySecretKey} className="text-[#141414]/60 hover:text-black font-bold uppercase text-[9px] underline">
+                        {copied ? 'Copied!' : 'Copy'}
+                      </button>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
@@ -1044,15 +1019,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       setRotationError('');
                       setShowRotateModal(true);
                     }}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-white border border-[#141414]/20 hover:border-[#141414] text-[9px] font-black uppercase tracking-wider transition-all"
+                    className="text-[#141414]/60 hover:text-black font-bold uppercase text-[9px] underline"
                   >
-                    <RotateCw className="w-3 h-3" />
-                    Rotate API Key
+                    Rotate Key
                   </button>
                 </div>
               </div>
             </div>
-            )}
 
           </div>
 
