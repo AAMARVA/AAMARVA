@@ -37,7 +37,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
   const { user } = useAuth();
 
   // Modal states
-  const [activeModal, setActiveModal] = useState<'subscriptions' | 'capability' | 'accounts' | 'modules' | 'frameworks' | null>(null);
+  const [activeModal, setActiveModal] = useState<'subscriptions' | 'capability' | 'accounts' | 'modules' | null>(null);
 
   // Spog Modal state
   const [isSpogModalOpen, setIsSpogModalOpen] = useState<boolean>(false);
@@ -460,28 +460,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             </p>
           </button>
         </div>
-
-        {/* Frameworks and Models Block */}
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => setActiveModal('frameworks')}
-            className="w-full bg-[#141414] hover:bg-[#1f1f1f] text-white p-4 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)] hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer text-left block"
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-white" />
-                <span className="text-xs font-black uppercase tracking-wider">
-                  Frameworks and Models
-                </span>
-              </div>
-              <ArrowUpRight className="w-4 h-4 text-white" />
-            </div>
-            <p className="text-[11px] text-white/60 font-sans leading-relaxed">
-              Configure and inspect integrated LLM models, runtime frameworks, and multi-agent execution providers.
-            </p>
-          </button>
-        </div>
       </div>
 
       {/* Interactive Modal Manager */}
@@ -495,13 +473,11 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                 {activeModal === 'capability' && <Gauge className="w-4 h-4 text-[#141414]" />}
                 {activeModal === 'accounts' && <Layers className="w-4 h-4 text-[#141414]" />}
                 {activeModal === 'modules' && <Sliders className="w-4 h-4 text-[#141414]" />}
-                {activeModal === 'frameworks' && <Cpu className="w-4 h-4 text-[#141414]" />}
                 <h3 className="font-mono font-black uppercase text-xs sm:text-sm tracking-wider">
                   {activeModal === 'subscriptions' && 'Active Subscriptions'}
                   {activeModal === 'capability' && 'Capability Configuration'}
                   {activeModal === 'accounts' && 'Identity Roster Management'}
                   {activeModal === 'modules' && 'System Modules Overview'}
-                  {activeModal === 'frameworks' && 'Frameworks and Models'}
                 </h3>
               </div>
               <button
@@ -1419,59 +1395,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                         <p className="text-[10px] text-[#141414]/60 mt-0.5 leading-snug">
                           Trust-On-First-Use cryptographic public-key pinning blocks MITM hijacking of peer key exchanges.
                         </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Frameworks and Models Overview Subview */}
-              {activeModal === 'frameworks' && (
-                <div className="space-y-4 text-left">
-                  <div className="bg-white border-2 border-[#141414] p-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3">
-                    <div className="flex items-center justify-between border-b border-[#141414]/15 pb-2">
-                      <span className="text-xs font-black uppercase tracking-wider">Active Execution Models</span>
-                      <span className="px-2 py-0.5 bg-emerald-400 text-black border border-[#141414] text-[9px] font-black uppercase">Operational</span>
-                    </div>
-                    <div className="space-y-2 font-mono text-xs">
-                      <div className="p-2.5 bg-[#F5F4F0] border border-[#141414] flex items-center justify-between">
-                        <div>
-                          <span className="font-bold block">Gemini 3.5 Flash Lite</span>
-                          <span className="text-[10px] text-[#141414]/60">Default Agentic & Reasoning Core (@google/genai)</span>
-                        </div>
-                        <span className="text-[9px] font-black uppercase bg-[#141414] text-white px-2 py-0.5">Primary</span>
-                      </div>
-                      <div className="p-2.5 bg-[#F5F4F0] border border-[#141414] flex items-center justify-between">
-                        <div>
-                          <span className="font-bold block">Gemini 2.5 Flash / Pro</span>
-                          <span className="text-[10px] text-[#141414]/60">Multimodal & Grounding Engine</span>
-                        </div>
-                        <span className="text-[9px] font-black uppercase bg-white border border-[#141414] px-2 py-0.5">Ready</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white border-2 border-[#141414] p-4 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3">
-                    <div className="flex items-center justify-between border-b border-[#141414]/15 pb-2">
-                      <span className="text-xs font-black uppercase tracking-wider">Runtime Frameworks Stack</span>
-                      <span className="px-2 py-0.5 bg-neutral-900 text-white border border-[#141414] text-[9px] font-black uppercase">v2.4 Secured</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-[11px]">
-                      <div className="p-2.5 bg-[#F5F4F0] border border-[#141414]">
-                        <span className="font-black block">React SPA + Vite</span>
-                        <span className="text-[9.5px] text-[#141414]/60">Frontend Client Runtime</span>
-                      </div>
-                      <div className="p-2.5 bg-[#F5F4F0] border border-[#141414]">
-                        <span className="font-black block">Node.js / Express</span>
-                        <span className="text-[9.5px] text-[#141414]/60">Backend Gateway API</span>
-                      </div>
-                      <div className="p-2.5 bg-[#F5F4F0] border border-[#141414]">
-                        <span className="font-black block">Supabase / Drizzle ORM</span>
-                        <span className="text-[9.5px] text-[#141414]/60">Persistent Relational DB</span>
-                      </div>
-                      <div className="p-2.5 bg-[#F5F4F0] border border-[#141414]">
-                        <span className="font-black block">Tailwind CSS v4</span>
-                        <span className="text-[9.5px] text-[#141414]/60">Brutalist Design System</span>
                       </div>
                     </div>
                   </div>

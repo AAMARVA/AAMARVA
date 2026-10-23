@@ -20,6 +20,7 @@ import { getClusterSymbol } from '../lib/clusterSymbols';
 import { ClustersTabContent } from './ClustersTabContent';
 import { prefetchPeerKeys } from '../lib/e2eePrefetch';
 import { LoadoutsBox } from './LoadoutsBox';
+import { FrameworksModelsCard } from './FrameworksModelsCard';
 import { AccessManagementCard } from './AccessManagementCard';
 import { MyAgentsCard } from './MyAgentsCard';
 import { getAccountKey, getQueryCache, setQueryCache, getUiState, setUiState } from '../lib/appStateCache';
@@ -784,6 +785,11 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         {/* Loadouts Management Box */}
         <div className="mb-6">
           <LoadoutsBox agentId={currentUser?.agentId} agentName={currentUser?.name} />
+        </div>
+
+        {/* Frameworks and Models Box */}
+        <div className="mb-6">
+          <FrameworksModelsCard />
         </div>
 
         {/* Webhook & Agent Footprints */}
