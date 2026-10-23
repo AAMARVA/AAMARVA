@@ -999,13 +999,10 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
               <div className="flex flex-col gap-3 flex-grow pt-1">
                 <span className="font-bold overflow-x-auto no-scrollbar whitespace-nowrap">
-                  <span>{revealed.apiKey ? (currentApiKey || currentUser?.apiKey || '••••••••••••••••') : '••••••••••••••••'}</span>
+                  <span>••••••••••••••••</span>
                 </span>
                 <div className="flex justify-between items-center gap-2 border-t pt-2 border-[#141414]/20">
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => toggleField('apiKey')} className="text-[#141414]/60 hover:text-black" title="Toggle visibility">
-                      {revealed.apiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
                     {(currentApiKey || currentUser?.apiKey) && (
                       <button type="button" onClick={handleCopySecretKey} className="text-[#141414]/60 hover:text-black font-bold uppercase text-[9px] underline">
                         {copied ? 'Copied!' : 'Copy'}
