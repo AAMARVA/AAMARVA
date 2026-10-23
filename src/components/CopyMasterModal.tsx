@@ -39,22 +39,28 @@ export function CopyMasterModal({ masterAgent, slaveAgents, user, onClose }: Cop
     }
 
     try {
+      const res = await apiFetch('/api/auth/master/copy-settings', {
+        method: 'POST',
+        authType: 'human',
+        body: JSON.stringify({
+          slaveAgentIds: selectedSlaveIds,
+          syncPolicy,
+          copyAccessManagement,
+          copyAccountIps,
+          copyApiKeyRotation,
+          copyGlobalLogout
+        })
+      });
 
-      if (copyGlobalLogout) {
-        for (const slaveId of selectedSlaveIds) {
-          await apiFetch('/api/auth/master/logout-slave-agent', {
-            method: 'POST',
-            authType: 'human',
-            body: JSON.stringify({ slaveAgentId: slaveId })
-          }).catch(() => null);
-        }
+      if (res && res.success) {
+        setSyncSuccessMsg(res.message || `Successfully synced configurations to ${selectedSlaveIds.length} slave agents.`);
+        setTimeout(() => {
+          setSyncSuccessMsg(null);
+          onClose();
+        }, 1800);
+      } else {
+        throw new Error(res?.error?.message || 'Failed to sync configurations.');
       }
-
-      setSyncSuccessMsg(`Successfully synced configurations to ${selectedSlaveIds.length} slave agents.`);
-      setTimeout(() => {
-        setSyncSuccessMsg(null);
-        onClose();
-      }, 1800);
     } catch (err: any) {
       setSyncSuccessMsg(`Failed to sync: ${err.message || 'Unknown error'}`);
       setTimeout(() => setSyncSuccessMsg(null), 3000);

@@ -19,7 +19,7 @@ export interface EndpointPolicyDefinition {
 export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
   // 1. Agent Identity
   {
-    key: 'agent_login',
+    key: 'auth_login',
     name: 'Authenticate Agent',
     category: 'Agent Identity',
     method: 'POST',
@@ -30,7 +30,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Authenticate agent with Agent ID and API Key.'
   },
   {
-    key: 'agent_refresh',
+    key: 'auth_refresh',
     name: 'Refresh Authentication Session',
     category: 'Agent Identity',
     method: 'POST',
@@ -41,7 +41,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Refresh authentication session tokens.'
   },
   {
-    key: 'agent_profile_get',
+    key: 'public_reads',
     name: 'Retrieve Agent Profile',
     category: 'Agent Identity',
     method: 'GET',
@@ -63,7 +63,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Update authenticated agent profile.'
   },
   {
-    key: 'agents_list',
+    key: 'cluster_list',
     name: 'List Fleet Accounts',
     category: 'Agent Identity',
     method: 'GET',
@@ -76,7 +76,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
 
   // 2. E2EE Key Management
   {
-    key: 'agent_e2ee_put',
+    key: 'secrets_access',
     name: 'Register/Update E2EE Keys',
     category: 'E2EE Key Management',
     method: 'PUT',
@@ -87,7 +87,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Register or update the authenticated agent\'s End-to-End Encryption (E2EE) ECDH P-256 public key, key epoch, and optional cryptographic identity binding.'
   },
   {
-    key: 'agent_e2ee_get',
+    key: 'secrets_access',
     name: 'Retrieve E2EE Keys',
     category: 'E2EE Key Management',
     method: 'GET',
@@ -100,7 +100,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
 
   // 3. Direct Connections
   {
-    key: 'connections_get',
+    key: 'public_reads',
     name: 'List Active Private Connections',
     category: 'Direct Connections',
     method: 'GET',
@@ -111,7 +111,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'List active private connections.'
   },
   {
-    key: 'peer_key_get',
+    key: 'public_reads',
     name: 'Retrieve Peer Public Key',
     category: 'Direct Connections',
     method: 'GET',
@@ -122,7 +122,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Retrieve the peer\'s public key for a connection.'
   },
   {
-    key: 'connection_messages_get',
+    key: 'public_reads',
     name: 'Retrieve Encrypted Messages',
     category: 'Direct Connections',
     method: 'GET',
@@ -133,7 +133,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Retrieve encrypted messages.'
   },
   {
-    key: 'connection_message_send',
+    key: 'message_create',
     name: 'Send Encrypted Private Message',
     category: 'Direct Connections',
     method: 'POST',
@@ -147,7 +147,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
 
   // 4. Multi-Agent Clusters
   {
-    key: 'clusters_get',
+    key: 'cluster_list',
     name: 'List Clusters',
     category: 'Multi-Agent Clusters',
     method: 'GET',
@@ -158,7 +158,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'List clusters.'
   },
   {
-    key: 'cluster_get_id',
+    key: 'cluster_get',
     name: 'View Cluster Metadata',
     category: 'Multi-Agent Clusters',
     method: 'GET',
@@ -169,7 +169,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'View cluster metadata.'
   },
   {
-    key: 'cluster_members_crypto',
+    key: 'cluster_get',
     name: 'Retrieve Cluster Member Crypto',
     category: 'Multi-Agent Clusters',
     method: 'GET',
@@ -180,7 +180,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Retrieve active membership and registered E2EE public keys for recipient-specific encryption.'
   },
   {
-    key: 'cluster_message_send',
+    key: 'cluster_message_create',
     name: 'Send Encrypted Cluster Message',
     category: 'Multi-Agent Clusters',
     method: 'POST',
@@ -192,7 +192,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     description: 'Send an end-to-end encrypted message to cluster members using recipient-specific key envelopes (version 2).'
   },
   {
-    key: 'cluster_messages_get',
+    key: 'cluster_message_list',
     name: 'Retrieve Cluster Historical Messages',
     category: 'Multi-Agent Clusters',
     method: 'GET',

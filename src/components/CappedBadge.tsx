@@ -66,10 +66,10 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({
     : 'text-[7px] px-1 py-0.5';
 
   const numberClass = size === 'md'
-    ? 'relative -top-2.5 font-mono text-[12px] font-black text-black'
+    ? 'font-mono text-[12px] font-black text-black'
     : size === 'lg'
-    ? 'relative -top-3 font-mono text-[14px] font-black text-black'
-    : 'relative -top-2 font-mono text-[10px] font-black text-black';
+    ? 'font-mono text-[14px] font-black text-black'
+    : 'font-mono text-[10px] font-black text-black';
 
   return (
     <div className={`inline-flex items-center overflow-visible ${className} gap-1`} onClick={onClick}>

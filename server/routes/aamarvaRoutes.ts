@@ -2000,18 +2000,18 @@ router.post(['/account/access-management', '/v1/account/access-management'], req
 
     // Persist in Supabase user record
     const supabase = getSupabaseClient();
-    try {
-      await supabase
-        .from('users')
-        .update({
-          disabledEndpoints: cleanDisabledList,
-          disabled_endpoints: cleanDisabledList,
-          customRateLimits: cleanLimits,
-          custom_rate_limits: cleanLimits
-        })
-        .eq('id', userId);
-    } catch (dbErr) {
-      console.warn('[AccessManagement] DB update warning:', dbErr);
+    const { error: dbErr } = await supabase
+      .from('users')
+      .update({
+        disabledEndpoints: cleanDisabledList,
+        disabled_endpoints: cleanDisabledList,
+        customRateLimits: cleanLimits,
+        custom_rate_limits: cleanLimits
+      })
+      .eq('id', userId);
+
+    if (dbErr) {
+      throw new Error(`Database update failed: ${dbErr.message}`);
     }
 
     // Log account footprint
@@ -2035,6 +2035,111 @@ router.post(['/account/access-management', '/v1/account/access-management'], req
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: { message: err.message || 'Failed to update access rules' } });
+  }
+});
+
+// 4g. POST /api/auth/master/copy-settings - Copy master configurations to selected slave agents
+router.post(['/auth/master/copy-settings', '/v1/auth/master/copy-settings'], requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const masterUserId = (req.user as any).masterUserId || req.user.id;
+    const { slaveAgentIds, syncPolicy, copyAccessManagement, copyAccountIps, copyApiKeyRotation, copyGlobalLogout } = req.body || {};
+
+    if (!Array.isArray(slaveAgentIds) || slaveAgentIds.length === 0) {
+      return res.status(400).json({ success: false, error: { message: 'At least one target slave agent must be selected.' } });
+    }
+
+    const supabase = getSupabaseClient();
+
+    // 1. Fetch master user's authoritative settings
+    const { data: masterRecord, error: masterErr } = await supabase
+      .from('users')
+      .select('disabledEndpoints, disabled_endpoints, customRateLimits, custom_rate_limits, whitelisted_networks')
+      .eq('id', masterUserId)
+      .maybeSingle();
+
+    if (masterErr || !masterRecord) {
+      return res.status(404).json({ success: false, error: { message: 'Master user record not found.' } });
+    }
+
+    const masterDisabled = masterRecord.disabledEndpoints || masterRecord.disabled_endpoints || [];
+    const masterLimits = masterRecord.customRateLimits || masterRecord.custom_rate_limits || {};
+    const masterWhitelist = masterRecord.whitelisted_networks || [];
+
+    const securityService = SecurityService.getInstance();
+
+    // 2. Iterate and apply to each selected slave agent
+    for (const slaveId of slaveAgentIds) {
+      const { data: slaveRecord, error: slaveErr } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', slaveId)
+        .maybeSingle();
+
+      if (slaveErr || !slaveRecord) {
+        throw new Error(`Slave agent with ID ${slaveId} not found.`);
+      }
+
+      if (slaveRecord.master_id !== masterUserId) {
+        return res.status(403).json({ success: false, error: { message: `Unauthorized: Agent ${slaveRecord.agentId} does not belong to your fleet.` } });
+      }
+
+      const updatePayload: any = {
+        updatedAt: new Date().toISOString(),
+        master_sync_policy: syncPolicy || 'forever',
+      };
+
+      if (copyAccessManagement) {
+        updatePayload.disabledEndpoints = masterDisabled;
+        updatePayload.disabled_endpoints = masterDisabled;
+        updatePayload.customRateLimits = masterLimits;
+        updatePayload.custom_rate_limits = masterLimits;
+        securityService.setUserDisabledEndpoints(slaveId, masterDisabled);
+        securityService.setUserCustomRateLimits(slaveId, masterLimits);
+      }
+
+      if (copyAccountIps) {
+        updatePayload.whitelisted_networks = masterWhitelist;
+      }
+
+      const { error: updateErr } = await supabase
+        .from('users')
+        .update(updatePayload)
+        .eq('id', slaveId);
+
+      if (updateErr) {
+        throw new Error(`Failed to update slave agent ${slaveRecord.agentId}: ${updateErr.message}`);
+      }
+
+      if (copyGlobalLogout) {
+        await invalidateAllHumanSessionsForUser(slaveId);
+        await supabase
+          .from('refresh_tokens')
+          .update({ isRevoked: true })
+          .eq('userId', slaveId);
+      }
+    }
+
+    try {
+      await watchtowerActivityService.recordWatchtowerActivity({
+        agentId: req.user!.agentId || masterUserId,
+        agentName: req.user!.name,
+        avatar: req.user!.avatar,
+        type: 'MASTER_SETTINGS_COPIED',
+        category: 'security',
+        outcome: 'success',
+        text: `Master synced settings (Access: ${!!copyAccessManagement}, IPs: ${!!copyAccountIps}, Logout: ${!!copyGlobalLogout}) to ${slaveAgentIds.length} slave agents`,
+        actorUserId: masterUserId,
+        masterId: masterUserId,
+        activityKey: `copy_settings:${masterUserId}:${Math.floor(Date.now() / 10000)}`
+      });
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: `Successfully synced configurations to ${slaveAgentIds.length} slave agents using ${syncPolicy === 'one_time' ? 'One-Time Copy' : 'Copy Forever'} policy.`
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err?.message || 'Failed to copy master settings.' } });
   }
 });
 
