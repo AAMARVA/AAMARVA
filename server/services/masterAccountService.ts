@@ -15,7 +15,6 @@ export interface MasterPlanEntitlement {
   plan_name: string;
   status: 'active' | 'inactive' | 'expired' | 'canceled';
   allowance_accounts: number;
-  allowance_master_slots?: number;
   tier: string;
   created_at: string;
   updated_at: string;
@@ -162,7 +161,6 @@ export class MasterAccountService {
           });
 
           const activeAllowance = activeBlocks.reduce((sum: number, b: any) => sum + (b.allowance || 0), 0);
-          const activeMasterSlots = activeBlocks.reduce((sum: number, b: any) => sum + (b.master_slots || 0), 0) || metadata.allowance_master_slots || 0;
           const maxExpiry = new Date(latestTime).toISOString();
 
           const entitlement: MasterPlanEntitlement = {
@@ -172,14 +170,12 @@ export class MasterAccountService {
             plan_name: entRecord.plan_name || 'Master & Slave Agent Plan',
             status: 'active',
             allowance_accounts: Math.min(1000, activeAllowance),
-            allowance_master_slots: activeMasterSlots,
             tier: entRecord.tier || 'scale',
             created_at: entRecord.created_at || new Date().toISOString(),
             updated_at: entRecord.updated_at || new Date().toISOString(),
             expires_at: maxExpiry,
             metadata: { 
               ...metadata, 
-              allowance_master_slots: activeMasterSlots,
               blocks: finalBlocks,
               active_blocks: finalBlocks.filter((b: any) => b.is_active),
               earliest_expiry: new Date(earliestTime).toISOString(),
@@ -209,7 +205,6 @@ export class MasterAccountService {
           plan_name: entRecord.plan_name || 'Master & Slave Agent Plan',
           status: 'active',
           allowance_accounts: entRecord.allowance_accounts || 10,
-          allowance_master_slots: metadata?.allowance_master_slots || 0,
           tier: entRecord.tier || 'scale',
           created_at: entRecord.created_at || new Date().toISOString(),
           updated_at: entRecord.updated_at || new Date().toISOString(),
@@ -336,9 +331,8 @@ export class MasterAccountService {
     masterId: string, 
     requestedAllowance: number = 10,
     options?: {
-      actionType?: 'new_plan' | 'add_accounts' | 'add_master_slots';
+      actionType?: 'new_plan' | 'add_accounts';
       addOnAccounts?: number;
-      addMasterSlots?: number;
       validityDays?: number;
       extendAccountsCount?: number;
       capabilityIncrement?: boolean;
@@ -374,11 +368,9 @@ export class MasterAccountService {
       const existingPlan = await this.getMasterPlan(masterId, true);
       const isCurrentlyActive = existingPlan && existingPlan.status === 'active';
       const currentAllowance = existingPlan?.allowance_accounts || 0;
-      const existingMasterSlots = existingPlan?.metadata?.allowance_master_slots || (existingPlan as any)?.allowance_master_slots || 0;
-      const addedMasterSlots = options?.addMasterSlots ? Math.max(0, Math.floor(options.addMasterSlots)) : 0;
 
-      // Idempotency: If already active with requested allowance and no master slots added and no explicit actionType, return existing plan
-      if (!options?.actionType && !addedMasterSlots && isCurrentlyActive && currentAllowance === Math.max(10, Math.min(1000, requestedAllowance))) {
+      // Idempotency: If already active with requested allowance and no explicit actionType, return existing plan
+      if (!options?.actionType && isCurrentlyActive && currentAllowance === Math.max(10, Math.min(1000, requestedAllowance))) {
         return existingPlan;
       }
 
@@ -390,10 +382,10 @@ export class MasterAccountService {
       if (false) {
         sanitizedAllowance = currentAllowance > 0 ? currentAllowance : 10;
         accountsBoughtThisTransaction = Math.max(10, options?.extendAccountsCount || sanitizedAllowance);
-      } else if (options?.actionType === 'add_accounts' || options?.actionType === 'add_master_slots') {
+      } else if (options?.actionType === 'add_accounts') {
         accountsBoughtThisTransaction = options?.addOnAccounts 
-          ? Math.max(0, Math.floor(options.addOnAccounts))
-          : (options?.actionType === 'add_master_slots' ? 0 : Math.max(10, Math.floor(requestedAllowance > currentAllowance ? requestedAllowance - currentAllowance : requestedAllowance)));
+          ? Math.max(10, Math.floor(options.addOnAccounts))
+          : Math.max(10, Math.floor(requestedAllowance > currentAllowance ? requestedAllowance - currentAllowance : requestedAllowance));
         sanitizedAllowance = Math.min(1000, currentAllowance + accountsBoughtThisTransaction);
       } else {
         // Direct allowance specification or 'new_plan' (clamped between 10 and 1000)
@@ -402,7 +394,7 @@ export class MasterAccountService {
       }
 
       // Check strict idempotency for standard repeat activation without actionType
-      if (!options?.actionType && !addedMasterSlots && isCurrentlyActive && existingPlan.allowance_accounts === sanitizedAllowance && (!options?.capabilityIncrement || existingPlan.metadata?.capabilityIncrement)) {
+      if (!options?.actionType && isCurrentlyActive && existingPlan.allowance_accounts === sanitizedAllowance && (!options?.capabilityIncrement || existingPlan.metadata?.capabilityIncrement)) {
         return existingPlan;
       }
 
@@ -444,7 +436,7 @@ export class MasterAccountService {
           status: 'active'
         };
         blocks.push(newPlanBlock);
-      } else if (actionType === 'add_accounts' && accountsBoughtThisTransaction > 0) {
+      } else if (actionType === 'add_accounts') {
         const addOnBlock = {
           id: `plan_box_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
           plan_number: nextPlanNumber,
@@ -462,28 +454,8 @@ export class MasterAccountService {
         blocks.push(addOnBlock);
       }
 
-      if (addedMasterSlots > 0) {
-        const masterSlotBlock = {
-          id: `plan_box_master_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
-          plan_number: blocks.length + 1,
-          plan_name: `Master Account Slot Plan (Box #${blocks.length + 1})`,
-          plan_subtitle: `Master Slot Expansion (+${addedMasterSlots} Master Slot${addedMasterSlots > 1 ? 's' : ''})`,
-          plan_type: 'master_slot_addon',
-          action_type: 'add_master_slots',
-          allowance: 0,
-          master_slots: addedMasterSlots,
-          created_at: now.toISOString(),
-          expires_at: '9999-12-31T23:59:59.999Z',
-          amount: Math.round(addedMasterSlots * 50),
-          currency: 'USD',
-          status: 'active'
-        };
-        blocks.push(masterSlotBlock);
-      }
-
       const totalAllowance = Math.min(1000, blocks.reduce((sum: number, b: any) => sum + (b.allowance || 0), 0));
       sanitizedAllowance = totalAllowance;
-      const totalMasterSlots = blocks.reduce((sum: number, b: any) => sum + (b.master_slots || 0), 0) || (existingMasterSlots + addedMasterSlots);
 
       const maxExpiry = blocks.length > 0 
         ? blocks.reduce((latest: string, b: any) => new Date(b.expires_at) > new Date(latest) ? b.expires_at : latest, blocks[0].expires_at) 
@@ -501,14 +473,12 @@ export class MasterAccountService {
         plan_name: 'Master & Slave Agent Plan',
         status: 'active',
         allowance_accounts: sanitizedAllowance,
-        allowance_master_slots: totalMasterSlots,
         tier: 'scale',
         created_at: existingPlan?.created_at || nowIso,
         updated_at: nowIso,
         expires_at: expiresAt,
         metadata: {
           ...(existingPlan?.metadata || {}),
-          allowance_master_slots: totalMasterSlots,
           source: 'aamarva_internal_entitlement',
           previous_allowance: currentAllowance,
           activated_by_master_id: masterId,
@@ -516,7 +486,6 @@ export class MasterAccountService {
           accounts_bought: accountsBoughtThisTransaction,
           accounts_in_transaction: accountsBoughtThisTransaction,
           added_accounts: accountsBoughtThisTransaction,
-          added_master_slots: addedMasterSlots,
           blocks: blocks,
           created_at: nowIso,
           expires_at: expiresAt

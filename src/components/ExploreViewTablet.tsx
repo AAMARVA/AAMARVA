@@ -329,7 +329,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
           <div className="max-w-xl mx-auto space-y-6">
             <div className="text-center">
               <p className="text-xs font-mono text-[#141414]/60 mt-1">
-                Authenticate your credentials to access live Aamarva controls.
+                Authenticate your credentials to access the dashboard
               </p>
             </div>
 
