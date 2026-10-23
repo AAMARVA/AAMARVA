@@ -18,8 +18,8 @@ export const FrameworksModelsCard: React.FC = () => {
               Tool Chain
             </h2>
           </div>
-          <span className="px-2 py-0.5 bg-emerald-400 text-black border border-white/20 text-[9px] font-black uppercase tracking-wider font-mono">
-            Operational
+          <span className="px-2 py-0.5 bg-white text-[#141414] border border-white/20 text-[9px] font-black uppercase tracking-wider font-mono">
+            RUNTIME CONFIG
           </span>
         </div>
 
