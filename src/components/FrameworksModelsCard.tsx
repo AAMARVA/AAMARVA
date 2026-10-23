@@ -15,7 +15,7 @@ export const FrameworksModelsCard: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <Workflow className="w-5 h-5 text-white" />
             <h2 className="font-mono text-xs sm:text-sm font-black uppercase tracking-wider text-white">
-              Frameworks and Models
+              Tool Chain
             </h2>
           </div>
           <span className="px-2 py-0.5 bg-emerald-400 text-black border border-white/20 text-[9px] font-black uppercase tracking-wider font-mono">
@@ -61,7 +61,7 @@ export const FrameworksModelsCard: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Workflow className="w-4 h-4 text-[#141414]" />
                 <h3 className="font-black uppercase text-xs sm:text-sm tracking-wider">
-                  Frameworks and Models Stack
+                  Tool Chain Stack
                 </h3>
               </div>
               <button
