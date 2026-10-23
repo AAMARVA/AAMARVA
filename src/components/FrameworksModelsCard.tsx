@@ -7,8 +7,7 @@ export const FrameworksModelsCard: React.FC = () => {
   return (
     <>
       <div 
-        className="bg-[#141414] text-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden cursor-pointer"
-        onClick={() => setIsModalOpen(true)}
+        className="bg-[#141414] text-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden"
       >
         {/* Card Header Bar */}
         <div className="bg-[#141414] text-white px-5 py-3.5 border-b-2 border-white/20 flex items-center justify-between">
@@ -26,7 +25,10 @@ export const FrameworksModelsCard: React.FC = () => {
         {/* Card Body */}
         <div className="p-5 bg-white text-[#141414] grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Models Box */}
-          <div className="p-4 bg-[#F5F4F0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2">
+          <div 
+            onClick={() => setIsModalOpen(true)}
+            className="p-4 bg-[#F5F4F0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2 cursor-pointer hover:bg-neutral-200 transition-colors"
+          >
             <span className="text-[10px] font-black uppercase text-[#141414]/60 font-mono tracking-wider flex items-center gap-2 border-b border-[#141414]/20 pb-1.5">
               <Diamond className="w-3 h-3" />
               Models
@@ -38,7 +40,10 @@ export const FrameworksModelsCard: React.FC = () => {
           </div>
           
           {/* Frameworks Box */}
-          <div className="p-4 bg-[#F5F4F0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2">
+          <div 
+            onClick={() => setIsModalOpen(true)}
+            className="p-4 bg-[#F5F4F0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2 cursor-pointer hover:bg-neutral-200 transition-colors"
+          >
             <span className="text-[10px] font-black uppercase text-[#141414]/60 font-mono tracking-wider flex items-center gap-2 border-b border-[#141414]/20 pb-1.5">
               <SquareStack className="w-3 h-3" />
               Frameworks
