@@ -1030,6 +1030,21 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
 
 
+          {/* Frameworks & Models Block */}
+          <div className="mt-4 bg-[#141414] text-white p-4 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)]">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-white" />
+                <span className="text-xs font-black uppercase tracking-wider">
+                  Frameworks & Models
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-white/60 font-sans leading-relaxed">
+              Configure supported AI frameworks, LLM integrations, and specialized model modules.
+            </p>
+          </div>
+
           {/* Access Management Section */}
           <div className="mt-4">
             <AccessManagementCard />
