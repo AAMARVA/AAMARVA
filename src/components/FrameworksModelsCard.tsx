@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { Cpu, ArrowUpRight, X, Check, Sliders, Layers } from 'lucide-react';
+import { Cpu, X } from 'lucide-react';
 
 export const FrameworksModelsCard: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
     <>
-      <div className="bg-[#141414] text-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden">
+      <div 
+        className="bg-[#141414] text-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden cursor-pointer"
+        onClick={() => setIsModalOpen(true)}
+      >
         {/* Card Header Bar */}
         <div className="bg-[#141414] text-white px-5 py-3.5 border-b-2 border-white/20 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -21,41 +24,28 @@ export const FrameworksModelsCard: React.FC = () => {
         </div>
 
         {/* Card Body */}
-        <div className="p-5 bg-white text-[#141414] space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-[#F5F4F0] border-2 border-[#141414]">
-            <div className="space-y-1">
-              <span className="text-[10px] font-black uppercase text-[#141414]/60 font-mono tracking-wider block">
-                Primary Execution Core
-              </span>
-              <span className="text-sm font-black text-[#141414] font-mono uppercase block">
-                Gemini 3.5 Flash Lite (@google/genai)
-              </span>
-              <span className="text-[11px] text-[#141414]/70 font-sans">
-                High-performance agentic reasoning, function calling, and cryptographic payload verification.
-              </span>
+        <div className="p-5 bg-white text-[#141414] grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Models Box */}
+          <div className="p-4 bg-[#F5F4F0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2">
+            <span className="text-[10px] font-black uppercase text-[#141414]/60 font-mono tracking-wider block border-b border-[#141414]/20 pb-1.5">
+              Models
+            </span>
+            <div className="space-y-1 font-mono text-[11px] pt-1">
+              <div className="font-bold">Gemini 3.5 Flash Lite</div>
+              <div className="text-[#141414]/60">Default Agentic & Reasoning Core</div>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(true)}
-              className="px-3.5 py-2 bg-[#141414] text-white hover:bg-black font-mono text-[10px] font-black uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer shrink-0 flex items-center gap-1.5 justify-center"
-            >
-              <span>Inspect Stack</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono text-xs">
-            <div className="p-3 bg-[#E4E3E0]/30 border border-[#141414]/20 space-y-1">
-              <span className="text-[9px] font-black uppercase text-[#141414]/50 block">Runtime</span>
-              <span className="font-bold text-[#141414] block">React SPA + Vite</span>
-            </div>
-            <div className="p-3 bg-[#E4E3E0]/30 border border-[#141414]/20 space-y-1">
-              <span className="text-[9px] font-black uppercase text-[#141414]/50 block">Gateway</span>
-              <span className="font-bold text-[#141414] block">Node.js / Express</span>
-            </div>
-            <div className="p-3 bg-[#E4E3E0]/30 border border-[#141414]/20 space-y-1">
-              <span className="text-[9px] font-black uppercase text-[#141414]/50 block">Storage</span>
-              <span className="font-bold text-[#141414] block">Supabase / Drizzle</span>
+          
+          {/* Frameworks Box */}
+          <div className="p-4 bg-[#F5F4F0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2">
+            <span className="text-[10px] font-black uppercase text-[#141414]/60 font-mono tracking-wider block border-b border-[#141414]/20 pb-1.5">
+              Frameworks
+            </span>
+            <div className="space-y-1 font-mono text-[11px] pt-1">
+              <div className="font-bold">React SPA + Vite</div>
+              <div className="text-[#141414]/60">Frontend Runtime</div>
+              <div className="font-bold pt-1">Node.js / Express</div>
+              <div className="text-[#141414]/60">Backend API</div>
             </div>
           </div>
         </div>
