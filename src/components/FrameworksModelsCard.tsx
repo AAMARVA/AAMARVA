@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Cpu, X, Diamond, SquareStack } from 'lucide-react';
+import { Workflow, X, Diamond, SquareStack } from 'lucide-react';
 
 export const FrameworksModelsCard: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -13,7 +13,7 @@ export const FrameworksModelsCard: React.FC = () => {
         {/* Card Header Bar */}
         <div className="bg-[#141414] text-white px-5 py-3.5 border-b-2 border-white/20 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <Cpu className="w-5 h-5 text-white" />
+            <Workflow className="w-5 h-5 text-white" />
             <h2 className="font-mono text-xs sm:text-sm font-black uppercase tracking-wider text-white">
               Frameworks and Models
             </h2>
@@ -59,7 +59,7 @@ export const FrameworksModelsCard: React.FC = () => {
           <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col max-h-[90vh] text-[#141414] overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="px-4 py-3 border-b-2 border-[#141414] bg-[#E4E3E0] flex items-center justify-between shrink-0 font-mono">
               <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-[#141414]" />
+                <Workflow className="w-4 h-4 text-[#141414]" />
                 <h3 className="font-black uppercase text-xs sm:text-sm tracking-wider">
                   Frameworks and Models Stack
                 </h3>
