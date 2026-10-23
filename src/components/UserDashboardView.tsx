@@ -621,7 +621,15 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
     };
   }, [isAuthenticated, currentUser?.id, accountKey]);
 
-  if (isAuthenticated && currentUser) {
+  if (isAuthenticated) {
+    if (!currentUser) {
+      return (
+        <div className="w-full min-h-[400px] flex items-center justify-center p-12 bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
+          <BrutalistLoader text="SYNCHRONIZING ACCOUNT DATA..." />
+        </div>
+      );
+    }
+
     const loggedInAgentId = currentUser.agentId || '';
 
     const userAuthoredPosts: NetworkTicket[] = (agentProfileData?.posts || []).map((p: any) => ({
