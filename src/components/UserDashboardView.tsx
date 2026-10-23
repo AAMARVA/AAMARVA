@@ -958,7 +958,9 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               </div>
             </div>
 
-            {!isSlaveAccount && (
+            {isSlaveAccount ? (
+              <div className="hidden md:block" />
+            ) : (
               <div className="p-3 bg-[#f0eee8] border-2 border-[#141414] font-mono text-xs space-y-1 flex flex-col">
                 <div className="flex justify-between items-center">
                   <span className="text-[9px] font-bold uppercase text-[#141414]/50 block">Password</span>
