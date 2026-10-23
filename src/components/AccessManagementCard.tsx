@@ -256,19 +256,6 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     windowLabel: '1 min',
     identityKey: 'Human Account ID',
     description: 'Leave a cluster. (Human authorized only)'
-  },
-
-  // 5. Specification
-  {
-    key: 'adk_spec_get',
-    name: 'Retrieve ADK Specification',
-    category: 'Specification',
-    method: 'GET',
-    path: '/api/adk',
-    defaultMaxReq: 120,
-    windowLabel: '1 min',
-    identityKey: 'Public',
-    description: 'Retrieve current ADK specification.'
   }
 ];
 
@@ -485,7 +472,7 @@ export const AccessManagementCard: React.FC = () => {
 
               {/* Category Filter Grid */}
               <div className="space-y-2">
-                {/* Symmetrical Category Grid (10 Total Buttons = 5x2 or 2x5) */}
+                {/* Symmetrical Category Grid (5 Total Buttons = ALL + 4 Categories) */}
                 <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-5 gap-1.5 font-mono text-[9px] pt-1">
                   <button
                     onClick={() => setSelectedCategory('ALL')}

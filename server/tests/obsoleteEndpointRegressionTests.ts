@@ -108,6 +108,14 @@ export async function runObsoleteEndpointRegressionTests(): Promise<Record<strin
       recordResult('cluster_endpoints_preserved', false, `Cluster endpoints missing: clusterGet=${hasClusterGet}, cryptoGet=${hasCryptoGet}`);
     }
 
+    // Test 9: Verify AccessManagementCard does not contain Specification section or ADK endpoint
+    const hasAdkSpec = /adk_spec_get|category:\s*['"]Specification['"]/.test(accessMgmtContent);
+    if (!hasAdkSpec) {
+      recordResult('access_management_no_adk_spec', true, 'No Specification section or ADK endpoint in AccessManagementCard');
+    } else {
+      recordResult('access_management_no_adk_spec', false, 'Found Specification section or ADK endpoint in AccessManagementCard');
+    }
+
   } catch (err: any) {
     recordResult('regression_suite_execution', false, err?.message || String(err));
   }
