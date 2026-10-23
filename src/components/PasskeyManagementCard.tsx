@@ -168,7 +168,7 @@ export const PasskeyManagementCard: React.FC = () => {
                 </div>
                 <div>
                   <div className="text-xs font-black text-black uppercase tracking-tight flex items-center space-x-2">
-                    <span>{pk.friendlyName}</span>
+                    <span className="break-all">{pk.friendlyName}</span>
                     <span className="text-[10px] font-normal text-zinc-500 lowercase tracking-normal">
                       ({pk.id.slice(0, 8)}...)
                     </span>
