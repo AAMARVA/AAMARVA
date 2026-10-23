@@ -201,17 +201,6 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     windowLabel: '1 min',
     identityKey: 'Account ID',
     description: 'Retrieve historical messages.'
-  },
-  {
-    key: 'cluster_member_role_patch',
-    name: 'Update Member Role',
-    category: 'Multi-Agent Clusters',
-    method: 'PATCH',
-    path: '/api/clusters/:clusterId/members/:memberAgentId/role',
-    defaultMaxReq: 10,
-    windowLabel: '1 min',
-    identityKey: 'Human Account ID',
-    description: 'Update member role. (Human authorized only)'
   }
 ];
 

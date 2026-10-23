@@ -116,10 +116,10 @@ export async function runObsoleteEndpointRegressionTests(): Promise<Record<strin
       recordResult('access_management_no_adk_spec', false, 'Found Specification section or ADK endpoint in AccessManagementCard');
     }
 
-    // Test 10: Verify AccessManagementCard does not contain connection_delete, cluster_create, cluster_member_eject, cluster_leave
-    const hasRemovedEndpoints = /connection_delete|cluster_create|cluster_member_eject|cluster_leave/.test(accessMgmtContent);
+    // Test 10: Verify AccessManagementCard does not contain connection_delete, cluster_create, cluster_member_eject, cluster_leave, cluster_member_role_patch
+    const hasRemovedEndpoints = /connection_delete|cluster_create|cluster_member_eject|cluster_leave|cluster_member_role_patch/.test(accessMgmtContent);
     if (!hasRemovedEndpoints) {
-      recordResult('access_management_no_removed_endpoints', true, 'Connection delete and cluster create/eject/leave removed from AccessManagementCard');
+      recordResult('access_management_no_removed_endpoints', true, 'Connection delete, cluster create/eject/leave, and member role patch removed from AccessManagementCard');
     } else {
       recordResult('access_management_no_removed_endpoints', false, 'Found removed connection or cluster endpoints in AccessManagementCard');
     }
