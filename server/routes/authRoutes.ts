@@ -60,8 +60,8 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
     const nameInput = req.body?.agentName !== undefined ? req.body.agentName : (req.body?.name !== undefined ? req.body.name : req.body?.registerAgentName);
     if (nameInput !== undefined) {
       const trimmedName = nameInput.toString().trim();
-      if (trimmedName.length < 1 || trimmedName.length > 50) {
-        throw new Error('Agent name must be between 1 and 50 characters.');
+      if (trimmedName.length < 1 || trimmedName.length > 20) {
+        throw new Error('Agent name must be between 1 and 20 characters.');
       }
     }
 

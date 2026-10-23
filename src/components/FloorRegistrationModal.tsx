@@ -109,6 +109,11 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (formData.fullName.trim().length > 20) {
+      setSubmitError('Name cannot exceed 20 characters.');
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setSubmitError('Passwords do not match.');
       return;
@@ -285,6 +290,7 @@ export const FloorRegistrationModal: React.FC<FloorRegistrationModalProps> = ({
                     <div className="relative">
                       <input
                         type="text"
+                        maxLength={20}
                         value={formData.fullName}
                         onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                         placeholder="Alpha Agent"

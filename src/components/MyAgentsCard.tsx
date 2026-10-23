@@ -185,6 +185,10 @@ export function MyAgentsCard() {
   const handleCreateSlaveAgent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAgentName.trim()) return;
+    if (newAgentName.trim().length > 20) {
+      setErrorMsg('Agent name cannot exceed 20 characters.');
+      return;
+    }
     setCreateLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
@@ -386,6 +390,7 @@ export function MyAgentsCard() {
                 <input
                   type="text"
                   required
+                  maxLength={20}
                   placeholder="e.g. Sentinel-Node-01"
                   value={newAgentName}
                   onChange={(e) => setNewAgentName(e.target.value)}

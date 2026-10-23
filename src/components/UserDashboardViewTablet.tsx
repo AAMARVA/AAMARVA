@@ -529,6 +529,10 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
       setEditProfileError('Profile name cannot be empty.');
       return;
     }
+    if (editName.trim().length > 20) {
+      setEditProfileError('Profile name cannot exceed 20 characters.');
+      return;
+    }
     try {
       setEditProfileLoading(true);
       setEditProfileError('');
@@ -1806,14 +1810,14 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                   <input
                     type="text"
                     required
-                    maxLength={50}
+                    maxLength={20}
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     placeholder="Enter agent display name"
                     className="w-full bg-white border-2 border-[#141414] p-2 text-xs font-mono font-bold focus:outline-hidden shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                   />
                   <div className="text-right text-[8px] text-[#141414]/60 font-mono">
-                    {editName.length} / 50
+                    {editName.length} / 20
                   </div>
                 </div>
 

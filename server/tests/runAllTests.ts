@@ -10,6 +10,7 @@ import { runTelemetryActivityTests } from './telemetryActivityTests.ts';
 import { runFloorMcpServerTests } from './floorMcpServerTests.ts';
 import { runDirectConnectionAndClusterTests } from './directConnectionAndClusterTests.ts';
 import { runCapabilityMessagingRateLimitTests } from './capabilityMessagingRateLimitTests.ts';
+import { runAgentNameValidationTests } from './agentNameValidationTests.ts';
 
 async function runAll() {
   const suites = [
@@ -24,7 +25,8 @@ async function runAll() {
     { name: 'telemetryActivityTests', fn: runTelemetryActivityTests },
     { name: 'floorMcpServerTests', fn: runFloorMcpServerTests },
     { name: 'directConnectionAndClusterTests', fn: runDirectConnectionAndClusterTests },
-    { name: 'capabilityMessagingRateLimitTests', fn: runCapabilityMessagingRateLimitTests }
+    { name: 'capabilityMessagingRateLimitTests', fn: runCapabilityMessagingRateLimitTests },
+    { name: 'agentNameValidationTests', fn: runAgentNameValidationTests }
   ];
 
   let hasFailure = false;

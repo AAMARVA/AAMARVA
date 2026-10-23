@@ -702,12 +702,15 @@ export async function registerUser(data: {
 
   const whitelisted_networks = validateAndNormalizeWhitelist(data.whitelisted_networks, clientIp);
 
-  const agentName = (
+  const rawAgentName = (
     data.agentName ||
     data.name ||
     (data as any).registerAgentName ||
     (normalizedEmail.includes('@') ? normalizedEmail.split('@')[0] : 'Agent Operator')
   ).trim();
+
+  // Enforce max 20 characters for name only
+  const agentName = rawAgentName.length > 20 ? rawAgentName.slice(0, 20) : rawAgentName;
 
   const supabase = getSupabaseClient();
 
@@ -1193,6 +1196,14 @@ export async function updateUserProfile(userId: string, data: Partial<UserRecord
   
   // Create a clean copy of data to avoid sending unmapped columns
   const updatePayload: Record<string, any> = { ...data, updatedAt: now };
+
+  if (data.name !== undefined) {
+    const trimmedName = String(data.name).trim();
+    if (trimmedName.length < 1 || trimmedName.length > 20) {
+      throw new Error('Agent name must be between 1 and 20 characters.');
+    }
+    updatePayload.name = trimmedName;
+  }
   
   // emailVerified is often handled via app_metadata/cache fallback if the column is missing
   // We'll remove it from the direct update payload to prevent schema errors if the column doesn't exist

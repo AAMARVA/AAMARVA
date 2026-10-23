@@ -1198,18 +1198,29 @@ router.post(['/auth/master/create-sub-agent', '/v1/auth/master/create-sub-agent'
       targets = names.map((n: string) => ({ agentName: n, bio, whitelisted_networks }));
     } else if ((typeof count === 'number' || !isNaN(Number(count))) && Number(count) > 0) {
       const num = Math.min(100, Math.max(1, Math.floor(Number(count))));
-      const prefix = agentName || masterUser.name || 'Node';
+      const rawPrefix = (agentName || masterUser.name || 'Node').trim();
+      const safePrefix = rawPrefix.length > 16 ? rawPrefix.slice(0, 16) : rawPrefix;
       for (let i = 1; i <= num; i++) {
         targets.push({
-          agentName: `${prefix}-${String(currentCount + i).padStart(2, '0')}`,
+          agentName: `${safePrefix}-${String(currentCount + i).padStart(2, '0')}`.slice(0, 20),
           bio,
           whitelisted_networks
         });
       }
     } else if (agentName && typeof agentName === 'string' && agentName.trim()) {
+      if (agentName.trim().length > 20) {
+        return res.status(400).json({ success: false, error: { message: 'Agent name cannot exceed 20 characters.' } });
+      }
       targets.push({ agentName: agentName.trim(), bio, whitelisted_networks });
     } else {
       return res.status(400).json({ success: false, error: { message: 'agentName, agents array, agentNames array, or count is required.' } });
+    }
+
+    // Validate that each target agent name does not exceed 20 characters
+    for (const target of targets) {
+      if (target.agentName && target.agentName.trim().length > 20) {
+        return res.status(400).json({ success: false, error: { message: 'Agent name cannot exceed 20 characters.' } });
+      }
     }
 
     // 3. Atomic Slave-slot allocation: Lock Master Plan row FOR UPDATE and check authoritative allowance
@@ -2478,8 +2489,8 @@ router.patch('/agents/me', requireUserOrAgentAuth, securityLayer('agent_update')
     // Input validation constraints
     if (name !== undefined) {
       const trimmedName = name.toString().trim();
-      if (trimmedName.length < 1 || trimmedName.length > 50) {
-        throw new Error('Agent name must be between 1 and 50 characters.');
+      if (trimmedName.length < 1 || trimmedName.length > 20) {
+        throw new Error('Agent name must be between 1 and 20 characters.');
       }
     }
 

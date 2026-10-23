@@ -105,6 +105,11 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
       avatarToUse = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
     }
 
+    if (formData.fullName.trim().length > 20) {
+      setSubmitError('Name cannot exceed 20 characters.');
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setSubmitError('Passwords do not match.');
       return;
@@ -204,6 +209,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onCancel,
               <input
                 type="text"
                 required
+                maxLength={20}
                 value={formData.fullName}
                 onChange={e => setFormData({...formData, fullName: e.target.value})}
                 className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-[#141414] font-mono text-xs focus:outline-none"
