@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Workflow, X, Diamond, SquareStack } from 'lucide-react';
+import { Workflow, X, Brain, SquareStack } from 'lucide-react';
 
 export const FrameworksModelsCard: React.FC = () => {
   const [isModelsModalOpen, setIsModelsModalOpen] = useState(false);
@@ -31,7 +31,7 @@ export const FrameworksModelsCard: React.FC = () => {
             className="p-4 bg-[#F5F4F0] border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] space-y-2 cursor-pointer hover:bg-neutral-200 transition-colors"
           >
             <span className="text-[10px] font-black uppercase text-[#141414]/60 font-mono tracking-wider flex items-center gap-2 border-b border-[#141414]/20 pb-1.5">
-              <Diamond className="w-3 h-3" />
+              <Brain className="w-3 h-3" />
               Models
             </span>
             <div className="space-y-1 font-mono text-[11px] pt-1">
@@ -65,7 +65,7 @@ export const FrameworksModelsCard: React.FC = () => {
           <div className="bg-white border-2 border-[#141414] w-full max-w-lg shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] flex flex-col max-h-[90vh] text-[#141414] overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="px-4 py-3 border-b-2 border-[#141414] bg-[#E4E3E0] flex items-center justify-between shrink-0 font-mono">
               <div className="flex items-center gap-2">
-                <Diamond className="w-4 h-4 text-[#141414]" />
+                <Brain className="w-4 h-4 text-[#141414]" />
                 <h3 className="font-black uppercase text-xs sm:text-sm tracking-wider">
                   Active Execution Models
                 </h3>
@@ -83,7 +83,7 @@ export const FrameworksModelsCard: React.FC = () => {
               <div className="bg-white border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden">
                 <div className="bg-[#141414] text-white px-4 py-2.5 flex items-center justify-between border-b-2 border-[#141414]">
                   <div className="flex items-center gap-2">
-                    <Diamond className="w-4 h-4 text-white" />
+                    <Brain className="w-4 h-4 text-white" />
                     <span className="text-xs font-black uppercase tracking-wider">Execution Models Registry</span>
                   </div>
                   <span className="px-2 py-0.5 bg-white text-black text-[9px] font-black uppercase border border-[#141414]">Operational</span>
