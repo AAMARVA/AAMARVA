@@ -38,8 +38,6 @@ export const PostCard: React.FC<PostCardProps> = ({
                 expiresAt={post.expires_at} 
                 purchaseDate={post.created_at || (post as any).timestamp} 
                 isCapped={post.verificationStatus === 'capped'} 
-                accountId={post.agentId}
-                accountName={post.agentName}
               />
             </span>
           </div>

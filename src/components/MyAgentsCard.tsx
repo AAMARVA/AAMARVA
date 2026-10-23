@@ -545,14 +545,9 @@ export function MyAgentsCard() {
                             {sub.name || 'Slave Agent'}
                           </p>
                           {Boolean(sub.hasCapabilityIncrement || sub.plan === 'slave_capability' || sub.isCapped) && (
-                            <CappedBadge 
-                              expiresAt={sub.expires_at} 
-                              purchaseDate={sub.plan_created_at || sub.created_at} 
-                              isCapped={sub.isCapped} 
-                              accountId={sub.id} 
-                              accountName={sub.name || sub.agentId || 'Slave Agent'}
-                              className="cursor-pointer hover:bg-amber-400" 
-                            />
+                            <div onClick={(e) => { e.stopPropagation(); setCapabilityModalAccount({ id: sub.id, name: sub.name || sub.agentId || 'Slave Agent' }); }}>
+                              <CappedBadge expiresAt={sub.expires_at} purchaseDate={sub.plan_created_at || sub.created_at} isCapped={sub.isCapped} className="cursor-pointer hover:bg-amber-400" />
+                            </div>
                           )}
                         </div>
                         <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">

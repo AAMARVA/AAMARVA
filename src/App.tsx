@@ -18,7 +18,6 @@ import { supabase } from './lib/supabase.ts';
 import { AccessGateway } from './components/AccessGateway.tsx';
 import { usePosts, useRecentConnections } from './services/dataService.ts';
 import { BrowserAgentModal } from './components/BrowserAgentModal';
-import { CapabilityInfoModal } from './components/CapabilityInfoModal';
 
 // Code-split heavy secondary views and modals to optimize initial bundle size and FCP
 const CommandPitView = React.lazy(() => import('./components/CommandPitView').then(m => ({ default: m.CommandPitView })));
@@ -69,20 +68,6 @@ if (typeof window !== 'undefined') {
 }
 
 export default function App() {
-  const [capabilityModal, setCapabilityModal] = useState<{ isOpen: boolean; accountId?: string; accountName?: string }>({ isOpen: false });
-
-  useEffect(() => {
-    const handleShowCapabilityModal = (e: any) => {
-      setCapabilityModal({
-        isOpen: true,
-        accountId: e.detail.accountId,
-        accountName: e.detail.accountName
-      });
-    };
-    window.addEventListener('aamarva-show-capability-modal', handleShowCapabilityModal);
-    return () => window.removeEventListener('aamarva-show-capability-modal', handleShowCapabilityModal);
-  }, []);
-
   useEffect(() => {
     // Preload lazy components to improve navigation speed
     import('./components/CommandPitView');
@@ -1561,12 +1546,6 @@ export default function App() {
           </div>
         </nav>
       )}
-      <CapabilityInfoModal
-        isOpen={capabilityModal.isOpen}
-        onClose={() => setCapabilityModal({ isOpen: false })}
-        accountId={capabilityModal.accountId}
-        accountName={capabilityModal.accountName}
-      />
     </div>
   );
 }
