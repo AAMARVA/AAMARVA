@@ -4270,31 +4270,19 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
         .order('created_at', { ascending: false })
         .limit(50);
       if (!error && data && data.length > 0) {
-        // Collect request IDs to resolve connection request metadata
-        const reqIdsToFetch = new Set<string>();
-        data.forEach((item: any) => {
-          const act = (item.action || '').toUpperCase();
-          const tgt = (item.target || '').toLowerCase();
-          if (act.includes('CONNECTION_REQUEST') || tgt.startsWith('req_')) {
-            if (tgt.startsWith('req_')) reqIdsToFetch.add(tgt);
-            if (typeof item.details === 'object' && item.details?.requestId) {
-              reqIdsToFetch.add(String(item.details.requestId).toLowerCase());
-            }
-          }
-        });
-
-        // connection_requests table is retired.
-        const reqMap: Record<string, any> = {};
-
-        // Also resolve agent profiles for matched requests
+        // Collect potential agent IDs, connection IDs, and user IDs
         const targetAgentIds = new Set<string>();
-        Object.values(reqMap).forEach((r: any) => {
-          if (r.senderUserId === callerUserId && r.receiverAgentId) targetAgentIds.add(r.receiverAgentId);
-          else if (r.receiverUserId === callerUserId && r.senderAgentId) targetAgentIds.add(r.senderAgentId);
-        });
+        const potentialConnIds = new Set<string>();
 
-        // Also check if any item details contains "handshake with agent AMR-..."
         data.forEach((item: any) => {
+          if (item.target_agent_id) targetAgentIds.add(item.target_agent_id);
+          const tgt = (item.target || '').trim();
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tgt)) {
+            potentialConnIds.add(tgt);
+          } else if (tgt && !tgt.toLowerCase().startsWith('req_') && !tgt.toLowerCase().startsWith('post_') && !tgt.toLowerCase().startsWith('cluster_')) {
+            targetAgentIds.add(tgt);
+          }
+
           let str = '';
           if (typeof item.details === 'string') {
             str = item.details;
@@ -4302,67 +4290,90 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             str = item.details.message || item.details.targetAgentId || item.details.receiverAgentId || '';
             if (item.details.targetAgentId) targetAgentIds.add(item.details.targetAgentId);
             if (item.details.receiverAgentId) targetAgentIds.add(item.details.receiverAgentId);
+            if (item.details.agentId) targetAgentIds.add(item.details.agentId);
           }
-          const m = str.match(/(?:handshake with agent|with agent|to agent|agent)\s+([A-Za-z0-9_-]+)/i);
+          const m = str.match(/(?:handshake with agent|with agent|to agent|agent)\s+([A-Za-z0-9_-]+)/i) || str.match(/(AMR-[A-Za-z0-9_-]+)/i);
           if (m && m[1] && !m[1].toLowerCase().startsWith('req_')) {
-            targetAgentIds.add(m[1]);
+            targetAgentIds.add(m[1].replace(/^@/, ''));
           }
         });
+
+        // Resolve connections if target was a connection UUID
+        const connLookupMap: Record<string, any> = {};
+        if (potentialConnIds.size > 0) {
+          try {
+            const { data: matchedConns } = await sb
+              .from('connections')
+              .select('id, user1_id, user2_id, user1_agent_id, user2_agent_id, user1_agent_name, user2_agent_name')
+              .in('id', Array.from(potentialConnIds));
+            if (matchedConns) {
+              matchedConns.forEach((c: any) => {
+                const isU1 = c.user1_id === targetUserId || (c.user1_agent_id && c.user1_agent_id.toLowerCase() === targetAgentId.toLowerCase());
+                const peerAid = isU1 ? c.user2_agent_id : c.user1_agent_id;
+                const peerUid = isU1 ? c.user2_id : c.user1_id;
+                const peerName = isU1 ? c.user2_agent_name : c.user1_agent_name;
+                connLookupMap[c.id] = { peerAid, peerUid, peerName };
+                if (peerAid) targetAgentIds.add(peerAid);
+                if (peerUid) targetAgentIds.add(peerUid);
+              });
+            }
+          } catch (e) {}
+        }
 
         const userMap: Record<string, any> = {};
         if (targetAgentIds.size > 0) {
           try {
+            const idList = Array.from(targetAgentIds);
             const { data: matchedUsers } = await sb
               .from('users')
-              .select('agentId, name, avatar')
-              .in('agentId', Array.from(targetAgentIds));
+              .select('id, agentId, name, avatar')
+              .or(`id.in.(${idList.map(id => `"${id}"`).join(',')}),agentId.in.(${idList.map(id => `"${id}"`).join(',')})`);
             if (matchedUsers) {
-              matchedUsers.forEach(u => {
-                userMap[u.agentId] = u;
+              matchedUsers.forEach((u: any) => {
+                userMap[u.id] = u;
+                if (u.agentId) {
+                  userMap[u.agentId] = u;
+                  userMap[u.agentId.toLowerCase()] = u;
+                }
               });
             }
           } catch (e) {}
         }
 
         footprints = data.map((item: any) => {
-          const act = (item.action || '').toUpperCase();
-          const tgt = (item.target || '').toLowerCase();
-          const matchedReq = reqMap[tgt] || (typeof item.details === 'object' && item.details?.requestId ? reqMap[String(item.details.requestId).toLowerCase()] : null);
-          
-          let targetAgentId = item.target_agent_id;
-          let requestId = null;
+          const tgt = (item.target || '').trim();
+          const connInfo = connLookupMap[tgt];
 
-          if (tgt.startsWith('req_')) {
-            requestId = item.target;
-          }
+          let resolvedTargetAgentId = item.target_agent_id || (connInfo ? connInfo.peerAid : null);
 
-          if (matchedReq) {
-            targetAgentId = (matchedReq.senderUserId === callerUserId ? matchedReq.receiverAgentId : matchedReq.senderAgentId) || targetAgentId;
-            requestId = matchedReq.id || requestId;
-          }
-
-          if (!targetAgentId) {
+          if (!resolvedTargetAgentId) {
             let str = '';
             if (typeof item.details === 'string') str = item.details;
             else if (item.details && typeof item.details === 'object') str = item.details.message || item.details.targetAgentId || item.details.receiverAgentId || '';
-            const m = str.match(/(?:handshake with agent|with agent|to agent|agent)\s+([A-Za-z0-9_-]+)/i);
+            const m = str.match(/(?:handshake with agent|with agent|to agent|agent)\s+([A-Za-z0-9_-]+)/i) || str.match(/(AMR-[A-Za-z0-9_-]+)/i);
             if (m && m[1] && !m[1].toLowerCase().startsWith('req_')) {
-              targetAgentId = m[1];
+              resolvedTargetAgentId = m[1].replace(/^@/, '');
             }
           }
 
-          const targetUser = targetAgentId ? userMap[targetAgentId] : null;
+          if (!resolvedTargetAgentId && tgt && !tgt.toLowerCase().startsWith('req_') && !tgt.toLowerCase().startsWith('post_') && !tgt.toLowerCase().startsWith('cluster_') && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tgt)) {
+            resolvedTargetAgentId = tgt;
+          }
+
+          const targetUser = resolvedTargetAgentId ? (userMap[resolvedTargetAgentId] || userMap[resolvedTargetAgentId.toLowerCase()]) : (connInfo?.peerUid ? userMap[connInfo.peerUid] : null);
+          const finalAgentId = targetUser?.agentId || resolvedTargetAgentId || undefined;
+          const finalAgentName = targetUser?.name || connInfo?.peerName || finalAgentId || undefined;
+          const finalAvatar = targetUser?.avatar || undefined;
 
           return {
             id: item.id,
             action: item.action,
             endpoint: item.endpoint || (item.method && item.path ? `${item.method} ${item.path}` : (typeof item.details === 'string' && item.details.match(/\((GET|POST|PUT|PATCH|DELETE)\s+([^)]+)\)/i) ? `${RegExp.$1.toUpperCase()} ${RegExp.$2}` : getEndpointForAction(item.action, item.target))),
             details: item.details || item.content,
-            target: item.target || item.target_agent_id,
-            targetAgentId: targetAgentId || undefined,
-            targetAgentName: targetUser?.name || matchedReq?.senderAgentName || targetAgentId || undefined,
-            targetAvatar: targetUser?.avatar || undefined,
-            requestId: requestId || undefined,
+            target: finalAgentId || item.target || item.target_agent_id,
+            targetAgentId: finalAgentId,
+            targetAgentName: finalAgentName,
+            targetAvatar: finalAvatar,
             timestamp: item.created_at || item.createdAt || item.timestamp
           };
         });
@@ -4380,35 +4391,72 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
 
     const dynamicFootprints: any[] = [];
 
-
-
-
-
     // 3. Fetch user's established connections
     try {
       const { data: conns } = await sb
         .from('connections')
-        .select('id, user1_agent_id, user2_agent_id, user1_id, user2_id, createdAt')
+        .select('id, user1_agent_id, user2_agent_id, user1_id, user2_id, user1_agent_name, user2_agent_name, createdAt')
         .or(`user1_id.eq.${targetUserId},user2_id.eq.${targetUserId},user1_agent_id.ilike.${targetAgentId},user2_agent_id.ilike.${targetAgentId}`)
         .order('createdAt', { ascending: false })
         .limit(30);
       if (conns && conns.length > 0) {
+        const peerLookupIds = new Set<string>();
+        conns.forEach((c: any) => {
+          const u1 = c.user1_id || c.postOwnerUserId;
+          const a1 = c.user1_agent_id || c.postOwnerAgentId;
+          const u2 = c.user2_id || c.replyAuthorUserId;
+          const a2 = c.user2_agent_id || c.replyAuthorAgentId;
+          const isU1 = u1 === targetUserId || (a1 && a1.toLowerCase() === targetAgentId.toLowerCase());
+          const peerUid = isU1 ? u2 : u1;
+          const peerAid = isU1 ? a2 : a1;
+          if (peerUid) peerLookupIds.add(peerUid);
+          if (peerAid) peerLookupIds.add(peerAid);
+        });
+
+        const connUserMap: Record<string, any> = {};
+        if (peerLookupIds.size > 0) {
+          try {
+            const idList = Array.from(peerLookupIds);
+            const { data: pUsers } = await sb
+              .from('users')
+              .select('id, agentId, name, avatar')
+              .or(`id.in.(${idList.map(id => `"${id}"`).join(',')}),agentId.in.(${idList.map(id => `"${id}"`).join(',')})`);
+            if (pUsers) {
+              pUsers.forEach((u: any) => {
+                connUserMap[u.id] = u;
+                if (u.agentId) connUserMap[u.agentId.toLowerCase()] = u;
+              });
+            }
+          } catch (e) {}
+        }
+
         conns.forEach((c: any) => {
           const key = `CONNECTION_ESTABLISHED:${c.id}`;
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
             const u1 = c.user1_id || c.postOwnerUserId;
             const a1 = c.user1_agent_id || c.postOwnerAgentId;
+            const u2 = c.user2_id || c.replyAuthorUserId;
             const a2 = c.user2_agent_id || c.replyAuthorAgentId;
-            const peer = (u1 === targetUserId || (a1 && a1.toLowerCase() === targetAgentId.toLowerCase()))
-              ? a2
-              : a1;
+            const isU1 = u1 === targetUserId || (a1 && a1.toLowerCase() === targetAgentId.toLowerCase());
+            const peerAid = isU1 ? a2 : a1;
+            const peerUid = isU1 ? u2 : u1;
+            const peerNameFallback = isU1 ? c.user2_agent_name : c.user1_agent_name;
+            const peerUser = connUserMap[peerUid] || (peerAid ? connUserMap[peerAid.toLowerCase()] : null);
+
+            const finalPeerAgentId = peerUser?.agentId || peerAid || 'peer_node';
+            const finalPeerName = peerUser?.name || peerNameFallback || finalPeerAgentId;
+            const finalPeerAvatar = peerUser?.avatar;
+
             dynamicFootprints.push({
               id: `fp_conn_${c.id}`,
               action: 'CONNECTION_ESTABLISHED',
               endpoint: 'POST /api/connections',
-              target: c.id,
-              details: `Established link with agent ${peer || 'peer_node'}`,
+              target: finalPeerAgentId,
+              targetAgentId: finalPeerAgentId,
+              targetAgentName: finalPeerName,
+              targetAvatar: finalPeerAvatar,
+              details: `Established link with agent ${finalPeerAgentId}`,
               timestamp: c.createdAt
             });
           }
@@ -4425,15 +4473,39 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
         .order('createdAt', { ascending: false })
         .limit(30);
       if (sentMsgs && sentMsgs.length > 0) {
+        const cIds = Array.from(new Set(sentMsgs.map((m: any) => m.connectionId).filter(Boolean)));
+        let connsMap: Record<string, any> = {};
+        if (cIds.length > 0) {
+          try {
+            const { data: mConns } = await sb
+              .from('connections')
+              .select('id, user1_id, user2_id, user1_agent_id, user2_agent_id, user1_agent_name, user2_agent_name')
+              .in('id', cIds);
+            if (mConns) {
+              mConns.forEach((c: any) => { connsMap[c.id] = c; });
+            }
+          } catch (e) {}
+        }
+
         sentMsgs.forEach((m: any) => {
           const key = `MESSAGE_SENT:${m.id}`;
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
+            const c = connsMap[m.connectionId];
+            let peerAid: string | undefined;
+            let peerName: string | undefined;
+            if (c) {
+              const isU1 = c.user1_id === targetUserId || (c.user1_agent_id && c.user1_agent_id.toLowerCase() === targetAgentId.toLowerCase());
+              peerAid = isU1 ? c.user2_agent_id : c.user1_agent_id;
+              peerName = isU1 ? c.user2_agent_name : c.user1_agent_name;
+            }
             dynamicFootprints.push({
               id: `fp_msg_${m.id}`,
               action: 'MESSAGE_SENT',
               endpoint: `POST /api/connections/${m.connectionId}/messages`,
-              target: m.connectionId,
+              target: peerAid || m.connectionId,
+              targetAgentId: peerAid,
+              targetAgentName: peerName || peerAid,
               details: 'Transmitted secure end-to-end encrypted payload',
               timestamp: m.createdAt
             });
@@ -4451,15 +4523,29 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
         .order('createdAt', { ascending: false })
         .limit(30);
       if (submittedReviews && submittedReviews.length > 0) {
+        const revAgentIds = Array.from(new Set(submittedReviews.map((r: any) => r.targetAgentId).filter(Boolean)));
+        const revUserMap: Record<string, any> = {};
+        if (revAgentIds.length > 0) {
+          try {
+            const { data: rUsers } = await sb.from('users').select('agentId, name, avatar').in('agentId', revAgentIds);
+            if (rUsers) {
+              rUsers.forEach((u: any) => { revUserMap[u.agentId] = u; });
+            }
+          } catch (e) {}
+        }
         submittedReviews.forEach((rev: any) => {
           const key = `PEER_REVIEW:${rev.id}`;
           if (!seenKeys.has(key)) {
             seenKeys.add(key);
+            const u = revUserMap[rev.targetAgentId];
             dynamicFootprints.push({
               id: `fp_rev_${rev.id}`,
               action: 'PEER_REVIEW',
               endpoint: 'POST /api/reviews',
-              target: rev.connectionId,
+              target: rev.targetAgentId || rev.connectionId,
+              targetAgentId: rev.targetAgentId,
+              targetAgentName: u?.name || rev.targetAgentId,
+              targetAvatar: u?.avatar,
               details: `Submitted review for agent ${rev.targetAgentId}`,
               timestamp: rev.createdAt
             });
@@ -4486,6 +4572,8 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
               action: 'CLUSTER_CREATED',
               endpoint: 'POST /api/clusters',
               target: cl.id,
+              targetAgentId: cl.ownerAgentId || targetAgentId,
+              targetAgentName: cl.name,
               details: `Provisioned cluster enclave "${cl.name}"`,
               timestamp: cl.createdAt || cl.created_at || new Date().toISOString()
             });
@@ -4498,7 +4586,7 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
     try {
       const { data: userRec } = await sb
         .from('users')
-        .select('id, agentId, name, createdAt, created_at')
+        .select('id, agentId, name, avatar, createdAt, created_at')
         .eq('id', targetUserId)
         .maybeSingle();
       if (userRec) {
@@ -4510,6 +4598,9 @@ router.get('/agent/footprints', requireUserOrAgentAuth, securityLayer('public_re
             action: 'PROFILE_UPDATED',
             endpoint: 'PATCH /api/agents/me',
             target: userRec.agentId || userRec.id,
+            targetAgentId: userRec.agentId,
+            targetAgentName: userRec.name,
+            targetAvatar: userRec.avatar,
             details: `Initialized autonomous agent node identity @${userRec.agentId || 'agent'}`,
             timestamp: userRec.createdAt || userRec.created_at || new Date().toISOString()
           });
@@ -4623,6 +4714,50 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
           'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED', 'COUNTER_PARTY_REVIEW', 'PEER_REVIEW',
           'MESSAGE_SENT', 'CLUSTER_MESSAGE_SENT', 'CLUSTER_CREATED'
         ];
+
+        // Collect all IDs to resolve
+        const idsToResolve = new Set<string>();
+        data.forEach((item: any) => {
+          let detailsObj: any = item.details;
+          if (typeof detailsObj === 'string') {
+            try { detailsObj = JSON.parse(detailsObj); } catch (e) {}
+          }
+          if (item.sender_id) idsToResolve.add(item.sender_id);
+          if (item.target_id) idsToResolve.add(item.target_id);
+          if (detailsObj?.user_id) idsToResolve.add(detailsObj.user_id);
+          if (detailsObj?.agent_id) idsToResolve.add(detailsObj.agent_id);
+          if (detailsObj?.targetAgentId) idsToResolve.add(detailsObj.targetAgentId);
+          if (detailsObj?.senderAgentId) idsToResolve.add(detailsObj.senderAgentId);
+          if (Array.isArray(detailsObj?.target_account_ids)) {
+            detailsObj.target_account_ids.forEach((id: string) => idsToResolve.add(id));
+          }
+          if (Array.isArray(detailsObj?.target_accounts)) {
+            detailsObj.target_accounts.forEach((acc: any) => {
+              if (acc.id) idsToResolve.add(acc.id);
+              if (acc.agent_id) idsToResolve.add(acc.agent_id);
+            });
+          }
+        });
+
+        const usersMap: Record<string, any> = {};
+        if (idsToResolve.size > 0) {
+          try {
+            const idList = Array.from(idsToResolve);
+            const { data: matchedUsers } = await sb
+              .from('users')
+              .select('id, agentId, name, avatar')
+              .or(`id.in.(${idList.map(id => `"${id}"`).join(',')}),agentId.in.(${idList.map(id => `"${id}"`).join(',')})`);
+            if (matchedUsers) {
+              matchedUsers.forEach((u: any) => {
+                usersMap[u.id] = u;
+                if (u.agentId) {
+                  usersMap[u.agentId] = u;
+                  usersMap[u.agentId.toLowerCase()] = u;
+                }
+              });
+            }
+          } catch (e) {}
+        }
         
         events = data
           .filter((item: any) => {
@@ -4634,15 +4769,63 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
             }
             return true;
           })
-          .map((item: any) => ({
-            id: item.id,
-            type: item.type || item.event_type,
-            category: 'event',
-            senderId: item.sender_id || item.senderId,
-            targetId: item.target_id || item.targetId,
-            details: item.details || item.content,
-            timestamp: item.created_at || item.createdAt || item.timestamp
-          }));
+          .map((item: any) => {
+            let detailsObj: any = item.details;
+            if (typeof detailsObj === 'string') {
+              try { detailsObj = JSON.parse(detailsObj); } catch (e) {}
+            }
+
+            const rawSender = item.sender_id || item.senderId;
+            const senderUser = rawSender ? (usersMap[rawSender] || usersMap[rawSender.toLowerCase()]) : null;
+
+            let resolvedTargetAgentId: string | undefined = undefined;
+            let resolvedTargetName: string | undefined = undefined;
+            let resolvedTargetAvatar: string | undefined = undefined;
+
+            if (item.type === 'SLAVE_CAPABILITY_BATCH_ACTIVATED' || item.type === 'SLAVE_CAPABILITY_ACTIVATED') {
+              let candidateAcc: any = null;
+              if (Array.isArray(detailsObj?.target_accounts) && detailsObj.target_accounts.length > 0) {
+                candidateAcc = detailsObj.target_accounts.find((a: any) => 
+                  (a.agent_id && a.agent_id.toLowerCase() === targetAgentId.toLowerCase()) ||
+                  (a.id && a.id === targetUserId)
+                ) || detailsObj.target_accounts[0];
+              }
+
+              if (candidateAcc) {
+                const u = usersMap[candidateAcc.id] || (candidateAcc.agent_id ? usersMap[candidateAcc.agent_id.toLowerCase()] : null);
+                resolvedTargetAgentId = candidateAcc.agent_id || u?.agentId || candidateAcc.id;
+                resolvedTargetName = u?.name || candidateAcc.name || resolvedTargetAgentId;
+                resolvedTargetAvatar = u?.avatar || candidateAcc.avatar;
+              } else if (item.target_id || detailsObj?.agent_id) {
+                const candId = detailsObj?.agent_id || item.target_id;
+                const u = usersMap[candId] || usersMap[candId.toLowerCase()];
+                resolvedTargetAgentId = u?.agentId || candId;
+                resolvedTargetName = u?.name || resolvedTargetAgentId;
+                resolvedTargetAvatar = u?.avatar;
+              }
+            } else if (item.target_id) {
+              const u = usersMap[item.target_id] || usersMap[item.target_id.toLowerCase()];
+              resolvedTargetAgentId = u?.agentId || item.target_id;
+              resolvedTargetName = u?.name || resolvedTargetAgentId;
+              resolvedTargetAvatar = u?.avatar;
+            }
+
+            return {
+              id: item.id,
+              type: item.type || item.event_type,
+              category: 'event',
+              senderId: senderUser?.agentId || rawSender,
+              senderAgentId: senderUser?.agentId || rawSender,
+              senderAgentName: senderUser?.name,
+              senderAvatar: senderUser?.avatar,
+              targetId: resolvedTargetAgentId || item.target_id || item.targetId,
+              targetAgentId: resolvedTargetAgentId,
+              targetAgentName: resolvedTargetName,
+              targetAvatar: resolvedTargetAvatar,
+              details: item.details || item.content,
+              timestamp: item.created_at || item.createdAt || item.timestamp
+            };
+          });
       }
     } catch (e) {
       // Table may not exist yet in Supabase
@@ -4667,7 +4850,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
       let conns: any[] = [];
       const { data: c1, error: e1 } = await sb
         .from('connections')
-        .select('*')
+        .select('id, user1_id, user2_id, user1_agent_id, user2_agent_id, user1_agent_name, user2_agent_name, createdAt, created_at')
         .or(`user1_id.eq.${targetUserId},user2_id.eq.${targetUserId},user1_agent_id.ilike.${targetAgentId},user2_agent_id.ilike.${targetAgentId}`)
         .order('createdAt', { ascending: false })
         .limit(30);
@@ -4675,21 +4858,62 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
         conns = c1;
       }
       if (conns && conns.length > 0) {
+        const peerLookupIds = new Set<string>();
         conns.forEach((c: any) => {
           const u1 = c.user1_id || c.postOwnerUserId;
           const a1 = c.user1_agent_id || c.postOwnerAgentId;
+          const u2 = c.user2_id || c.replyAuthorUserId;
           const a2 = c.user2_agent_id || c.replyAuthorAgentId;
           const isMeU1 = u1 === targetUserId || (a1 && a1.toLowerCase() === targetAgentId.toLowerCase());
-          const peer = isMeU1 ? a2 : a1;
+          const peerUid = isMeU1 ? u2 : u1;
+          const peerAid = isMeU1 ? a2 : a1;
+          if (peerUid) peerLookupIds.add(peerUid);
+          if (peerAid) peerLookupIds.add(peerAid);
+        });
+
+        const connUserMap: Record<string, any> = {};
+        if (peerLookupIds.size > 0) {
+          try {
+            const idList = Array.from(peerLookupIds);
+            const { data: pUsers } = await sb
+              .from('users')
+              .select('id, agentId, name, avatar')
+              .or(`id.in.(${idList.map(id => `"${id}"`).join(',')}),agentId.in.(${idList.map(id => `"${id}"`).join(',')})`);
+            if (pUsers) {
+              pUsers.forEach((u: any) => {
+                connUserMap[u.id] = u;
+                if (u.agentId) connUserMap[u.agentId.toLowerCase()] = u;
+              });
+            }
+          } catch (e) {}
+        }
+
+        conns.forEach((c: any) => {
+          const u1 = c.user1_id || c.postOwnerUserId;
+          const a1 = c.user1_agent_id || c.postOwnerAgentId;
+          const u2 = c.user2_id || c.replyAuthorUserId;
+          const a2 = c.user2_agent_id || c.replyAuthorAgentId;
+          const isMeU1 = u1 === targetUserId || (a1 && a1.toLowerCase() === targetAgentId.toLowerCase());
+          const peerAid = isMeU1 ? a2 : a1;
+          const peerUid = isMeU1 ? u2 : u1;
+          const peerNameFallback = isMeU1 ? c.user2_agent_name : c.user1_agent_name;
+          const peerUser = connUserMap[peerUid] || (peerAid ? connUserMap[peerAid.toLowerCase()] : null);
+          const finalPeerAgentId = peerUser?.agentId || peerAid || 'peer_node';
+          const finalPeerName = peerUser?.name || peerNameFallback || finalPeerAgentId;
+          const finalPeerAvatar = peerUser?.avatar;
+
           const key = `CONNECTION_ACCEPTED_BY_TARGET:${c.id}`;
           if (!seenEventKeys.has(key)) {
             seenEventKeys.add(key);
             dynamicEvents.push({
               id: `evt_conn_${c.id}`,
               type: 'CONNECTION_ACCEPTED_BY_TARGET',
-              senderId: peer || 'peer_node',
+              senderId: finalPeerAgentId,
+              senderAgentId: finalPeerAgentId,
+              senderAgentName: finalPeerName,
+              senderAvatar: finalPeerAvatar,
               targetId: c.id,
-              details: `Peer agent @${peer || 'peer_node'} established connection link`,
+              details: `Peer agent @${finalPeerAgentId} established connection link`,
               timestamp: c.createdAt || c.created_at
             });
           }
@@ -4701,7 +4925,7 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
     try {
       const { data: userConns } = await sb
         .from('connections')
-        .select('id, user1_id, user2_id, user1_agent_id, user2_agent_id')
+        .select('id, user1_id, user2_id, user1_agent_id, user2_agent_id, user1_agent_name, user2_agent_name')
         .or(`user1_id.eq.${targetUserId},user2_id.eq.${targetUserId},user1_agent_id.ilike.${targetAgentId},user2_agent_id.ilike.${targetAgentId}`);
       if (userConns && userConns.length > 0) {
         const connIds = userConns.map((c: any) => c.id);
@@ -4713,14 +4937,36 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
           .order('createdAt', { ascending: false })
           .limit(30);
         if (incomingMsgs && incomingMsgs.length > 0) {
+          const senderIds = Array.from(new Set(incomingMsgs.map((m: any) => m.senderUserId || m.senderAgentId).filter(Boolean)));
+          const msgUserMap: Record<string, any> = {};
+          if (senderIds.length > 0) {
+            try {
+              const { data: mUsers } = await sb.from('users').select('id, agentId, name, avatar').or(`id.in.(${senderIds.map(id => `"${id}"`).join(',')}),agentId.in.(${senderIds.map(id => `"${id}"`).join(',')})`);
+              if (mUsers) {
+                mUsers.forEach((u: any) => {
+                  msgUserMap[u.id] = u;
+                  if (u.agentId) msgUserMap[u.agentId.toLowerCase()] = u;
+                });
+              }
+            } catch (e) {}
+          }
+
           incomingMsgs.forEach((m: any) => {
             const key = `MESSAGE_RECEIVED:${m.id}`;
             if (!seenEventKeys.has(key)) {
               seenEventKeys.add(key);
+              const u = msgUserMap[m.senderUserId] || (m.senderAgentId ? msgUserMap[m.senderAgentId.toLowerCase()] : null);
+              const senderAid = u?.agentId || m.senderAgentId || m.senderUserId;
+              const senderName = u?.name || senderAid;
+              const senderAvatar = u?.avatar;
+
               dynamicEvents.push({
                 id: `evt_msg_${m.id}`,
                 type: 'MESSAGE_RECEIVED',
-                senderId: m.senderAgentId || m.senderUserId,
+                senderId: senderAid,
+                senderAgentId: senderAid,
+                senderAgentName: senderName,
+                senderAvatar: senderAvatar,
                 targetId: m.connectionId,
                 details: 'Encrypted telemetry transmission received from connected peer',
                 timestamp: m.createdAt
@@ -4741,14 +4987,36 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
         .order('createdAt', { ascending: false })
         .limit(30);
       if (incomingReviews && incomingReviews.length > 0) {
+        const revUserIds = Array.from(new Set(incomingReviews.map((r: any) => r.reviewerUserId || r.reviewerAgentId).filter(Boolean)));
+        const revUserMap: Record<string, any> = {};
+        if (revUserIds.length > 0) {
+          try {
+            const { data: rUsers } = await sb.from('users').select('id, agentId, name, avatar').or(`id.in.(${revUserIds.map(id => `"${id}"`).join(',')}),agentId.in.(${revUserIds.map(id => `"${id}"`).join(',')})`);
+            if (rUsers) {
+              rUsers.forEach((u: any) => {
+                revUserMap[u.id] = u;
+                if (u.agentId) revUserMap[u.agentId.toLowerCase()] = u;
+              });
+            }
+          } catch (e) {}
+        }
+
         incomingReviews.forEach((rev: any) => {
           const key = `PEER_REVIEW_RECEIVED:${rev.id}`;
           if (!seenEventKeys.has(key)) {
             seenEventKeys.add(key);
+            const u = revUserMap[rev.reviewerUserId] || (rev.reviewerAgentId ? revUserMap[rev.reviewerAgentId.toLowerCase()] : null);
+            const reviewerAid = u?.agentId || rev.reviewerAgentId;
+            const reviewerName = u?.name || reviewerAid;
+            const reviewerAvatar = u?.avatar;
+
             dynamicEvents.push({
               id: `evt_rev_${rev.id}`,
               type: 'PEER_REVIEW_RECEIVED',
-              senderId: rev.reviewerAgentId,
+              senderId: reviewerAid,
+              senderAgentId: reviewerAid,
+              senderAgentName: reviewerName,
+              senderAvatar: reviewerAvatar,
               targetId: rev.connectionId,
               details: rev.comment ? (rev.comment.length > 60 ? rev.comment.slice(0, 60) + '...' : rev.comment) : 'Peer review received from network partner',
               timestamp: rev.createdAt
@@ -4757,8 +5025,6 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
         });
       }
     } catch (e) {}
-
-
 
     // 6. Incoming cluster enclave messages from peers
     try {
@@ -4776,14 +5042,36 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
           .order('createdAt', { ascending: false })
           .limit(30);
         if (incomingClusterMsgs && incomingClusterMsgs.length > 0) {
+          const clSenderIds = Array.from(new Set(incomingClusterMsgs.map((cm: any) => cm.senderUserId || cm.senderAgentId).filter(Boolean)));
+          const clUserMap: Record<string, any> = {};
+          if (clSenderIds.length > 0) {
+            try {
+              const { data: cUsers } = await sb.from('users').select('id, agentId, name, avatar').or(`id.in.(${clSenderIds.map(id => `"${id}"`).join(',')}),agentId.in.(${clSenderIds.map(id => `"${id}"`).join(',')})`);
+              if (cUsers) {
+                cUsers.forEach((u: any) => {
+                  clUserMap[u.id] = u;
+                  if (u.agentId) clUserMap[u.agentId.toLowerCase()] = u;
+                });
+              }
+            } catch (e) {}
+          }
+
           incomingClusterMsgs.forEach((cm: any) => {
             const key = `CLUSTER_MESSAGE_RECEIVED:${cm.id}`;
             if (!seenEventKeys.has(key)) {
               seenEventKeys.add(key);
+              const u = clUserMap[cm.senderUserId] || (cm.senderAgentId ? clUserMap[cm.senderAgentId.toLowerCase()] : null);
+              const clSenderAid = u?.agentId || cm.senderAgentId || cm.senderUserId;
+              const clSenderName = u?.name || clSenderAid;
+              const clSenderAvatar = u?.avatar;
+
               dynamicEvents.push({
                 id: `evt_cl_msg_${cm.id}`,
                 type: 'CLUSTER_MESSAGE_RECEIVED',
-                senderId: cm.senderAgentId || cm.senderUserId,
+                senderId: clSenderAid,
+                senderAgentId: clSenderAid,
+                senderAgentName: clSenderName,
+                senderAvatar: clSenderAvatar,
                 targetId: cm.clusterId,
                 details: 'Encrypted cluster enclave transmission received',
                 timestamp: cm.createdAt || cm.created_at
@@ -4810,16 +5098,38 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
           .order('joinedAt', { ascending: false })
           .limit(30);
         if (memberActivity && memberActivity.length > 0) {
+          const memIds = Array.from(new Set(memberActivity.map((ma: any) => ma.userId || ma.agentId).filter(Boolean)));
+          const memUserMap: Record<string, any> = {};
+          if (memIds.length > 0) {
+            try {
+              const { data: mUsers } = await sb.from('users').select('id, agentId, name, avatar').or(`id.in.(${memIds.map(id => `"${id}"`).join(',')}),agentId.in.(${memIds.map(id => `"${id}"`).join(',')})`);
+              if (mUsers) {
+                mUsers.forEach((u: any) => {
+                  memUserMap[u.id] = u;
+                  if (u.agentId) memUserMap[u.agentId.toLowerCase()] = u;
+                });
+              }
+            } catch (e) {}
+          }
+
           memberActivity.forEach((ma: any) => {
             const isLeft = ma.status === 'dissolved' || ma.status === 'left';
             const eventType = isLeft ? 'CLUSTER_MEMBER_LEFT' : 'CLUSTER_MEMBER_JOINED';
             const key = `${eventType}:${ma.id}`;
             if (!seenEventKeys.has(key)) {
               seenEventKeys.add(key);
+              const u = memUserMap[ma.userId] || (ma.agentId ? memUserMap[ma.agentId.toLowerCase()] : null);
+              const memAid = u?.agentId || ma.agentId || ma.userId;
+              const memName = u?.name || memAid;
+              const memAvatar = u?.avatar;
+
               dynamicEvents.push({
                 id: `evt_cl_mem_${ma.id}`,
                 type: eventType,
-                senderId: ma.agentId || ma.userId,
+                senderId: memAid,
+                senderAgentId: memAid,
+                senderAgentName: memName,
+                senderAvatar: memAvatar,
                 targetId: ma.clusterId,
                 details: isLeft ? 'Member exited cluster enclave' : 'New member joined cluster enclave',
                 timestamp: ma.joinedAt || ma.joined_at || new Date().toISOString()

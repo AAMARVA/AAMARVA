@@ -17,6 +17,9 @@ interface LogItem {
   content?: any;
   type?: string;
   senderId?: string;
+  senderAgentId?: string;
+  senderAgentName?: string;
+  senderAvatar?: string;
   target?: string;
   targetId?: string;
   targetAgentId?: string;
@@ -411,11 +414,19 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     return (key ? FOOTPRINT_ENDPOINTS[key] : null) || 'POST /api/agent/footprints';
   };
 
+  const isUuid = (val?: string | null): boolean => {
+    if (!val || typeof val !== 'string') return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+  };
+
   const resolveLogEntities = (log: LogItem) => {
+    const isWebhook = activeTab === 'webhooks';
     const detailsObj = typeof log.details === 'object' && log.details !== null ? log.details : {};
-    const detailsStr = typeof log.details === 'string' ? log.details : (detailsObj?.message || detailsObj?.details || '');
+    const detailsStr = typeof log.details === 'string'
+      ? log.details
+      : (detailsObj?.message || detailsObj?.details || detailsObj?.text || '');
     const actionKey = (log.action || log.type || '').toUpperCase();
-    const rawTarget = log.target || log.targetId || detailsObj?.targetId;
+    const rawTarget = (log.target || log.targetId || detailsObj?.targetId || '').trim();
 
     const isRequestAction = 
       actionKey.includes('CONNECTION_REQUEST') ||
@@ -435,48 +446,114 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       requestId = log.id.replace(/^fp_req_/, '');
     }
 
-    // 2. Identify agent ID
+    // 2. Identify agent ID, display name, and avatar
     let agentId: string | null = null;
-    if (log.targetAgentId) {
-      agentId = log.targetAgentId;
-    } else if (detailsObj?.targetAgentId) {
-      agentId = detailsObj.targetAgentId;
-    } else if (detailsObj?.receiverAgentId) {
-      agentId = detailsObj.receiverAgentId;
-    } else if (detailsObj?.senderAgentId) {
-      agentId = detailsObj.senderAgentId;
-    } else if (log.senderId && !log.senderId.toLowerCase().startsWith('req_')) {
-      agentId = log.senderId;
-    } else if (
-      rawTarget && 
-      !rawTarget.toLowerCase().startsWith('req_') && 
-      !rawTarget.toUpperCase().startsWith('REQ_') && 
-      !rawTarget.toLowerCase().startsWith('post_') && 
-      !rawTarget.toLowerCase().startsWith('cluster_')
-    ) {
-      agentId = rawTarget;
-    }
+    let agentName: string | null = null;
+    let agentAvatar: string | null = null;
 
-    // If agentId is still empty, parse from details string (e.g. "Initiated handshake with agent AMR-FEZV-4FCC")
-    if (!agentId && detailsStr) {
-      const match = detailsStr.match(/(?:handshake with agent|with agent|to agent|from agent|agent)\s+([A-Za-z0-9_-]+)/i);
-      if (match && match[1] && !match[1].toLowerCase().startsWith('req_')) {
-        agentId = match[1];
+    if (isWebhook) {
+      // Inbound webhook event
+      if (actionKey.includes('CAPABILITY') || actionKey.includes('SLAVE_CAPABILITY')) {
+        let candidateAcc: any = null;
+        if (Array.isArray(detailsObj?.target_accounts) && detailsObj.target_accounts.length > 0) {
+          candidateAcc = detailsObj.target_accounts.find((a: any) =>
+            (a.agent_id && (a.agent_id === activeAccount?.agentId || a.agent_id === user?.agentId)) ||
+            (a.id && (a.id === activeAccount?.id || a.id === user?.id))
+          ) || detailsObj.target_accounts[0];
+        }
+        if (candidateAcc) {
+          agentId = candidateAcc.agent_id || candidateAcc.agentId || candidateAcc.id;
+          agentName = candidateAcc.name || candidateAcc.agentName || candidateAcc.agent_id;
+          agentAvatar = candidateAcc.avatar || null;
+        } else if (log.targetAgentId) {
+          agentId = log.targetAgentId;
+          agentName = log.targetAgentName || null;
+          agentAvatar = log.targetAvatar || null;
+        } else if (detailsObj?.agent_id) {
+          agentId = detailsObj.agent_id;
+          agentName = detailsObj.name || detailsObj.agentName || detailsObj.agent_id;
+          agentAvatar = detailsObj.avatar || null;
+        }
+      } else {
+        // Other inbound events: peer sender
+        agentId = log.senderAgentId || log.senderId || detailsObj?.senderAgentId || detailsObj?.senderId || detailsObj?.reviewerAgentId || null;
+        agentName = log.senderAgentName || detailsObj?.senderAgentName || detailsObj?.senderName || detailsObj?.reviewerName || null;
+        agentAvatar = log.senderAvatar || detailsObj?.senderAvatar || null;
+      }
+    } else {
+      // Outbound footprint
+      if (actionKey.includes('PROFILE')) {
+        const cur = activeAccount || user;
+        agentId = cur?.agentId || cur?.id || null;
+        agentName = cur?.name || cur?.agentId || 'Agent';
+        agentAvatar = cur?.avatar || null;
+      } else {
+        agentId = log.targetAgentId || detailsObj?.targetAgentId || detailsObj?.receiverAgentId || null;
+        agentName = log.targetAgentName || detailsObj?.targetAgentName || detailsObj?.receiverAgentName || null;
+        agentAvatar = log.targetAvatar || detailsObj?.targetAvatar || detailsObj?.receiverAvatar || null;
       }
     }
 
-    let agentName = log.targetAgentName || detailsObj?.targetAgentName || detailsObj?.receiverAgentName || detailsObj?.senderAgentName || detailsObj?.agentName || detailsObj?.peerName || null;
-    let agentAvatar = log.targetAvatar || detailsObj?.targetAvatar || detailsObj?.receiverAvatar || detailsObj?.senderAvatar || detailsObj?.avatar || null;
+    // If agentId is empty or a UUID or generic 'agent', check details string for AMR-XXXX-XXXX
+    if ((!agentId || isUuid(agentId) || agentId.toLowerCase() === 'agent') && detailsStr) {
+      const amrMatch = detailsStr.match(/(?:handshake with agent|with agent|to agent|from agent|for agent|target:\s*@?|agent)\s+([A-Za-z0-9_-]+)/i) || detailsStr.match(/(AMR-[A-Za-z0-9_-]+)/i);
+      if (amrMatch && amrMatch[1] && !amrMatch[1].toLowerCase().startsWith('req_')) {
+        agentId = amrMatch[1].replace(/^@/, '');
+        if (!agentName || isUuid(agentName) || agentName === 'Agent') {
+          agentName = agentId;
+        }
+      }
+    }
+
+    // Check connections to resolve agentId, agentName, and avatar (especially if UUID or empty)
+    if (connections && connections.length > 0) {
+      const searchKey = String(agentId || rawTarget || log.senderId || '').toLowerCase();
+      if (searchKey) {
+        const match = connections.find((c: any) => {
+          const cId = String(c.id || c.connectionId || '').toLowerCase();
+          const cAgentId = String(c.agentId || c.peerAgentId || '').toLowerCase();
+          const u1Id = String(c.user1_id || '').toLowerCase();
+          const u2Id = String(c.user2_id || '').toLowerCase();
+          const a1 = String(c.user1_agent_id || '').toLowerCase();
+          const a2 = String(c.user2_agent_id || '').toLowerCase();
+          return (
+            cId === searchKey ||
+            cAgentId === searchKey ||
+            u1Id === searchKey ||
+            u2Id === searchKey ||
+            a1 === searchKey ||
+            a2 === searchKey
+          );
+        });
+
+        if (match) {
+          const isU1 = match.user1_id === user?.id || (match.user1_agent_id && match.user1_agent_id.toLowerCase() === (user?.agentId || '').toLowerCase());
+          const peerId = match.agentId || match.peerAgentId || (isU1 ? match.user2_agent_id : match.user1_agent_id) || match.id;
+          const peerName = match.agentName || match.peerName || (isU1 ? match.user2_agent_name : match.user1_agent_name) || peerId;
+          const peerAvatar = match.avatar || match.peerAvatar || (isU1 ? match.user2_avatar : match.user1_avatar);
+
+          if (!agentId || isUuid(agentId) || agentId.toLowerCase() === 'agent') {
+            agentId = peerId;
+          }
+          if (!agentName || isUuid(agentName) || agentName === 'Agent' || agentName === agentId) {
+            agentName = peerName;
+          }
+          if (!agentAvatar) {
+            agentAvatar = peerAvatar;
+          }
+        }
+      }
+    }
 
     // Check pending requests
     if (requestId && pendingRequests && pendingRequests.length > 0) {
       const cleanReqId = requestId.toLowerCase();
       const matchedReq = pendingRequests.find((pr: any) => String(pr.id || '').toLowerCase() === cleanReqId);
       if (matchedReq) {
-        if (!agentId) {
+        if (!agentId || isUuid(agentId)) {
           agentId = matchedReq.receiverAgentId || matchedReq.senderAgentId;
         }
-        if (!agentName) {
+        if (!agentName || isUuid(agentName)) {
           agentName = matchedReq.receiverAgentName || matchedReq.senderAgentName;
         }
         if (!agentAvatar) {
@@ -485,18 +562,9 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       }
     }
 
-    // Check connections
-    if (agentId && connections && connections.length > 0) {
-      const cleanAgentId = agentId.toLowerCase();
-      const match = connections.find((c: any) => {
-        const cId = String(c.id || c.connectionId || '').toLowerCase();
-        const cAgentId = String(c.agentId || '').toLowerCase();
-        return cId === cleanAgentId || cAgentId === cleanAgentId;
-      });
-      if (match) {
-        if (!agentName) agentName = match.agentName || match.peerName;
-        if (!agentAvatar) agentAvatar = match.avatar || match.peerAvatar;
-      }
+    // Fallback if rawTarget was a valid non-UUID handle
+    if (!agentId && rawTarget && !isUuid(rawTarget) && !rawTarget.toLowerCase().startsWith('req_') && !rawTarget.toLowerCase().startsWith('post_') && !rawTarget.toLowerCase().startsWith('cluster_')) {
+      agentId = rawTarget;
     }
 
     const isRequest = Boolean(isRequestAction || requestId);
@@ -505,7 +573,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
       isRequest,
       requestId,
       agentId,
-      agentName: agentName || agentId || 'Agent',
+      agentName: (agentName && !isUuid(agentName)) ? agentName : (agentId && !isUuid(agentId) ? agentId : 'Agent'),
       agentAvatar
     };
   };
@@ -514,7 +582,8 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     if (!rawAgentId && !details) return null;
 
     const detailsObj = typeof details === 'object' && details !== null ? details : {};
-    const finalAgentId = rawAgentId || detailsObj?.agentId || detailsObj?.targetAgentId || detailsObj?.receiverAgentId || detailsObj?.senderAgentId || 'agent';
+    const detailsStr = typeof details === 'string' ? details : (detailsObj?.message || detailsObj?.details || detailsObj?.text || '');
+    let finalAgentId = rawAgentId || detailsObj?.agentId || detailsObj?.targetAgentId || detailsObj?.receiverAgentId || detailsObj?.senderAgentId || '';
 
     // If finalAgentId is a request ID or cluster or post, don't render it as an agent
     if (
@@ -529,20 +598,83 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     let displayName = agentName || detailsObj?.agentName || detailsObj?.targetAgentName || detailsObj?.receiverAgentName || detailsObj?.senderAgentName || detailsObj?.name;
     let resolvedAvatar = avatar || detailsObj?.avatar || detailsObj?.targetAvatar || detailsObj?.receiverAvatar || detailsObj?.senderAvatar;
 
-    if ((!displayName || !resolvedAvatar) && connections && connections.length > 0) {
-      const searchKey = finalAgentId.toLowerCase();
-      const match = connections.find((c: any) => {
-        const cId = String(c.id || c.connectionId || '').toLowerCase();
-        const cAgentId = String(c.agentId || '').toLowerCase();
-        return cId === searchKey || cAgentId === searchKey;
-      });
-      if (match) {
-        if (!displayName) displayName = match.agentName || match.peerName;
-        if (!resolvedAvatar) resolvedAvatar = match.avatar || match.peerAvatar;
+    // Check capability target accounts if finalAgentId is missing, UUID, or generic 'agent'
+    if (!finalAgentId || isUuid(finalAgentId) || finalAgentId.toLowerCase() === 'agent') {
+      if (Array.isArray(detailsObj?.target_accounts) && detailsObj.target_accounts.length > 0) {
+        const targetAcc = detailsObj.target_accounts.find((a: any) => 
+          (a.agent_id && (a.agent_id === activeAccount?.agentId || a.agent_id === user?.agentId)) ||
+          (a.id && (a.id === activeAccount?.id || a.id === user?.id))
+        ) || detailsObj.target_accounts[0];
+        if (targetAcc) {
+          finalAgentId = targetAcc.agent_id || targetAcc.agentId || targetAcc.id;
+          if (!displayName || isUuid(displayName) || displayName === 'Agent') {
+            displayName = targetAcc.name || targetAcc.agentName || finalAgentId;
+          }
+          if (!resolvedAvatar) {
+            resolvedAvatar = targetAcc.avatar;
+          }
+        }
       }
     }
 
-    const finalName = displayName || finalAgentId || 'Agent';
+    // Check if details contains AMR-XXXX-XXXX
+    if (!finalAgentId || isUuid(finalAgentId) || finalAgentId.toLowerCase() === 'agent') {
+      const amrMatch = detailsStr.match(/(AMR-[A-Za-z0-9_-]+)/i);
+      if (amrMatch) {
+        finalAgentId = amrMatch[1];
+        if (!displayName || isUuid(displayName) || displayName === 'Agent') {
+          displayName = amrMatch[1];
+        }
+      }
+    }
+
+    // Match against connections
+    if (connections && connections.length > 0) {
+      const searchKey = finalAgentId.toLowerCase();
+      const match = connections.find((c: any) => {
+        const cId = String(c.id || c.connectionId || '').toLowerCase();
+        const cAgentId = String(c.agentId || c.peerAgentId || '').toLowerCase();
+        const u1Id = String(c.user1_id || '').toLowerCase();
+        const u2Id = String(c.user2_id || '').toLowerCase();
+        const a1 = String(c.user1_agent_id || '').toLowerCase();
+        const a2 = String(c.user2_agent_id || '').toLowerCase();
+        return (
+          cId === searchKey ||
+          cAgentId === searchKey ||
+          u1Id === searchKey ||
+          u2Id === searchKey ||
+          a1 === searchKey ||
+          a2 === searchKey
+        );
+      });
+      if (match) {
+        const isU1 = match.user1_id === user?.id || (match.user1_agent_id && match.user1_agent_id.toLowerCase() === (user?.agentId || '').toLowerCase());
+        const peerId = match.agentId || match.peerAgentId || (isU1 ? match.user2_agent_id : match.user1_agent_id) || match.id;
+        const peerName = match.agentName || match.peerName || (isU1 ? match.user2_agent_name : match.user1_agent_name) || peerId;
+        const peerAvatar = match.avatar || match.peerAvatar || (isU1 ? match.user2_avatar : match.user1_avatar);
+
+        if (!finalAgentId || isUuid(finalAgentId) || finalAgentId.toLowerCase() === 'agent') {
+          finalAgentId = peerId;
+        }
+        if (!displayName || isUuid(displayName) || displayName === 'Agent' || displayName === finalAgentId) {
+          displayName = peerName;
+        }
+        if (!resolvedAvatar) {
+          resolvedAvatar = peerAvatar;
+        }
+      }
+    }
+
+    if (!finalAgentId) {
+      finalAgentId = 'agent';
+    }
+
+    // If displayName is still a UUID or empty, fall back cleanly to finalAgentId (or 'Agent Node' if finalAgentId is also UUID)
+    if (isUuid(displayName) || !displayName) {
+      displayName = isUuid(finalAgentId) ? 'Agent Node' : finalAgentId;
+    }
+
+    const finalName = displayName;
 
     return (
       <button

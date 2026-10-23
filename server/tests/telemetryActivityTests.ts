@@ -679,6 +679,92 @@ export async function runTelemetryActivityTests(): Promise<Record<string, { stat
       `Screenshot summary: ${screenshotSummaryOk}, Accounts: ${screenshotAccountsOk}, Validity: ${screenshotValidityOk}, No JSON leaked: ${noRawJsonLeaked}, Malformed handled: ${malformedHandled}, Unknown safe: ${unknownSafe}, Footprint preserved: ${footprintPreserved}`
     );
 
+    // =========================================================================
+    // TEST 18: Agent Profile Identity (Avatar, Name, Agent ID) in Footprints & Webhooks
+    // =========================================================================
+    const testConnId = `conn_test_identity_${ts}`;
+    await supabase.from('connections').insert({
+      id: testConnId,
+      user1_id: userA.id,
+      user1_agent_id: userA.agentId,
+      user1_agent_name: 'Telemetry Alpha Master',
+      user2_id: userB.id,
+      user2_agent_id: userB.agentId,
+      user2_agent_name: 'Telemetry Beta Master',
+      status: 'active',
+      createdAt: new Date().toISOString()
+    });
+
+    const testCapEventId = `evt_cap_test_id_${ts}`;
+    await supabase.from('external_events').insert({
+      id: testCapEventId,
+      user_id: userA.id,
+      type: 'SLAVE_CAPABILITY_BATCH_ACTIVATED',
+      details: JSON.stringify({
+        batch_id: `batch_${ts}`,
+        master_id: userA.id,
+        target_account_ids: [slaveAId],
+        target_accounts: [
+          {
+            id: slaveAId,
+            agent_id: `SLAVE-ALPHA-${ts}`,
+            name: 'Alpha Worker Slave',
+            avatar: 'robot_avatar.svg'
+          }
+        ],
+        accounts_count: 1,
+        validity_days: 30
+      }),
+      created_at: new Date().toISOString()
+    });
+
+    // 18a: Footprints connection event returns resolved targetAgentId, targetAgentName, and targetAvatar
+    const connFpRes = await helperFetch('/api/agent/footprints', {
+      headers: { 'Cookie': `aamarva_human_session=${sessionTokenA}` }
+    });
+    const fpData = connFpRes.json?.data || [];
+    const connFpItem = fpData.find((f: any) => f.action === 'CONNECTION_ESTABLISHED');
+    const isConnFpTargetResolved = Boolean(
+      connFpItem &&
+      connFpItem.targetAgentId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(connFpItem.targetAgentId) &&
+      connFpItem.targetAgentName &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(connFpItem.targetAgentName)
+    );
+
+    // 18b: Webhook events capability event returns resolved slave targetAgentId, targetAgentName, and targetAvatar
+    const whRes = await helperFetch('/api/webhooks/events', {
+      headers: { 'Cookie': `aamarva_human_session=${sessionTokenA}` }
+    });
+    const whData = whRes.json?.data || [];
+    const capWhItem = whData.find((w: any) => w.id === testCapEventId || (w.type === 'SLAVE_CAPABILITY_BATCH_ACTIVATED' && w.targetAgentId));
+    const isCapWhTargetResolved = Boolean(
+      capWhItem &&
+      capWhItem.targetAgentId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(capWhItem.targetAgentId) &&
+      capWhItem.targetAgentId.toLowerCase() !== 'agent' &&
+      capWhItem.targetAgentName &&
+      capWhItem.targetAgentName !== 'Agent' &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(capWhItem.targetAgentName)
+    );
+
+    // 18c: Webhook inbound connection event returns resolved senderAgentId, senderAgentName, and senderAvatar
+    const connWhItem = whData.find((w: any) => w.type === 'CONNECTION_ACCEPTED_BY_TARGET');
+    const isConnWhSenderResolved = Boolean(
+      connWhItem &&
+      connWhItem.senderAgentId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(connWhItem.senderAgentId) &&
+      connWhItem.senderAgentName &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(connWhItem.senderAgentName)
+    );
+
+    const test18Passed = Boolean(isConnFpTargetResolved && isCapWhTargetResolved && isConnWhSenderResolved);
+    recordResult(
+      'TEST 18: Agent Profile Identity (Avatar, Name, Agent ID) resolved without UUID leakage',
+      test18Passed,
+      `Footprint connection resolved: ${isConnFpTargetResolved}, Capability webhook target resolved: ${isCapWhTargetResolved}, Connection webhook sender resolved: ${isConnWhSenderResolved}`
+    );
+
   } catch (err: any) {
     console.error('Fatal error during telemetry activity tests:', err);
     recordResult('Telemetry Activity Tests Execution', false, err.message);
