@@ -4,7 +4,6 @@ import {
   Wrench,
   Plus,
   RefreshCw,
-  Search,
   AlertCircle,
   CheckCircle2,
   ExternalLink,
@@ -43,7 +42,6 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({ isSlaveAcc
   const [fleetAgents, setFleetAgents] = useState<FleetAgent[]>([]);
   const [pendingInvocations, setPendingInvocations] = useState<PendingInvocation[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -144,17 +142,10 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({ isSlaveAcc
   };
 
   const filteredServers = servers.filter((s) => {
-    const matchesSearch =
-      searchQuery.trim() === '' ||
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.endpoint.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.description && s.description.toLowerCase().includes(searchQuery.toLowerCase()));
-
-    const matchesStatus =
+    return (
       statusFilter === 'ALL' ||
-      s.status.toUpperCase() === statusFilter.toUpperCase();
-
-    return matchesSearch && matchesStatus;
+      s.status.toUpperCase() === statusFilter.toUpperCase()
+    );
   });
 
   return (
@@ -309,20 +300,8 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({ isSlaveAcc
         </div>
       )}
 
-      {/* Search, Filter & Refresh Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 bg-white border-2 border-[#141414]">
-        {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 text-[#141414]/50 absolute left-2.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Filter integrations by name, endpoint, or tool..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#FAF9F5] border border-[#141414] pl-8 pr-3 py-1.5 text-xs font-mono focus:outline-hidden"
-          />
-        </div>
-
+      {/* Filter & Refresh Bar */}
+      <div className="flex items-center justify-between gap-2.5 p-3 bg-white border-2 border-[#141414]">
         {/* Status Filters */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           {(['ALL', 'CONNECTED', 'ERROR', 'DISABLED'] as const).map((st) => (
@@ -330,7 +309,7 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({ isSlaveAcc
               key={st}
               type="button"
               onClick={() => setStatusFilter(st)}
-              className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider border transition-all ${
+              className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer ${
                 statusFilter === st
                   ? 'bg-[#141414] text-white border-[#141414]'
                   : 'bg-white text-[#141414] border-neutral-300 hover:border-[#141414]'
@@ -339,17 +318,17 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({ isSlaveAcc
               {st}
             </button>
           ))}
-
-          <button
-            type="button"
-            onClick={loadData}
-            disabled={isLoading}
-            className="p-1.5 bg-white border border-[#141414] hover:bg-neutral-100 transition-colors ml-1 cursor-pointer shrink-0"
-            title="Refresh status"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
         </div>
+
+        <button
+          type="button"
+          onClick={loadData}
+          disabled={isLoading}
+          className="p-1.5 bg-white border border-[#141414] hover:bg-neutral-100 transition-colors cursor-pointer shrink-0"
+          title="Refresh status"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
       {/* Area A: Inventory Table / List */}
@@ -362,13 +341,13 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({ isSlaveAcc
           <Server className="w-8 h-8 text-[#141414]/30 mx-auto" />
           <div className="space-y-1">
             <h3 className="text-xs font-black uppercase tracking-wider">
-              {searchQuery ? 'No matching integrations found' : 'No MCP servers configured on this floor'}
+              {statusFilter !== 'ALL' ? `No ${statusFilter.toLowerCase()} integrations found` : 'No MCP servers configured on this floor'}
             </h3>
             <p className="text-[10px] text-[#141414]/60 max-w-md mx-auto font-sans leading-relaxed">
               Connect external MCP tool servers to discover tools and authorize access for your autonomous agent nodes.
             </p>
           </div>
-          {!isSlaveAccount && !searchQuery && (
+          {!isSlaveAccount && (
             <button
               type="button"
               onClick={() => setIsAddModalOpen(true)}
