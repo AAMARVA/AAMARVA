@@ -355,7 +355,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
           </div>
         )}
 
-        {/* Tab 2: Access & Governance (Assigning to Master / Slave agents) */}
+        {/* Tab 2: Access & Governance (Assigning to Fleet Slave Agents) */}
         {activeTab === 'assignment' && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div className="p-3 bg-[#FAF9F5] border-2 border-[#141414] text-xs space-y-1">
@@ -364,7 +364,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 Server-Enforced Agent Authorization Matrix
               </span>
               <p className="text-[10px] text-[#141414]/70 font-sans leading-relaxed">
-                Tools are closed by default. An agent (Master or Slave) cannot execute a tool unless explicitly authorized in this matrix. Revoking permissions takes effect immediately on the backend proxy.
+                Tools are closed by default. Fleet agents cannot execute a tool unless explicitly authorized in this matrix. Revoking permissions takes effect immediately on the backend proxy.
               </p>
               {!isSlaveAccount && (
                 <button
@@ -383,95 +383,103 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
               <p className="text-xs text-[#141414]/60 italic py-4">No tools available to assign.</p>
             ) : (
               <div className="space-y-4">
-                {tools.map((tool) => (
-                  <div key={tool.id} className="p-3 bg-white border-2 border-[#141414] space-y-3 text-left">
-                    <div className="flex items-center justify-between border-b border-[#141414]/20 pb-2">
-                      <div className="flex items-center gap-2">
-                        <Wrench className="w-3.5 h-3.5" />
-                        <span className="text-xs font-black uppercase">{tool.name}</span>
+                {tools.map((tool) => {
+                  const governableAgents = fleetAgents.filter((agent) => !agent.isMaster);
+
+                  return (
+                    <div key={tool.id} className="p-3 bg-white border-2 border-[#141414] space-y-3 text-left">
+                      <div className="flex items-center justify-between border-b border-[#141414]/20 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Wrench className="w-3.5 h-3.5" />
+                          <span className="text-xs font-black uppercase">{tool.name}</span>
+                        </div>
+                        <span className="text-[9px] font-bold text-[#141414]/60 uppercase">
+                          Select accounts allowed to invoke this tool
+                        </span>
                       </div>
-                      <span className="text-[9px] font-bold text-[#141414]/60 uppercase">
-                        Select accounts allowed to invoke this tool
-                      </span>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {fleetAgents.map((agent) => {
-                        const isGranted = (tool.assigned_agents || []).includes(agent.agentId) ||
-                                          (tool.assigned_agents || []).includes(agent.id);
+                      {governableAgents.length === 0 ? (
+                        <div className="p-4 text-center border border-dashed border-[#141414]/20 bg-[#FAF9F5]">
+                          <p className="text-[11px] font-bold text-[#141414]/60 uppercase">
+                            No fleet slave agents available to authorize.
+                          </p>
+                          <p className="text-[10px] text-[#141414]/40 mt-0.5 font-sans">
+                            Deploy or register slave agents in your cluster to delegate tool invocation permissions.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {governableAgents.map((agent) => {
+                            const isGranted = (tool.assigned_agents || []).includes(agent.agentId) ||
+                                              (tool.assigned_agents || []).includes(agent.id);
 
-                        return (
-                          <div
-                            key={agent.id}
-                            className={`p-2.5 border-2 flex items-center justify-between gap-2.5 transition-all ${
-                              isGranted
-                                ? 'bg-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                                : 'bg-[#FAF9F5] border-neutral-300 opacity-80 hover:opacity-100'
-                            }`}
-                          >
-                            <div
-                              className={`flex items-center gap-2.5 min-w-0 flex-1 ${
-                                onOpenAgentProfile ? 'cursor-pointer group' : ''
-                              }`}
-                              onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
-                              title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
-                            >
-                              <AgentAvatar
-                                id={agent.agentId || agent.id}
-                                name={agent.name}
-                                avatar={agent.avatar}
-                                isMaster={agent.isMaster}
-                                className="w-8 h-8 rounded-full border border-[#141414] shrink-0 group-hover:scale-105 transition-transform"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span className="text-[11px] font-bold block truncate text-[#141414] group-hover:underline">
-                                    {agent.name}
-                                  </span>
-                                  {agent.isMaster && (
-                                    <span className="text-[8px] font-black uppercase px-1 py-0.5 bg-[#141414] text-white shrink-0 tracking-wider">
-                                      MASTER
+                            return (
+                              <div
+                                key={agent.id}
+                                className={`p-2.5 border-2 flex items-center justify-between gap-2.5 transition-all ${
+                                  isGranted
+                                    ? 'bg-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                                    : 'bg-[#FAF9F5] border-neutral-300 opacity-80 hover:opacity-100'
+                                }`}
+                              >
+                                <div
+                                  className={`flex items-center gap-2.5 min-w-0 flex-1 ${
+                                    onOpenAgentProfile ? 'cursor-pointer group' : ''
+                                  }`}
+                                  onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
+                                  title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
+                                >
+                                  <AgentAvatar
+                                    id={agent.agentId || agent.id}
+                                    name={agent.name}
+                                    avatar={agent.avatar}
+                                    isMaster={false}
+                                    className="w-8 h-8 rounded-full border border-[#141414] shrink-0 group-hover:scale-105 transition-transform"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <span className="text-[11px] font-bold block truncate text-[#141414] group-hover:underline">
+                                      {agent.name}
                                     </span>
-                                  )}
+                                    <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
+                                      @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
+                                    </span>
+                                  </div>
                                 </div>
-                                <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
-                                  @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
-                                </span>
-                              </div>
-                            </div>
 
-                            {!isSlaveAccount ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleAssignment(tool.id, agent.agentId, isGranted);
-                                }}
-                                className={`px-2.5 py-1 text-[10px] font-black uppercase border transition-all shrink-0 cursor-pointer ${
-                                  isGranted
-                                    ? 'bg-[#141414] text-white border-[#141414] hover:bg-neutral-800'
-                                    : 'bg-white text-[#141414] border-[#141414] hover:bg-neutral-100'
-                                }`}
-                              >
-                                {isGranted ? 'Granted' : 'Grant Access'}
-                              </button>
-                            ) : (
-                              <span
-                                className={`text-[9px] font-bold uppercase shrink-0 px-2 py-0.5 border ${
-                                  isGranted
-                                    ? 'bg-[#141414] text-white border-[#141414]'
-                                    : 'bg-neutral-100 text-[#141414]/60 border-neutral-300'
-                                }`}
-                              >
-                                {isGranted ? 'Authorized' : 'Denied'}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
+                                {!isSlaveAccount ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleAssignment(tool.id, agent.agentId, isGranted);
+                                    }}
+                                    className={`px-2.5 py-1 text-[10px] font-black uppercase border transition-all shrink-0 cursor-pointer ${
+                                      isGranted
+                                        ? 'bg-[#141414] text-white border-[#141414] hover:bg-neutral-800'
+                                        : 'bg-white text-[#141414] border-[#141414] hover:bg-neutral-100'
+                                    }`}
+                                  >
+                                    {isGranted ? 'Granted' : 'Grant Access'}
+                                  </button>
+                                ) : (
+                                  <span
+                                    className={`text-[9px] font-bold uppercase shrink-0 px-2 py-0.5 border ${
+                                      isGranted
+                                        ? 'bg-[#141414] text-white border-[#141414]'
+                                        : 'bg-neutral-100 text-[#141414]/60 border-neutral-300'
+                                    }`}
+                                  >
+                                    {isGranted ? 'Authorized' : 'Denied'}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
