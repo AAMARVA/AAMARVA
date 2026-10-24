@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Server, Wrench } from 'lucide-react';
 import { NetworkTicket } from '../types';
 import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
@@ -36,6 +36,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
 }) => {
   const { activeAccount } = useAuth();
   const [dbPosts, setDbPosts] = useState<NetworkTicket[]>([]);
+  const [dbMcpServers, setDbMcpServers] = useState<any[]>([]);
   const [dbAgents, setDbAgents] = useState<any[]>([]);
   const [dbClusters, setDbClusters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,59 +56,25 @@ export const SearchView: React.FC<SearchViewProps> = ({
     const timer = setTimeout(async () => {
       try {
         if (activeTab === 'posts') {
-          // Ticket endpoint removed
-          const postsRes = { success: false, data: null };
-          if (reqIdRef.current !== currentReqId) return;
-
-          const rawList = postsRes?.data?.tickets || postsRes?.data?.posts;
-          if (postsRes && postsRes.success && Array.isArray(rawList)) {
-            const mappedPosts: NetworkTicket[] = rawList.map((p: any) => ({
-              id: p.id,
-              agentName: p.agentName || 'Agent Node',
-              agentId: p.agentId,
-              avatar: p.avatar || undefined,
-              content: p.content,
-              timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-              createdAt: p.createdAt,
-              rawMinutesAgo: p.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 60000)) : 0,
-              repliesCount: p.repliesCount || (p.replies ? p.replies.length : 0),
-              connectionsCount: p.connectionsCount || (p.connectionsList ? p.connectionsList.length : 0),
-              verified: p.emailVerified === true,
-              emailVerified: p.emailVerified === true,
-              verificationStatus: p.verificationStatus || (p.emailVerified ? 'verified' : 'not verified'),
-              status: 'active',
-              type: p.type || 'intake',
-              category: p.category || 'General',
-              replies: Array.isArray(p.replies) ? p.replies.map((r: any) => ({
-                id: r.id,
-                agentName: r.agentName || r.author?.displayName || 'Agent',
-                agentId: r.agentId || r.author?.agentId,
-                avatar: r.avatar || r.author?.avatar || undefined,
-                content: r.content,
-                timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (r.timestamp || 'Just now'),
-                createdAt: r.createdAt,
-                emailVerified: r.emailVerified === true,
-                verificationStatus: r.verificationStatus || (r.emailVerified ? 'verified' : 'not verified'),
-              })) : [],
-              connectionsList: Array.isArray(p.connectionsList) ? p.connectionsList.map((c: any) => ({
-                id: c.id,
-                postId: c.postId,
-                replyId: c.replyId,
-                agentName: c.agentName || c.replyAuthorAgentName || 'Connected Agent',
-                agentId: c.agentId || c.replyAuthorAgentId,
-                avatar: c.avatar || c.replyAuthorAvatar || undefined,
-                postOwnerAgentName: c.postOwnerAgentName,
-                postOwnerAgentId: c.postOwnerAgentId,
-                postOwnerEmailVerified: c.postOwnerEmailVerified === true,
-                replyAuthorEmailVerified: c.replyAuthorEmailVerified === true,
-                emailVerified: c.emailVerified === true,
-                verificationStatus: c.verificationStatus || (c.emailVerified ? 'verified' : 'not verified'),
-                createdAt: c.createdAt,
-              })) : [],
-            }));
-            setDbPosts(mappedPosts);
-          } else {
-            setDbPosts([]);
+          // Search MCP Servers and Tools
+          try {
+            const serversRes = await apiFetch('/api/floor/servers', { authType: 'human' }).catch(() => null);
+            if (reqIdRef.current !== currentReqId) return;
+            if (serversRes && serversRes.success && Array.isArray(serversRes.data)) {
+              const q = trimmed.toLowerCase();
+              const matched = serversRes.data.filter((s: any) => {
+                return (
+                  s.name?.toLowerCase().includes(q) ||
+                  s.description?.toLowerCase().includes(q) ||
+                  s.endpoint?.toLowerCase().includes(q)
+                );
+              });
+              setDbMcpServers(matched);
+            } else {
+              setDbMcpServers([]);
+            }
+          } catch {
+            setDbMcpServers([]);
           }
         } else if (activeTab === 'agents') {
           const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'human' }).catch(() => null);
@@ -201,9 +168,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
   })();
 
   const displayedClusters = isQueryActive && hasQueried ? dbClusters : [];
+  const displayedMcp = isQueryActive && hasQueried ? dbMcpServers : [];
 
-  const totalCount = activeTab === 'posts' ? displayedPosts.length : activeTab === 'agents' ? displayedAgents.length : displayedClusters.length;
-  const itemLabel = activeTab === 'posts' ? 'ticket' : activeTab === 'agents' ? 'agent' : 'cluster';
+  const totalCount = activeTab === 'posts' ? (displayedMcp.length || displayedPosts.length) : activeTab === 'agents' ? displayedAgents.length : displayedClusters.length;
+  const itemLabel = activeTab === 'posts' ? 'tools & mcp' : activeTab === 'agents' ? 'agent' : 'cluster';
 
   if (isLoading) {
     return (
@@ -217,13 +185,46 @@ export const SearchView: React.FC<SearchViewProps> = ({
     <div className="space-y-4 flex-1 flex flex-col">
       {/* Results Header */}
       <div className="flex items-center justify-between font-mono text-xs uppercase tracking-wider text-gray-500 px-3">
-        <span>Found {totalCount} {itemLabel} result{totalCount === 1 ? '' : 's'}</span>
+        <span>Found {totalCount} {itemLabel} {activeTab === 'posts' ? 'results' : `result${totalCount === 1 ? '' : 's'}`}</span>
       </div>
 
       {/* Results List */}
       <div className="space-y-4 px-3 pb-8">
         {activeTab === 'posts' ? (
-          displayedPosts.length > 0 ? (
+          displayedMcp.length > 0 ? (
+            displayedMcp.map((srv) => (
+              <div
+                key={srv.id}
+                className="flex items-center justify-between p-4 bg-[#161616] border border-white/10 rounded-2xl transition-all group"
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-mono text-white text-lg font-bold shrink-0">
+                    <Server className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-white font-mono text-sm sm:text-base font-black truncate uppercase tracking-tight">
+                        <Highlight text={srv.name} query={query} />
+                      </p>
+                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 border border-white/30 bg-white/10 text-white">
+                        {srv.status || 'CONNECTED'}
+                      </span>
+                    </div>
+                    <p className="text-gray-500 font-mono text-[10px] sm:text-xs truncate">
+                      <Highlight text={srv.endpoint} query={query} />
+                      {srv.description ? ` • ${srv.description}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-xs font-mono text-white/70 bg-white/5 border border-white/10 px-2.5 py-1 rounded inline-flex items-center gap-1.5">
+                    <Wrench className="w-3 h-3" />
+                    {srv.tools_count || 0} TOOLS
+                  </span>
+                </div>
+              </div>
+            ))
+          ) : displayedPosts.length > 0 ? (
             displayedPosts.map((post) => (
               <PostCard
                 key={post.id}
@@ -238,7 +239,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
           ) : (
             <div className="text-center py-12 bg-[#161616] border border-white/10 rounded-2xl p-6">
               <p className="text-gray-400 font-mono text-xs sm:text-sm uppercase font-bold tracking-wider">
-                No tickets match your search criteria.
+                No tools & mcp match your search criteria.
               </p>
             </div>
           )

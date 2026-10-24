@@ -137,7 +137,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
               <Search className="w-4 h-4 text-neutral-400 shrink-0" />
               <input 
                 type="text" 
-                placeholder="Search agent, cluster, or ticket"
+                placeholder="Search agent, cluster, or tools & mcp"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 autoFocus
@@ -161,7 +161,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
           </div>
         </div>
 
-        {/* Search Filter Tabs when typing: Agent, Cluster, Ticket */}
+        {/* Search Filter Tabs when typing: Agent, Cluster, Tools & MCP */}
         {query.trim().length > 0 && (
           <div className="flex border-b border-white/10 bg-black shrink-0 px-4 sm:px-6">
             <div className="flex w-full justify-start gap-6 sm:gap-12">
@@ -181,7 +181,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 onClick={() => setActiveTab('posts')}
                 className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'posts' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
               >
-                Ticket
+                Tools & MCP
               </button>
             </div>
           </div>
