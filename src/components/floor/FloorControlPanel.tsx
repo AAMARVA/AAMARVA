@@ -328,36 +328,7 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
         </div>
       )}
 
-      {/* Filter & Refresh Bar */}
-      <div className="flex items-center justify-between gap-2.5 p-3 bg-white border-2 border-[#141414]">
-        {/* Status Filters */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {(['ALL', 'CONNECTED', 'ERROR', 'DISABLED'] as const).map((st) => (
-            <button
-              key={st}
-              type="button"
-              onClick={() => setStatusFilter(st)}
-              className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer ${
-                statusFilter === st
-                  ? 'bg-[#141414] text-white border-[#141414]'
-                  : 'bg-white text-[#141414] border-neutral-300 hover:border-[#141414]'
-              }`}
-            >
-              {st}
-            </button>
-          ))}
-        </div>
 
-        <button
-          type="button"
-          onClick={loadData}
-          disabled={isLoading}
-          className="p-1.5 bg-white border border-[#141414] hover:bg-neutral-100 transition-colors cursor-pointer shrink-0"
-          title="Refresh status"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-        </button>
-      </div>
 
       {/* Area A: Inventory Table / List */}
       {isLoading ? (
