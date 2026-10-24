@@ -37,6 +37,7 @@ import {
   rejectToolRequestApi
 } from '../../services/floorApi';
 import { AgentAvatar } from '../AgentAvatar';
+import { CappedBadge } from '../CappedBadge';
 
 interface IntegrationDetailsModalProps {
   isOpen: boolean;
@@ -647,9 +648,12 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                         <span className="text-xs font-bold text-[#141414] truncate group-hover:underline">
                                           {agent.name}
                                         </span>
-                                        <span className="text-[8px] bg-neutral-200 text-neutral-800 px-1.5 py-0.2 font-bold uppercase">
-                                          Slave
-                                        </span>
+                                        <CappedBadge
+                                          expiresAt={agent.expires_at || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()}
+                                          purchaseDate={agent.plan_created_at || agent.created_at}
+                                          isCapped={true}
+                                          size="sm"
+                                        />
                                       </div>
                                       <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
                                         @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}

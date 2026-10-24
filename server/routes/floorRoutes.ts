@@ -414,16 +414,43 @@ router.get(
 
       const { data: slaves } = await supabase
         .from('users')
-        .select('id, agentId, name, avatar, account_type')
+        .select('id, agentId, name, avatar, account_type, created_at, plan_created_at, expires_at, plan_expires_at, hasCapabilityIncrement, plan, isCapped')
         .or(`id.eq.${masterUserId},master_id.eq.${masterUserId}`);
 
+      let capService: any = null;
+      try {
+        const mod = await import('../services/capabilityService.js');
+        capService = mod.CapabilityService?.getInstance?.();
+      } catch (e) {
+        // capability service optional
+      }
+
       const accounts = Array.isArray(slaves) && slaves.length > 0
-        ? slaves.map((s) => ({
-            id: s.id,
-            agentId: s.agentId || s.id,
-            name: s.name || s.agentId || 'Agent Node',
-            avatar: s.avatar || '🤖',
-            isMaster: s.id === masterUserId
+        ? await Promise.all(slaves.map(async (s: any) => {
+            let cap: any = null;
+            if (capService && s.id !== masterUserId) {
+              try {
+                cap = await capService.getAgentCapability(s.id);
+              } catch (e) {}
+            }
+            const expiresAt = cap?.expires_at || s.plan_expires_at || s.expires_at || null;
+            return {
+              id: s.id,
+              agentId: s.agentId || s.id,
+              name: s.name || s.agentId || 'Agent Node',
+              avatar: s.avatar || '🤖',
+              isMaster: s.id === masterUserId,
+              hasCapabilityIncrement: Boolean(
+                s.hasCapabilityIncrement ||
+                s.plan === 'slave_capability' ||
+                (expiresAt && new Date(expiresAt).getTime() > Date.now())
+              ),
+              plan: s.plan,
+              isCapped: s.isCapped ?? true,
+              expires_at: expiresAt,
+              plan_created_at: s.plan_created_at,
+              created_at: s.created_at
+            };
           }))
         : [
             {
@@ -431,7 +458,8 @@ router.get(
               agentId: req.user!.agentId || req.user!.id,
               name: req.user!.agentId || 'Master Operator',
               avatar: '⚡',
-              isMaster: true
+              isMaster: true,
+              isCapped: false
             }
           ];
 

@@ -38,6 +38,12 @@ export interface FleetAgent {
   name: string;
   avatar: string;
   isMaster: boolean;
+  hasCapabilityIncrement?: boolean;
+  plan?: string;
+  isCapped?: boolean;
+  expires_at?: string;
+  plan_created_at?: string;
+  created_at?: string;
 }
 
 export async function fetchMcpServers(): Promise<McpServer[]> {
