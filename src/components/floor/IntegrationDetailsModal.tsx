@@ -70,11 +70,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   // Grants state
-  const [grants, setGrants] = useState<McpToolGrant[]>([]);
-  const [isLoadingGrants, setIsLoadingGrants] = useState(false);
-  const [selectedGrantToolId, setSelectedGrantToolId] = useState<string>(tools[0]?.id || '');
-  const [selectedGrantAccountId, setSelectedGrantAccountId] = useState<string>(fleetAgents[0]?.agentId || '');
-  const [isGrantingSubmitting, setIsGrantingSubmitting] = useState(false);
+  const [, setGrants] = useState<McpToolGrant[]>([]);
+  const [, setIsLoadingGrants] = useState(false);
   const [revokingTarget, setRevokingTarget] = useState<string | null>(null);
 
   // Requests state
@@ -93,15 +90,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   useEffect(() => {
     if (tools.length > 0 && !selectedToolId) {
       setSelectedToolId(tools[0].id);
-      setSelectedGrantToolId(tools[0].id);
     }
   }, [tools, selectedToolId]);
-
-  useEffect(() => {
-    if (fleetAgents.length > 0 && !selectedGrantAccountId) {
-      setSelectedGrantAccountId(fleetAgents[0].agentId || fleetAgents[0].id);
-    }
-  }, [fleetAgents, selectedGrantAccountId]);
 
   const loadGrants = async () => {
     if (!server) return;
@@ -174,53 +164,36 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
     }
   };
 
-  const handleGrantAccess = async (toolId: string, accountId: string) => {
+  const handleToggleAssignment = async (toolId: string, accountId: string, currentAssigned: boolean) => {
     if (!toolId || !accountId) return;
-    setIsGrantingSubmitting(true);
+    setRevokingTarget(accountId);
     setActionError(null);
     setActionSuccess(null);
     try {
-      const res = await setToolGrantApi(toolId, accountId, true);
-      // Refresh grants
-      await loadGrants();
-      // Update tools state assigned_agents
-      const updatedTools = tools.map((t) => {
-        if (t.id !== toolId) return t;
-        const currentAssigned = t.assigned_agents || [];
-        const nextAssigned = Array.from(new Set([...currentAssigned, accountId]));
-        return { ...t, assigned_agents: nextAssigned };
-      });
-      onServerUpdated(server, updatedTools);
-      setActionSuccess(`Permanent tool access granted to ${accountId}!`);
-      setTimeout(() => setActionSuccess(null), 3000);
-    } catch (err: any) {
-      setActionError(err?.message || 'Failed to grant tool access.');
-    } finally {
-      setIsGrantingSubmitting(false);
-    }
-  };
+      const nextGranted = !currentAssigned;
+      await Promise.all([
+        setToolAssignmentApi(toolId, accountId, nextGranted),
+        setToolGrantApi(toolId, accountId, nextGranted).catch(() => {})
+      ]);
 
-  const handleRevokeGrant = async (toolId: string, accountId: string) => {
-    const key = `${toolId}:${accountId}`;
-    setRevokingTarget(key);
-    setActionError(null);
-    setActionSuccess(null);
-    try {
-      await setToolGrantApi(toolId, accountId, false);
-      // Refresh grants
-      await loadGrants();
-      // Update local tools state
       const updatedTools = tools.map((t) => {
         if (t.id !== toolId) return t;
-        const currentAssigned = t.assigned_agents || [];
-        const nextAssigned = currentAssigned.filter((a) => a !== accountId);
-        return { ...t, assigned_agents: nextAssigned };
+        const currentAssignedList = t.assigned_agents || [];
+        const nextAssignedList = nextGranted
+          ? Array.from(new Set([...currentAssignedList, accountId]))
+          : currentAssignedList.filter((a) => a !== accountId);
+        return { ...t, assigned_agents: nextAssignedList };
       });
       onServerUpdated(server, updatedTools);
-      setActionSuccess(`Tool access revoked from ${accountId}. Subsequent calls will be denied.`);
+      setActionSuccess(
+        nextGranted
+          ? `Tool access granted to ${accountId}`
+          : `Tool access revoked from ${accountId}`
+      );
       setTimeout(() => setActionSuccess(null), 3000);
+      loadGrants();
     } catch (err: any) {
-      setActionError(err?.message || 'Failed to revoke tool grant.');
+      setActionError(err?.message || 'Failed to update tool assignment.');
     } finally {
       setRevokingTarget(null);
     }
@@ -423,7 +396,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 : 'text-[#141414]/60 hover:text-[#141414]'
             }`}
           >
-            <ShieldCheck className="w-3.5 h-3.5" />
+            <Users className="w-3.5 h-3.5" />
             <span>Access & Governance</span>
           </button>
 
@@ -537,143 +510,129 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
           </div>
         )}
 
-        {/* Tab 2: Access & Governance (Persistent Grants Management) */}
+        {/* Tab 2: Access & Governance */}
         {activeTab === 'assignment' && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 text-left">
             <div className="p-3 bg-[#FAF9F5] border-2 border-[#141414] text-xs space-y-1">
               <span className="font-black uppercase tracking-wider flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4" />
-                Persistent Account-Level Tool Authorization Matrix
+                <Users className="w-4 h-4" />
+                Agent Tool Access Governance
               </span>
               <p className="text-[10px] text-[#141414]/70 font-sans leading-relaxed">
-                Tools are closed by default. Authorized accounts can invoke tools repeatedly without prompt. Grants persist indefinitely until explicitly revoked manually. Revocation denies subsequent calls immediately.
+                By default, all discovered tools are locked (Zero-Trust). Explicitly assign tools to specific slave agent accounts in your fleet to grant execution permissions.
               </p>
             </div>
 
-            {/* Quick Grant Panel */}
-            {!isSlaveAccount && tools.length > 0 && fleetAgents.length > 0 && (
-              <div className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3">
-                <div className="flex items-center justify-between border-b border-[#141414]/15 pb-2">
-                  <span className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5">
-                    <Plus className="w-3.5 h-3.5" />
-                    Grant Permanent Access
-                  </span>
-                  <span className="text-[9px] text-neutral-500 font-bold uppercase">
-                    Account-Specific Authorization
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end">
-                  <div>
-                    <label className="block text-[9px] font-black uppercase text-[#141414]/70 mb-1">
-                      1. Select Discovered Tool
-                    </label>
-                    <select
-                      value={selectedGrantToolId}
-                      onChange={(e) => setSelectedGrantToolId(e.target.value)}
-                      className="w-full bg-white border-2 border-[#141414] p-1.5 text-xs font-mono font-bold focus:outline-hidden"
-                    >
-                      {tools.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[9px] font-black uppercase text-[#141414]/70 mb-1">
-                      2. Select Target Account
-                    </label>
-                    <select
-                      value={selectedGrantAccountId}
-                      onChange={(e) => setSelectedGrantAccountId(e.target.value)}
-                      className="w-full bg-white border-2 border-[#141414] p-1.5 text-xs font-mono font-bold focus:outline-hidden"
-                    >
-                      {fleetAgents.map((a) => (
-                        <option key={a.id} value={a.agentId || a.id}>
-                          {a.name} (@{a.agentId?.replace(/^@/, '') || a.id}) {a.isMaster ? '[Master]' : '[Slave]'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleGrantAccess(selectedGrantToolId, selectedGrantAccountId)}
-                    disabled={isGrantingSubmitting || !selectedGrantToolId || !selectedGrantAccountId}
-                    className="w-full py-2 px-3 bg-[#141414] text-white hover:bg-black border-2 border-[#141414] text-[10px] font-black uppercase tracking-wider cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
-                  >
-                    {isGrantingSubmitting ? (
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Check className="w-3 h-3" />
-                    )}
-                    <span>Authorize Account</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Matrix of Tools & Granted Accounts */}
             {tools.length === 0 ? (
-              <p className="text-xs text-[#141414]/60 italic py-4">No tools available to govern.</p>
+              <div className="p-8 text-center border-2 border-dashed border-[#141414]/20 bg-[#FAF9F5]">
+                <p className="text-xs font-bold uppercase text-[#141414]/50">No tools available to govern.</p>
+              </div>
             ) : (
-              <div className="space-y-4">
-                {tools.map((tool) => {
-                  const assignedAgentsList = tool.assigned_agents || [];
-                  const activeGrantsForTool = grants.filter(
-                    (g) => g.tool_id === tool.id && g.status === 'active'
-                  );
-                  // Accounts that have access
-                  const grantedAccounts = fleetAgents.filter((agent) => {
-                    const matchId = agent.agentId || agent.id;
-                    const byAssigned = assignedAgentsList.includes(matchId) || assignedAgentsList.includes(agent.id);
-                    const byGrant = activeGrantsForTool.some((g) => g.account_id === matchId || g.account_id === agent.id);
-                    return byAssigned || byGrant;
-                  });
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                {/* Left Column: Tools List */}
+                <div className="space-y-2 border-2 border-[#141414] p-2.5 bg-[#FAF9F5]">
+                  <span className="text-[10px] font-black uppercase text-[#141414]/70 px-1 block">
+                    Select Tool ({tools.length})
+                  </span>
+                  <div className="space-y-1.5 max-h-[460px] overflow-y-auto">
+                    {tools.map((tool) => {
+                      const isSelected = tool.id === selectedToolId;
+                      const assignedCount = (tool.assigned_agents || []).length;
+                      return (
+                        <button
+                          key={tool.id}
+                          type="button"
+                          onClick={() => setSelectedToolId(tool.id)}
+                          className={`w-full p-2.5 text-left border-2 transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#141414] text-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                              : 'bg-white text-[#141414] border-[#141414]/30 hover:border-[#141414]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-black uppercase truncate">{tool.name}</span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 border ${
+                                isSelected
+                                  ? 'bg-white text-black border-white'
+                                  : assignedCount > 0
+                                  ? 'bg-green-100 text-green-900 border-green-600'
+                                  : 'bg-neutral-100 text-neutral-600 border-neutral-300'
+                              }`}
+                            >
+                              {assignedCount}
+                            </span>
+                          </div>
+                          {tool.description && (
+                            <p
+                              className={`text-[10px] font-sans truncate mt-1 ${
+                                isSelected ? 'text-white/70' : 'text-[#141414]/60'
+                              }`}
+                            >
+                              {tool.description}
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-                  // Accounts without access
-                  const ungrantedAccounts = fleetAgents.filter(
-                    (agent) => !grantedAccounts.some((g) => g.id === agent.id)
-                  );
-
-                  return (
-                    <div key={tool.id} className="p-3 bg-white border-2 border-[#141414] space-y-3 text-left">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-[#141414]/20 pb-2">
-                        <div className="flex items-center gap-2">
-                          <Wrench className="w-3.5 h-3.5" />
-                          <span className="text-xs font-black uppercase">{tool.name}</span>
+                {/* Right Column: Fleet Accounts Assignment for Selected Tool */}
+                <div className="md:col-span-2 space-y-3">
+                  {currentTool ? (
+                    <div className="p-3.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b-2 border-[#141414] pb-2.5">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <Wrench className="w-4 h-4 text-[#141414] shrink-0" />
+                            <span className="text-xs font-black uppercase text-[#141414] truncate">
+                              {currentTool.name}
+                            </span>
+                          </div>
+                          {currentTool.description && (
+                            <p className="text-[11px] text-[#141414]/70 font-sans mt-0.5 line-clamp-2">
+                              {currentTool.description}
+                            </p>
+                          )}
                         </div>
-                        <span className="text-[9px] font-bold text-[#141414]/70 uppercase">
-                          {grantedAccounts.length} Account{grantedAccounts.length === 1 ? '' : 's'} Granted Permanent Access
+                        <span className="text-[9px] font-bold uppercase px-2 py-0.5 bg-[#FAF9F5] border border-[#141414] shrink-0 self-start sm:self-center">
+                          {fleetAgents.filter((a) => (currentTool.assigned_agents || []).includes(a.agentId) || (currentTool.assigned_agents || []).includes(a.id)).length} / {fleetAgents.length} Permitted
                         </span>
                       </div>
 
-                      {/* Currently Authorized Accounts */}
-                      <div className="space-y-1.5">
-                        <span className="text-[9px] font-bold text-[#141414]/60 uppercase block">
-                          Authorized Accounts (Indefinite Permanent Grants):
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-black uppercase text-[#141414]/70 block">
+                          Fleet Accounts ({fleetAgents.length})
                         </span>
-                        {grantedAccounts.length === 0 ? (
-                          <div className="p-3 border border-dashed border-[#141414]/20 bg-[#FAF9F5] text-center">
-                            <p className="text-[10px] font-bold text-[#141414]/50 uppercase">
-                              No accounts authorized yet. All calls to '{tool.name}' will be blocked and recorded in Requests.
+
+                        {fleetAgents.length === 0 ? (
+                          <div className="p-6 text-center border border-dashed border-[#141414]/20 bg-[#FAF9F5]">
+                            <p className="text-xs font-bold uppercase text-[#141414]/50">
+                              No fleet agents deployed yet under this master account.
                             </p>
                           </div>
                         ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {grantedAccounts.map((agent) => {
+                          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                            {fleetAgents.map((agent) => {
                               const targetId = agent.agentId || agent.id;
-                              const isRevoking = revokingTarget === `${tool.id}:${targetId}`;
+                              const isAssigned =
+                                (currentTool.assigned_agents || []).includes(targetId) ||
+                                (currentTool.assigned_agents || []).includes(agent.id) ||
+                                (currentTool.assigned_agents || []).includes(agent.agentId);
+                              const isUpdating = revokingTarget === targetId;
 
                               return (
                                 <div
                                   key={agent.id}
-                                  className="p-2.5 bg-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-2.5"
+                                  className={`p-2.5 border-2 transition-all flex items-center justify-between gap-3 ${
+                                    isAssigned
+                                      ? 'bg-[#FAF9F5] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                                      : 'bg-white border-[#141414]/20 hover:border-[#141414]/50'
+                                  }`}
                                 >
                                   <div
-                                    className={`flex items-center gap-2 min-w-0 flex-1 ${
+                                    className={`flex items-center gap-2.5 min-w-0 flex-1 ${
                                       onOpenAgentProfile ? 'cursor-pointer group' : ''
                                     }`}
                                     onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
@@ -688,14 +647,20 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                     />
                                     <div className="min-w-0 flex-1">
                                       <div className="flex items-center gap-1.5">
-                                        <span className="text-[10px] font-bold truncate text-[#141414]">
+                                        <span className="text-xs font-bold text-[#141414] truncate group-hover:underline">
                                           {agent.name}
                                         </span>
-                                        <span className="text-[8px] bg-green-100 text-green-900 border border-green-600 px-1 font-bold uppercase">
-                                          Active
-                                        </span>
+                                        {agent.isMaster ? (
+                                          <span className="text-[8px] bg-black text-white px-1.5 py-0.2 font-black uppercase">
+                                            Master
+                                          </span>
+                                        ) : (
+                                          <span className="text-[8px] bg-neutral-200 text-neutral-800 px-1.5 py-0.2 font-bold uppercase">
+                                            Slave
+                                          </span>
+                                        )}
                                       </div>
-                                      <span className="text-[8.5px] text-[#141414]/60 font-mono block truncate">
+                                      <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
                                         @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
                                       </span>
                                     </div>
@@ -704,17 +669,27 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                   {!isSlaveAccount && (
                                     <button
                                       type="button"
-                                      onClick={() => handleRevokeGrant(tool.id, targetId)}
-                                      disabled={isRevoking}
-                                      className="px-2 py-1 bg-red-600 text-white hover:bg-red-700 text-[9px] font-black uppercase tracking-wider border border-[#141414] transition-all shrink-0 cursor-pointer disabled:opacity-50 flex items-center gap-1"
-                                      title="Revoke grant and immediately deny calls"
+                                      onClick={() => handleToggleAssignment(currentTool.id, targetId, isAssigned)}
+                                      disabled={isUpdating}
+                                      className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-2 transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                                        isAssigned
+                                          ? 'bg-[#141414] text-white border-[#141414] hover:bg-red-700 hover:border-red-700'
+                                          : 'bg-white text-[#141414] border-[#141414] hover:bg-[#141414] hover:text-white'
+                                      }`}
                                     >
-                                      {isRevoking ? (
-                                        <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                                      {isUpdating ? (
+                                        <RefreshCw className="w-3 h-3 animate-spin" />
+                                      ) : isAssigned ? (
+                                        <>
+                                          <Check className="w-3 h-3" />
+                                          <span>Assigned</span>
+                                        </>
                                       ) : (
-                                        <XCircle className="w-2.5 h-2.5" />
+                                        <>
+                                          <Plus className="w-3 h-3" />
+                                          <span>Assign</span>
+                                        </>
                                       )}
-                                      <span>Revoke</span>
                                     </button>
                                   )}
                                 </div>
@@ -723,34 +698,9 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                           </div>
                         )}
                       </div>
-
-                      {/* Ungranted Accounts Quick Delegation */}
-                      {!isSlaveAccount && ungrantedAccounts.length > 0 && (
-                        <div className="pt-2 border-t border-neutral-200 space-y-1.5">
-                          <span className="text-[9px] font-bold text-[#141414]/50 uppercase block">
-                            Delegate Access To Other Fleet Nodes:
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {ungrantedAccounts.map((agent) => {
-                              const targetId = agent.agentId || agent.id;
-                              return (
-                                <button
-                                  key={agent.id}
-                                  type="button"
-                                  onClick={() => handleGrantAccess(tool.id, targetId)}
-                                  className="px-2 py-0.5 bg-[#FAF9F5] hover:bg-neutral-100 border border-[#141414] text-[9px] font-bold uppercase flex items-center gap-1 cursor-pointer transition-all"
-                                >
-                                  <Plus className="w-2.5 h-2.5" />
-                                  <span>{agent.name}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
                     </div>
-                  );
-                })}
+                  ) : null}
+                </div>
               </div>
             )}
           </div>
