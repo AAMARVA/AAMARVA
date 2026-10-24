@@ -1108,14 +1108,17 @@ export default function App() {
                   deviceSize === 'desktop' ? (
                     <FloorViewDesktop
                       isSlaveAccount={isSlaveAccount}
+                      onOpenAgentProfile={handleOpenAgentProfile}
                     />
                   ) : deviceSize === 'tablet' ? (
                     <FloorViewTablet
                       isSlaveAccount={isSlaveAccount}
+                      onOpenAgentProfile={handleOpenAgentProfile}
                     />
                   ) : (
                     <FloorViewMobile
                       isSlaveAccount={isSlaveAccount}
+                      onOpenAgentProfile={handleOpenAgentProfile}
                     />
                   )
                 )}

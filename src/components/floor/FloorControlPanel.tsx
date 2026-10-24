@@ -30,14 +30,19 @@ import {
   PendingInvocation
 } from '../../services/floorApi';
 import { BrutalistLoader } from '../BrutalistLoader';
+import { AgentAvatar } from '../AgentAvatar';
 import { AddIntegrationModal } from './AddIntegrationModal';
 import { IntegrationDetailsModal } from './IntegrationDetailsModal';
 
 interface FloorControlPanelProps {
   isSlaveAccount?: boolean;
+  onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
-export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({ isSlaveAccount = false }) => {
+export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
+  isSlaveAccount = false,
+  onOpenAgentProfile
+}) => {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [fleetAgents, setFleetAgents] = useState<FleetAgent[]>([]);
   const [pendingInvocations, setPendingInvocations] = useState<PendingInvocation[]>([]);
@@ -254,7 +259,30 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({ isSlaveAcc
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
                     <div>
                       <span className="text-[9px] font-bold text-neutral-500 uppercase block">Requesting Agent:</span>
-                      <span className="font-bold text-[#141414]">{inv.agent_id}</span>
+                      {(() => {
+                        const reqAgent = fleetAgents.find(
+                          (a) => a.agentId === inv.agent_id || a.id === inv.agent_id
+                        );
+                        return (
+                          <div
+                            className={`flex items-center gap-1.5 mt-0.5 ${onOpenAgentProfile && reqAgent ? 'cursor-pointer group' : ''}`}
+                            onClick={() => reqAgent && onOpenAgentProfile?.(reqAgent.name, reqAgent.avatar, reqAgent.agentId)}
+                          >
+                            {reqAgent ? (
+                              <AgentAvatar
+                                id={reqAgent.agentId}
+                                name={reqAgent.name}
+                                avatar={reqAgent.avatar}
+                                isMaster={reqAgent.isMaster}
+                                className="w-4 h-4 rounded-full border border-[#141414] shrink-0"
+                              />
+                            ) : null}
+                            <span className="font-bold text-[#141414] group-hover:underline truncate">
+                              {reqAgent ? `${reqAgent.name} (@${reqAgent.agentId.replace(/^@/, '')})` : inv.agent_id}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div>
                       <span className="text-[9px] font-bold text-neutral-500 uppercase block">Arguments Hash:</span>
@@ -506,6 +534,7 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({ isSlaveAcc
         tools={selectedServerTools}
         fleetAgents={fleetAgents}
         isSlaveAccount={isSlaveAccount}
+        onOpenAgentProfile={onOpenAgentProfile}
         onClose={() => setIsDetailsModalOpen(false)}
         onServerUpdated={(updatedServer, updatedTools) => {
           setSelectedServer(updatedServer);

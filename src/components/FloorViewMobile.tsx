@@ -15,10 +15,10 @@ interface FloorViewProps {
   isSlaveAccount?: boolean;
 }
 
-export const FloorViewMobile: React.FC<FloorViewProps> = ({ isSlaveAccount = false }) => {
+export const FloorViewMobile: React.FC<FloorViewProps> = ({ isSlaveAccount = false, onOpenAgentProfile }) => {
   return (
     <div className="w-full">
-      <FloorControlPanel isSlaveAccount={isSlaveAccount} />
+      <FloorControlPanel isSlaveAccount={isSlaveAccount} onOpenAgentProfile={onOpenAgentProfile} />
     </div>
   );
 };

@@ -24,6 +24,7 @@ import {
   setToolAssignmentApi,
   invokeMcpToolApi
 } from '../../services/floorApi';
+import { AgentAvatar } from '../AgentAvatar';
 
 interface IntegrationDetailsModalProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ interface IntegrationDetailsModalProps {
   onServerUpdated: (server: McpServer, tools: McpTool[]) => void;
   onServerDeleted: (serverId: string) => void;
   isSlaveAccount?: boolean;
+  onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
 export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = ({
@@ -44,7 +46,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   onClose,
   onServerUpdated,
   onServerDeleted,
-  isSlaveAccount = false
+  isSlaveAccount = false,
+  onOpenAgentProfile
 }) => {
   const [activeTab, setActiveTab] = useState<'tools' | 'assignment' | 'test'>('tools');
   const [selectedToolId, setSelectedToolId] = useState<string | null>(tools[0]?.id || null);
@@ -400,20 +403,39 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                         return (
                           <div
                             key={agent.id}
-                            className={`p-2.5 border-2 flex items-center justify-between transition-all ${
+                            className={`p-2.5 border-2 flex items-center justify-between gap-2.5 transition-all ${
                               isGranted
                                 ? 'bg-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                                : 'bg-[#FAF9F5] border-neutral-300 opacity-70'
+                                : 'bg-[#FAF9F5] border-neutral-300 opacity-80 hover:opacity-100'
                             }`}
                           >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-sm">{agent.avatar || '🤖'}</span>
-                              <div className="truncate">
-                                <span className="text-[11px] font-bold block truncate">
-                                  {agent.name} {agent.isMaster && '(Master Operator)'}
-                                </span>
-                                <span className="text-[9px] text-[#141414]/50 font-mono block">
-                                  @{agent.agentId}
+                            <div
+                              className={`flex items-center gap-2.5 min-w-0 flex-1 ${
+                                onOpenAgentProfile ? 'cursor-pointer group' : ''
+                              }`}
+                              onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
+                              title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
+                            >
+                              <AgentAvatar
+                                id={agent.agentId || agent.id}
+                                name={agent.name}
+                                avatar={agent.avatar}
+                                isMaster={agent.isMaster}
+                                className="w-8 h-8 rounded-full border border-[#141414] shrink-0 group-hover:scale-105 transition-transform"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-[11px] font-bold block truncate text-[#141414] group-hover:underline">
+                                    {agent.name}
+                                  </span>
+                                  {agent.isMaster && (
+                                    <span className="text-[8px] font-black uppercase px-1 py-0.5 bg-[#141414] text-white shrink-0 tracking-wider">
+                                      MASTER
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
+                                  @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
                                 </span>
                               </div>
                             </div>
@@ -421,17 +443,26 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             {!isSlaveAccount ? (
                               <button
                                 type="button"
-                                onClick={() => handleToggleAssignment(tool.id, agent.agentId, isGranted)}
-                                className={`px-2.5 py-1 text-[10px] font-black uppercase border transition-all ${
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleAssignment(tool.id, agent.agentId, isGranted);
+                                }}
+                                className={`px-2.5 py-1 text-[10px] font-black uppercase border transition-all shrink-0 cursor-pointer ${
                                   isGranted
-                                    ? 'bg-[#141414] text-white border-[#141414]'
+                                    ? 'bg-[#141414] text-white border-[#141414] hover:bg-neutral-800'
                                     : 'bg-white text-[#141414] border-[#141414] hover:bg-neutral-100'
                                 }`}
                               >
                                 {isGranted ? 'Granted' : 'Grant Access'}
                               </button>
                             ) : (
-                              <span className="text-[9px] font-bold uppercase text-[#141414]/60">
+                              <span
+                                className={`text-[9px] font-bold uppercase shrink-0 px-2 py-0.5 border ${
+                                  isGranted
+                                    ? 'bg-[#141414] text-white border-[#141414]'
+                                    : 'bg-neutral-100 text-[#141414]/60 border-neutral-300'
+                                }`}
+                              >
                                 {isGranted ? 'Authorized' : 'Denied'}
                               </span>
                             )}
