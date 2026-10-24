@@ -11,6 +11,7 @@ import { runFloorMcpServerTests } from './floorMcpServerTests.ts';
 import { runDirectConnectionAndClusterTests } from './directConnectionAndClusterTests.ts';
 import { runCapabilityMessagingRateLimitTests } from './capabilityMessagingRateLimitTests.ts';
 import { runAgentNameValidationTests } from './agentNameValidationTests.ts';
+import { runQwenLangchainIntegrationTests } from './qwenLangchainIntegrationTests.ts';
 
 async function runAll() {
   const suites = [
@@ -26,7 +27,8 @@ async function runAll() {
     { name: 'floorMcpServerTests', fn: runFloorMcpServerTests },
     { name: 'directConnectionAndClusterTests', fn: runDirectConnectionAndClusterTests },
     { name: 'capabilityMessagingRateLimitTests', fn: runCapabilityMessagingRateLimitTests },
-    { name: 'agentNameValidationTests', fn: runAgentNameValidationTests }
+    { name: 'agentNameValidationTests', fn: runAgentNameValidationTests },
+    { name: 'qwenLangchainIntegrationTests', fn: runQwenLangchainIntegrationTests }
   ];
 
   let hasFailure = false;
