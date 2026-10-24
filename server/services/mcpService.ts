@@ -97,6 +97,36 @@ export interface ToolExecutionGrantRecord {
   created_at: string;
 }
 
+export interface McpToolGrantRecord {
+  id: string;
+  server_id: string;
+  tool_id: string;
+  account_id: string;
+  granted_by: string;
+  status: 'active' | 'revoked';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface McpToolRequestRecord {
+  id: string;
+  server_id: string;
+  tool_id: string;
+  tool_name: string;
+  server_name: string;
+  account_id: string;
+  caller_id: string;
+  agent_name?: string;
+  requested_operation: string;
+  arguments: Record<string, any>;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // In-memory fallback stores when running isolated offline tests or without cloud DB configured
 const inMemoryServers = new Map<string, McpServerRecord>();
 const inMemoryTools = new Map<string, McpToolRecord>();
@@ -104,11 +134,18 @@ const inMemoryAssignments = new Map<string, McpToolAssignmentRecord>();
 const inMemoryPolicies = new Map<string, McpToolPolicyRecord>();
 const inMemoryInvocations = new Map<string, PendingToolInvocationRecord>();
 const inMemoryGrants = new Map<string, ToolExecutionGrantRecord>();
+const inMemoryPersistentGrants = new Map<string, McpToolGrantRecord>();
+const inMemoryToolRequests = new Map<string, McpToolRequestRecord>();
 
 export function clearHitlStoreForTesting(): void {
   inMemoryPolicies.clear();
   inMemoryInvocations.clear();
   inMemoryGrants.clear();
+}
+
+export function clearAccessGovernanceForTesting(): void {
+  inMemoryPersistentGrants.clear();
+  inMemoryToolRequests.clear();
 }
 
 let dbHasSessionIdColumn: boolean | null = null;
@@ -1699,6 +1736,11 @@ export async function removeMcpServer(userId: string, serverId: string): Promise
     const { error: assnErr } = await supabase.from('mcp_tool_assignments').delete().eq('server_id', serverId);
     if (assnErr && shouldFailOnDbError()) throw assnErr;
 
+    try {
+      await supabase.from('mcp_tool_grants').delete().eq('server_id', serverId);
+      await supabase.from('mcp_tool_requests').delete().eq('server_id', serverId);
+    } catch {}
+
     const { error: toolsErr } = await supabase.from('mcp_tools').delete().eq('server_id', serverId).eq('owner_id', userId);
     if (toolsErr && shouldFailOnDbError()) throw toolsErr;
 
@@ -1715,6 +1757,12 @@ export async function removeMcpServer(userId: string, serverId: string): Promise
   }
   for (const [aId, a] of inMemoryAssignments.entries()) {
     if (a.server_id === serverId) inMemoryAssignments.delete(aId);
+  }
+  for (const [gId, g] of inMemoryPersistentGrants.entries()) {
+    if (g.server_id === serverId) inMemoryPersistentGrants.delete(gId);
+  }
+  for (const [rId, r] of inMemoryToolRequests.entries()) {
+    if (r.server_id === serverId) inMemoryToolRequests.delete(rId);
   }
   return true;
 }
@@ -1857,6 +1905,631 @@ export async function setToolAssignment(
     inMemoryAssignments.set(assignmentId, assignmentRecord);
     return { success: true, assigned: true };
   }
+}
+
+// ============================================================================
+// PERSISTENT TOOL PERMISSIONS & ACCESS REQUESTS GOVERNANCE
+// ============================================================================
+
+/**
+ * Checks whether an account has an active, persistent grant for a specific tool.
+ * Evaluates persistent grants, respects explicit revocations, and checks assignments.
+ */
+export async function hasActiveToolGrant(
+  serverId: string,
+  toolId: string,
+  accountId: string
+): Promise<boolean> {
+  if (!serverId || !toolId || !accountId) return false;
+
+  // 1. Check in-memory persistent grants first
+  for (const grant of inMemoryPersistentGrants.values()) {
+    if (grant.server_id === serverId && grant.tool_id === toolId && grant.account_id === accountId) {
+      if (grant.status === 'revoked') return false;
+      if (grant.status === 'active') return true;
+    }
+  }
+
+  // 2. Query persistent database table if Supabase is configured
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from('mcp_tool_grants')
+        .select('*')
+        .eq('server_id', serverId)
+        .eq('tool_id', toolId)
+        .eq('account_id', accountId)
+        .maybeSingle();
+
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error verifying tool grant: ${error.message}`);
+      }
+
+      if (data) {
+        inMemoryPersistentGrants.set(data.id, data);
+        if (data.status === 'revoked') return false;
+        if (data.status === 'active') return true;
+      }
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+
+  // 3. Fallback to existing assignments (ensures zero regression for existing assignments)
+  const assignments = await listAssignmentsForServer(serverId);
+  const isAssigned = assignments.some(
+    (a) => a.tool_id === toolId && a.agent_id === accountId
+  );
+  if (isAssigned) {
+    // Verify it was not explicitly revoked in memory
+    for (const grant of inMemoryPersistentGrants.values()) {
+      if (grant.server_id === serverId && grant.tool_id === toolId && grant.account_id === accountId && grant.status === 'revoked') {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Grants an account permanent, indefinitely-active access to a specific tool.
+ */
+export async function grantToolAccess(
+  operatorUserId: string,
+  serverId: string,
+  toolId: string,
+  accountId: string
+): Promise<{ success: boolean; grant: McpToolGrantRecord }> {
+  if (!operatorUserId || !serverId || !toolId || !accountId) {
+    throw new Error('Operator ID, server ID, tool ID, and target account ID are required.');
+  }
+
+  // 1. Verify target agent belongs to operator's authentic fleet or is operator themselves
+  const isFleetMember = await verifyAgentInOperatorFleet(operatorUserId, accountId);
+  if (!isFleetMember && accountId !== operatorUserId) {
+    throw new Error(`Target account '${accountId}' does not belong to operator's authentic fleet.`);
+  }
+
+  // 2. Verify tool exists, belongs to this server and is owned by operator
+  const tool = await getToolRecord(toolId);
+  if (!tool || tool.owner_id !== operatorUserId || tool.server_id !== serverId) {
+    throw new Error('MCP tool not found or unauthorized.');
+  }
+
+  const now = new Date().toISOString();
+  let existingGrantId: string | null = null;
+  for (const [id, g] of inMemoryPersistentGrants.entries()) {
+    if (g.server_id === serverId && g.tool_id === toolId && g.account_id === accountId) {
+      existingGrantId = id;
+      break;
+    }
+  }
+
+  const grantId = existingGrantId || `grant_${crypto.randomBytes(8).toString('hex')}`;
+  const grantRecord: McpToolGrantRecord = {
+    id: grantId,
+    server_id: serverId,
+    tool_id: toolId,
+    account_id: accountId,
+    granted_by: operatorUserId,
+    status: 'active',
+    created_at: now,
+    updated_at: now
+  };
+
+  // 3. Persist to database if configured
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    try {
+      const { data, error } = await supabase
+        .from('mcp_tool_grants')
+        .upsert(
+          {
+            id: grantId,
+            server_id: serverId,
+            tool_id: toolId,
+            account_id: accountId,
+            granted_by: operatorUserId,
+            status: 'active',
+            updated_at: now
+          },
+          { onConflict: 'server_id,tool_id,account_id' }
+        )
+        .select()
+        .maybeSingle();
+
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error persisting tool grant: ${error.message}`);
+      }
+      if (data) {
+        Object.assign(grantRecord, data);
+      }
+
+      // Mark any pending access requests for this tool and account as approved
+      await supabase
+        .from('mcp_tool_requests')
+        .update({
+          status: 'approved',
+          reviewed_by: operatorUserId,
+          reviewed_at: now,
+          updated_at: now
+        })
+        .eq('server_id', serverId)
+        .eq('tool_id', toolId)
+        .eq('account_id', accountId)
+        .eq('status', 'pending');
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+
+  // 4. Update in-memory stores and synchronize tool assignments table
+  inMemoryPersistentGrants.set(grantRecord.id, grantRecord);
+  await setToolAssignment(operatorUserId, toolId, accountId, true);
+
+  for (const req of inMemoryToolRequests.values()) {
+    if (req.server_id === serverId && req.tool_id === toolId && req.account_id === accountId && req.status === 'pending') {
+      req.status = 'approved';
+      req.reviewed_by = operatorUserId;
+      req.reviewed_at = now;
+      req.updated_at = now;
+    }
+  }
+
+  return { success: true, grant: grantRecord };
+}
+
+/**
+ * Manually revokes an active grant from an account.
+ */
+export async function revokeToolAccess(
+  operatorUserId: string,
+  serverId: string,
+  toolId: string,
+  accountId: string
+): Promise<{ success: boolean; revoked: boolean }> {
+  if (!operatorUserId || !serverId || !toolId || !accountId) {
+    throw new Error('Operator ID, server ID, tool ID, and target account ID are required.');
+  }
+
+  const tool = await getToolRecord(toolId);
+  if (!tool || tool.owner_id !== operatorUserId || tool.server_id !== serverId) {
+    throw new Error('MCP tool not found or unauthorized.');
+  }
+
+  const now = new Date().toISOString();
+
+  // 1. Mark grant as revoked in database
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    try {
+      const { error } = await supabase
+        .from('mcp_tool_grants')
+        .update({ status: 'revoked', updated_at: now })
+        .eq('server_id', serverId)
+        .eq('tool_id', toolId)
+        .eq('account_id', accountId);
+
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error revoking tool grant: ${error.message}`);
+      }
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+
+  // 2. Mark revoked in in-memory persistent grants
+  let foundInMem = false;
+  for (const [id, g] of inMemoryPersistentGrants.entries()) {
+    if (g.server_id === serverId && g.tool_id === toolId && g.account_id === accountId) {
+      g.status = 'revoked';
+      g.updated_at = now;
+      foundInMem = true;
+    }
+  }
+  if (!foundInMem) {
+    const revokedGrant: McpToolGrantRecord = {
+      id: `grant_${crypto.randomBytes(8).toString('hex')}`,
+      server_id: serverId,
+      tool_id: toolId,
+      account_id: accountId,
+      granted_by: operatorUserId,
+      status: 'revoked',
+      created_at: now,
+      updated_at: now
+    };
+    inMemoryPersistentGrants.set(revokedGrant.id, revokedGrant);
+  }
+
+  // 3. Remove from tool assignments table
+  await setToolAssignment(operatorUserId, toolId, accountId, false);
+
+  return { success: true, revoked: true };
+}
+
+/**
+ * Lists all tool grants for a specific server.
+ */
+export async function listToolGrantsForServer(
+  operatorUserId: string,
+  serverId: string
+): Promise<McpToolGrantRecord[]> {
+  const supabase = getSupabaseClient();
+  const grantsMap = new Map<string, McpToolGrantRecord>();
+
+  // 1. Database grants
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase
+        .from('mcp_tool_grants')
+        .select('*')
+        .eq('server_id', serverId);
+
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error listing tool grants: ${error.message}`);
+      }
+      if (Array.isArray(data)) {
+        for (const g of data) {
+          grantsMap.set(`${g.tool_id}:${g.account_id}`, g);
+        }
+      }
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+
+  // 2. In-memory grants overlay
+  for (const g of inMemoryPersistentGrants.values()) {
+    if (g.server_id === serverId) {
+      grantsMap.set(`${g.tool_id}:${g.account_id}`, g);
+    }
+  }
+
+  // 3. Sync from assignments if not explicitly present in grants
+  const assignments = await listAssignmentsForServer(serverId);
+  for (const a of assignments) {
+    const key = `${a.tool_id}:${a.agent_id}`;
+    if (!grantsMap.has(key)) {
+      grantsMap.set(key, {
+        id: a.id,
+        server_id: a.server_id,
+        tool_id: a.tool_id,
+        account_id: a.agent_id,
+        granted_by: a.granted_by,
+        status: 'active',
+        created_at: a.created_at,
+        updated_at: a.created_at
+      });
+    }
+  }
+
+  return Array.from(grantsMap.values());
+}
+
+/**
+ * Records or updates an access request when an unauthorized caller invokes a tool.
+ * Deduplicates pending requests by updating the existing pending request timestamp & args.
+ */
+export async function recordOrReuseAccessRequest(params: {
+  serverId: string;
+  toolId: string;
+  toolName: string;
+  serverName: string;
+  accountId: string;
+  callerId: string;
+  agentName?: string;
+  requestedOperation?: string;
+  arguments?: Record<string, any>;
+}): Promise<McpToolRequestRecord> {
+  const now = new Date().toISOString();
+
+  // 1. Check in-memory for existing pending request for this account + tool + server
+  for (const req of inMemoryToolRequests.values()) {
+    if (
+      req.server_id === params.serverId &&
+      req.tool_id === params.toolId &&
+      req.account_id === params.accountId &&
+      req.status === 'pending'
+    ) {
+      req.updated_at = now;
+      if (params.arguments) req.arguments = params.arguments;
+      if (params.requestedOperation) req.requested_operation = params.requestedOperation;
+      if (params.agentName) req.agent_name = params.agentName;
+
+      if (isSupabaseConfigured()) {
+        try {
+          const supabase = getSupabaseClient();
+          await supabase
+            .from('mcp_tool_requests')
+            .update({
+              updated_at: now,
+              arguments: req.arguments,
+              requested_operation: req.requested_operation,
+              agent_name: req.agent_name
+            })
+            .eq('id', req.id);
+        } catch {}
+      }
+      return req;
+    }
+  }
+
+  // 2. Check Supabase for existing pending request
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data: existing, error: findErr } = await supabase
+        .from('mcp_tool_requests')
+        .select('*')
+        .eq('server_id', params.serverId)
+        .eq('tool_id', params.toolId)
+        .eq('account_id', params.accountId)
+        .eq('status', 'pending')
+        .maybeSingle();
+
+      if (!findErr && existing) {
+        existing.updated_at = now;
+        existing.arguments = params.arguments || existing.arguments;
+        existing.requested_operation = params.requestedOperation || existing.requested_operation;
+        if (params.agentName) existing.agent_name = params.agentName;
+
+        await supabase
+          .from('mcp_tool_requests')
+          .update({
+            updated_at: now,
+            arguments: existing.arguments,
+            requested_operation: existing.requested_operation,
+            agent_name: existing.agent_name
+          })
+          .eq('id', existing.id);
+
+        inMemoryToolRequests.set(existing.id, existing);
+        return existing;
+      }
+    } catch {}
+  }
+
+  // 3. Create brand-new pending request
+  const newReqId = `req_${crypto.randomBytes(8).toString('hex')}`;
+  const newRecord: McpToolRequestRecord = {
+    id: newReqId,
+    server_id: params.serverId,
+    tool_id: params.toolId,
+    tool_name: params.toolName,
+    server_name: params.serverName,
+    account_id: params.accountId,
+    caller_id: params.callerId,
+    agent_name: params.agentName || params.accountId,
+    requested_operation: params.requestedOperation || 'tool_invocation',
+    arguments: params.arguments || {},
+    status: 'pending',
+    created_at: now,
+    updated_at: now
+  };
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from('mcp_tool_requests')
+        .insert(newRecord)
+        .select()
+        .single();
+
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error creating access request: ${error.message}`);
+      }
+      if (data) Object.assign(newRecord, data);
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+
+  inMemoryToolRequests.set(newRecord.id, newRecord);
+  return newRecord;
+}
+
+/**
+ * Lists tool access requests for an operator's MCP servers.
+ * Supports filtering by serverId and request status ('pending', 'approved', 'rejected', 'all').
+ */
+export async function listToolAccessRequests(
+  operatorUserId: string,
+  serverId?: string,
+  status?: string
+): Promise<McpToolRequestRecord[]> {
+  const operatorServers = await listUserMcpServers(operatorUserId);
+  const operatorServerIds = operatorServers.map((s) => s.id);
+
+  if (serverId && !operatorServerIds.includes(serverId)) {
+    throw new Error('Forbidden: Operator does not own the requested server.');
+  }
+
+  const targetServerIds = serverId ? [serverId] : operatorServerIds;
+  const filterStatus = status && status.toLowerCase() !== 'all' ? status.toLowerCase() : null;
+
+  const resultsMap = new Map<string, McpToolRequestRecord>();
+
+  // 1. Fetch from database if configured
+  if (isSupabaseConfigured() && targetServerIds.length > 0) {
+    try {
+      const supabase = getSupabaseClient();
+      let query = supabase
+        .from('mcp_tool_requests')
+        .select('*')
+        .in('server_id', targetServerIds);
+
+      if (filterStatus) {
+        query = query.eq('status', filterStatus);
+      }
+
+      query = query.order('created_at', { ascending: false });
+
+      const { data, error } = await query;
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error listing access requests: ${error.message}`);
+      }
+      if (Array.isArray(data)) {
+        for (const r of data) {
+          resultsMap.set(r.id, r);
+        }
+      }
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+
+  // 2. Overlay in-memory requests
+  for (const r of inMemoryToolRequests.values()) {
+    if (targetServerIds.includes(r.server_id)) {
+      if (!filterStatus || r.status.toLowerCase() === filterStatus) {
+        resultsMap.set(r.id, r);
+      }
+    }
+  }
+
+  // Sort by created_at descending
+  return Array.from(resultsMap.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+/**
+ * Approves a pending tool access request:
+ * - Persists a permanent grant for the exact requesting account, server, and tool.
+ * - Updates the request status to 'approved'.
+ * - Immediately available for subsequent tool calls.
+ */
+export async function approveToolAccessRequest(
+  operatorUserId: string,
+  requestId: string
+): Promise<{ success: boolean; request: McpToolRequestRecord; grant: McpToolGrantRecord }> {
+  // Find request
+  let request: McpToolRequestRecord | null = inMemoryToolRequests.get(requestId) || null;
+  if (!request && isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase.from('mcp_tool_requests').select('*').eq('id', requestId).maybeSingle();
+      if (data) request = data;
+    } catch {}
+  }
+
+  if (!request) {
+    throw new Error('Access request not found.');
+  }
+
+  // Verify operator owns the server
+  const server = await getMcpServer(operatorUserId, request.server_id);
+  if (!server) {
+    throw new Error('Forbidden: Operator does not own the associated MCP server.');
+  }
+
+  if (request.status !== 'pending') {
+    throw new Error(`Cannot approve request in '${request.status}' state.`);
+  }
+
+  // 1. Grant permanent tool access
+  const grantResult = await grantToolAccess(operatorUserId, request.server_id, request.tool_id, request.account_id);
+
+  // 2. Update request status to approved
+  const now = new Date().toISOString();
+  request.status = 'approved';
+  request.reviewed_by = operatorUserId;
+  request.reviewed_at = now;
+  request.updated_at = now;
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase
+        .from('mcp_tool_requests')
+        .update({
+          status: 'approved',
+          reviewed_by: operatorUserId,
+          reviewed_at: now,
+          updated_at: now
+        })
+        .eq('id', requestId);
+
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error approving access request: ${error.message}`);
+      }
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+
+  inMemoryToolRequests.set(request.id, request);
+  return { success: true, request, grant: grantResult.grant };
+}
+
+/**
+ * Rejects a pending tool access request:
+ * - Updates the request status to 'rejected'.
+ * - Does not grant permission or execute the unauthorized call.
+ * - Retains the decision in request history.
+ */
+export async function rejectToolAccessRequest(
+  operatorUserId: string,
+  requestId: string,
+  reason?: string
+): Promise<{ success: boolean; request: McpToolRequestRecord }> {
+  let request: McpToolRequestRecord | null = inMemoryToolRequests.get(requestId) || null;
+  if (!request && isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase.from('mcp_tool_requests').select('*').eq('id', requestId).maybeSingle();
+      if (data) request = data;
+    } catch {}
+  }
+
+  if (!request) {
+    throw new Error('Access request not found.');
+  }
+
+  const server = await getMcpServer(operatorUserId, request.server_id);
+  if (!server) {
+    throw new Error('Forbidden: Operator does not own the associated MCP server.');
+  }
+
+  if (request.status !== 'pending') {
+    throw new Error(`Cannot reject request in '${request.status}' state.`);
+  }
+
+  const now = new Date().toISOString();
+  request.status = 'rejected';
+  request.reviewed_by = operatorUserId;
+  request.reviewed_at = now;
+  request.rejection_reason = reason?.trim() || 'Access denied by operator policy.';
+  request.updated_at = now;
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase
+        .from('mcp_tool_requests')
+        .update({
+          status: 'rejected',
+          reviewed_by: operatorUserId,
+          reviewed_at: now,
+          rejection_reason: request.rejection_reason,
+          updated_at: now
+        })
+        .eq('id', requestId);
+
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error rejecting access request: ${error.message}`);
+      }
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+
+  inMemoryToolRequests.set(request.id, request);
+  return { success: true, request };
 }
 
 export async function getToolRecord(toolId: string): Promise<McpToolRecord | null> {
@@ -2164,7 +2837,15 @@ export async function invokeAuthorizedTool(
   args: Record<string, any>,
   invocationId?: string,
   grantToken?: string
-): Promise<{ success: boolean; result?: any; error?: string; invocationId?: string; requiresApproval?: boolean }> {
+): Promise<{
+  success: boolean;
+  result?: any;
+  error?: string;
+  invocationId?: string;
+  requiresApproval?: boolean;
+  requestId?: string;
+  requiresAccessApproval?: boolean;
+}> {
   const supabase = getSupabaseClient();
 
   // 1. Fetch tool record
@@ -2205,14 +2886,40 @@ export async function invokeAuthorizedTool(
     };
   }
 
-  // 4. Authorization Check
-  const assignments = await listAssignmentsForServer(server.id);
-  const isAssigned = assignments.some(
-    (a) => a.tool_id === toolId && (a.agent_id === caller.agentId || a.agent_id === caller.userId)
-  );
+  // 4. Authorization Check & Persistent Access Request Integration
+  const hasGrant =
+    (await hasActiveToolGrant(server.id, toolId, caller.agentId)) ||
+    (await hasActiveToolGrant(server.id, toolId, caller.userId));
 
-  if (!isAssigned) {
-    return { success: false, error: 'Forbidden: Tool not authorized or assigned to caller.' };
+  if (!hasGrant) {
+    // 1. Block execution of the unauthorized tool call
+    // 2. Create a persistent access request or reuse an existing pending request
+    const accessReq = await recordOrReuseAccessRequest({
+      serverId: server.id,
+      toolId: tool.id,
+      toolName: tool.name,
+      serverName: server.name,
+      accountId: caller.agentId || caller.userId,
+      callerId: caller.userId,
+      agentName: caller.agentId,
+      requestedOperation: 'tool_invocation',
+      arguments: args
+    });
+
+    await logAgentFootprint(
+      caller.userId,
+      'MCP_TOOL_INVOCATION_BLOCKED',
+      `Blocked: Tool '${tool.name}' not authorized for account '${caller.agentId || caller.userId}'. Access request '${accessReq.id}' created.`,
+      tool.id,
+      caller.agentId
+    );
+
+    return {
+      success: false,
+      error: `Forbidden: Tool not authorized or assigned to caller. Access request created for operator approval (request: ${accessReq.id}).`,
+      requestId: accessReq.id,
+      requiresAccessApproval: true
+    };
   }
 
   // 5. HITL Check

@@ -32,7 +32,16 @@ import {
   clearHitlStoreForTesting,
   hashToolArguments,
   canonicalJsonStringify,
-  resetDbHasSessionIdColumnForTesting
+  resetDbHasSessionIdColumnForTesting,
+  hasActiveToolGrant,
+  grantToolAccess,
+  revokeToolAccess,
+  listToolGrantsForServer,
+  recordOrReuseAccessRequest,
+  listToolAccessRequests,
+  approveToolAccessRequest,
+  rejectToolAccessRequest,
+  clearAccessGovernanceForTesting
 } from '../services/mcpService.js';
 import {
   establishDirectConnection,
@@ -1524,6 +1533,138 @@ export async function runFloorMcpServerTests(): Promise<Record<string, { passed:
   } catch (err: any) {
     resetDbHasSessionIdColumnForTesting(null);
     results['test_missing_session_id_column_resilience'] = { passed: false, message: err?.message };
+  }
+
+  // ============================================================================
+  // 31. PERSISTENT MCP TOOL PERMISSIONS & ACCESS REQUESTS GOVERNANCE TEST SUITE
+  // ============================================================================
+  try {
+    clearAccessGovernanceForTesting();
+
+    const govServerRes = await addMcpServerWithDiscovery(masterUserId, {
+      name: 'Governance Test MCP Server',
+      endpoint: 'mock://test-gov-mcp.internal',
+      transport: 'http-streamable',
+      auth_type: 'none'
+    });
+
+    const govServerId = govServerRes.server.id;
+    const govTool = govServerRes.tools[0];
+    const govToolId = govTool.id;
+    const testAgentAlpha = 'agent_slave_alpha_001';
+    const testAgentBeta = 'agent_slave_beta_002';
+    const intruderAgent = 'agent_unauthorized_intruder_999';
+
+    // 1. Unauthorized invocation blocked and creates access request
+    const unauthCall1 = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: testAgentAlpha, isMaster: false },
+      govToolId,
+      { query: 'initial unauthorized attempt' }
+    );
+
+    const call1Blocked = !unauthCall1.success && unauthCall1.error?.includes('not authorized');
+    const reqList1 = await listToolAccessRequests(masterUserId, govServerId, 'pending');
+    const req1Created = reqList1.length === 1 && reqList1[0].account_id === testAgentAlpha && reqList1[0].tool_id === govToolId;
+
+    // 2. Duplicate prevention: second call reuses and updates existing request
+    const unauthCall2 = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: testAgentAlpha, isMaster: false },
+      govToolId,
+      { query: 'second attempt with modified payload' }
+    );
+
+    const reqList2 = await listToolAccessRequests(masterUserId, govServerId, 'pending');
+    const noDuplicate = reqList2.length === 1 && reqList2[0].arguments?.query === 'second attempt with modified payload';
+
+    // 3. Human Approval creates permanent grant & immediately unblocks execution
+    const pendingReqId = reqList2[0].id;
+    const approvalRes = await approveToolAccessRequest(masterUserId, pendingReqId);
+    const approvalStatusOk = approvalRes.success && approvalRes.request.status === 'approved';
+    const grantExists = await hasActiveToolGrant(govServerId, govToolId, testAgentAlpha);
+
+    // 4. Authorized account can invoke tool repeatedly without repeated prompts
+    const callPostApprove1 = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: testAgentAlpha, isMaster: false },
+      govToolId,
+      { query: 'authorized execution 1' }
+    );
+    const callPostApprove2 = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: testAgentAlpha, isMaster: false },
+      govToolId,
+      { query: 'authorized execution 2' }
+    );
+    const repeatedExecutionOk = callPostApprove1.success && callPostApprove2.success;
+
+    // 5. Account isolation: other accounts do NOT inherit the grant
+    const betaCall = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: testAgentBeta, isMaster: false },
+      govToolId,
+      { query: 'beta attempt' }
+    );
+    const betaBlocked = !betaCall.success && betaCall.error?.includes('not authorized');
+    const betaReqList = await listToolAccessRequests(masterUserId, govServerId, 'pending');
+    const betaHasDistinctReq = betaReqList.some((r) => r.account_id === testAgentBeta);
+
+    // 6. Manual revocation immediately blocks subsequent calls
+    await revokeToolAccess(masterUserId, govServerId, govToolId, testAgentAlpha);
+    const hasGrantPostRevoke = await hasActiveToolGrant(govServerId, govToolId, testAgentAlpha);
+    const callPostRevoke = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: testAgentAlpha, isMaster: false },
+      govToolId,
+      { query: 'post revoke attempt' }
+    );
+    const revokeDeniesCall = !hasGrantPostRevoke && !callPostRevoke.success && callPostRevoke.error?.includes('not authorized');
+
+    // 7. Rejection flow: rejects request, does NOT grant access, retains decision history
+    const betaPendingReq = betaReqList.find((r) => r.account_id === testAgentBeta)!;
+    const rejectRes = await rejectToolAccessRequest(masterUserId, betaPendingReq.id, 'Account lacks necessary role');
+    const rejectStatusOk = rejectRes.success && rejectRes.request.status === 'rejected';
+    const betaStillBlocked = !(await hasActiveToolGrant(govServerId, govToolId, testAgentBeta));
+    const allRequestsHistory = await listToolAccessRequests(masterUserId, govServerId, 'all');
+    const historyRetained = allRequestsHistory.some((r) => r.id === betaPendingReq.id && r.status === 'rejected');
+
+    // 8. Foreign operator authorization boundary: cannot approve or tamper with another operator's server
+    const foreignOperatorId = 'usr_foreign_attacker_888';
+    let foreignApprovalBlocked = false;
+    try {
+      await approveToolAccessRequest(foreignOperatorId, pendingReqId);
+    } catch {
+      foreignApprovalBlocked = true;
+    }
+
+    await removeMcpServer(masterUserId, govServerId);
+
+    const allPassed =
+      call1Blocked &&
+      req1Created &&
+      noDuplicate &&
+      approvalStatusOk &&
+      grantExists &&
+      repeatedExecutionOk &&
+      betaBlocked &&
+      betaHasDistinctReq &&
+      revokeDeniesCall &&
+      rejectStatusOk &&
+      betaStillBlocked &&
+      historyRetained &&
+      foreignApprovalBlocked;
+
+    if (allPassed) {
+      results['test_persistent_grants_and_access_requests_lifecycle'] = {
+        passed: true,
+        message: 'Persistent account-level tool grants, duplicate prevention, approval, revocation, rejection history, and isolation fully validated'
+      };
+      console.log('[PASSED] test_persistent_grants_and_access_requests_lifecycle: Full persistent tool governance validated');
+    } else {
+      results['test_persistent_grants_and_access_requests_lifecycle'] = {
+        passed: false,
+        message: `Persistent governance checks failed: call1Blocked=${call1Blocked}, req1Created=${req1Created}, noDup=${noDuplicate}, app=${approvalStatusOk}, grantExists=${grantExists}, repOk=${repeatedExecutionOk}, betaBlocked=${betaBlocked}, revokeOk=${revokeDeniesCall}, rejOk=${rejectStatusOk}, foreignBlocked=${foreignApprovalBlocked}`
+      };
+      console.error('[FAILED] test_persistent_grants_and_access_requests_lifecycle');
+    }
+  } catch (err: any) {
+    results['test_persistent_grants_and_access_requests_lifecycle'] = { passed: false, message: err?.message };
+    console.error('[FAILED] test_persistent_grants_and_access_requests_lifecycle exception:', err);
   }
 
   return results;

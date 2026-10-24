@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Server,
@@ -13,16 +13,28 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Clock,
+  Check,
+  XCircle,
+  Plus,
+  Inbox
 } from 'lucide-react';
 import {
   McpServer,
   McpTool,
   FleetAgent,
+  McpToolGrant,
+  McpToolRequest,
   reconnectMcpServerApi,
   deleteMcpServerApi,
   setToolAssignmentApi,
-  invokeMcpToolApi
+  invokeMcpToolApi,
+  fetchServerGrantsApi,
+  setToolGrantApi,
+  fetchToolRequestsApi,
+  approveToolRequestApi,
+  rejectToolRequestApi
 } from '../../services/floorApi';
 import { AgentAvatar } from '../AgentAvatar';
 
@@ -49,7 +61,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   isSlaveAccount = false,
   onOpenAgentProfile
 }) => {
-  const [activeTab, setActiveTab] = useState<'tools' | 'assignment' | 'test'>('tools');
+  const [activeTab, setActiveTab] = useState<'tools' | 'assignment' | 'requests' | 'test'>('tools');
   const [selectedToolId, setSelectedToolId] = useState<string | null>(tools[0]?.id || null);
   const [expandedSchemaToolId, setExpandedSchemaToolId] = useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -57,11 +69,72 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
+  // Grants state
+  const [grants, setGrants] = useState<McpToolGrant[]>([]);
+  const [isLoadingGrants, setIsLoadingGrants] = useState(false);
+  const [selectedGrantToolId, setSelectedGrantToolId] = useState<string>(tools[0]?.id || '');
+  const [selectedGrantAccountId, setSelectedGrantAccountId] = useState<string>(fleetAgents[0]?.agentId || '');
+  const [isGrantingSubmitting, setIsGrantingSubmitting] = useState(false);
+  const [revokingTarget, setRevokingTarget] = useState<string | null>(null);
+
+  // Requests state
+  const [requests, setRequests] = useState<McpToolRequest[]>([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+  const [requestFilter, setRequestFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+  const [expandedReqArgsId, setExpandedReqArgsId] = useState<string | null>(null);
+
   // Test Execution State
   const [testArgsJson, setTestArgsJson] = useState('{}');
   const [isExecuting, setIsExecuting] = useState(false);
   const [execResult, setExecResult] = useState<any>(null);
   const [execError, setExecError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tools.length > 0 && !selectedToolId) {
+      setSelectedToolId(tools[0].id);
+      setSelectedGrantToolId(tools[0].id);
+    }
+  }, [tools, selectedToolId]);
+
+  useEffect(() => {
+    if (fleetAgents.length > 0 && !selectedGrantAccountId) {
+      setSelectedGrantAccountId(fleetAgents[0].agentId || fleetAgents[0].id);
+    }
+  }, [fleetAgents, selectedGrantAccountId]);
+
+  const loadGrants = async () => {
+    if (!server) return;
+    setIsLoadingGrants(true);
+    try {
+      const data = await fetchServerGrantsApi(server.id);
+      setGrants(data);
+    } catch {
+      // Graceful fallback to tool assignments
+    } finally {
+      setIsLoadingGrants(false);
+    }
+  };
+
+  const loadRequests = async () => {
+    if (!server) return;
+    setIsLoadingRequests(true);
+    try {
+      const data = await fetchToolRequestsApi(server.id);
+      setRequests(data);
+    } catch {
+      // Graceful error handling
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && server) {
+      loadGrants();
+      loadRequests();
+    }
+  }, [isOpen, server?.id]);
 
   if (!isOpen || !server) return null;
 
@@ -76,6 +149,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
       onServerUpdated(res.server, res.tools);
       setActionSuccess('Reconnected successfully & tools refreshed!');
       setTimeout(() => setActionSuccess(null), 3000);
+      loadGrants();
     } catch (err: any) {
       setActionError(err?.message || 'Failed to reconnect to MCP server.');
     } finally {
@@ -100,25 +174,101 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
     }
   };
 
-  const handleToggleAssignment = async (toolId: string, agentId: string, currentGranted: boolean) => {
+  const handleGrantAccess = async (toolId: string, accountId: string) => {
+    if (!toolId || !accountId) return;
+    setIsGrantingSubmitting(true);
     setActionError(null);
+    setActionSuccess(null);
     try {
-      const newGranted = !currentGranted;
-      await setToolAssignmentApi(toolId, agentId, newGranted);
+      const res = await setToolGrantApi(toolId, accountId, true);
+      // Refresh grants
+      await loadGrants();
+      // Update tools state assigned_agents
+      const updatedTools = tools.map((t) => {
+        if (t.id !== toolId) return t;
+        const currentAssigned = t.assigned_agents || [];
+        const nextAssigned = Array.from(new Set([...currentAssigned, accountId]));
+        return { ...t, assigned_agents: nextAssigned };
+      });
+      onServerUpdated(server, updatedTools);
+      setActionSuccess(`Permanent tool access granted to ${accountId}!`);
+      setTimeout(() => setActionSuccess(null), 3000);
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to grant tool access.');
+    } finally {
+      setIsGrantingSubmitting(false);
+    }
+  };
 
+  const handleRevokeGrant = async (toolId: string, accountId: string) => {
+    const key = `${toolId}:${accountId}`;
+    setRevokingTarget(key);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      await setToolGrantApi(toolId, accountId, false);
+      // Refresh grants
+      await loadGrants();
       // Update local tools state
       const updatedTools = tools.map((t) => {
         if (t.id !== toolId) return t;
         const currentAssigned = t.assigned_agents || [];
-        const nextAssigned = newGranted
-          ? Array.from(new Set([...currentAssigned, agentId]))
-          : currentAssigned.filter((a) => a !== agentId);
+        const nextAssigned = currentAssigned.filter((a) => a !== accountId);
         return { ...t, assigned_agents: nextAssigned };
       });
-
       onServerUpdated(server, updatedTools);
+      setActionSuccess(`Tool access revoked from ${accountId}. Subsequent calls will be denied.`);
+      setTimeout(() => setActionSuccess(null), 3000);
     } catch (err: any) {
-      setActionError(err?.message || 'Failed to update assignment.');
+      setActionError(err?.message || 'Failed to revoke tool grant.');
+    } finally {
+      setRevokingTarget(null);
+    }
+  };
+
+  const handleApproveRequest = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await approveToolRequestApi(requestId);
+      setRequests((prev) =>
+        prev.map((r) => (r.id === requestId ? { ...r, status: 'approved', reviewed_at: new Date().toISOString() } : r))
+      );
+      await loadGrants();
+      // Update tool assignment in tools state
+      if (res.grant) {
+        const updatedTools = tools.map((t) => {
+          if (t.id !== res.grant.tool_id) return t;
+          const nextAssigned = Array.from(new Set([...(t.assigned_agents || []), res.grant.account_id]));
+          return { ...t, assigned_agents: nextAssigned };
+        });
+        onServerUpdated(server, updatedTools);
+      }
+      setActionSuccess(`Access request approved! Permanent grant issued for ${res.request.account_id}.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to approve access request.');
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    setProcessingRequestId(requestId);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      await rejectToolRequestApi(requestId, 'Access denied by operator policy.');
+      setRequests((prev) =>
+        prev.map((r) => (r.id === requestId ? { ...r, status: 'rejected', reviewed_at: new Date().toISOString() } : r))
+      );
+      setActionSuccess('Access request rejected and retained in governance history.');
+      setTimeout(() => setActionSuccess(null), 3000);
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to reject access request.');
+    } finally {
+      setProcessingRequestId(null);
     }
   };
 
@@ -146,6 +296,14 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
       setIsExecuting(false);
     }
   };
+
+  // Filter requests
+  const filteredRequests = requests.filter((r) => {
+    if (requestFilter === 'all') return true;
+    return r.status === requestFilter;
+  });
+
+  const pendingRequestsCount = requests.filter((r) => r.status === 'pending').length;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
@@ -204,7 +362,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 type="button"
                 onClick={handleReconnect}
                 disabled={isReconnecting}
-                className="px-2.5 py-1 bg-white text-[#141414] hover:bg-neutral-100 border border-[#141414] text-[10px] font-bold uppercase transition-all flex items-center gap-1.5"
+                className="px-2.5 py-1 bg-white text-[#141414] hover:bg-neutral-100 border border-[#141414] text-[10px] font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer"
                 title="Re-verify connection & sync tool definitions"
               >
                 <RefreshCw className={`w-3 h-3 ${isReconnecting ? 'animate-spin' : ''}`} />
@@ -214,7 +372,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 type="button"
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="px-2.5 py-1 bg-red-600 text-white hover:bg-red-700 border border-red-700 text-[10px] font-bold uppercase transition-all flex items-center gap-1.5"
+                className="px-2.5 py-1 bg-red-600 text-white hover:bg-red-700 border border-red-700 text-[10px] font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer"
                 title="Permanently remove integration"
               >
                 <Trash2 className="w-3 h-3" />
@@ -239,11 +397,11 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
         )}
 
         {/* Tabs Bar */}
-        <div className="flex items-center border-b-2 border-[#141414] bg-neutral-100 shrink-0">
+        <div className="flex items-center border-b-2 border-[#141414] bg-neutral-100 shrink-0 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab('tools')}
-            className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-1.5 ${
+            className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === 'tools'
                 ? 'bg-white text-[#141414] border-r-2 border-[#141414] -mb-[2px] pb-[10px]'
                 : 'text-[#141414]/60 hover:text-[#141414]'
@@ -255,28 +413,52 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
           <button
             type="button"
-            onClick={() => setActiveTab('assignment')}
-            className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-1.5 ${
+            onClick={() => {
+              setActiveTab('assignment');
+              loadGrants();
+            }}
+            className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === 'assignment'
                 ? 'bg-white text-[#141414] border-r-2 border-l-2 border-[#141414] -mb-[2px] pb-[10px]'
                 : 'text-[#141414]/60 hover:text-[#141414]'
             }`}
           >
-            <Users className="w-3.5 h-3.5" />
+            <ShieldCheck className="w-3.5 h-3.5" />
             <span>Access & Governance</span>
           </button>
 
           <button
             type="button"
+            onClick={() => {
+              setActiveTab('requests');
+              loadRequests();
+            }}
+            className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
+              activeTab === 'requests'
+                ? 'bg-white text-[#141414] border-r-2 border-l-2 border-[#141414] -mb-[2px] pb-[10px]'
+                : 'text-[#141414]/60 hover:text-[#141414]'
+            }`}
+          >
+            <Inbox className="w-3.5 h-3.5" />
+            <span>Requests</span>
+            {pendingRequestsCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 bg-amber-500 text-black text-[9px] font-black border border-amber-600">
+                {pendingRequestsCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('test')}
-            className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-1.5 ${
+            className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === 'test'
                 ? 'bg-white text-[#141414] border-r-2 border-l-2 border-[#141414] -mb-[2px] pb-[10px]'
                 : 'text-[#141414]/60 hover:text-[#141414]'
             }`}
           >
             <Play className="w-3.5 h-3.5" />
-            <span>Requests</span>
+            <span>Test Sandbox</span>
           </button>
         </div>
 
@@ -315,13 +497,13 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             ? 'bg-[#141414] text-white border-[#141414]'
                             : 'bg-neutral-100 text-[#141414]/60 border-neutral-300'
                         }`}>
-                          {assignedCount > 0 ? `${assignedCount} Agents Authorized` : 'Unassigned (Restricted)'}
+                          {assignedCount > 0 ? `${assignedCount} Accounts Authorized` : 'Unassigned (Restricted)'}
                         </span>
 
                         <button
                           type="button"
                           onClick={() => setExpandedSchemaToolId(isSchemaExpanded ? null : tool.id)}
-                          className="px-2 py-0.5 bg-[#FAF9F5] border border-[#141414] text-[10px] font-bold uppercase hover:bg-neutral-100 transition-all flex items-center gap-1"
+                          className="px-2 py-0.5 bg-[#FAF9F5] border border-[#141414] text-[10px] font-bold uppercase hover:bg-neutral-100 transition-all flex items-center gap-1 cursor-pointer"
                         >
                           <Code className="w-3 h-3" />
                           <span>{isSchemaExpanded ? 'Hide Schema' : 'Inspect Schema'}</span>
@@ -355,126 +537,215 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
           </div>
         )}
 
-        {/* Tab 2: Access & Governance (Assigning to Fleet Slave Agents) */}
+        {/* Tab 2: Access & Governance (Persistent Grants Management) */}
         {activeTab === 'assignment' && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-left">
             <div className="p-3 bg-[#FAF9F5] border-2 border-[#141414] text-xs space-y-1">
               <span className="font-black uppercase tracking-wider flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4" />
-                Server-Enforced Agent Authorization Matrix
+                Persistent Account-Level Tool Authorization Matrix
               </span>
               <p className="text-[10px] text-[#141414]/70 font-sans leading-relaxed">
-                Tools are closed by default. Fleet agents cannot execute a tool unless explicitly authorized in this matrix. Revoking permissions takes effect immediately on the backend proxy.
+                Tools are closed by default. Authorized accounts can invoke tools repeatedly without prompt. Grants persist indefinitely until explicitly revoked manually. Revocation denies subsequent calls immediately.
               </p>
-              {!isSlaveAccount && (
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={isDeleting}
-                  className="mt-3 px-3 py-1.5 bg-red-600 text-white hover:bg-red-700 border-2 border-red-700 text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Disband Cluster</span>
-                </button>
-              )}
             </div>
 
+            {/* Quick Grant Panel */}
+            {!isSlaveAccount && tools.length > 0 && fleetAgents.length > 0 && (
+              <div className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3">
+                <div className="flex items-center justify-between border-b border-[#141414]/15 pb-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5" />
+                    Grant Permanent Access
+                  </span>
+                  <span className="text-[9px] text-neutral-500 font-bold uppercase">
+                    Account-Specific Authorization
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end">
+                  <div>
+                    <label className="block text-[9px] font-black uppercase text-[#141414]/70 mb-1">
+                      1. Select Discovered Tool
+                    </label>
+                    <select
+                      value={selectedGrantToolId}
+                      onChange={(e) => setSelectedGrantToolId(e.target.value)}
+                      className="w-full bg-white border-2 border-[#141414] p-1.5 text-xs font-mono font-bold focus:outline-hidden"
+                    >
+                      {tools.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] font-black uppercase text-[#141414]/70 mb-1">
+                      2. Select Target Account
+                    </label>
+                    <select
+                      value={selectedGrantAccountId}
+                      onChange={(e) => setSelectedGrantAccountId(e.target.value)}
+                      className="w-full bg-white border-2 border-[#141414] p-1.5 text-xs font-mono font-bold focus:outline-hidden"
+                    >
+                      {fleetAgents.map((a) => (
+                        <option key={a.id} value={a.agentId || a.id}>
+                          {a.name} (@{a.agentId?.replace(/^@/, '') || a.id}) {a.isMaster ? '[Master]' : '[Slave]'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleGrantAccess(selectedGrantToolId, selectedGrantAccountId)}
+                    disabled={isGrantingSubmitting || !selectedGrantToolId || !selectedGrantAccountId}
+                    className="w-full py-2 px-3 bg-[#141414] text-white hover:bg-black border-2 border-[#141414] text-[10px] font-black uppercase tracking-wider cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                  >
+                    {isGrantingSubmitting ? (
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Check className="w-3 h-3" />
+                    )}
+                    <span>Authorize Account</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Matrix of Tools & Granted Accounts */}
             {tools.length === 0 ? (
-              <p className="text-xs text-[#141414]/60 italic py-4">No tools available to assign.</p>
+              <p className="text-xs text-[#141414]/60 italic py-4">No tools available to govern.</p>
             ) : (
               <div className="space-y-4">
                 {tools.map((tool) => {
-                  const governableAgents = fleetAgents.filter((agent) => !agent.isMaster);
+                  const assignedAgentsList = tool.assigned_agents || [];
+                  const activeGrantsForTool = grants.filter(
+                    (g) => g.tool_id === tool.id && g.status === 'active'
+                  );
+                  // Accounts that have access
+                  const grantedAccounts = fleetAgents.filter((agent) => {
+                    const matchId = agent.agentId || agent.id;
+                    const byAssigned = assignedAgentsList.includes(matchId) || assignedAgentsList.includes(agent.id);
+                    const byGrant = activeGrantsForTool.some((g) => g.account_id === matchId || g.account_id === agent.id);
+                    return byAssigned || byGrant;
+                  });
+
+                  // Accounts without access
+                  const ungrantedAccounts = fleetAgents.filter(
+                    (agent) => !grantedAccounts.some((g) => g.id === agent.id)
+                  );
 
                   return (
                     <div key={tool.id} className="p-3 bg-white border-2 border-[#141414] space-y-3 text-left">
-                      <div className="flex items-center justify-between border-b border-[#141414]/20 pb-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-[#141414]/20 pb-2">
                         <div className="flex items-center gap-2">
                           <Wrench className="w-3.5 h-3.5" />
                           <span className="text-xs font-black uppercase">{tool.name}</span>
                         </div>
-                        <span className="text-[9px] font-bold text-[#141414]/60 uppercase">
-                          Select accounts allowed to invoke this tool
+                        <span className="text-[9px] font-bold text-[#141414]/70 uppercase">
+                          {grantedAccounts.length} Account{grantedAccounts.length === 1 ? '' : 's'} Granted Permanent Access
                         </span>
                       </div>
 
-                      {governableAgents.length === 0 ? (
-                        <div className="p-4 text-center border border-dashed border-[#141414]/20 bg-[#FAF9F5]">
-                          <p className="text-[11px] font-bold text-[#141414]/60 uppercase">
-                            No fleet slave agents available to authorize.
-                          </p>
-                          <p className="text-[10px] text-[#141414]/40 mt-0.5 font-sans">
-                            Deploy or register slave agents in your cluster to delegate tool invocation permissions.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {governableAgents.map((agent) => {
-                            const isGranted = (tool.assigned_agents || []).includes(agent.agentId) ||
-                                              (tool.assigned_agents || []).includes(agent.id);
+                      {/* Currently Authorized Accounts */}
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] font-bold text-[#141414]/60 uppercase block">
+                          Authorized Accounts (Indefinite Permanent Grants):
+                        </span>
+                        {grantedAccounts.length === 0 ? (
+                          <div className="p-3 border border-dashed border-[#141414]/20 bg-[#FAF9F5] text-center">
+                            <p className="text-[10px] font-bold text-[#141414]/50 uppercase">
+                              No accounts authorized yet. All calls to '{tool.name}' will be blocked and recorded in Requests.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {grantedAccounts.map((agent) => {
+                              const targetId = agent.agentId || agent.id;
+                              const isRevoking = revokingTarget === `${tool.id}:${targetId}`;
 
-                            return (
-                              <div
-                                key={agent.id}
-                                className={`p-2.5 border-2 flex items-center justify-between gap-2.5 transition-all ${
-                                  isGranted
-                                    ? 'bg-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                                    : 'bg-[#FAF9F5] border-neutral-300 opacity-80 hover:opacity-100'
-                                }`}
-                              >
+                              return (
                                 <div
-                                  className={`flex items-center gap-2.5 min-w-0 flex-1 ${
-                                    onOpenAgentProfile ? 'cursor-pointer group' : ''
-                                  }`}
-                                  onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
-                                  title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
+                                  key={agent.id}
+                                  className="p-2.5 bg-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center justify-between gap-2.5"
                                 >
-                                  <AgentAvatar
-                                    id={agent.agentId || agent.id}
-                                    name={agent.name}
-                                    avatar={agent.avatar}
-                                    isMaster={false}
-                                    className="w-8 h-8 rounded-full border border-[#141414] shrink-0 group-hover:scale-105 transition-transform"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <span className="text-[11px] font-bold block truncate text-[#141414] group-hover:underline">
-                                      {agent.name}
-                                    </span>
-                                    <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
-                                      @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
-                                    </span>
+                                  <div
+                                    className={`flex items-center gap-2 min-w-0 flex-1 ${
+                                      onOpenAgentProfile ? 'cursor-pointer group' : ''
+                                    }`}
+                                    onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
+                                    title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
+                                  >
+                                    <AgentAvatar
+                                      id={agent.agentId || agent.id}
+                                      name={agent.name}
+                                      avatar={agent.avatar}
+                                      isMaster={agent.isMaster}
+                                      className="w-7 h-7 rounded-full border border-[#141414] shrink-0"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] font-bold truncate text-[#141414]">
+                                          {agent.name}
+                                        </span>
+                                        <span className="text-[8px] bg-green-100 text-green-900 border border-green-600 px-1 font-bold uppercase">
+                                          Active
+                                        </span>
+                                      </div>
+                                      <span className="text-[8.5px] text-[#141414]/60 font-mono block truncate">
+                                        @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
+                                      </span>
+                                    </div>
                                   </div>
-                                </div>
 
-                                {!isSlaveAccount ? (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleToggleAssignment(tool.id, agent.agentId, isGranted);
-                                    }}
-                                    className={`px-2.5 py-1 text-[10px] font-black uppercase border transition-all shrink-0 cursor-pointer ${
-                                      isGranted
-                                        ? 'bg-[#141414] text-white border-[#141414] hover:bg-neutral-800'
-                                        : 'bg-white text-[#141414] border-[#141414] hover:bg-neutral-100'
-                                    }`}
-                                  >
-                                    {isGranted ? 'Granted' : 'Grant Access'}
-                                  </button>
-                                ) : (
-                                  <span
-                                    className={`text-[9px] font-bold uppercase shrink-0 px-2 py-0.5 border ${
-                                      isGranted
-                                        ? 'bg-[#141414] text-white border-[#141414]'
-                                        : 'bg-neutral-100 text-[#141414]/60 border-neutral-300'
-                                    }`}
-                                  >
-                                    {isGranted ? 'Authorized' : 'Denied'}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
+                                  {!isSlaveAccount && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRevokeGrant(tool.id, targetId)}
+                                      disabled={isRevoking}
+                                      className="px-2 py-1 bg-red-600 text-white hover:bg-red-700 text-[9px] font-black uppercase tracking-wider border border-[#141414] transition-all shrink-0 cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                                      title="Revoke grant and immediately deny calls"
+                                    >
+                                      {isRevoking ? (
+                                        <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                                      ) : (
+                                        <XCircle className="w-2.5 h-2.5" />
+                                      )}
+                                      <span>Revoke</span>
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Ungranted Accounts Quick Delegation */}
+                      {!isSlaveAccount && ungrantedAccounts.length > 0 && (
+                        <div className="pt-2 border-t border-neutral-200 space-y-1.5">
+                          <span className="text-[9px] font-bold text-[#141414]/50 uppercase block">
+                            Delegate Access To Other Fleet Nodes:
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {ungrantedAccounts.map((agent) => {
+                              const targetId = agent.agentId || agent.id;
+                              return (
+                                <button
+                                  key={agent.id}
+                                  type="button"
+                                  onClick={() => handleGrantAccess(tool.id, targetId)}
+                                  className="px-2 py-0.5 bg-[#FAF9F5] hover:bg-neutral-100 border border-[#141414] text-[9px] font-bold uppercase flex items-center gap-1 cursor-pointer transition-all"
+                                >
+                                  <Plus className="w-2.5 h-2.5" />
+                                  <span>{agent.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -485,13 +756,237 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
           </div>
         )}
 
-        {/* Tab 3: Interactive Tool Execution Sandbox */}
+        {/* Tab 3: Access Requests Section */}
+        {activeTab === 'requests' && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-left">
+            <div className="p-3 bg-[#FAF9F5] border-2 border-[#141414] text-xs space-y-1">
+              <span className="font-black uppercase tracking-wider flex items-center gap-1.5">
+                <Inbox className="w-4 h-4 text-amber-700" />
+                Persistent Tool Access Requests Queue
+              </span>
+              <p className="text-[10px] text-[#141414]/70 font-sans leading-relaxed">
+                When an unauthorized agent attempts an invocation, execution is blocked and a request is queued here. Approving a request grants permanent access and unblocks future invocations. Rejection denies the call and preserves history.
+              </p>
+            </div>
+
+            {/* Filter Tabs & Refresh */}
+            <div className="flex items-center justify-between border-b border-[#141414]/20 pb-2 gap-2 flex-wrap">
+              <div className="flex items-center gap-1">
+                {(['pending', 'approved', 'rejected', 'all'] as const).map((st) => {
+                  const count =
+                    st === 'all'
+                      ? requests.length
+                      : requests.filter((r) => r.status === st).length;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setRequestFilter(st)}
+                      className={`px-2.5 py-1 text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                        requestFilter === st
+                          ? 'bg-[#141414] text-white border-[#141414]'
+                          : 'bg-white text-[#141414]/70 border-neutral-300 hover:text-[#141414]'
+                      }`}
+                    >
+                      {st} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={loadRequests}
+                disabled={isLoadingRequests}
+                className="px-2 py-1 bg-white border border-[#141414] hover:bg-neutral-100 text-[10px] font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoadingRequests ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
+
+            {/* Requests List */}
+            {isLoadingRequests ? (
+              <div className="p-8 text-center text-xs font-bold uppercase text-[#141414]/50">
+                Loading requests...
+              </div>
+            ) : filteredRequests.length === 0 ? (
+              <div className="p-8 text-center border-2 border-dashed border-[#141414]/20 bg-[#FAF9F5] space-y-1">
+                <Inbox className="w-8 h-8 text-[#141414]/30 mx-auto mb-1" />
+                <p className="text-xs font-bold uppercase">No access requests found.</p>
+                <p className="text-[10px] text-[#141414]/60 font-sans">
+                  {requestFilter === 'pending'
+                    ? 'There are currently zero pending tool access requests awaiting operator approval.'
+                    : `No access requests matching status '${requestFilter}'.`}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredRequests.map((req) => {
+                  const isProcessing = processingRequestId === req.id;
+                  const isArgsExpanded = expandedReqArgsId === req.id;
+                  const reqAgent = fleetAgents.find(
+                    (a) => a.agentId === req.account_id || a.id === req.account_id
+                  );
+
+                  return (
+                    <div
+                      key={req.id}
+                      className={`p-3 border-2 transition-all space-y-2.5 ${
+                        req.status === 'pending'
+                          ? 'bg-amber-50/50 border-amber-600 shadow-[2px_2px_0px_0px_rgba(217,119,6,1)]'
+                          : req.status === 'approved'
+                          ? 'bg-white border-green-700'
+                          : 'bg-neutral-50 border-neutral-400 opacity-80'
+                      }`}
+                    >
+                      {/* Request Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-black/10 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Wrench className="w-3.5 h-3.5 text-[#141414]" />
+                          <span className="font-black text-xs uppercase text-[#141414]">
+                            {req.tool_name}
+                          </span>
+                          <span className="text-[9px] bg-neutral-100 text-neutral-600 px-1.5 py-0.2 border border-neutral-300 font-bold uppercase">
+                            {req.server_name}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-[9px] font-black uppercase px-2 py-0.5 border ${
+                              req.status === 'pending'
+                                ? 'bg-amber-500 text-black border-amber-600'
+                                : req.status === 'approved'
+                                ? 'bg-green-600 text-white border-green-700'
+                                : 'bg-red-600 text-white border-red-700'
+                            }`}
+                          >
+                            {req.status}
+                          </span>
+                          <span className="text-[9px] text-[#141414]/60 font-mono">
+                            {new Date(req.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Request Details Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
+                        <div>
+                          <span className="text-[9px] font-bold text-neutral-500 uppercase block">
+                            Requesting Account:
+                          </span>
+                          <div
+                            className={`flex items-center gap-2 mt-0.5 ${
+                              onOpenAgentProfile && reqAgent ? 'cursor-pointer group' : ''
+                            }`}
+                            onClick={() =>
+                              reqAgent && onOpenAgentProfile?.(reqAgent.name, reqAgent.avatar, reqAgent.agentId)
+                            }
+                          >
+                            <AgentAvatar
+                              id={req.account_id}
+                              name={reqAgent?.name || req.agent_name || req.account_id}
+                              avatar={reqAgent?.avatar}
+                              isMaster={reqAgent?.isMaster || false}
+                              className="w-5 h-5 rounded-full border border-[#141414] shrink-0"
+                            />
+                            <span className="font-bold text-[#141414] group-hover:underline truncate">
+                              {reqAgent ? reqAgent.name : req.agent_name || req.account_id}
+                            </span>
+                            <span className="text-[9px] text-neutral-500 font-mono">
+                              (@{req.account_id.replace(/^@/, '')})
+                            </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="text-[9px] font-bold text-neutral-500 uppercase block">
+                            Requested Operation:
+                          </span>
+                          <span className="font-bold text-neutral-800 uppercase text-[10px]">
+                            {req.requested_operation}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Arguments Preview */}
+                      {req.arguments && Object.keys(req.arguments).length > 0 && (
+                        <div className="space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedReqArgsId(isArgsExpanded ? null : req.id)}
+                            className="text-[9px] font-bold text-neutral-600 uppercase flex items-center gap-1 hover:text-black cursor-pointer"
+                          >
+                            <Code className="w-3 h-3" />
+                            <span>{isArgsExpanded ? 'Hide Payload Arguments' : 'View Payload Arguments'}</span>
+                            {isArgsExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                          {isArgsExpanded && (
+                            <pre className="p-2 bg-neutral-900 text-green-400 text-[10px] font-mono overflow-x-auto max-h-32 border border-neutral-700">
+                              {JSON.stringify(req.arguments, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Rejection / Review Info */}
+                      {req.status !== 'pending' && (
+                        <div className="text-[9px] text-neutral-600 pt-1 border-t border-black/10 flex items-center justify-between">
+                          <span>
+                            Decision recorded: {req.reviewed_at ? new Date(req.reviewed_at).toLocaleString() : 'Done'}
+                          </span>
+                          {req.rejection_reason && (
+                            <span className="text-red-700 font-bold truncate max-w-xs">
+                              Reason: {req.rejection_reason}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Action Buttons for Pending Requests */}
+                      {!isSlaveAccount && req.status === 'pending' && (
+                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-black/10">
+                          <button
+                            type="button"
+                            onClick={() => handleRejectRequest(req.id)}
+                            disabled={isProcessing}
+                            className="px-3 py-1.5 bg-red-600 text-white hover:bg-red-700 text-[10px] font-black uppercase tracking-wider border-2 border-[#141414] cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                          >
+                            <XCircle className="w-3 h-3" />
+                            <span>Reject</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleApproveRequest(req.id)}
+                            disabled={isProcessing}
+                            className="px-3.5 py-1.5 bg-green-600 text-white hover:bg-green-700 text-[10px] font-black uppercase tracking-wider border-2 border-[#141414] cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px]"
+                          >
+                            {isProcessing ? (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Check className="w-3 h-3" />
+                            )}
+                            <span>Approve & Grant Permanent Access</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 4: Interactive Tool Execution Sandbox */}
         {activeTab === 'test' && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 text-left">
             <div className="p-3 bg-[#FAF9F5] border-2 border-[#141414] text-xs space-y-1">
               <span className="font-black uppercase tracking-wider flex items-center gap-1.5">
                 <Play className="w-3.5 h-3.5" />
-                Requests
+                Interactive Tool Execution Sandbox
               </span>
               <p className="text-[10px] text-[#141414]/70 font-sans leading-relaxed">
                 Test calling this integration directly through AAMARVA's execution gateway to verify protocol response format and live connectivity.

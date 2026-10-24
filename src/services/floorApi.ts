@@ -190,3 +190,105 @@ export async function resolvePendingInvocationApi(invocationId: string, approved
   return true;
 }
 
+export interface McpToolGrant {
+  id: string;
+  server_id: string;
+  tool_id: string;
+  account_id: string;
+  granted_by: string;
+  status: 'active' | 'revoked';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface McpToolRequest {
+  id: string;
+  server_id: string;
+  tool_id: string;
+  tool_name: string;
+  server_name: string;
+  account_id: string;
+  caller_id: string;
+  agent_name?: string;
+  requested_operation: string;
+  arguments: Record<string, any>;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchServerGrantsApi(serverId: string): Promise<McpToolGrant[]> {
+  const res = await apiFetch(`/api/floor/servers/${serverId}/grants`, { authType: getCurrentSessionAuthType() });
+  if (res?.success && Array.isArray(res.data)) {
+    return res.data;
+  }
+  return [];
+}
+
+export async function setToolGrantApi(
+  toolId: string,
+  accountId: string,
+  granted: boolean
+): Promise<{ success: boolean; granted: boolean; grant?: McpToolGrant }> {
+  const res = await apiFetch(`/api/floor/tools/${toolId}/grants`, {
+    method: 'POST',
+    body: JSON.stringify({ accountId, granted }),
+    authType: 'human'
+  });
+
+  if (!res?.success) {
+    throw new Error(res?.error?.message || 'Failed to update tool grant');
+  }
+  return res;
+}
+
+export async function fetchToolRequestsApi(
+  serverId?: string,
+  status?: string
+): Promise<McpToolRequest[]> {
+  const params = new URLSearchParams();
+  if (serverId) params.set('serverId', serverId);
+  if (status && status !== 'all') params.set('status', status);
+  const queryStr = params.toString() ? `?${params.toString()}` : '';
+
+  const res = await apiFetch(`/api/floor/requests${queryStr}`, { authType: 'human' });
+  if (res?.success && Array.isArray(res.data)) {
+    return res.data;
+  }
+  return [];
+}
+
+export async function approveToolRequestApi(
+  requestId: string
+): Promise<{ success: boolean; request: McpToolRequest; grant: McpToolGrant }> {
+  const res = await apiFetch(`/api/floor/requests/${requestId}/approve`, {
+    method: 'POST',
+    authType: 'human'
+  });
+
+  if (!res?.success) {
+    throw new Error(res?.error?.message || 'Failed to approve tool access request');
+  }
+  return res;
+}
+
+export async function rejectToolRequestApi(
+  requestId: string,
+  reason?: string
+): Promise<{ success: boolean; request: McpToolRequest }> {
+  const res = await apiFetch(`/api/floor/requests/${requestId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+    authType: 'human'
+  });
+
+  if (!res?.success) {
+    throw new Error(res?.error?.message || 'Failed to reject tool access request');
+  }
+  return res;
+}
+
+

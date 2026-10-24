@@ -22,7 +22,13 @@ import {
   approvePendingInvocation,
   denyPendingInvocation,
   listPendingInvocationsForOwner,
-  hashToolArguments
+  hashToolArguments,
+  grantToolAccess,
+  revokeToolAccess,
+  listToolGrantsForServer,
+  listToolAccessRequests,
+  approveToolAccessRequest,
+  rejectToolAccessRequest
 } from '../services/mcpService.js';
 import { getSupabaseClient } from '../supabase.js';
 
@@ -207,7 +213,8 @@ router.post(
     try {
       const userId = req.user!.id;
       const toolId = req.params.toolId as string;
-      const { agentId, granted } = req.body;
+      const agentId = req.body.agentId || req.body.accountId;
+      const granted = req.body.granted;
 
       if (!agentId || typeof agentId !== 'string') {
         return res.status(400).json({ success: false, error: { message: 'Target agentId is required.' } });
@@ -216,15 +223,178 @@ router.post(
       if (typeof granted !== 'boolean') {
         return res.status(400).json({ success: false, error: { message: 'granted must be a boolean' } });
       }
-      const result = await setToolAssignment(userId, toolId, agentId, granted);
+
+      const tool = await getToolRecord(toolId);
+      if (tool) {
+        if (granted) {
+          await grantToolAccess(userId, tool.server_id, toolId, agentId);
+        } else {
+          await revokeToolAccess(userId, tool.server_id, toolId, agentId);
+        }
+      } else {
+        await setToolAssignment(userId, toolId, agentId, granted);
+      }
+
       res.json({
         success: true,
-        assigned: result.assigned,
-        message: result.assigned ? `Tool access granted to ${agentId}` : `Tool access revoked from ${agentId}`
+        assigned: granted,
+        message: granted ? `Tool access granted to ${agentId}` : `Tool access revoked from ${agentId}`
       });
     } catch (err: any) {
-      const isForbidden = err?.message?.includes("does not belong to operator's fleet");
+      const isForbidden = err?.message?.includes("does not belong to operator's") || err?.message?.includes('unauthorized');
       res.status(isForbidden ? 403 : 400).json({ success: false, error: { message: err?.message || 'Failed to update tool assignment.' } });
+    }
+  }
+);
+
+/**
+ * 7b. POST /api/floor/tools/:toolId/grants
+ * Grant or revoke permanent tool access to a specific account (Human/Master only)
+ */
+router.post(
+  '/tools/:toolId/grants',
+  requireHumanSession,
+  securityLayer('floor_manage'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const operatorId = req.user!.id;
+      const toolId = req.params.toolId as string;
+      const accountId = req.body.accountId || req.body.agentId;
+      const granted = req.body.granted;
+
+      if (!accountId || typeof accountId !== 'string') {
+        return res.status(400).json({ success: false, error: { message: 'Target accountId is required.' } });
+      }
+
+      if (typeof granted !== 'boolean') {
+        return res.status(400).json({ success: false, error: { message: 'granted must be a boolean.' } });
+      }
+
+      const tool = await getToolRecord(toolId);
+      if (!tool) {
+        return res.status(404).json({ success: false, error: { message: 'Tool not found.' } });
+      }
+
+      if (granted) {
+        const result = await grantToolAccess(operatorId, tool.server_id, toolId, accountId);
+        return res.json({
+          success: true,
+          granted: true,
+          grant: result.grant,
+          message: `Permanent access to '${tool.name}' granted to ${accountId}`
+        });
+      } else {
+        const result = await revokeToolAccess(operatorId, tool.server_id, toolId, accountId);
+        return res.json({
+          success: true,
+          granted: false,
+          message: `Access to '${tool.name}' revoked from ${accountId}`
+        });
+      }
+    } catch (err: any) {
+      const isForbidden = err?.message?.includes("does not belong to operator's") || err?.message?.includes('unauthorized');
+      res.status(isForbidden ? 403 : 400).json({ success: false, error: { message: err?.message || 'Failed to update tool grant.' } });
+    }
+  }
+);
+
+/**
+ * 7c. GET /api/floor/servers/:serverId/grants
+ * List active tool grants for a specific server
+ */
+router.get(
+  '/servers/:serverId/grants',
+  requireUserOrAgentAuth,
+  securityLayer('floor_reads'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const operatorId = req.user!.masterId || req.user!.id;
+      const serverId = req.params.serverId as string;
+      const grants = await listToolGrantsForServer(operatorId, serverId);
+      res.json({ success: true, data: grants });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: { message: err?.message || 'Failed to list tool grants.' } });
+    }
+  }
+);
+
+/**
+ * 7d. GET /api/floor/requests
+ * List persistent MCP tool access requests (Human/Master only)
+ */
+router.get(
+  '/requests',
+  requireHumanSession,
+  securityLayer('floor_reads'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const operatorId = req.user!.id;
+      const serverId = req.query.serverId as string | undefined;
+      const status = req.query.status as string | undefined;
+      const requests = await listToolAccessRequests(operatorId, serverId, status);
+      res.json({ success: true, data: requests });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: { message: err?.message || 'Failed to list tool access requests.' } });
+    }
+  }
+);
+
+/**
+ * 7e. POST /api/floor/requests/:requestId/approve
+ * Approve an MCP tool access request, creating a permanent grant (Human/Master only)
+ */
+router.post(
+  '/requests/:requestId/approve',
+  requireHumanSession,
+  securityLayer('floor_manage'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const operatorId = req.user!.id;
+      const requestId = req.params.requestId as string;
+      const result = await approveToolAccessRequest(operatorId, requestId);
+      res.json({
+        success: true,
+        data: result.request,
+        grant: result.grant,
+        message: `Tool access request approved and permanent grant issued to account ${result.request.account_id}.`
+      });
+    } catch (err: any) {
+      const isForbidden = err?.message?.includes('Forbidden');
+      const isNotFound = err?.message?.includes('not found');
+      res.status(isForbidden ? 403 : isNotFound ? 404 : 400).json({
+        success: false,
+        error: { message: err?.message || 'Failed to approve tool access request.' }
+      });
+    }
+  }
+);
+
+/**
+ * 7f. POST /api/floor/requests/:requestId/reject
+ * Reject an MCP tool access request without granting permission (Human/Master only)
+ */
+router.post(
+  '/requests/:requestId/reject',
+  requireHumanSession,
+  securityLayer('floor_manage'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const operatorId = req.user!.id;
+      const requestId = req.params.requestId as string;
+      const { reason } = req.body || {};
+      const result = await rejectToolAccessRequest(operatorId, requestId, reason);
+      res.json({
+        success: true,
+        data: result.request,
+        message: 'Tool access request rejected.'
+      });
+    } catch (err: any) {
+      const isForbidden = err?.message?.includes('Forbidden');
+      const isNotFound = err?.message?.includes('not found');
+      res.status(isForbidden ? 403 : isNotFound ? 404 : 400).json({
+        success: false,
+        error: { message: err?.message || 'Failed to reject tool access request.' }
+      });
     }
   }
 );
