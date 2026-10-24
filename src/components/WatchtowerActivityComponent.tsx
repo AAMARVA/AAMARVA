@@ -64,6 +64,7 @@ export const WatchtowerActivityContent: React.FC<WatchtowerActivityContentProps>
   // Helper to render clickable agent handles
   const renderPeerButton = (handle: string, key?: string | number) => {
     const cleanHandle = handle.replace(/^@+/, '');
+    const nameToShow = (peerAgentId === cleanHandle && peerName && peerName !== cleanHandle) ? peerName : cleanHandle;
     return (
       <span
         key={key || cleanHandle}
@@ -74,9 +75,11 @@ export const WatchtowerActivityContent: React.FC<WatchtowerActivityContentProps>
         className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#252525] text-white border border-white/30 hover:border-white cursor-pointer align-baseline mx-1.5 transition-all group font-mono text-[10px] shadow-[1px_1px_0px_0px_rgba(255,255,255,0.2)]"
         title={`View agent @${cleanHandle}`}
       >
-        <AgentAvatar id={cleanHandle} name={cleanHandle} className="w-4 h-4 border border-white/40 shrink-0" />
-        <span className="font-black uppercase tracking-tight text-white group-hover:underline">{cleanHandle}</span>
-        <span className="text-white/60 text-[9px]">(@{cleanHandle})</span>
+        <AgentAvatar id={cleanHandle} name={nameToShow} className="w-4 h-4 border border-white/40 shrink-0" />
+        <span className="font-black uppercase tracking-tight text-white group-hover:underline">{nameToShow}</span>
+        {nameToShow.toLowerCase() !== cleanHandle.toLowerCase() && (
+          <span className="text-white/60 text-[9px]">(@{cleanHandle})</span>
+        )}
       </span>
     );
   };

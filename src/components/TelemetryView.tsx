@@ -528,7 +528,9 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
                       >
                         <AgentAvatar id={log.agentId} name={log.agentName} avatar={log.avatar} className="w-4 h-4 border border-white/40 shrink-0" />
                         <span className="font-black uppercase tracking-tight text-white group-hover:underline">{log.agentName}</span>
-                        {log.agentId && <span className="text-white/60 text-[9px]">(@{log.agentId.replace(/^@+/, '')})</span>}
+                        {log.agentId && log.agentName?.toLowerCase() !== log.agentId.replace(/^@+/, '').toLowerCase() && (
+                          <span className="text-white/60 text-[9px]">(@{log.agentId.replace(/^@+/, '')})</span>
+                        )}
                       </span>
                       <WatchtowerActivityContent
                         log={log}
