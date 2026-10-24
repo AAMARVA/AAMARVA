@@ -8,7 +8,6 @@ import {
   AlertCircle,
   RefreshCw,
   Trash2,
-  Play,
   Code,
   ChevronDown,
   ChevronUp,
@@ -29,7 +28,6 @@ import {
   reconnectMcpServerApi,
   deleteMcpServerApi,
   setToolAssignmentApi,
-  invokeMcpToolApi,
   fetchServerGrantsApi,
   setToolGrantApi,
   fetchToolRequestsApi,
@@ -62,7 +60,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   isSlaveAccount = false,
   onOpenAgentProfile
 }) => {
-  const [activeTab, setActiveTab] = useState<'tools' | 'assignment' | 'requests' | 'test'>('tools');
+  const [activeTab, setActiveTab] = useState<'tools' | 'assignment' | 'requests'>('tools');
   const [selectedToolId, setSelectedToolId] = useState<string | null>(tools[0]?.id || null);
   const [expandedSchemaToolId, setExpandedSchemaToolId] = useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -82,11 +80,6 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
   const [expandedReqArgsId, setExpandedReqArgsId] = useState<string | null>(null);
 
-  // Test Execution State
-  const [testArgsJson, setTestArgsJson] = useState('{}');
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [execResult, setExecResult] = useState<any>(null);
-  const [execError, setExecError] = useState<string | null>(null);
 
   useEffect(() => {
     if (tools.length > 0 && !selectedToolId) {
@@ -247,30 +240,6 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
     }
   };
 
-  const handleExecuteTest = async () => {
-    if (!currentTool) return;
-    setIsExecuting(true);
-    setExecResult(null);
-    setExecError(null);
-
-    let parsedArgs = {};
-    try {
-      parsedArgs = JSON.parse(testArgsJson);
-    } catch {
-      setExecError('Malformed JSON arguments. Please provide valid JSON object.');
-      setIsExecuting(false);
-      return;
-    }
-
-    try {
-      const result = await invokeMcpToolApi(currentTool.id, parsedArgs);
-      setExecResult(result);
-    } catch (err: any) {
-      setExecError(err?.message || 'Tool execution invocation failed.');
-    } finally {
-      setIsExecuting(false);
-    }
-  };
 
   // Filter requests
   const filteredRequests = requests.filter((r) => {
@@ -423,18 +392,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('test')}
-            className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'test'
-                ? 'bg-white text-[#141414] border-r-2 border-l-2 border-[#141414] -mb-[2px] pb-[10px]'
-                : 'text-[#141414]/60 hover:text-[#141414]'
-            }`}
-          >
-            <Play className="w-3.5 h-3.5" />
-            <span>Test Sandbox</span>
-          </button>
+
         </div>
 
         {/* Tab 1: Tools & Schema Inspection */}
@@ -925,103 +883,6 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
           </div>
         )}
 
-        {/* Tab 4: Interactive Tool Execution Sandbox */}
-        {activeTab === 'test' && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-left">
-            <div className="p-3 bg-[#FAF9F5] border-2 border-[#141414] text-xs space-y-1">
-              <span className="font-black uppercase tracking-wider flex items-center gap-1.5">
-                <Play className="w-3.5 h-3.5" />
-                Interactive Tool Execution Sandbox
-              </span>
-              <p className="text-[10px] text-[#141414]/70 font-sans leading-relaxed">
-                Test calling this integration directly through AAMARVA's execution gateway to verify protocol response format and live connectivity.
-              </p>
-            </div>
-
-            {tools.length === 0 ? (
-              <p className="text-xs text-[#141414]/60 italic py-4">No tools available to test.</p>
-            ) : (
-              <div className="space-y-3">
-                {/* Select tool to test */}
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-[#141414]">
-                    Select Tool to Test
-                  </label>
-                  <select
-                    value={selectedToolId || ''}
-                    onChange={(e) => {
-                      setSelectedToolId(e.target.value);
-                      setExecResult(null);
-                      setExecError(null);
-                    }}
-                    className="w-full bg-white border-2 border-[#141414] p-2 text-xs font-mono font-bold focus:outline-hidden"
-                  >
-                    {tools.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} — {t.description?.slice(0, 50) || 'no description'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Input arguments JSON */}
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-[#141414]">
-                    Input Arguments (JSON Object)
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={testArgsJson}
-                    onChange={(e) => setTestArgsJson(e.target.value)}
-                    placeholder='{"query": "test query", "limit": 5}'
-                    className="w-full bg-black text-green-400 border-2 border-[#141414] p-2.5 text-xs font-mono leading-normal focus:outline-hidden"
-                  />
-                </div>
-
-                {/* Submit test button */}
-                <button
-                  type="button"
-                  onClick={handleExecuteTest}
-                  disabled={isExecuting || !currentTool}
-                  className="px-4 py-2 bg-[#141414] text-white hover:bg-black text-xs font-black uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isExecuting ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white relative overflow-hidden">
-                        <div className="absolute inset-0 bg-white animate-pulse" />
-                      </div>
-                      <span>Invoking Remote Tool...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5" />
-                      <span>Execute Tool Call</span>
-                    </>
-                  )}
-                </button>
-
-                {/* Execution Output */}
-                {execError && (
-                  <div className="p-3 bg-red-50 border-2 border-red-600 text-red-700 text-xs font-mono font-bold">
-                    Invocation Error: {execError}
-                  </div>
-                )}
-
-                {execResult && (
-                  <div className="p-3 bg-black text-white border-2 border-[#141414] space-y-1.5">
-                    <span className="text-[10px] font-bold text-green-400 uppercase tracking-wide flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
-                      Execution Result (JSON-RPC)
-                    </span>
-                    <pre className="text-[10px] font-mono text-white/90 overflow-x-auto p-2 bg-neutral-900 border border-white/10 max-h-56">
-                      {JSON.stringify(execResult, null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Modal Footer */}
         <div className="p-3 bg-neutral-50 border-t-2 border-[#141414] flex justify-end shrink-0">
