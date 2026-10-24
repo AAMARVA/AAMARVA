@@ -129,6 +129,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   if (!isOpen || !server) return null;
 
   const currentTool = tools.find((t) => t.id === selectedToolId) || tools[0];
+  const slaveFleetAgents = fleetAgents.filter((a) => !a.isMaster);
 
   const handleReconnect = async () => {
     setIsReconnecting(true);
@@ -512,8 +513,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
         {/* Tab 2: Access & Governance */}
         {activeTab === 'assignment' && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-left">
-            <div className="p-3 bg-[#FAF9F5] border-2 border-[#141414] text-xs space-y-1">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 text-left">
+            <div className="p-2.5 bg-[#FAF9F5] border-2 border-[#141414] text-xs space-y-0.5 shrink-0">
               <span className="font-black uppercase tracking-wider flex items-center gap-1.5">
                 <Users className="w-4 h-4" />
                 Agent Tool Access Governance
@@ -528,13 +529,13 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 <p className="text-xs font-bold uppercase text-[#141414]/50">No tools available to govern.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
                 {/* Left Column: Tools List */}
                 <div className="space-y-2 border-2 border-[#141414] p-2.5 bg-[#FAF9F5]">
                   <span className="text-[10px] font-black uppercase text-[#141414]/70 px-1 block">
                     Select Tool ({tools.length})
                   </span>
-                  <div className="space-y-1.5 max-h-[460px] overflow-y-auto">
+                  <div className="space-y-1.5 max-h-[250px] overflow-y-auto">
                     {tools.map((tool) => {
                       const isSelected = tool.id === selectedToolId;
                       const assignedCount = (tool.assigned_agents || []).length;
@@ -543,7 +544,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                           key={tool.id}
                           type="button"
                           onClick={() => setSelectedToolId(tool.id)}
-                          className={`w-full p-2.5 text-left border-2 transition-all cursor-pointer ${
+                          className={`w-full p-2 text-left border-2 transition-all cursor-pointer ${
                             isSelected
                               ? 'bg-[#141414] text-white border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                               : 'bg-white text-[#141414] border-[#141414]/30 hover:border-[#141414]'
@@ -581,8 +582,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 {/* Right Column: Fleet Accounts Assignment for Selected Tool */}
                 <div className="md:col-span-2 space-y-3">
                   {currentTool ? (
-                    <div className="p-3.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b-2 border-[#141414] pb-2.5">
+                    <div className="p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b-2 border-[#141414] pb-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <Wrench className="w-4 h-4 text-[#141414] shrink-0" />
@@ -591,30 +592,26 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             </span>
                           </div>
                           {currentTool.description && (
-                            <p className="text-[11px] text-[#141414]/70 font-sans mt-0.5 line-clamp-2">
+                            <p className="text-[11px] text-[#141414]/70 font-sans mt-0.5 line-clamp-1">
                               {currentTool.description}
                             </p>
                           )}
                         </div>
                         <span className="text-[9px] font-bold uppercase px-2 py-0.5 bg-[#FAF9F5] border border-[#141414] shrink-0 self-start sm:self-center">
-                          {fleetAgents.filter((a) => (currentTool.assigned_agents || []).includes(a.agentId) || (currentTool.assigned_agents || []).includes(a.id)).length} / {fleetAgents.length} Permitted
+                          {slaveFleetAgents.filter((a) => (currentTool.assigned_agents || []).includes(a.agentId) || (currentTool.assigned_agents || []).includes(a.id)).length} / {slaveFleetAgents.length} Permitted
                         </span>
                       </div>
 
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-black uppercase text-[#141414]/70 block">
-                          Fleet Accounts ({fleetAgents.length})
-                        </span>
-
-                        {fleetAgents.length === 0 ? (
+                      <div className="space-y-1.5">
+                        {slaveFleetAgents.length === 0 ? (
                           <div className="p-6 text-center border border-dashed border-[#141414]/20 bg-[#FAF9F5]">
                             <p className="text-xs font-bold uppercase text-[#141414]/50">
-                              No fleet agents deployed yet under this master account.
+                              No slave fleet agents deployed yet under this master account.
                             </p>
                           </div>
                         ) : (
-                          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                            {fleetAgents.map((agent) => {
+                          <div className="space-y-2 max-h-[188px] overflow-y-auto pr-1">
+                            {slaveFleetAgents.map((agent) => {
                               const targetId = agent.agentId || agent.id;
                               const isAssigned =
                                 (currentTool.assigned_agents || []).includes(targetId) ||
@@ -625,7 +622,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                               return (
                                 <div
                                   key={agent.id}
-                                  className={`p-2.5 border-2 transition-all flex items-center justify-between gap-3 ${
+                                  className={`p-2 border-2 transition-all flex items-center justify-between gap-2.5 ${
                                     isAssigned
                                       ? 'bg-[#FAF9F5] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                                       : 'bg-white border-[#141414]/20 hover:border-[#141414]/50'
@@ -642,7 +639,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                       id={agent.agentId || agent.id}
                                       name={agent.name}
                                       avatar={agent.avatar}
-                                      isMaster={agent.isMaster}
+                                      isMaster={false}
                                       className="w-7 h-7 rounded-full border border-[#141414] shrink-0"
                                     />
                                     <div className="min-w-0 flex-1">
@@ -650,15 +647,9 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                         <span className="text-xs font-bold text-[#141414] truncate group-hover:underline">
                                           {agent.name}
                                         </span>
-                                        {agent.isMaster ? (
-                                          <span className="text-[8px] bg-black text-white px-1.5 py-0.2 font-black uppercase">
-                                            Master
-                                          </span>
-                                        ) : (
-                                          <span className="text-[8px] bg-neutral-200 text-neutral-800 px-1.5 py-0.2 font-bold uppercase">
-                                            Slave
-                                          </span>
-                                        )}
+                                        <span className="text-[8px] bg-neutral-200 text-neutral-800 px-1.5 py-0.2 font-bold uppercase">
+                                          Slave
+                                        </span>
                                       </div>
                                       <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
                                         @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
