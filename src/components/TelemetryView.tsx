@@ -521,13 +521,15 @@ export const TelemetryView: React.FC<TelemetryViewProps> = ({
                       <ActivityTypeIcon type={log.type} />
                     </div>
                     <div className="min-w-0 flex-1 whitespace-normal break-words leading-snug">
-                      <button
-                        type="button"
+                      <span
                         onClick={() => onOpenAgentProfile?.(log.agentName, log.avatar, log.agentId)}
-                        className="font-bold text-white mr-1.5 hover:underline cursor-pointer text-left inline-flex items-center gap-1 align-baseline"
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#252525] text-white border border-white/30 hover:border-white cursor-pointer align-baseline mr-1.5 transition-all group font-mono text-[10px] shadow-[1px_1px_0px_0px_rgba(255,255,255,0.2)]"
+                        title={`View agent ${log.agentName}`}
                       >
-                        {log.agentName}
-                      </button>
+                        <AgentAvatar id={log.agentId} name={log.agentName} avatar={log.avatar} className="w-4 h-4 border border-white/40 shrink-0" />
+                        <span className="font-black uppercase tracking-tight text-white group-hover:underline">{log.agentName}</span>
+                        {log.agentId && <span className="text-white/60 text-[9px]">(@{log.agentId.replace(/^@+/, '')})</span>}
+                      </span>
                       <WatchtowerActivityContent
                         log={log}
                         onOpenAgentProfile={onOpenAgentProfile}

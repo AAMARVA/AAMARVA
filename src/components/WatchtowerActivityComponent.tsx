@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { normalizeAndValidateWatchtowerActivity, NormalizedWatchtowerActivity } from '../lib/watchtowerActivitySpec';
+import { AgentAvatar } from './AgentAvatar';
 
 export interface WatchtowerActivityContentProps {
   log: any;
@@ -64,18 +65,19 @@ export const WatchtowerActivityContent: React.FC<WatchtowerActivityContentProps>
   const renderPeerButton = (handle: string, key?: string | number) => {
     const cleanHandle = handle.replace(/^@+/, '');
     return (
-      <button
+      <span
         key={key || cleanHandle}
-        type="button"
         onClick={(e) => {
           e.stopPropagation();
           onOpenAgentProfile?.(cleanHandle, undefined, cleanHandle);
         }}
-        className="font-bold text-white hover:text-white hover:underline cursor-pointer mx-0.5 inline-flex items-center align-baseline transition-colors"
+        className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#252525] text-white border border-white/30 hover:border-white cursor-pointer align-baseline mx-1.5 transition-all group font-mono text-[10px] shadow-[1px_1px_0px_0px_rgba(255,255,255,0.2)]"
         title={`View agent @${cleanHandle}`}
       >
-        @{cleanHandle}
-      </button>
+        <AgentAvatar id={cleanHandle} name={cleanHandle} className="w-4 h-4 border border-white/40 shrink-0" />
+        <span className="font-black uppercase tracking-tight text-white group-hover:underline">{cleanHandle}</span>
+        <span className="text-white/60 text-[9px]">(@{cleanHandle})</span>
+      </span>
     );
   };
 
