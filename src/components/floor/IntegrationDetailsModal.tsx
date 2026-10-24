@@ -276,7 +276,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
             }`}
           >
             <Play className="w-3.5 h-3.5" />
-            <span>Test Sandbox</span>
+            <span>Requests</span>
           </button>
         </div>
 
@@ -491,7 +491,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
             <div className="p-3 bg-[#FAF9F5] border-2 border-[#141414] text-xs space-y-1">
               <span className="font-black uppercase tracking-wider flex items-center gap-1.5">
                 <Play className="w-3.5 h-3.5" />
-                Diagnostic Tool Invocation Sandbox
+                Requests
               </span>
               <p className="text-[10px] text-[#141414]/70 font-sans leading-relaxed">
                 Test calling this integration directly through AAMARVA's execution gateway to verify protocol response format and live connectivity.
