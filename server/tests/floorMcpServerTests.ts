@@ -31,7 +31,8 @@ import {
   approvePendingInvocation,
   clearHitlStoreForTesting,
   hashToolArguments,
-  canonicalJsonStringify
+  canonicalJsonStringify,
+  resetDbHasSessionIdColumnForTesting
 } from '../services/mcpService.js';
 import {
   establishDirectConnection,
@@ -1463,6 +1464,66 @@ export async function runFloorMcpServerTests(): Promise<Record<string, { passed:
     }
   } catch (err: any) {
     results['test_hitl_tool_id_mismatch_rejection'] = { passed: false, message: err?.message };
+  }
+
+  // ============================================================================
+  // 32. Schema Resilience: Missing session_id_encrypted Column in Supabase Cache
+  // ============================================================================
+  try {
+    // Explicitly simulate missing session_id_encrypted column in schema cache
+    resetDbHasSessionIdColumnForTesting(false);
+
+    const fallbackServerRes = await addMcpServerWithDiscovery(masterUserId, {
+      name: 'Resilient Schema Server',
+      endpoint: 'mock://mcp.internal/session-required-suite'
+    });
+    const fbServerId = fallbackServerRes.server.id;
+    const fbToolId = fallbackServerRes.tools[0].id;
+    await setToolAssignment(masterUserId, fbToolId, slaveAgentId, true);
+
+    // Simulate cold start: clear session store in memory
+    clearServerSessionStoreForTesting();
+
+    // Verify tool execution recovers session from fallback server_info storage
+    const fbInvokeRes = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: slaveAgentId, isMaster: false },
+      fbToolId,
+      { query: 'resilient fallback verification' }
+    );
+
+    const fbSessionRestored =
+      fbInvokeRes.success &&
+      String(fbInvokeRes.result?.content?.[0]?.text).includes('[Session: Active]');
+
+    // Verify that getMcpServer does NOT leak _session_id_encrypted or session identifiers
+    const fbFetchedServer = await getMcpServer(masterUserId, fbServerId);
+    const fbSafeRedaction =
+      fbFetchedServer &&
+      (fbFetchedServer as any).session_id_encrypted === undefined &&
+      (fbFetchedServer as any).sessionId === undefined &&
+      (fbFetchedServer.server_info as any)?._session_id_encrypted === undefined;
+
+    await removeMcpServer(masterUserId, fbServerId);
+
+    // Reset column support flag
+    resetDbHasSessionIdColumnForTesting(null);
+
+    if (fallbackServerRes.server.id && fbSessionRestored && fbSafeRedaction) {
+      results['test_missing_session_id_column_resilience'] = {
+        passed: true,
+        message: 'MCP server registration and cold-start session recovery succeeded resiliently without session_id_encrypted column'
+      };
+      console.log('[PASSED] test_missing_session_id_column_resilience: Missing column schema resilience verified');
+    } else {
+      results['test_missing_session_id_column_resilience'] = {
+        passed: false,
+        message: `Schema resilience check failed: restored=${fbSessionRestored}, safeRedaction=${fbSafeRedaction}`
+      };
+      console.error('[FAILED] test_missing_session_id_column_resilience');
+    }
+  } catch (err: any) {
+    resetDbHasSessionIdColumnForTesting(null);
+    results['test_missing_session_id_column_resilience'] = { passed: false, message: err?.message };
   }
 
   return results;

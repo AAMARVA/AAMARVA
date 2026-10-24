@@ -111,6 +111,46 @@ export function clearHitlStoreForTesting(): void {
   inMemoryGrants.clear();
 }
 
+let dbHasSessionIdColumn: boolean | null = null;
+
+export function resetDbHasSessionIdColumnForTesting(val: boolean | null = null): void {
+  dbHasSessionIdColumn = val;
+}
+
+export async function checkSessionIdColumnSupport(): Promise<boolean> {
+  if (dbHasSessionIdColumn !== null) return dbHasSessionIdColumn;
+  if (!isSupabaseConfigured()) {
+    dbHasSessionIdColumn = true;
+    return true;
+  }
+  try {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('mcp_servers').select('session_id_encrypted').limit(1);
+    if (error && (error.message?.includes('session_id_encrypted') || (error as any).code === 'PGRST204')) {
+      try {
+        const { error: rpcErr } = await supabase.rpc('exec_sql', {
+          sql_query: "ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS session_id_encrypted TEXT; NOTIFY pgrst, 'reload schema';"
+        });
+        if (!rpcErr) {
+          const { error: recheckErr } = await supabase.from('mcp_servers').select('session_id_encrypted').limit(1);
+          if (!recheckErr) {
+            dbHasSessionIdColumn = true;
+            return true;
+          }
+        }
+      } catch {}
+
+      dbHasSessionIdColumn = false;
+      return false;
+    }
+    dbHasSessionIdColumn = true;
+    return true;
+  } catch {
+    dbHasSessionIdColumn = false;
+    return false;
+  }
+}
+
 /**
  * Deterministic JSON stringify ensuring canonical key ordering for hash consistency
  */
@@ -646,6 +686,10 @@ export function sanitizeServerInfo(serverInfo: Record<string, any> | undefined):
   delete copy.credentials;
   delete copy.mcpSessionId;
   delete copy.mcp_session_id;
+  delete copy.session_id_encrypted;
+  delete copy._session_id_encrypted;
+  delete copy.auth_credential_encrypted;
+  delete copy._auth_credential_encrypted;
   return copy;
 }
 
@@ -1033,14 +1077,25 @@ export async function executeRemoteMcpTool(
       }
     } catch {}
   }
+  if (!storedSessionId && (server.server_info as any)?._session_id_encrypted) {
+    try {
+      storedSessionId = decryptMcpCredential((server.server_info as any)._session_id_encrypted);
+      if (storedSessionId) {
+        serverSessionStore.set(server.id, storedSessionId);
+      }
+    } catch {}
+  }
   if (!storedSessionId && isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
-      const { data } = await supabase.from('mcp_servers').select('session_id_encrypted').eq('id', server.id).maybeSingle();
-      if (data?.session_id_encrypted) {
-        storedSessionId = decryptMcpCredential(data.session_id_encrypted);
-        if (storedSessionId) {
-          serverSessionStore.set(server.id, storedSessionId);
+      const { data, error } = await supabase.from('mcp_servers').select('*').eq('id', server.id).maybeSingle();
+      if (!error && data) {
+        const enc = (data as any).session_id_encrypted || (data as any).server_info?._session_id_encrypted;
+        if (enc) {
+          storedSessionId = decryptMcpCredential(enc);
+          if (storedSessionId) {
+            serverSessionStore.set(server.id, storedSessionId);
+          }
         }
       }
     } catch {}
@@ -1120,7 +1175,20 @@ export async function executeRemoteMcpTool(
       try {
         const enc = encryptMcpCredential(newSessionId);
         const supabase = getSupabaseClient();
-        await supabase.from('mcp_servers').update({ session_id_encrypted: enc }).eq('id', server.id);
+        const hasCol = await checkSessionIdColumnSupport();
+        if (hasCol) {
+          const { error } = await supabase.from('mcp_servers').update({ session_id_encrypted: enc }).eq('id', server.id);
+          if (error && (error.message?.includes('session_id_encrypted') || (error as any).code === 'PGRST204')) {
+            dbHasSessionIdColumn = false;
+            await supabase.from('mcp_servers').update({
+              server_info: { ...(server.server_info || {}), _session_id_encrypted: enc }
+            }).eq('id', server.id);
+          }
+        } else {
+          await supabase.from('mcp_servers').update({
+            server_info: { ...(server.server_info || {}), _session_id_encrypted: enc }
+          }).eq('id', server.id);
+        }
       } catch (err) {
         if (shouldFailOnDbError()) throw err;
       }
@@ -1312,19 +1380,65 @@ export async function addMcpServerWithDiscovery(
   let savedServer = newServerRecord;
 
   try {
+    const hasCol = await checkSessionIdColumnSupport();
+    const insertPayload: any = { ...newServerRecord };
+
+    // If session_id_encrypted column is missing or undefined, omit from table columns
+    // and preserve inside server_info._session_id_encrypted for serverless recovery
+    if (!hasCol || !insertPayload.session_id_encrypted) {
+      if (insertPayload.session_id_encrypted) {
+        insertPayload.server_info = {
+          ...(insertPayload.server_info || {}),
+          _session_id_encrypted: insertPayload.session_id_encrypted
+        };
+      }
+      delete insertPayload.session_id_encrypted;
+    }
+
     const { data, error } = await supabase
       .from('mcp_servers')
-      .insert(newServerRecord)
+      .insert(insertPayload)
       .select()
       .single();
 
-    if (error && shouldFailOnDbError()) {
-      throw new Error(`Database persistence failed: ${error.message}`);
-    }
-    if (!error && data) {
+    if (error) {
+      const isColErr =
+        error.message?.includes('session_id_encrypted') ||
+        (error as any).code === 'PGRST204';
+
+      if (isColErr) {
+        dbHasSessionIdColumn = false;
+        const retryPayload = { ...insertPayload };
+        if (retryPayload.session_id_encrypted) {
+          retryPayload.server_info = {
+            ...(retryPayload.server_info || {}),
+            _session_id_encrypted: retryPayload.session_id_encrypted
+          };
+        }
+        delete retryPayload.session_id_encrypted;
+
+        const { data: retryData, error: retryErr } = await supabase
+          .from('mcp_servers')
+          .insert(retryPayload)
+          .select()
+          .single();
+
+        if (retryErr && shouldFailOnDbError()) {
+          throw new Error(`Database persistence failed: ${retryErr.message}`);
+        }
+        if (!retryErr && retryData) {
+          savedServer = retryData;
+        }
+      } else if (shouldFailOnDbError()) {
+        throw new Error(`Database persistence failed: ${error.message}`);
+      }
+    } else if (data) {
       savedServer = data;
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.message?.includes('Database persistence failed')) {
+      throw err;
+    }
     if (shouldFailOnDbError()) throw err;
   }
   inMemoryServers.set(serverId, savedServer);
@@ -1439,21 +1553,45 @@ export async function revalidateAndSyncMcpServer(
     updatedEncryptedSessionId = encryptMcpCredential(discovery.sessionId);
   }
 
+  const hasCol = await checkSessionIdColumnSupport();
+  const updatePayload: any = {
+    status: updatedStatus,
+    last_checked: now,
+    last_error: updatedError,
+    server_info: {
+      ...sanitizedServerInfo,
+      ...(updatedEncryptedSessionId ? { _session_id_encrypted: updatedEncryptedSessionId } : {})
+    },
+    updated_at: now
+  };
+  if (hasCol && updatedEncryptedSessionId) {
+    updatePayload.session_id_encrypted = updatedEncryptedSessionId;
+  }
+
   try {
     const { error } = await supabase
       .from('mcp_servers')
-      .update({
-        status: updatedStatus,
-        last_checked: now,
-        last_error: updatedError,
-        server_info: sanitizedServerInfo,
-        session_id_encrypted: updatedEncryptedSessionId,
-        updated_at: now
-      })
+      .update(updatePayload)
       .eq('id', serverId);
 
-    if (error && shouldFailOnDbError()) {
-      throw new Error(`Database error updating server status: ${error.message}`);
+    if (error) {
+      const isColErr =
+        error.message?.includes('session_id_encrypted') ||
+        (error as any).code === 'PGRST204';
+
+      if (isColErr) {
+        dbHasSessionIdColumn = false;
+        delete updatePayload.session_id_encrypted;
+        const { error: retryErr } = await supabase
+          .from('mcp_servers')
+          .update(updatePayload)
+          .eq('id', serverId);
+        if (retryErr && shouldFailOnDbError()) {
+          throw new Error(`Database error updating server status: ${retryErr.message}`);
+        }
+      } else if (shouldFailOnDbError()) {
+        throw new Error(`Database error updating server status: ${error.message}`);
+      }
     }
   } catch (err) {
     if (shouldFailOnDbError()) throw err;

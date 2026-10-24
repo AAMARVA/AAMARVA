@@ -898,6 +898,19 @@ export async function checkDatabaseConnectivity(): Promise<void> {
         console.warn(`👉 ACTION REQUIRED: Please execute the SQL migration from "supabase/migrations/add_master_billing_fields.sql" in your Supabase SQL Editor to support plan states.`);
       }
     }
+
+    // Check mcp_servers table & session_id_encrypted column
+    const { error: mcpCheckErr } = await supabase.from('mcp_servers').select('session_id_encrypted').limit(1);
+    if (mcpCheckErr && (mcpCheckErr.message?.includes('session_id_encrypted') || (mcpCheckErr as any).code === 'PGRST204')) {
+      console.warn('👉 SCHEMA NOTICE: Column "session_id_encrypted" missing from mcp_servers table schema cache. Attempting auto-migration/reload...');
+      try {
+        await supabase.rpc('exec_sql', {
+          sql_query: "ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS session_id_encrypted TEXT; NOTIFY pgrst, 'reload schema';"
+        });
+      } catch (e: any) {
+        // RPC might not exist, resilient application fallback in mcpService handles this seamlessly
+      }
+    }
   } catch (err: any) {
     console.warn(`⚠️ Warning connecting to Supabase: ${err?.message || err}`);
   }
