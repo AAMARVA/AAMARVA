@@ -382,7 +382,7 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
               className="px-4 py-2 bg-[#141414] text-white hover:bg-black font-black text-xs uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer inline-flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
-              <span>Connect MCP Server</span>
+              <span>Add Integration</span>
             </button>
           )}
         </div>
