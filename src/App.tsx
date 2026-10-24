@@ -17,6 +17,7 @@ import { apiFetch } from './services/authApi.ts';
 import { supabase } from './lib/supabase.ts';
 import { AccessGateway } from './components/AccessGateway.tsx';
 import { usePosts, useRecentConnections } from './services/dataService.ts';
+import { fetchServerDetails, fetchFleetAgents, McpServer, McpTool, FleetAgent } from './services/floorApi.ts';
 
 // Code-split heavy secondary views and modals to optimize initial bundle size and FCP
 const CommandPitView = React.lazy(() => import('./components/CommandPitView').then(m => ({ default: m.CommandPitView })));
@@ -45,6 +46,7 @@ const FloorRegistrationModal = React.lazy(() => import('./components/FloorRegist
 const ApiKeyDisplayModal = React.lazy(() => import('./components/ApiKeyDisplayModal.tsx').then(m => ({ default: m.ApiKeyDisplayModal })));
 const ThreadModal = React.lazy(() => import('./components/ThreadModal').then(m => ({ default: m.ThreadModal })));
 const ConnectionsModal = React.lazy(() => import('./components/ConnectionsModal').then(m => ({ default: m.ConnectionsModal })));
+const IntegrationDetailsModal = React.lazy(() => import('./components/floor/IntegrationDetailsModal').then(m => ({ default: m.IntegrationDetailsModal })));
 
 // Expose diagnostic and integration tests to window on-demand to avoid bundling test runners in main chunk
 if (typeof window !== 'undefined') {
@@ -186,6 +188,10 @@ export default function App() {
   }[]>([]);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [selectedSearchMcpServer, setSelectedSearchMcpServer] = useState<McpServer | null>(null);
+  const [selectedSearchMcpTools, setSelectedSearchMcpTools] = useState<McpTool[]>([]);
+  const [isSearchMcpModalOpen, setIsSearchMcpModalOpen] = useState(false);
+  const [searchMcpFleetAgents, setSearchMcpFleetAgents] = useState<FleetAgent[]>([]);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
   const [isFloorRegisterOpen, setIsFloorRegisterOpen] = useState(false);
   const [floorRegisterEmail, setFloorRegisterEmail] = useState('');
@@ -785,6 +791,25 @@ export default function App() {
     });
   };
 
+  const handleOpenMcpDetails = async (server: any) => {
+    handleCloseAllModals();
+    setIsSearchModalOpen(false);
+    setActiveTab('floor');
+    setSelectedSearchMcpServer(server);
+    try {
+      const [details, agents] = await Promise.all([
+        fetchServerDetails(server.id),
+        fetchFleetAgents()
+      ]);
+      setSelectedSearchMcpTools(details.tools || []);
+      setSearchMcpFleetAgents(agents || []);
+      setIsSearchMcpModalOpen(true);
+    } catch {
+      setSelectedSearchMcpTools([]);
+      setIsSearchMcpModalOpen(true);
+    }
+  };
+
   const handleCloseAllModals = () => {
     setModalHistory([]);
     setActiveThreadPost(null);
@@ -794,6 +819,7 @@ export default function App() {
     setActiveDedicatedPost(null);
     setActiveChat(null);
     setActiveClusterChat(null);
+    setIsSearchMcpModalOpen(false);
   };
 
   const sortedPosts = posts;
@@ -1323,9 +1349,28 @@ export default function App() {
         activeMainTab={activeTab}
         onSetActiveMainTab={setActiveTab}
         isSlaveAccount={isSlaveAccount}
+        onOpenMcpServer={handleOpenMcpDetails}
       />
 
       <React.Suspense fallback={null}>
+      <IntegrationDetailsModal
+        isOpen={isSearchMcpModalOpen}
+        server={selectedSearchMcpServer}
+        tools={selectedSearchMcpTools}
+        fleetAgents={searchMcpFleetAgents}
+        isSlaveAccount={isSlaveAccount}
+        onOpenAgentProfile={handleOpenAgentProfile}
+        onClose={() => setIsSearchMcpModalOpen(false)}
+        onServerUpdated={(updatedServer, updatedTools) => {
+          setSelectedSearchMcpServer(updatedServer);
+          setSelectedSearchMcpTools(updatedTools);
+        }}
+        onServerDeleted={() => {
+          setIsSearchMcpModalOpen(false);
+          setSelectedSearchMcpServer(null);
+        }}
+      />
+
       <AgentProfileModal
         agentName={activeAgentProfile?.name || activeAgentProfile?.agentId || null}
         agentId={activeAgentProfile?.agentId}

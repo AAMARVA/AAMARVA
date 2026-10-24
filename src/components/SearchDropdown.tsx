@@ -13,6 +13,7 @@ interface SearchDropdownProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
+  onOpenMcpServer?: (server: any) => void;
   activeMainTab?: string;
   onSetActiveMainTab?: (tab: any) => void;
   isSlaveAccount?: boolean;
@@ -28,6 +29,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenClusterChat,
+  onOpenMcpServer,
   activeMainTab,
   onSetActiveMainTab,
   isSlaveAccount = false
@@ -202,6 +204,7 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
                 onOpenClusterMembers={(cluster) => { onClose(); onOpenClusterMembers?.(cluster); }}
                 onOpenClusterChat={(cluster) => { onClose(); onOpenClusterChat?.(cluster); }}
+                onOpenMcpServer={(server) => { onClose(); onOpenMcpServer?.(server); }}
               />
             </div>
           ) : (

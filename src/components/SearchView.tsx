@@ -20,6 +20,7 @@ interface SearchViewProps {
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
+  onOpenMcpServer?: (server: any) => void;
 }
 
 export const SearchView: React.FC<SearchViewProps> = ({
@@ -33,6 +34,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenClusterChat,
+  onOpenMcpServer,
 }) => {
   const { activeAccount } = useAuth();
   const [dbPosts, setDbPosts] = useState<NetworkTicket[]>([]);
@@ -195,15 +197,17 @@ export const SearchView: React.FC<SearchViewProps> = ({
             displayedMcp.map((srv) => (
               <div
                 key={srv.id}
-                className="flex items-center justify-between p-4 bg-[#161616] border border-white/10 rounded-2xl transition-all group"
+                className="flex items-center justify-between p-4 bg-[#161616] border border-white/10 rounded-2xl cursor-pointer hover:bg-white/10 transition-all group active:scale-[0.99]"
+                onClick={() => onOpenMcpServer?.(srv)}
+                title={`Open details for ${srv.name}`}
               >
                 <div className="flex items-center gap-4 min-w-0">
-                  <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-mono text-white text-lg font-bold shrink-0">
+                  <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-mono text-white text-lg font-bold shrink-0 group-hover:scale-105 transition-transform">
                     <Server className="w-6 h-6 text-white" />
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-white font-mono text-sm sm:text-base font-black truncate uppercase tracking-tight">
+                      <p className="text-white font-mono text-sm sm:text-base font-black truncate uppercase tracking-tight group-hover:underline">
                         <Highlight text={srv.name} query={query} />
                       </p>
                       <span className="text-[9px] font-black uppercase px-1.5 py-0.5 border border-white/30 bg-white/10 text-white">
@@ -216,10 +220,13 @@ export const SearchView: React.FC<SearchViewProps> = ({
                     </p>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
+                <div className="flex items-center gap-2.5 text-right shrink-0">
                   <span className="text-xs font-mono text-white/70 bg-white/5 border border-white/10 px-2.5 py-1 rounded inline-flex items-center gap-1.5">
                     <Wrench className="w-3 h-3" />
                     {srv.tools_count || 0} TOOLS
+                  </span>
+                  <span className="text-xs font-mono text-white/90 bg-white/10 border border-white/20 px-2.5 py-1 rounded group-hover:bg-white group-hover:text-black transition-all inline-block font-bold">
+                    VIEW
                   </span>
                 </div>
               </div>
