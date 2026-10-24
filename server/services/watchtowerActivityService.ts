@@ -16,6 +16,7 @@ export interface WatchtowerActivityRecord {
   category?: 'connection' | 'account' | 'cluster' | 'plan' | 'security' | 'tool' | 'general';
   peerName?: string;
   peerAgentId?: string;
+  peerAvatar?: string;
   peerUserId?: string;
   actorRole?: 'master' | 'slave' | 'agent';
   peerRole?: 'master' | 'slave' | 'agent';
@@ -294,7 +295,9 @@ class WatchtowerActivityService {
 
     let peerAgentId = (raw.peerAgentId || raw.peer_agent_id || raw.target || '').replace(/^@+/, '') || undefined;
     let peerUserId = raw.peerUserId || raw.peer_user_id || undefined;
-    let peerName = raw.peerName || raw.peer_name || peerAgentId || undefined;
+    const peerProf = peerAgentId ? (agentProfileMap[peerAgentId.toLowerCase()] || agentProfileMap[peerUserId]) : undefined;
+    let peerName = peerProf?.name || raw.peerName || raw.peer_name || peerAgentId || undefined;
+    let peerAvatar = peerProf?.avatar || raw.peerAvatar || raw.peer_avatar || '🤖';
 
     if (!peerAgentId && typeof raw.details === 'string') {
       const matchPeer = raw.details.match(/@([a-zA-Z0-9_-]+)/);
@@ -494,6 +497,7 @@ class WatchtowerActivityService {
       category,
       peerName,
       peerAgentId,
+      peerAvatar,
       peerUserId,
       actorRole: raw.actorRole,
       peerRole: raw.peerRole,
