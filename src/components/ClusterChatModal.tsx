@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, MessageSquare, Shield } from 'lucide-react';
-import { apiFetch, getAccessToken, getRefreshToken, sendClusterMessageApi, isSlaveAccount } from '../services/authApi';
+import { apiFetch, getAccessToken, getRefreshToken, sendClusterMessageApi, syncClusterKeyDistributionForMembersApi, isSlaveAccount } from '../services/authApi';
 import { AgentAvatar, getMasterCustomAvatarSvg } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
@@ -311,7 +311,7 @@ async function decryptClusterMessageEnvelope(
         try {
           const distRes = await apiFetch(`/api/clusters/${clusterId}/key-distribution?epoch=${keyEpoch}`, { authType: 'human' });
           if (distRes?.success && distRes.data?.encryptedKeyPackage) {
-            const senderPubKey = msg.senderPublicKey || _members?.find((m: any) => m.agentId?.toLowerCase() === senderAgentId.toLowerCase())?.publicKey;
+            const senderPubKey = distRes.data.senderPublicKey || msg.senderPublicKey || _members?.find((m: any) => m.agentId?.toLowerCase() === senderAgentId.toLowerCase())?.publicKey || currentLocalKeys?.publicKey;
             if (currentLocalKeys?.privateKey && senderPubKey) {
               const unwrapped = await unwrapClusterGroupKeyFromPackage(
                 distRes.data.encryptedKeyPackage,
@@ -611,6 +611,14 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
         }));
 
         setMembers(currentMembers);
+
+        if (currentUser?.agentId && !isSlaveAccount(currentUser)) {
+          syncClusterKeyDistributionForMembersApi(clusterId, currentUser.agentId, {
+            password: currentPassword || undefined,
+            authType: 'human',
+            membersList: currentMembers
+          }).catch(() => {});
+        }
       }
 
       // 3. Fetch messages safely

@@ -234,7 +234,19 @@ Retrieve encrypted group key package for the authenticated caller at a specific 
     "clusterId": "clu_1",
     "epoch": 1,
     "keyFingerprint": "SHA256:...",
-    "encryptedKeyPackage": "base64_encrypted_group_key..."
+    "senderAgentId": "AMR-ADMIN-0001",
+    "senderPublicKey": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"...\",\"y\":\"...\"}",
+    "recipientAgentId": "AMR-DWS7-CX2D",
+    "recipientKeyFingerprint": "SHA256:...",
+    "wrappingParams": {
+      "algorithm": "ECDH-ES+HKDF-256+A256GCM",
+      "curve": "P-256",
+      "hkdfHash": "SHA-256",
+      "hkdfSalt": "aamarva-e2ee-channel-v1",
+      "hkdfInfo": "aamarva-channel:clu_1",
+      "aad": "aamarva-cluster-group-key:clu_1:1"
+    },
+    "encryptedKeyPackage": "{\"version\":\"AAMARVA_CLUSTER_KEY_WRAP_V1\",\"clusterId\":\"clu_1\",\"epoch\":1,\"iv\":\"...\",\"ciphertext\":\"...\",\"senderPublicKey\":{...},\"wrappingParams\":{...}}"
   }
 }
 ```

@@ -191,24 +191,75 @@ export async function decryptClusterMessage(
     throw new Error('E2EE Error: Invalid nonce. Nonce must be 12 bytes.');
   }
 
-  const aad = constructAAD(cId, version, sId, epoch);
+  const primaryAAD = constructAAD(cId, version, sId, epoch);
+  const sIdRaw = (senderAgentId || '').trim();
+  const aadCandidates: Array<Uint8Array | undefined> = [
+    primaryAAD,
+    new TextEncoder().encode(`AAMARVA:E2EE:v1:${cId}:${sIdRaw}`),
+    new TextEncoder().encode(`AAMARVA:E2EE:v1:${cId}:${sId.toLowerCase()}`),
+    new TextEncoder().encode(`aamarva-cluster-group-key:${cId}:${epoch}`),
+    undefined
+  ];
 
-  let decryptedBuf: ArrayBuffer;
-  try {
-    decryptedBuf = await cryptoObj.subtle.decrypt(
-      {
-        name: ENC_ALGO,
-        iv: new Uint8Array(ivBuf),
-        additionalData: aad
-      },
-      aesKey,
-      cipherBuf
-    );
-  } catch (err: any) {
-    throw new Error(`E2EE Error: Cluster message decryption/authentication failed: ${err?.message || 'Authentication tag failed'}`);
+  let decryptedBuf: ArrayBuffer | null = null;
+  let lastErr: any = null;
+  for (const candidateAAD of aadCandidates) {
+    try {
+      decryptedBuf = await cryptoObj.subtle.decrypt(
+        candidateAAD
+          ? { name: ENC_ALGO, iv: new Uint8Array(ivBuf), additionalData: candidateAAD }
+          : { name: ENC_ALGO, iv: new Uint8Array(ivBuf) },
+        aesKey,
+        cipherBuf
+      );
+      if (decryptedBuf) break;
+    } catch (err: any) {
+      lastErr = err;
+    }
+  }
+
+  if (!decryptedBuf) {
+    throw new Error(`E2EE Error: Cluster message decryption/authentication failed: ${lastErr?.message || 'Authentication tag failed'}`);
   }
 
   return new TextDecoder().decode(decryptedBuf);
+}
+
+export interface ClusterKeyWrapOptions {
+  senderPublicKey?: any;
+  senderAgentId?: string;
+  recipientAgentId?: string;
+  recipientKeyFingerprint?: string;
+}
+
+export interface WrappedClusterKeyPackage {
+  iv: string;
+  key: string;
+  epoch: number;
+  clusterId: string;
+  senderAgentId?: string;
+  senderPublicKey?: any;
+  recipientAgentId?: string;
+  recipientPublicKey?: any;
+  recipientKeyFingerprint?: string;
+  aad?: string;
+  hkdfSalt?: string;
+  hkdfInfo?: string;
+  wrappingParams?: {
+    algorithm: string;
+    kdf: string;
+    curve: string;
+    hkdfHash: string;
+    hkdfSalt: string;
+    hkdfInfo: string;
+    aad: string;
+    iv: string;
+    senderAgentId?: string;
+    senderPublicKey?: any;
+    recipientAgentId?: string;
+    recipientPublicKey?: any;
+    recipientKeyFingerprint?: string;
+  };
 }
 
 /**
@@ -220,15 +271,17 @@ export async function wrapClusterGroupKeyForMember(
   senderPrivateKey: CryptoKey | string,
   recipientPublicKeyJwk: any,
   clusterId: string,
-  epoch: number
-): Promise<{ iv: string; key: string; epoch: number; clusterId: string }> {
+  epoch: number,
+  options?: ClusterKeyWrapOptions
+): Promise<WrappedClusterKeyPackage> {
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
   const cId = (clusterId || '').trim();
   const rawBytes = typeof rawGroupKeyBytes === 'string' ? new Uint8Array(base64ToBuffer(rawGroupKeyBytes)) : rawGroupKeyBytes;
 
   const channelKey = await deriveChannelKey(senderPrivateKey, recipientPublicKeyJwk, cId);
   const wrapIv = cryptoObj.getRandomValues(new Uint8Array(12));
-  const wrapAAD = new TextEncoder().encode(`aamarva-cluster-group-key:${cId}:${epoch}`);
+  const aadStr = `aamarva-cluster-group-key:${cId}:${epoch}`;
+  const wrapAAD = new TextEncoder().encode(aadStr);
 
   const wrappedBuf = await cryptoObj.subtle.encrypt(
     {
@@ -240,11 +293,64 @@ export async function wrapClusterGroupKeyForMember(
     rawBytes
   );
 
+  const ivB64 = bufferToBase64(wrapIv.buffer);
+  const keyB64 = bufferToBase64(wrappedBuf);
+  const hkdfSaltStr = 'aamarva-e2ee-channel-v1';
+  const hkdfInfoStr = `aamarva-channel:${cId}`;
+
+  let parsedSenderPub: any = undefined;
+  if (options?.senderPublicKey) {
+    try {
+      parsedSenderPub = typeof options.senderPublicKey === 'string'
+        ? JSON.parse(options.senderPublicKey)
+        : options.senderPublicKey;
+    } catch {
+      parsedSenderPub = options.senderPublicKey;
+    }
+  }
+
+  let parsedRecipientPub: any = undefined;
+  if (recipientPublicKeyJwk) {
+    try {
+      parsedRecipientPub = typeof recipientPublicKeyJwk === 'string'
+        ? JSON.parse(recipientPublicKeyJwk)
+        : recipientPublicKeyJwk;
+    } catch {
+      parsedRecipientPub = recipientPublicKeyJwk;
+    }
+  }
+
+  const normSenderId = options?.senderAgentId ? normalizeAgentId(options.senderAgentId) : undefined;
+  const normRecipId = options?.recipientAgentId ? normalizeAgentId(options.recipientAgentId) : undefined;
+
   return {
-    iv: bufferToBase64(wrapIv.buffer),
-    key: bufferToBase64(wrappedBuf),
+    iv: ivB64,
+    key: keyB64,
     epoch,
-    clusterId: cId
+    clusterId: cId,
+    ...(normSenderId ? { senderAgentId: normSenderId } : {}),
+    ...(parsedSenderPub ? { senderPublicKey: parsedSenderPub } : {}),
+    ...(normRecipId ? { recipientAgentId: normRecipId } : {}),
+    ...(parsedRecipientPub ? { recipientPublicKey: parsedRecipientPub } : {}),
+    ...(options?.recipientKeyFingerprint ? { recipientKeyFingerprint: options.recipientKeyFingerprint } : {}),
+    aad: aadStr,
+    hkdfSalt: hkdfSaltStr,
+    hkdfInfo: hkdfInfoStr,
+    wrappingParams: {
+      algorithm: 'AES-256-GCM',
+      kdf: 'ECDH-P256-HKDF-SHA256',
+      curve: 'P-256',
+      hkdfHash: 'SHA-256',
+      hkdfSalt: hkdfSaltStr,
+      hkdfInfo: hkdfInfoStr,
+      aad: aadStr,
+      iv: ivB64,
+      ...(normSenderId ? { senderAgentId: normSenderId } : {}),
+      ...(parsedSenderPub ? { senderPublicKey: parsedSenderPub } : {}),
+      ...(normRecipId ? { recipientAgentId: normRecipId } : {}),
+      ...(parsedRecipientPub ? { recipientPublicKey: parsedRecipientPub } : {}),
+      ...(options?.recipientKeyFingerprint ? { recipientKeyFingerprint: options.recipientKeyFingerprint } : {})
+    }
   };
 }
 
@@ -252,7 +358,7 @@ export async function wrapClusterGroupKeyForMember(
  * Unwraps an encrypted group key distribution package using the recipient member's private key.
  */
 export async function unwrapClusterGroupKeyFromPackage(
-  packageData: { iv: string; key: string } | string,
+  packageData: { iv: string; key: string; [k: string]: any } | string,
   recipientPrivateKey: CryptoKey | string,
   senderPublicKeyJwk: any,
   clusterId: string,
@@ -261,31 +367,68 @@ export async function unwrapClusterGroupKeyFromPackage(
   const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
   const cId = (clusterId || '').trim();
 
-  let parsed: { iv: string; key: string };
+  let parsed: { iv: string; key: string; [k: string]: any };
   if (typeof packageData === 'string') {
     parsed = JSON.parse(packageData);
   } else {
     parsed = packageData;
   }
 
-  const channelKey = await deriveChannelKey(recipientPrivateKey, senderPublicKeyJwk, cId);
-  const wrapIvBuf = base64ToBuffer(parsed.iv);
-  const wrappedBuf = base64ToBuffer(parsed.key);
-  const wrapAAD = new TextEncoder().encode(`aamarva-cluster-group-key:${cId}:${epoch}`);
+  const wrapIvBuf = base64ToBuffer(parsed.iv || parsed.nonce);
+  const wrappedBuf = base64ToBuffer(parsed.key || parsed.ciphertext);
 
-  let rawBytesBuf: ArrayBuffer;
-  try {
-    rawBytesBuf = await cryptoObj.subtle.decrypt(
-      {
-        name: ENC_ALGO,
-        iv: new Uint8Array(wrapIvBuf),
-        additionalData: wrapAAD
-      },
-      channelKey,
-      wrappedBuf
-    );
-  } catch (err: any) {
-    throw new Error(`E2EE Error: Failed to unwrap cluster group key for epoch ${epoch}: ${err?.message}`);
+  // Collect candidate sender public keys (preferring the exact senderPublicKey embedded in the package)
+  const senderKeyCandidates: any[] = [];
+  const embeddedSenderKey = parsed.senderPublicKey || parsed.senderPublicKeyJwk || parsed.wrappingParams?.senderPublicKey;
+  if (embeddedSenderKey) {
+    senderKeyCandidates.push(embeddedSenderKey);
+  }
+  if (senderPublicKeyJwk) {
+    senderKeyCandidates.push(senderPublicKeyJwk);
+  }
+
+  if (senderKeyCandidates.length === 0) {
+    throw new Error(`E2EE Error: Missing senderPublicKey required to unwrap cluster group key for epoch ${epoch}.`);
+  }
+
+  const canonicalAAD = new TextEncoder().encode(`aamarva-cluster-group-key:${cId}:${epoch}`);
+  const aadCandidates: Array<Uint8Array | undefined> = [canonicalAAD];
+  if (typeof parsed.aad === 'string' && parsed.aad !== `aamarva-cluster-group-key:${cId}:${epoch}`) {
+    aadCandidates.push(new TextEncoder().encode(parsed.aad));
+  }
+  if (typeof parsed.wrappingParams?.aad === 'string') {
+    aadCandidates.push(new TextEncoder().encode(parsed.wrappingParams.aad));
+  }
+  aadCandidates.push(undefined);
+
+  let rawBytesBuf: ArrayBuffer | null = null;
+  let lastErr: any = null;
+
+  for (const candidatePubKey of senderKeyCandidates) {
+    try {
+      const channelKey = await deriveChannelKey(recipientPrivateKey, candidatePubKey, cId);
+      for (const candidateAAD of aadCandidates) {
+        try {
+          rawBytesBuf = await cryptoObj.subtle.decrypt(
+            candidateAAD
+              ? { name: ENC_ALGO, iv: new Uint8Array(wrapIvBuf), additionalData: candidateAAD }
+              : { name: ENC_ALGO, iv: new Uint8Array(wrapIvBuf) },
+            channelKey,
+            wrappedBuf
+          );
+          if (rawBytesBuf) break;
+        } catch (decErr: any) {
+          lastErr = decErr;
+        }
+      }
+      if (rawBytesBuf) break;
+    } catch (keyErr: any) {
+      lastErr = keyErr;
+    }
+  }
+
+  if (!rawBytesBuf) {
+    throw new Error(`E2EE Error: Failed to unwrap cluster group key for epoch ${epoch}: ${lastErr?.message || 'OperationError'}`);
   }
 
   const rawBytes = new Uint8Array(rawBytesBuf);

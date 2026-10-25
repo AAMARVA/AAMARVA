@@ -722,6 +722,134 @@ export async function getClusterAuthoritativeEpochApi(
   return 1;
 }
 
+async function ensureSenderE2EEKeySyncedOnServer(
+  localKeys: any,
+  authType: 'human' | 'agent'
+): Promise<void> {
+  if (!localKeys?.publicKey) return;
+  try {
+    const checkRes = await apiFetch('/api/agents/me/e2ee', {
+      authType,
+      method: 'GET'
+    });
+    const remotePubKey = checkRes?.data?.publicKey || checkRes?.publicKey;
+    const remoteFp = checkRes?.data?.fingerprint || checkRes?.fingerprint;
+    const remoteEpoch = Number(checkRes?.data?.keyEpoch || checkRes?.keyEpoch || 1);
+
+    if (remotePubKey === localKeys.publicKey && (!localKeys.fingerprint || remoteFp === localKeys.fingerprint)) {
+      return;
+    }
+
+    const targetEpoch = remotePubKey && remotePubKey !== localKeys.publicKey
+      ? Math.max(remoteEpoch + 1, localKeys.keyEpoch || 1)
+      : (localKeys.keyEpoch || 1);
+
+    await apiFetch('/api/agents/me/e2ee', {
+      authType,
+      method: 'PUT',
+      body: JSON.stringify({
+        publicKey: localKeys.publicKey,
+        fingerprint: localKeys.fingerprint,
+        identityKey: localKeys.identityPublicKey,
+        signature: localKeys.signature,
+        keyEpoch: targetEpoch,
+        allowRotation: true
+      })
+    });
+  } catch {
+    // Non-fatal if already synced or agent lacks rotation permission
+  }
+}
+
+async function computeRawGroupKeyFingerprint(rawBytes: Uint8Array): Promise<string> {
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+  const digestBuf = await cryptoObj.subtle.digest('SHA-256', rawBytes);
+  const hex = Array.from(new Uint8Array(digestBuf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join(':')
+    .toUpperCase();
+  return `SHA256:${hex}`;
+}
+
+export async function syncClusterKeyDistributionForMembersApi(
+  clusterId: string,
+  senderAgentId: string,
+  options?: {
+    password?: string;
+    authType?: 'human' | 'agent';
+    epoch?: number;
+    membersList?: any[];
+  }
+): Promise<void> {
+  try {
+    const resolvedAuthType: 'human' | 'agent' = options?.authType || getCurrentSessionAuthType();
+    const localKeys = await getLocalKeyPair(senderAgentId, undefined, options?.password);
+    if (!localKeys?.privateKey || !localKeys?.publicKey) return;
+
+    await ensureSenderE2EEKeySyncedOnServer(localKeys, resolvedAuthType);
+
+    const clusterEpoch = options?.epoch || (await getClusterAuthoritativeEpochApi(clusterId, resolvedAuthType));
+    const groupKey = await getClusterGroupKey(clusterId, clusterEpoch);
+    if (!groupKey) return;
+
+    const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+    const exportedBuf = await cryptoObj.subtle.exportKey('raw', groupKey);
+    const rawGroupKeyBytes = new Uint8Array(exportedBuf);
+    const groupKeyFingerprint = await computeRawGroupKeyFingerprint(rawGroupKeyBytes);
+
+    let membersList = options?.membersList;
+    if (!Array.isArray(membersList) || membersList.length === 0) {
+      const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, {
+        authType: resolvedAuthType,
+        method: 'GET'
+      });
+      membersList = membersRes?.data?.members || membersRes?.members || [];
+    }
+
+    const distributions: any[] = [];
+    for (const m of membersList || []) {
+      const mPubKey = m.publicKey || m.e2eePublicKey;
+      if (m.status !== 'dissolved' && m.status !== 'inactive' && m.status !== 'removed' && m.agentId && mPubKey) {
+        const wrapped = await wrapClusterGroupKeyForMember(
+          rawGroupKeyBytes,
+          localKeys.privateKey,
+          mPubKey,
+          clusterId,
+          clusterEpoch,
+          {
+            senderPublicKey: localKeys.publicKey,
+            senderAgentId,
+            recipientAgentId: m.agentId,
+            recipientKeyFingerprint: m.e2eePublicKeyFingerprint || m.fingerprint
+          }
+        );
+        distributions.push({
+          recipientAgentId: m.agentId,
+          senderAgentId,
+          senderPublicKey: localKeys.publicKey,
+          encryptedKeyPackage: wrapped
+        });
+      }
+    }
+
+    if (distributions.length > 0) {
+      await apiFetch(`/api/clusters/${clusterId}/key-distribution`, {
+        authType: resolvedAuthType,
+        method: 'POST',
+        body: JSON.stringify({
+          epoch: clusterEpoch,
+          keyFingerprint: groupKeyFingerprint,
+          senderAgentId,
+          senderPublicKey: localKeys.publicKey,
+          distributions
+        })
+      });
+    }
+  } catch {
+    // Non-fatal background sync
+  }
+}
+
 export async function sendClusterMessageApi(
   clusterId: string,
   plaintext: string,
@@ -765,6 +893,9 @@ export async function sendClusterMessageApi(
     );
   }
 
+  // Ensure sender's local E2EE public key matches server registration
+  await ensureSenderE2EEKeySyncedOnServer(localKeys, resolvedAuthType);
+
   // 2. Obtain authoritative cluster epoch
   let clusterEpoch = await getClusterAuthoritativeEpochApi(clusterId, resolvedAuthType);
 
@@ -780,10 +911,11 @@ export async function sendClusterMessageApi(
         method: 'GET'
       });
       if (distRes?.success && distRes.data?.encryptedKeyPackage) {
+        const distributorPubKey = distRes.data.senderPublicKey || localKeys.publicKey;
         const unwrapped = await unwrapClusterGroupKeyFromPackage(
           distRes.data.encryptedKeyPackage,
           localKeys.privateKey,
-          localKeys.publicKey,
+          distributorPubKey,
           clusterId,
           clusterEpoch
         );
@@ -801,7 +933,17 @@ export async function sendClusterMessageApi(
     rawGroupKeyBytes = gen.rawKey;
     groupKeyFingerprint = gen.fingerprint;
     await saveClusterGroupKey(clusterId, clusterEpoch, rawGroupKeyBytes, groupKeyFingerprint);
+  } else if (!rawGroupKeyBytes) {
+    try {
+      const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+      const exportedBuf = await cryptoObj.subtle.exportKey('raw', groupKey);
+      rawGroupKeyBytes = new Uint8Array(exportedBuf);
+      groupKeyFingerprint = await computeRawGroupKeyFingerprint(rawGroupKeyBytes);
+    } catch {}
+  }
 
+  // Always refresh key distributions for active cluster members so newly added or rotated members can unwrap
+  if (rawGroupKeyBytes) {
     try {
       const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, {
         authType: resolvedAuthType,
@@ -811,16 +953,25 @@ export async function sendClusterMessageApi(
       const distributions: any[] = [];
 
       for (const m of membersList) {
-        if (m.status === 'active' && m.agentId && m.publicKey) {
+        const mPubKey = m.publicKey || m.e2eePublicKey;
+        if (m.status !== 'dissolved' && m.status !== 'inactive' && m.status !== 'removed' && m.agentId && mPubKey) {
           const wrapped = await wrapClusterGroupKeyForMember(
             rawGroupKeyBytes,
             localKeys.privateKey,
-            m.publicKey,
+            mPubKey,
             clusterId,
-            clusterEpoch
+            clusterEpoch,
+            {
+              senderPublicKey: localKeys.publicKey,
+              senderAgentId,
+              recipientAgentId: m.agentId,
+              recipientKeyFingerprint: m.e2eePublicKeyFingerprint || m.fingerprint
+            }
           );
           distributions.push({
             recipientAgentId: m.agentId,
+            senderAgentId,
+            senderPublicKey: localKeys.publicKey,
             encryptedKeyPackage: wrapped
           });
         }
@@ -833,6 +984,8 @@ export async function sendClusterMessageApi(
           body: JSON.stringify({
             epoch: clusterEpoch,
             keyFingerprint: groupKeyFingerprint,
+            senderAgentId,
+            senderPublicKey: localKeys.publicKey,
             distributions
           })
         });

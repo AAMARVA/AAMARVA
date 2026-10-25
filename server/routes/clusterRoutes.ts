@@ -308,10 +308,18 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       const uId = m.userId || m.user_id;
       const aId = m.agentId || m.agent_id;
       if (uId) participantUserIds.add(uId);
-      if (aId) participantAgentIds.add(String(aId).trim());
+      if (aId) {
+        participantAgentIds.add(String(aId).trim());
+        const normAid = normalizeAgentId(String(aId));
+        if (normAid) participantAgentIds.add(normAid);
+      }
     });
     if (cluster.ownerUserId) participantUserIds.add(cluster.ownerUserId);
-    if (cluster.ownerAgentId) participantAgentIds.add(String(cluster.ownerAgentId).trim());
+    if (cluster.ownerAgentId) {
+      participantAgentIds.add(String(cluster.ownerAgentId).trim());
+      const normOwnerAid = normalizeAgentId(String(cluster.ownerAgentId));
+      if (normOwnerAid) participantAgentIds.add(normOwnerAid);
+    }
 
     let usersById: any[] = [];
     let usersByAgentId: any[] = [];
@@ -337,29 +345,36 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
     users.forEach((u: any) => {
       const uId = u.id;
       const aId = u.agentId || u.agent_id;
-      if (aId) userMap.set(String(aId).toLowerCase(), u);
+      if (aId) {
+        userMap.set(String(aId).toLowerCase(), u);
+        const normAid = normalizeAgentId(String(aId)).toLowerCase();
+        if (normAid) userMap.set(normAid, u);
+      }
       if (uId) {
         userMap.set(String(uId).toLowerCase(), u);
         participantUserIds.add(String(uId));
       }
     });
 
-    // Populate E2EE public keys from user auth metadata for cluster members
-    for (const uId of Array.from(participantUserIds)) {
+    // Populate E2EE public keys from user auth metadata for cluster members in parallel
+    await Promise.all(Array.from(participantUserIds).map(async (uId) => {
       try {
         const { data: authData } = await supabase.auth.admin.getUserById(uId);
         const meta = authData?.user?.user_metadata;
         if (meta?.e2eePublicKey) {
           const existing = userMap.get(String(uId).toLowerCase()) || {};
           existing.e2eePublicKey = meta.e2eePublicKey;
+          existing.e2eePublicKeyFingerprint = meta.e2eePublicKeyFingerprint || null;
           existing.e2eeKeyEpoch = meta.e2eeKeyEpoch || 1;
           userMap.set(String(uId).toLowerCase(), existing);
           if (existing.agentId) {
             userMap.set(String(existing.agentId).toLowerCase(), existing);
+            const normAid = normalizeAgentId(String(existing.agentId)).toLowerCase();
+            if (normAid) userMap.set(normAid, existing);
           }
         }
       } catch {}
-    }
+    }));
 
     const { CapabilityService } = await import('../services/capabilityService.js');
     const capService = CapabilityService.getInstance();
@@ -367,13 +382,15 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
     let membersList: any[] = await Promise.all((dbMembers || []).map(async (m: any) => {
       const mAgentId = m.agentId || m.agent_id;
       const mUserId = m.userId || m.user_id;
-      const u = (mAgentId ? userMap.get(String(mAgentId).toLowerCase()) : null) || 
+      const normMAgentId = mAgentId ? normalizeAgentId(String(mAgentId)).toLowerCase() : '';
+      const u = (mAgentId ? userMap.get(String(mAgentId).toLowerCase()) : null) ||
+                (normMAgentId ? userMap.get(normMAgentId) : null) ||
                 (mUserId ? userMap.get(String(mUserId).toLowerCase()) : null);
       
-      const resolvedAgentId = mAgentId || u?.agentId || u?.agent_id;
+      const resolvedAgentId = u?.agentId || u?.agent_id || (mAgentId ? normalizeAgentId(String(mAgentId)) : mAgentId);
       const realName = (u?.name && String(u.name).trim()) || '';
       const isOwnerMember = Boolean(
-        (cluster.ownerAgentId && resolvedAgentId && cluster.ownerAgentId.toLowerCase() === String(resolvedAgentId).toLowerCase()) ||
+        (cluster.ownerAgentId && resolvedAgentId && normalizeAgentId(cluster.ownerAgentId) === normalizeAgentId(String(resolvedAgentId))) ||
         (cluster.ownerUserId && (mUserId || u?.id) && cluster.ownerUserId.toLowerCase() === String(mUserId || u?.id).toLowerCase())
       );
       const isSlave = !isOwnerMember && Boolean(
@@ -418,6 +435,8 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
         emailVerified: Boolean(u?.emailVerified),
         e2eePublicKey: u?.e2eePublicKey || null,
         publicKey: u?.e2eePublicKey || null,
+        e2eePublicKeyFingerprint: u?.e2eePublicKeyFingerprint || null,
+        fingerprint: u?.e2eePublicKeyFingerprint || null,
         keyStatus: u?.e2eePublicKey ? 'available' : 'missing',
         isSlave,
         isMaster: !isSlave,
@@ -2030,20 +2049,51 @@ router.post('/clusters/:clusterId/key-distribution', requireUserOrAgentAuth, asy
       return res.status(400).json({ success: false, error: { code: 'MISSING_DISTRIBUTIONS', message: 'distributions array is required and cannot be empty.' } });
     }
 
-    // Register epoch in cluster_epochs
-    const epochId = `epoch_${crypto.randomUUID()}`;
+    // Register or update epoch in cluster_epochs without overwriting existing primary key id
     const now = new Date().toISOString();
-    const { error: epochErr } = await supabase.from(tables.epochs).upsert({
-      id: epochId,
-      clusterId,
-      epoch,
-      keyFingerprint: keyFingerprint || 'PENDING',
-      createdAt: now
-    }, { onConflict: 'clusterId,epoch' });
+    const { data: existingEpochRow } = await supabase
+      .from(tables.epochs)
+      .select('id, keyFingerprint')
+      .eq('clusterId', clusterId)
+      .eq('epoch', epoch)
+      .maybeSingle();
 
-    if (epochErr) {
-      throw new Error(`Failed to upsert cluster epoch: ${epochErr.message}`);
+    if (!existingEpochRow) {
+      const epochId = `epoch_${crypto.randomUUID()}`;
+      const { error: epochErr } = await supabase.from(tables.epochs).insert({
+        id: epochId,
+        clusterId,
+        epoch,
+        keyFingerprint: keyFingerprint || 'PENDING',
+        createdAt: now
+      });
+      if (epochErr) {
+        throw new Error(`Failed to insert cluster epoch: ${epochErr.message}`);
+      }
+    } else if (keyFingerprint && existingEpochRow.keyFingerprint !== keyFingerprint) {
+      await supabase
+        .from(tables.epochs)
+        .update({ keyFingerprint })
+        .eq('id', existingEpochRow.id);
     }
+
+    // Resolve distributor's E2EE public key so recipients have the exact wrapping public key
+    let distributorPublicKey: any = req.body?.senderPublicKey || null;
+    if (!distributorPublicKey && userId) {
+      try {
+        const { data: distAuth } = await supabase.auth.admin.getUserById(userId);
+        distributorPublicKey = distAuth?.user?.user_metadata?.e2eePublicKey || null;
+      } catch {}
+    }
+    let parsedDistributorPub: any = distributorPublicKey;
+    if (typeof distributorPublicKey === 'string') {
+      try {
+        parsedDistributorPub = JSON.parse(distributorPublicKey);
+      } catch {
+        parsedDistributorPub = distributorPublicKey;
+      }
+    }
+    const normDistributorAgentId = normalizeAgentId(req.body?.senderAgentId || agentId);
 
     // Verify authoritative active members
     const { data: memberRows, error: memberErr } = await supabase
@@ -2064,22 +2114,86 @@ router.post('/clusters/:clusterId/key-distribution', requireUserOrAgentAuth, asy
     });
 
     const insertedRows: any[] = [];
+    const targetRecipientSet = new Set<string>();
+
     for (const dist of distributions) {
       const targetAgent = normalizeAgentId(dist.recipientAgentId);
       if (!targetAgent || !dist.encryptedKeyPackage) continue;
       if (!activeAgents.has(targetAgent)) continue;
 
+      let pkgObj: any = null;
+      if (typeof dist.encryptedKeyPackage === 'string') {
+        try {
+          pkgObj = JSON.parse(dist.encryptedKeyPackage);
+        } catch {
+          pkgObj = null;
+        }
+      } else if (typeof dist.encryptedKeyPackage === 'object') {
+        pkgObj = { ...dist.encryptedKeyPackage };
+      }
+
+      if (pkgObj && typeof pkgObj === 'object') {
+        const effSenderId = normalizeAgentId(dist.senderAgentId || pkgObj.senderAgentId || normDistributorAgentId);
+        let effSenderPub = dist.senderPublicKey || pkgObj.senderPublicKey || parsedDistributorPub;
+        if (typeof effSenderPub === 'string') {
+          try {
+            effSenderPub = JSON.parse(effSenderPub);
+          } catch {}
+        }
+        const aadStr = pkgObj.aad || `aamarva-cluster-group-key:${clusterId}:${epoch}`;
+        const hkdfSaltStr = pkgObj.hkdfSalt || 'aamarva-e2ee-channel-v1';
+        const hkdfInfoStr = pkgObj.hkdfInfo || `aamarva-channel:${clusterId}`;
+
+        pkgObj = {
+          ...pkgObj,
+          clusterId,
+          epoch,
+          recipientAgentId: targetAgent,
+          ...(effSenderId ? { senderAgentId: effSenderId } : {}),
+          ...(effSenderPub ? { senderPublicKey: effSenderPub } : {}),
+          aad: aadStr,
+          hkdfSalt: hkdfSaltStr,
+          hkdfInfo: hkdfInfoStr,
+          wrappingParams: {
+            algorithm: 'AES-256-GCM',
+            kdf: 'ECDH-P256-HKDF-SHA256',
+            curve: 'P-256',
+            hkdfHash: 'SHA-256',
+            hkdfSalt: hkdfSaltStr,
+            hkdfInfo: hkdfInfoStr,
+            aad: aadStr,
+            iv: pkgObj.iv || pkgObj.nonce,
+            ...(effSenderId ? { senderAgentId: effSenderId } : {}),
+            ...(effSenderPub ? { senderPublicKey: effSenderPub } : {}),
+            recipientAgentId: targetAgent,
+            ...(pkgObj.recipientPublicKey ? { recipientPublicKey: pkgObj.recipientPublicKey } : {}),
+            ...(pkgObj.recipientKeyFingerprint ? { recipientKeyFingerprint: pkgObj.recipientKeyFingerprint } : {})
+          }
+        };
+      }
+
+      targetRecipientSet.add(targetAgent);
       insertedRows.push({
         id: `dist_${crypto.randomUUID()}`,
         clusterId,
         epoch,
         recipientAgentId: targetAgent,
-        encryptedKeyPackage: typeof dist.encryptedKeyPackage === 'string' ? dist.encryptedKeyPackage : JSON.stringify(dist.encryptedKeyPackage),
+        encryptedKeyPackage: pkgObj ? JSON.stringify(pkgObj) : String(dist.encryptedKeyPackage),
         createdAt: now
       });
     }
 
     if (insertedRows.length > 0) {
+      // Remove stale distribution rows for the same (clusterId, epoch, recipientAgentId) before inserting fresh packages
+      try {
+        await supabase
+          .from(tables.keyDistributions)
+          .delete()
+          .eq('clusterId', clusterId)
+          .eq('epoch', epoch)
+          .in('recipientAgentId', Array.from(targetRecipientSet));
+      } catch {}
+
       const { error: distErr } = await supabase.from(tables.keyDistributions).insert(insertedRows);
       if (distErr) {
         throw new Error(`Failed to insert key distributions: ${distErr.message}`);
@@ -2159,13 +2273,136 @@ router.get('/clusters/:clusterId/key-distribution', requireUserOrAgentAuth, asyn
       .eq('epoch', targetEpoch)
       .maybeSingle();
 
+    let parsedPkg: any = null;
+    if (typeof matched.encryptedKeyPackage === 'string') {
+      try {
+        parsedPkg = JSON.parse(matched.encryptedKeyPackage);
+      } catch {
+        parsedPkg = null;
+      }
+    } else if (matched.encryptedKeyPackage && typeof matched.encryptedKeyPackage === 'object') {
+      parsedPkg = { ...matched.encryptedKeyPackage };
+    }
+
+    // Resolve distributor (cluster admin/owner) public key if not already embedded in package
+    let senderAgentId: string | null = parsedPkg?.senderAgentId || null;
+    let senderPublicKey: any = parsedPkg?.senderPublicKey || null;
+
+    if (!senderPublicKey || !senderAgentId) {
+      try {
+        const { data: clusterRow } = await supabase
+          .from(tables.clusters)
+          .select('ownerUserId, ownerAgentId')
+          .eq('id', clusterId)
+          .maybeSingle();
+
+        if (!senderAgentId && clusterRow?.ownerAgentId) {
+          senderAgentId = normalizeAgentId(clusterRow.ownerAgentId);
+        }
+
+        let ownerUid = clusterRow?.ownerUserId || null;
+        if (!ownerUid && senderAgentId) {
+          const { data: ownerUser } = await supabase
+            .from('users')
+            .select('id')
+            .eq('agentId', senderAgentId)
+            .maybeSingle();
+          ownerUid = ownerUser?.id || null;
+        }
+
+        if (!senderPublicKey && ownerUid) {
+          const { data: ownerAuth } = await supabase.auth.admin.getUserById(ownerUid);
+          const rawOwnerKey = ownerAuth?.user?.user_metadata?.e2eePublicKey || null;
+          if (rawOwnerKey) {
+            try {
+              senderPublicKey = typeof rawOwnerKey === 'string' ? JSON.parse(rawOwnerKey) : rawOwnerKey;
+            } catch {
+              senderPublicKey = rawOwnerKey;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Resolve caller's (recipient's) registered E2EE public key & fingerprint
+    let recipientPublicKey: any = parsedPkg?.recipientPublicKey || null;
+    let recipientKeyFingerprint: string | null = parsedPkg?.recipientKeyFingerprint || null;
+    if ((!recipientPublicKey || !recipientKeyFingerprint) && userId) {
+      try {
+        const { data: callerAuth } = await supabase.auth.admin.getUserById(userId);
+        const callerMeta = callerAuth?.user?.user_metadata || {};
+        if (!recipientPublicKey && callerMeta.e2eePublicKey) {
+          try {
+            recipientPublicKey = typeof callerMeta.e2eePublicKey === 'string'
+              ? JSON.parse(callerMeta.e2eePublicKey)
+              : callerMeta.e2eePublicKey;
+          } catch {
+            recipientPublicKey = callerMeta.e2eePublicKey;
+          }
+        }
+        if (!recipientKeyFingerprint && callerMeta.e2eePublicKeyFingerprint) {
+          recipientKeyFingerprint = callerMeta.e2eePublicKeyFingerprint;
+        }
+      } catch {}
+    }
+
+    const aadStr = parsedPkg?.aad || `aamarva-cluster-group-key:${clusterId}:${targetEpoch}`;
+    const hkdfSaltStr = parsedPkg?.hkdfSalt || 'aamarva-e2ee-channel-v1';
+    const hkdfInfoStr = parsedPkg?.hkdfInfo || `aamarva-channel:${clusterId}`;
+
+    const wrappingParams = {
+      algorithm: 'AES-256-GCM',
+      kdf: 'ECDH-P256-HKDF-SHA256',
+      curve: 'P-256',
+      hkdfHash: 'SHA-256',
+      hkdfSalt: hkdfSaltStr,
+      hkdfInfo: hkdfInfoStr,
+      aad: aadStr,
+      iv: parsedPkg?.iv || parsedPkg?.nonce || null,
+      ciphertext: parsedPkg?.key || parsedPkg?.ciphertext || null,
+      senderAgentId,
+      senderPublicKey,
+      recipientAgentId: callerAgent,
+      recipientPublicKey,
+      recipientKeyFingerprint
+    };
+
+    let enrichedPackageString = matched.encryptedKeyPackage;
+    let enrichedPackageObj = parsedPkg;
+    if (parsedPkg && typeof parsedPkg === 'object') {
+      enrichedPackageObj = {
+        ...parsedPkg,
+        clusterId,
+        epoch: targetEpoch,
+        ...(senderAgentId ? { senderAgentId } : {}),
+        ...(senderPublicKey ? { senderPublicKey } : {}),
+        recipientAgentId: callerAgent,
+        ...(recipientPublicKey ? { recipientPublicKey } : {}),
+        ...(recipientKeyFingerprint ? { recipientKeyFingerprint } : {}),
+        aad: aadStr,
+        hkdfSalt: hkdfSaltStr,
+        hkdfInfo: hkdfInfoStr,
+        wrappingParams
+      };
+      enrichedPackageString = JSON.stringify(enrichedPackageObj);
+    }
+
     return res.json({
       success: true,
       data: {
         clusterId,
         epoch: targetEpoch,
         keyFingerprint: epochMeta?.keyFingerprint || null,
-        encryptedKeyPackage: matched.encryptedKeyPackage
+        senderAgentId,
+        senderPublicKey: senderPublicKey ? (typeof senderPublicKey === 'string' ? senderPublicKey : JSON.stringify(senderPublicKey)) : null,
+        senderPublicKeyJwk: senderPublicKey,
+        recipientAgentId: callerAgent,
+        recipientPublicKey: recipientPublicKey ? (typeof recipientPublicKey === 'string' ? recipientPublicKey : JSON.stringify(recipientPublicKey)) : null,
+        recipientPublicKeyJwk: recipientPublicKey,
+        recipientKeyFingerprint,
+        wrappingParams,
+        keyPackage: enrichedPackageObj,
+        encryptedKeyPackage: enrichedPackageString
       }
     });
   } catch (err: any) {
