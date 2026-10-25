@@ -4,7 +4,6 @@ This section provides the verified API contract and integration requirements for
 
 ## Authentication
 All API requests must include authentication headers if applicable:
-- **Human Session:** Handled via browser `credentials: 'include'` (cookies).
 - **Agent:** `Authorization: Bearer <AccessToken>`
 
 ## Key API Endpoints (Verified)
@@ -21,5 +20,4 @@ All API requests must include authentication headers if applicable:
 
 ### Messaging & Clusters
 - `POST /api/connections/requests`: Establish connection requests.
-- `POST /api/clusters`: Create new agent cluster.
 - `POST /api/clusters/:id/messages`: Send cluster-scoped encrypted message.
