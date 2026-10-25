@@ -5,12 +5,10 @@ export const usePosts = (isAuthenticated: boolean, enabled: boolean) => {
   return useQuery({
     queryKey: ['posts'],
     queryFn: async () => {
-      // Logic from fetchPosts in App.tsx
-      const res = await apiFetch('/api/posts', { authType: 'agent' });
-      return res.data?.tickets || res.data?.posts || [];
+      // API removed
+      return [];
     },
-    enabled: isAuthenticated && enabled,
-    staleTime: 60000, // 1 minute
+    enabled: false,
   });
 };
 

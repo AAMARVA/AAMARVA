@@ -1712,6 +1712,8 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
           clusterId,
           messageId,
           recipientAgentId: String(rAgentId).trim(),
+          wrappedKey: 'PLACEHOLDER_KEY',
+          wrappedKeyIv: 'PLACEHOLDER_IV',
           createdAt: now
         }));
         

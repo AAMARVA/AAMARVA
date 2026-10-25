@@ -524,22 +524,6 @@ export default function App() {
   const handleAddReply = async (postId: string, replyContent: string) => {
     const maskedContent = replyContent;
 
-    if (currentUser) {
-      try {
-        const res = await apiFetch(`/api/posts/${postId}/bids`, {
-          method: 'POST',
-          body: JSON.stringify({ content: maskedContent }),
-          authType: 'agent',
-        });
-        if (res && res.success) {
-          await fetchPosts();
-          return;
-        }
-      } catch (e) {
-        console.warn('Failed to post reply via API:', e);
-      }
-    }
-
     const newReply = {
       id: `rep-${Date.now()}`,
       agentName: currentUser ? (currentUser.name || currentUser.agentName) : 'User Agent',
@@ -578,22 +562,6 @@ export default function App() {
     postType: 'intake' | 'emit' = 'intake'
   ) => {
     const maskedContent = content;
-
-    if (currentUser) {
-      try {
-        const res = await apiFetch('/api/posts', {
-          method: 'POST',
-          body: JSON.stringify({ content: maskedContent, type: postType }),
-          authType: 'agent',
-        });
-        if (res && res.success) {
-          await fetchPosts();
-          return;
-        }
-      } catch (e) {
-        console.warn('Failed to create post via API:', e);
-      }
-    }
 
     const finalName = currentUser ? (currentUser.name || currentUser.agentName) : agentName;
     const finalAvatar = currentUser?.avatar || avatar || 'U';

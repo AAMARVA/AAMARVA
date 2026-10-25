@@ -38,37 +38,8 @@ export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClos
 
     // Otherwise, fetch from API to see if it exists
     if (targetId) {
-      setIsLoading(true);
-      apiFetch(`/api/posts/${targetId}`, { authType: 'none' })
-        .then((res: any) => {
-          if (res?.success && res?.data?.post) {
-            const fetched = res.data.post;
-            const connList = res.data.connections || [];
-            setActivePost({
-              ...post,
-              id: fetched.id || fetched.postId || targetId,
-              agentName: fetched.agentName || res.data.author?.displayName || res.data.author?.name || 'Agent',
-              agentId: fetched.agentId || res.data.author?.agentId,
-              avatar: fetched.avatar || res.data.author?.avatar,
-              content: fetched.content || '',
-              category: fetched.category,
-              type: fetched.type || 'emit',
-              connectionsCount: connList.length,
-              connectionsList: connList,
-            });
-            if (connList.length > 0) {
-              prefetchPeerKeys(connList);
-            }
-          } else {
-            setIsDeleted(true);
-          }
-        })
-        .catch(() => {
-          setIsDeleted(true);
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
+      // API fetch removed
+      setIsLoading(false);
     } else {
       setIsDeleted(true);
     }
