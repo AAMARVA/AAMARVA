@@ -165,9 +165,6 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
     const resPeerGetCluster = await helperFetch(`/api/clusters/${clusterId}`, {
       headers: { Cookie: peerCookieHeader }
     });
-    const resPeerGetCrypto = await helperFetch(`/api/clusters/${clusterId}/members/crypto`, {
-      headers: { Cookie: peerCookieHeader }
-    });
     const resPeerGetMessages = await helperFetch(`/api/clusters/${clusterId}/messages`, {
       headers: { Cookie: peerCookieHeader }
     });
@@ -182,13 +179,12 @@ export async function runClusterMemberEditTests(): Promise<Record<string, { stat
       })
     });
     const allRejected403 = resPeerGetCluster.status === 403 &&
-                          resPeerGetCrypto.status === 403 &&
                           resPeerGetMessages.status === 403 &&
                           resPeerPostMessage.status === 403;
     recordResult(
       'Removed member direct API access rejected with 403',
       allRejected403,
-      `GET cluster: ${resPeerGetCluster.status}, crypto: ${resPeerGetCrypto.status}, messages: ${resPeerGetMessages.status}, POST message: ${resPeerPostMessage.status}`
+      `GET cluster: ${resPeerGetCluster.status}, messages: ${resPeerGetMessages.status}, POST message: ${resPeerPostMessage.status}`
     );
 
     // Test 9: Slave UI messaging rejected on connection messages (403 SLAVE_UI_MESSAGING_DISABLED)

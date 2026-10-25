@@ -9,7 +9,6 @@ import { SecurityService } from '../services/securityService';
 import { MAX_BASE64_CIPHERTEXT_LENGTH, MAX_DECODED_CIPHERTEXT_BYTES } from '../services/connectionService';
 import { HUMAN_SESSION_COOKIE_NAME } from '../authService';
 import { clusterService } from '../services/clusterService';
-import { clusterMessageRecipientService } from '../services/clusterMessageRecipientService';
 
 const router = Router();
 
@@ -19,6 +18,8 @@ export interface ClusterTables {
   invites: string;
   messages: string;
   recipients: string;
+  epochs: string;
+  keyDistributions: string;
 }
 
 let cachedTables: ClusterTables | null = null;
@@ -33,6 +34,8 @@ export async function getClusterTables(_supabase?: any): Promise<ClusterTables> 
     invites: 'cluster_invites',
     messages: 'cluster_messages',
     recipients: 'cluster_message_recipients',
+    epochs: 'cluster_epochs',
+    keyDistributions: 'cluster_key_distributions',
   };
   return cachedTables;
 }
@@ -909,7 +912,18 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
       .eq('clusterId', clusterId)
       .neq('status', 'dissolved');
 
-    const currentEpoch = 1;
+    let currentEpoch = 1;
+    try {
+      const { data: epData } = await supabase
+        .from(tables.epochs)
+        .select('epoch')
+        .eq('clusterId', clusterId)
+        .order('epoch', { ascending: false })
+        .limit(1);
+      if (epData && epData.length > 0 && typeof epData[0].epoch === 'number') {
+        currentEpoch = epData[0].epoch;
+      }
+    } catch {}
 
     res.json({
       success: true,
@@ -920,6 +934,8 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
         description: cluster.description,
         ownerAgentId: cluster.ownerAgentId,
         membersCount: count || 0,
+        epoch: currentEpoch,
+        currentEpoch,
         createdAt: cluster.createdAt
       }
     });
@@ -928,224 +944,6 @@ router.get('/clusters/:clusterId', requireUserOrAgentAuth, async (req: Authentic
   }
 });
 
-
-// 3.2 GET /clusters/:clusterId/members/crypto (Get cluster member directory with cryptographic identities & public keys)
-router.get('/clusters/:clusterId/members/crypto', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    await SecurityService.getInstance().evaluateRequest(req, 'cluster_get');
-    const clusterId = req.params.clusterId as string;
-    const supabase = getSupabaseClient();
-    const tables = await getClusterTables(supabase);
-    const userId = req.user!.id;
-
-    // 1. Check if cluster exists and is not dissolved
-    const { data: cluster, error: clError } = await supabase
-      .from(tables.clusters)
-      .select('id, status, ownerUserId, ownerAgentId, createdAt')
-      .eq('id', clusterId)
-      .maybeSingle();
-
-    if (clError || !cluster) {
-      return res.status(404).json({ success: false, error: { code: 'CLUSTER_NOT_FOUND', message: 'Cluster not found.' } });
-    }
-
-    if (cluster.status === 'dissolved') {
-      return res.status(403).json({ success: false, error: { code: 'CLUSTER_DISSOLVED', message: 'Forbidden: This cluster has been dissolved.' } });
-    }
-
-    // 2. Enforce active membership check for caller
-    const isMember = await isClusterMember(supabase, clusterId, userId, req.user?.agentId);
-    if (!isMember) {
-      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: You must be an active member of this cluster to view the cryptographic member directory.' } });
-    }
-
-    // 3. Query cluster members
-    const { data: dbMembers, error: memErr } = await supabase
-      .from(tables.members)
-      .select('id, clusterId, userId, agentId, role, status, createdAt')
-      .eq('clusterId', clusterId)
-      .order('createdAt', { ascending: true });
-
-    if (memErr) {
-      throw new Error(`Failed to query cluster members: ${memErr.message}`);
-    }
-
-    // 4. Collect all participant user IDs and agent IDs
-    const participantUserIds = new Set<string>();
-    const participantAgentIds = new Set<string>();
-    (dbMembers || []).forEach((m: any) => {
-      if (m.userId) participantUserIds.add(m.userId);
-      if (m.agentId) participantAgentIds.add(String(m.agentId).trim());
-    });
-    if (cluster.ownerUserId) participantUserIds.add(cluster.ownerUserId);
-    if (cluster.ownerAgentId) participantAgentIds.add(String(cluster.ownerAgentId).trim());
-
-    let usersById: any[] = [];
-    let usersByAgentId: any[] = [];
-    if (participantUserIds.size > 0) {
-      const { data } = await supabase
-        .from('users')
-        .select('id, name, agentId, avatar, bio, emailVerified, account_type, role, is_slave, master_id, is_master_primary')
-        .in('id', Array.from(participantUserIds));
-      if (data) usersById = data;
-    }
-    if (participantAgentIds.size > 0) {
-      const { data } = await supabase
-        .from('users')
-        .select('id, name, agentId, avatar, bio, emailVerified, account_type, role, is_slave, master_id, is_master_primary')
-        .in('agentId', Array.from(participantAgentIds));
-      if (data) usersByAgentId = data;
-    }
-
-    const users = [...usersById, ...usersByAgentId];
-    const userMap = new Map<string, any>();
-    users.forEach((u: any) => {
-      if (u.id) userMap.set(String(u.id).toLowerCase(), u);
-      if (u.agentId) userMap.set(String(u.agentId).toLowerCase(), u);
-    });
-    userMap.forEach((u) => { if (u.id) participantUserIds.add(u.id); });
-
-    // Populate E2EE public keys and metadata from user auth metadata
-    // First, list all auth users to map email to Auth ID
-    const { data: authUsers } = await supabase.auth.admin.listUsers();
-    const authUserMap = new Map();
-    if (authUsers?.users) {
-        authUsers.users.forEach(u => {
-            if (u.email) authUserMap.set(u.email.toLowerCase(), u);
-        });
-    }
-
-    for (const uId of Array.from(participantUserIds)) {
-      try {
-        const u = userMap.get(String(uId).toLowerCase());
-        let authUser = null;
-        
-        // Try lookup by Auth ID first
-        const { data: authDataById } = await supabase.auth.admin.getUserById(uId);
-        if (authDataById?.user) {
-            authUser = authDataById.user;
-        } else if (u?.agentId) {
-            // Fallback: Try lookup by email (derived from agentId)
-            const email = `${String(u.agentId).toLowerCase()}@aamarva.net`;
-            authUser = authUserMap.get(email);
-        }
-
-        const meta = authUser?.user_metadata;
-        if (meta?.e2eePublicKey) {
-          const existing = u || {};
-          existing.e2eePublicKey = meta.e2eePublicKey;
-          existing.e2eeKeyEpoch = meta.e2eeKeyEpoch || 1;
-          existing.e2eePublicKeyFingerprint = meta.e2eePublicKeyFingerprint || null;
-          userMap.set(String(uId).toLowerCase(), existing);
-          if (existing.agentId) {
-            userMap.set(String(existing.agentId).toLowerCase(), existing);
-          }
-        }
-      } catch (e) {
-          console.warn('Error fetching E2EE key for uId:', uId, e);
-      }
-    }
-
-    const membershipVersion = 1;
-
-    const membersList = (dbMembers || []).map((m: any) => {
-      const mAgentId = m.agentId || m.agent_id;
-      const mUserId = m.userId || m.user_id;
-      const u = (mAgentId ? userMap.get(String(mAgentId).toLowerCase()) : null) || 
-                (mUserId ? userMap.get(String(mUserId).toLowerCase()) : null);
-
-      const pubKey = u?.e2eePublicKey || m.e2eePublicKey || null;
-      let keyStatus = 'missing';
-      if (pubKey && typeof pubKey === 'string' && pubKey.trim().length > 0) {
-        keyStatus = 'available';
-      }
-
-      const isSlave = Boolean(
-        u?.account_type === 'slave' ||
-        u?.role === 'slave' ||
-        u?.is_slave === true ||
-        (u?.master_id && !u?.is_master_primary) ||
-        m.role === 'slave' ||
-        m.is_slave === true ||
-        (mAgentId && mAgentId.includes('+AMR-'))
-      );
-      const isMaster = !isSlave;
-
-      let avatar = u?.avatar;
-      if (isMaster && (!avatar || avatar.includes('robohash.org') || avatar.includes('robohash') || avatar === '🤖')) {
-        const cleanName = (u?.name || mAgentId || 'M').trim().replace(/^@/, '');
-        const initial = (cleanName.charAt(0) || 'M').toUpperCase();
-        avatar = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" fill="#141414"/><text x="50%" y="54%" font-family="monospace" font-size="56" font-weight="900" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">${initial}</text></svg>`)}`;
-      }
-
-      return {
-        agentId: mAgentId || u?.agentId || 'UNKNOWN_AGENT',
-        name: (u?.name && String(u.name).trim()) || mAgentId || 'Cluster Member',
-        avatar: avatar || '🤖',
-        bio: u?.bio || null,
-        publicKey: pubKey,
-        keyId: u?.e2eePublicKeyFingerprint || (pubKey ? `key_${mAgentId || 'agent'}` : null),
-        keyVersion: u?.e2eeKeyEpoch || membershipVersion,
-        keyStatus,
-        membershipRole: (cluster.ownerAgentId && mAgentId && cluster.ownerAgentId.toLowerCase() === mAgentId.toLowerCase()) || (cluster.ownerUserId && mUserId && cluster.ownerUserId.toLowerCase() === mUserId.toLowerCase()) ? 'admin' : 'member',
-        status: m.status || 'active',
-        isSlave,
-        isMaster
-      };
-    });
-
-    // Ensure cluster owner/admin is included in membersList
-    const ownerAgentId = cluster.ownerAgentId;
-    const hasOwner = membersList.some((mem: any) => 
-      ownerAgentId && mem.agentId?.toLowerCase() === ownerAgentId.toLowerCase()
-    );
-    if (!hasOwner && (cluster.ownerAgentId || cluster.ownerUserId)) {
-      const oAid = cluster.ownerAgentId;
-      const oUid = cluster.ownerUserId;
-      const ownerInfo = (oAid ? userMap.get(String(oAid).toLowerCase()) : null) || 
-                        (oUid ? userMap.get(String(oUid).toLowerCase()) : null);
-      const adminAgentId = cluster.ownerAgentId || 'AMR-TW43-24WU';
-      const adminName = (ownerInfo?.name && String(ownerInfo.name).trim()) || adminAgentId;
-      const ownerPubKey = ownerInfo?.e2eePublicKey || null;
-      
-      let ownerAvatar = ownerInfo?.avatar;
-      if (!ownerAvatar || ownerAvatar.includes('robohash.org') || ownerAvatar.includes('robohash') || ownerAvatar === '🤖') {
-        const cleanName = (adminName || adminAgentId || 'M').trim().replace(/^@/, '');
-        const initial = (cleanName.charAt(0) || 'M').toUpperCase();
-        ownerAvatar = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" fill="#141414"/><text x="50%" y="54%" font-family="monospace" font-size="56" font-weight="900" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">${initial}</text></svg>`)}`;
-      }
-
-      membersList.unshift({
-        agentId: adminAgentId,
-        name: adminName,
-        avatar: ownerAvatar,
-        bio: ownerInfo?.bio || null,
-        publicKey: ownerPubKey,
-        keyId: ownerInfo?.e2eePublicKeyFingerprint || (ownerPubKey ? `key_${adminAgentId}` : null),
-        keyVersion: ownerInfo?.e2eeKeyEpoch || membershipVersion,
-        keyStatus: (ownerPubKey && typeof ownerPubKey === 'string' && ownerPubKey.trim().length > 0) ? 'available' : 'missing',
-        membershipRole: 'owner',
-        status: 'active',
-        isSlave: false,
-        isMaster: true
-      });
-    }
-
-    const latestEpoch = 1;
-
-    res.json({
-      success: true,
-      data: {
-        clusterId,
-        membershipVersion: latestEpoch,
-        members: membersList,
-        keyPackage: null
-      }
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
-  }
-});
 
 // 4. PATCH /clusters/:clusterId (Update cluster metadata - Human only)
 router.patch('/clusters/:clusterId', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
@@ -1655,26 +1453,18 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
     }
 
     // 4. Authoritative active members query
-    let authoritativeActiveMembers: any[] = [];
     const { data: activeRecs, error: peerErr } = await supabase
       .from(tables.members)
       .select('userId, agentId, status')
       .eq('clusterId', clusterId);
-
+    
     if (peerErr) {
-      const { data: fallbackActive, error: fallbackPeerErr } = await supabase
-        .from(tables.members)
-        .select('userId, agentId')
-        .eq('clusterId', clusterId);
-      if (fallbackPeerErr) {
-        throw new Error(`Failed to query authoritative cluster members: ${fallbackPeerErr.message || peerErr.message}`);
-      }
-      authoritativeActiveMembers = fallbackActive || [];
-    } else {
-      authoritativeActiveMembers = (activeRecs || []).filter(
-        (m: any) => m.status === 'active' || !m.status
-      );
+      throw new Error(`Failed to query authoritative cluster members: ${peerErr.message}`);
     }
+
+    const authoritativeActiveMembers = (activeRecs || []).filter(
+      (m: any) => m.status === 'active' || !m.status
+    );
 
 
     // 5. Strict E2EE validation: reject any plaintext content (content or message fields)
@@ -1770,19 +1560,19 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
       });
     }
 
-    // 8. Nonce (Deprecated: use inner envelope nonce instead)
-    if (nonce !== undefined && nonce !== null && typeof nonce !== 'string') {
+    // 8. Strict Nonce (IV) presence and format validation
+    if (nonce === undefined || nonce === null || typeof nonce !== 'string') {
       return res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_NONCE',
-          message: 'If provided, nonce must be a valid Base64-encoded string.',
+          message: 'Cluster messages require a valid Base64-encoded initialization vector (nonce).',
         },
       });
     }
 
-    const trimmedNonce = typeof nonce === 'string' ? nonce.trim() : null;
-    if (trimmedNonce && trimmedNonce.length > 0 && !isValidBase64String(trimmedNonce)) {
+    const trimmedNonce = nonce.trim();
+    if (trimmedNonce.length === 0 || !isValidBase64String(trimmedNonce)) {
       return res.status(400).json({
         success: false,
         error: {
@@ -1793,17 +1583,15 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
     }
 
     try {
-      if (trimmedNonce) {
-        const nonceBuf = Buffer.from(trimmedNonce, 'base64');
-        if (nonceBuf.length !== 12) {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'INVALID_NONCE',
-              message: 'Invalid nonce. AES-256-GCM requires a valid 96-bit (12-byte) initialization vector.',
-            },
-          });
-        }
+      const nonceBuf = Buffer.from(trimmedNonce, 'base64');
+      if (nonceBuf.length !== 12) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_NONCE',
+            message: 'Invalid nonce. AES-256-GCM requires a valid 96-bit (12-byte) initialization vector.',
+          },
+        });
       }
     } catch {
       return res.status(400).json({
@@ -1815,13 +1603,13 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
       });
     }
 
-    // 9. Strict protocol version validation: ONLY version 2 recipient-envelope protocol is accepted
+    // 9. Strict protocol version validation: ONLY version 2 is accepted
     if (version === undefined || version === null) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'MISSING_VERSION',
-          message: 'Cluster messages require explicit protocol version 2 (recipient-envelope protocol). Version 1 is deprecated and rejected.',
+          message: 'Cluster messages require explicit protocol version 2. Version 1 is deprecated and rejected.',
         },
       });
     }
@@ -1831,7 +1619,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
         success: false,
         error: {
           code: 'UNSUPPORTED_VERSION',
-          message: 'Unsupported E2EE protocol version. Only recipient-envelope protocol version 2 is accepted for cluster messages. Legacy version 1 is rejected.',
+          message: 'Unsupported E2EE protocol version. Only protocol version 2 is accepted for cluster messages. Legacy version 1 is rejected.',
         },
       });
     }
@@ -1859,259 +1647,6 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
     }
     const parsedKeyEpoch = keyEpoch;
 
-    // 11. Recipient-based E2EE: Validate recipient keys map presence and structure
-    if (!keys || typeof keys !== 'object' || Array.isArray(keys) || Object.keys(keys).length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'MISSING_RECIPIENT_KEYS',
-          message: 'Recipient-envelope messages (version 2) must include a non-empty map of recipient key envelopes.'
-        }
-      });
-    }
-
-    // Check for duplicate or empty recipient IDs in keys map
-    const rawRecipientKeys = Object.keys(keys);
-    const seenRecipientIds = new Set<string>();
-    for (const r of rawRecipientKeys) {
-      const trimmed = (r || '').trim();
-      if (trimmed.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'MALFORMED_RECIPIENT_ID',
-            message: 'Recipient ID in keys map cannot be empty.',
-          },
-        });
-      }
-      const norm = trimmed.toLowerCase();
-      if (seenRecipientIds.has(norm)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'DUPLICATE_RECIPIENT',
-            message: `Duplicate recipient detected in keys map: ${r}.`,
-          },
-        });
-      }
-      seenRecipientIds.add(norm);
-    }
-
-    // 12. Require explicit intended-recipient set in every new Cluster message submission
-    const rawIntended = body.recipients ?? body.intendedRecipients ?? body.intended_recipients ?? body.recipientAgentIds;
-    if (rawIntended === undefined || rawIntended === null) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'MISSING_INTENDED_RECIPIENTS',
-          message: 'Cluster messages must include an explicit intended-recipients list (recipients array).',
-        },
-      });
-    }
-
-    if (!Array.isArray(rawIntended)) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INTENDED_RECIPIENTS',
-          message: 'Intended recipients must be an array of agent IDs.',
-        },
-      });
-    }
-
-    if (rawIntended.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'EMPTY_RECIPIENTS',
-          message: 'Intended recipients array cannot be empty.',
-        },
-      });
-    }
-
-    const seenIntended = new Set<string>();
-    for (const intended of rawIntended) {
-      if (typeof intended !== 'string' || intended.trim().length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'MALFORMED_RECIPIENT_ID',
-            message: 'All intended recipient entries must be non-empty strings.',
-          },
-        });
-      }
-      const normIntended = intended.trim().toLowerCase();
-      if (seenIntended.has(normIntended)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'DUPLICATE_RECIPIENT',
-            message: `Duplicate intended recipient: ${intended}.`,
-          },
-        });
-      }
-      seenIntended.add(normIntended);
-      if (!seenRecipientIds.has(normIntended)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'MISSING_RECIPIENT_ENVELOPE',
-            message: `Missing recipient key envelope for intended recipient: ${intended}.`,
-          },
-        });
-      }
-    }
-    for (const r of rawRecipientKeys) {
-      const norm = r.trim().toLowerCase();
-      if (!seenIntended.has(norm)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'UNEXPECTED_RECIPIENT_ENVELOPE',
-            message: `Recipient key envelope provided for ${r} which was not in intended recipients list.`,
-          },
-        });
-      }
-    }
-    
-    // Authoritative Membership & Recipient Authorization Check
-    let memberRecords: any[] = [];
-    const { data: recs, error: memErr } = await supabase
-      .from(tables.members)
-      .select('userId, agentId, status')
-      .eq('clusterId', clusterId);
-
-    if (memErr) {
-      // Fallback query if status column is missing or schema error
-      const { data: fallbackRecs, error: fallbackErr } = await supabase
-        .from(tables.members)
-        .select('userId, agentId')
-        .eq('clusterId', clusterId);
-
-      if (fallbackErr) {
-        console.error('Failed to query cluster members:', memErr, fallbackErr);
-        return res.status(500).json({
-          success: false,
-          error: { message: `Failed to validate cluster membership: ${fallbackErr?.message || memErr?.message || 'Database query error'}` }
-        });
-      }
-      memberRecords = fallbackRecs || [];
-    } else {
-      memberRecords = recs || [];
-    }
-
-    const activeMemberIds = new Set<string>();
-    const inactiveMemberIds = new Set<string>();
-
-    for (const m of (memberRecords || [])) {
-      const raw = ((m.agentId || m.agent_id) || '').trim();
-      if (raw) {
-        const norm = normalizeAgentId(raw);
-        const lower = raw.toLowerCase().replace(/^@+/, '');
-        if (m.status === 'inactive' || m.status === 'dissolved' || m.status === 'removed' || m.status === 'suspended') {
-          inactiveMemberIds.add(norm);
-          inactiveMemberIds.add(lower);
-        } else {
-          // If status is 'active' or null/undefined, treat as active member
-          activeMemberIds.add(norm);
-          activeMemberIds.add(lower);
-        }
-      }
-    }
-    // Strict authorization: Do not automatically authorize the Cluster owner unless the owner qualifies under the same authoritative membership rules.
-
-    for (const [rId, env] of Object.entries(keys as Record<string, any>)) {
-      const normId = normalizeAgentId(rId);
-      const lowerId = rId.trim().toLowerCase().replace(/^@+/, '');
-
-      // Check if recipient is known but inactive / dissolved
-      if ((inactiveMemberIds.has(normId) || inactiveMemberIds.has(lowerId)) && (!activeMemberIds.has(normId) && !activeMemberIds.has(lowerId))) {
-        return res.status(403).json({
-          success: false,
-          error: {
-            code: 'INACTIVE_RECIPIENT',
-            message: `Recipient ${rId} is an inactive or dissolved member of this cluster.`
-          }
-        });
-      }
-
-      // Check if recipient is an active cluster member
-      if (!activeMemberIds.has(normId) && !activeMemberIds.has(lowerId)) {
-        return res.status(403).json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED_RECIPIENT',
-            message: `Recipient ${rId} is not an active member of this cluster.`
-          }
-        });
-      }
-
-      if (!env || typeof env !== 'object' || Array.isArray(env)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'MALFORMED_RECIPIENT_ENVELOPE',
-            message: `Recipient envelope for ${rId} is malformed. Expected an object with iv and key properties.`
-          }
-        });
-      }
-
-      if (typeof env.iv !== 'string' || typeof env.key !== 'string') {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'MALFORMED_RECIPIENT_ENVELOPE',
-            message: `Recipient envelope for ${rId} is missing required string fields 'iv' or 'key'.`
-          }
-        });
-      }
-
-      const trimmedIv = env.iv.trim();
-      const trimmedKey = env.key.trim();
-
-      if (trimmedIv.length === 0 || trimmedKey.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'MALFORMED_RECIPIENT_ENVELOPE',
-            message: `Recipient envelope for ${rId} contains empty 'iv' or 'key'.`
-          }
-        });
-      }
-
-      if (!isValidBase64String(trimmedIv) || !isValidBase64String(trimmedKey)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_ENVELOPE_ENCODING',
-            message: `Recipient envelope for ${rId} contains invalid Base64 data.`
-          }
-        });
-      }
-
-      // Strict IV length validation: 12-byte IV for AES-256-GCM
-      try {
-        const ivBuf = Buffer.from(trimmedIv, 'base64');
-        if (ivBuf.length !== 12) {
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: 'MALFORMED_RECIPIENT_ENVELOPE',
-              message: `Recipient envelope for ${rId} has invalid IV length (${ivBuf.length} bytes). AES-256-GCM requires 12 bytes.`
-            }
-          });
-        }
-      } catch {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_ENVELOPE_ENCODING',
-            message: `Recipient envelope for ${rId} contains unparseable Base64 IV.`
-          }
-        });
-      }
-    }
-
     // 11. Strict sequence validation (non-negative integer when supplied)
     let parsedSequence: number | undefined = undefined;
     const rawSeq = sequence ?? seq;
@@ -2128,217 +1663,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
       parsedSequence = rawSeq;
     }
 
-    // 12. Strict Envelope Verification: Decode embedded envelope and verify against request & authenticated context
-    let embeddedEnvelope: any;
-    try {
-      const decodedUtf8 = cipherBuf.toString('utf-8');
-      embeddedEnvelope = JSON.parse(decodedUtf8.trim());
-    } catch {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'MALFORMED_ENVELOPE',
-          message: 'Failed to decode or parse ciphertext payload. Ciphertext must be a Base64-encoded JSON envelope.'
-        }
-      });
-    }
-
-    if (!embeddedEnvelope || typeof embeddedEnvelope !== 'object' || Array.isArray(embeddedEnvelope)) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'MALFORMED_ENVELOPE',
-          message: 'Embedded ciphertext envelope must be a JSON object.'
-        }
-      });
-    }
-
-    // Require its type to be AAMARVA_RECIPIENT_E2EE_v2
-    if (embeddedEnvelope.type !== 'AAMARVA_RECIPIENT_E2EE_v2') {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_ENVELOPE_TYPE',
-          message: `Invalid embedded envelope type: '${embeddedEnvelope.type}'. Expected 'AAMARVA_RECIPIENT_E2EE_v2'.`
-        }
-      });
-    }
-
-    // Verify version matches validated version (2)
-    if (embeddedEnvelope.version !== parsedVersion) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'ENVELOPE_VERSION_MISMATCH',
-          message: `Embedded envelope version (${embeddedEnvelope.version}) does not match validated protocol version (${parsedVersion}).`
-        }
-      });
-    }
-
-    // Verify keyEpoch matches request keyEpoch
-    if (embeddedEnvelope.keyEpoch !== parsedKeyEpoch) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'ENVELOPE_EPOCH_MISMATCH',
-          message: `Embedded envelope keyEpoch (${embeddedEnvelope.keyEpoch}) does not match request keyEpoch (${parsedKeyEpoch}).`
-        }
-      });
-    }
-
-    // Verify clusterId matches request clusterId
-    if ((embeddedEnvelope.clusterId || '').trim() !== clusterId.trim()) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'ENVELOPE_CLUSTER_MISMATCH',
-          message: `Embedded envelope clusterId ('${embeddedEnvelope.clusterId}') does not match request clusterId ('${clusterId}').`
-        }
-      });
-    }
-
-    // Verify senderAgentId matches authenticated context
-    if (normalizeAgentId(embeddedEnvelope.senderAgentId) !== normalizeAgentId(agentId)) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'ENVELOPE_SENDER_MISMATCH',
-          message: `Embedded envelope senderAgentId ('${embeddedEnvelope.senderAgentId}') does not match authenticated agent ID ('${agentId}').`
-        }
-      });
-    }
-
-    // Verify embedded envelope has non-empty inner nonce and inner ciphertext
-    if (!embeddedEnvelope.nonce || typeof embeddedEnvelope.nonce !== 'string' || embeddedEnvelope.nonce.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'MALFORMED_ENVELOPE',
-          message: 'Embedded envelope must contain a non-empty inner initialization vector (nonce).'
-        }
-      });
-    }
-
-    if (!embeddedEnvelope.ciphertext || typeof embeddedEnvelope.ciphertext !== 'string' || embeddedEnvelope.ciphertext.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'MALFORMED_ENVELOPE',
-          message: 'Embedded envelope must contain non-empty encrypted body ciphertext.'
-        }
-      });
-    }
-
-    // Verify embedded keys map matches top-level keys map and intended recipients exactly
-    if (!embeddedEnvelope.keys || typeof embeddedEnvelope.keys !== 'object' || Array.isArray(embeddedEnvelope.keys)) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'MALFORMED_ENVELOPE_KEYS',
-          message: 'Embedded envelope keys map is missing or malformed.'
-        }
-      });
-    }
-
-    const embeddedKeyEntries = Object.entries(embeddedEnvelope.keys as Record<string, any>);
-    if (embeddedKeyEntries.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'EMPTY_ENVELOPE_KEYS',
-          message: 'Embedded envelope keys map cannot be empty.'
-        }
-      });
-    }
-
-    const embeddedKeysNormalized = new Map<string, { iv: string; key: string }>();
-    for (const [rId, envData] of embeddedKeyEntries) {
-      const norm = normalizeAgentId(rId);
-      if (!norm) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'MALFORMED_RECIPIENT_ID',
-            message: 'Recipient ID in embedded keys map cannot be empty.'
-          }
-        });
-      }
-      if (embeddedKeysNormalized.has(norm)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'DUPLICATE_RECIPIENT',
-            message: `Duplicate recipient detected in embedded keys map: ${rId}.`
-          }
-        });
-      }
-      if (!envData || typeof envData !== 'object' || Array.isArray(envData) || typeof envData.iv !== 'string' || typeof envData.key !== 'string') {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'MALFORMED_RECIPIENT_ENVELOPE',
-            message: `Embedded key envelope for ${rId} is malformed.`
-          }
-        });
-      }
-      embeddedKeysNormalized.set(norm, {
-        iv: envData.iv.trim(),
-        key: envData.key.trim()
-      });
-    }
-
-    const topKeysNormalized = new Map<string, { iv: string; key: string }>();
-    for (const [rId, envData] of Object.entries(keys as Record<string, any>)) {
-      topKeysNormalized.set(normalizeAgentId(rId), {
-        iv: envData.iv.trim(),
-        key: envData.key.trim()
-      });
-    }
-
-    if (embeddedKeysNormalized.size !== topKeysNormalized.size) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'ENVELOPE_KEYS_MISMATCH',
-          message: `Embedded envelope recipient count (${embeddedKeysNormalized.size}) does not match top-level keys count (${topKeysNormalized.size}).`
-        }
-      });
-    }
-
-    for (const [normId, topData] of topKeysNormalized.entries()) {
-      const embData = embeddedKeysNormalized.get(normId);
-      if (!embData) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'ENVELOPE_KEYS_MISMATCH',
-            message: `Recipient '${normId}' in top-level keys is missing from embedded envelope keys.`
-          }
-        });
-      }
-      if (embData.iv !== topData.iv || embData.key !== topData.key) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'ENVELOPE_KEYS_MISMATCH',
-            message: `Embedded key envelope for recipient '${normId}' does not match top-level key envelope.`
-          }
-        });
-      }
-    }
-
-    for (const normId of embeddedKeysNormalized.keys()) {
-      if (!topKeysNormalized.has(normId)) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'ENVELOPE_KEYS_MISMATCH',
-            message: `Recipient '${normId}' in embedded envelope keys is missing from top-level keys.`
-          }
-        });
-      }
-    }
-
+    // 12. Persist single shared group-key encrypted payload (O(1) delivery)
     const messageId = `msg_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
@@ -2348,7 +1673,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
       senderUserId: userId,
       senderAgentId: agentId,
       ciphertext: trimmedCiphertext,
-      nonce: trimmedNonce || null,
+      nonce: trimmedNonce,
       version: parsedVersion,
       keyEpoch: parsedKeyEpoch,
       sequence: parsedSequence !== undefined ? parsedSequence : null,
@@ -2364,30 +1689,47 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
       if (msgErr) {
         throw new Error(`Failed to send message: ${msgErr.message}`);
       }
-      messageInserted = true; watchtowerActivityService.recordWatchtowerActivity({ agentId: agentId || userId, agentName: req.user!.name, avatar: req.user!.avatar, emailVerified: req.user!.emailVerified, text: `transmitted an encrypted message inside Cluster "${cluster.name}"`, type: "CLUSTER_MESSAGE_SENT", cluster: { name: cluster.name, id: clusterId, symbol: getClusterSymbol(clusterId) } }).catch(console.warn); (req as any).alreadyRecordedSlaveActivity = true;
+      messageInserted = true;
 
-      // Persist recipient key envelopes
-      if (keys && typeof keys === 'object' && Object.keys(keys).length > 0) {
-        const recipientInserts = Object.entries(keys).map(([recipientId, keyData]: [string, any]) => ({
-          id: `dist_${crypto.randomUUID()}`,
-          messageId: messageId,
-          clusterId: clusterId,
-          recipientAgentId: recipientId,
-          wrappedKey: keyData?.key || '',
-          wrappedKeyIv: keyData?.iv || '',
-          createdAt: now
-        }));
-
-        if (recipientInserts.length > 0) {
-          const { error: recErr } = await supabase
-            .from(tables.recipients)
-            .insert(recipientInserts);
-          
-          if (recErr) {
-            console.warn(`⚠️ Warning: Failed to persist message recipients to table (falling back to message.keys JSONB): ${recErr.message}`);
+      const recipientIds = body.recipientAgentIds || body.recipients || [];
+      if (Array.isArray(recipientIds) && recipientIds.length > 0) {
+        // Validate recipients are active members
+        const { data: activeMembers } = await supabase
+          .from(tables.members)
+          .select('agentId')
+          .eq('clusterId', clusterId)
+          .eq('status', 'active');
+        const activeMemberIds = new Set(activeMembers?.map(m => normalizeAgentId(m.agentId)) || []);
+        
+        for (const rId of recipientIds) {
+          if (!activeMemberIds.has(normalizeAgentId(rId))) {
+            throw new Error(`Invalid or inactive recipient: ${rId}`);
           }
         }
+
+        const recipientInserts = recipientIds.map((rAgentId: string) => ({
+          id: `recip_${crypto.randomUUID()}`,
+          clusterId,
+          messageId,
+          agentId: String(rAgentId).trim(),
+          createdAt: now
+        }));
+        
+        const { error: recipErr } = await supabase.from(tables.recipients).insert(recipientInserts);
+        if (recipErr) {
+          throw new Error(`Failed to insert recipients: ${recipErr.message}`);
+        }
       }
+      watchtowerActivityService.recordWatchtowerActivity({
+        agentId: agentId || userId,
+        agentName: req.user!.name,
+        avatar: req.user!.avatar,
+        emailVerified: req.user!.emailVerified,
+        text: `transmitted an encrypted message inside Cluster "${cluster.name}"`,
+        type: 'CLUSTER_MESSAGE_SENT',
+        cluster: { name: cluster.name, id: clusterId, symbol: getClusterSymbol(clusterId) }
+      }).catch(console.warn);
+      (req as any).alreadyRecordedSlaveActivity = true;
 
       // Log outbound footprint
       try {
@@ -2505,23 +1847,6 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMessa
       });
     }
 
-    const callerAgentId = (req.user?.agentId || '').trim();
-
-    // Query recipient mappings for the caller
-    let authorizedMessageIds = new Set<string>();
-    try {
-      const { data: recipientRows } = await supabase
-        .from(tables.recipients)
-        .select('messageId')
-        .eq('clusterId', clusterId)
-        .eq('recipientAgentId', callerAgentId);
-      if (recipientRows && Array.isArray(recipientRows)) {
-        recipientRows.forEach((r: any) => {
-          if (r.messageId) authorizedMessageIds.add(r.messageId);
-        });
-      }
-    } catch {}
-
     const { data: allClusterMessages, error: msgErr } = await supabase
       .from(tables.messages)
       .select('*')
@@ -2532,25 +1857,34 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMessa
       return res.json({ success: true, data: [] });
     }
 
-    // Filter to only messages where caller is an authorized recipient, sender, or legacy broadcast
-    const messages = (allClusterMessages || []).filter((m: any) => {
-      if (callerAgentId && m.senderAgentId && m.senderAgentId.toLowerCase() === callerAgentId.toLowerCase()) {
-        return true;
+    const messages = allClusterMessages || [];
+    const messageIds = messages.map((m: any) => m.id);
+    let recipientsMap = new Map<string, any[]>();
+    if (messageIds.length > 0) {
+      const { data: recipRows, error: recipErr } = await supabase
+        .from(tables.recipients)
+        .select('*')
+        .in('messageId', messageIds);
+      if (recipErr) {
+        throw new Error(`Failed to retrieve message recipients: ${recipErr.message}`);
       }
-      if (authorizedMessageIds.has(m.id)) {
-        return true;
-      }
-      if (m.keys && typeof m.keys === 'object' && callerAgentId) {
-        const lowerCaller = callerAgentId.toLowerCase();
-        for (const [k] of Object.entries(m.keys)) {
-          if (k.toLowerCase() === lowerCaller) return true;
-        }
-      }
-      return false;
+      (recipRows || []).forEach((r: any) => {
+        const list = recipientsMap.get(r.messageId) || [];
+        list.push({ agentId: r.agentId });
+        recipientsMap.set(r.messageId, list);
+      });
+    }
+
+    // Filter messages for recipient authorization
+    const callerAgentId = normalizeAgentId(req.user!.agentId);
+    const authorizedMessages = messages.filter((m: any) => {
+      const recips = recipientsMap.get(m.id);
+      if (!recips || recips.length === 0) return true; // Broadcast
+      return recips.some(r => normalizeAgentId(r.agentId) === callerAgentId) || normalizeAgentId(m.senderAgentId) === callerAgentId;
     });
 
-    // Resolve sender public keys in parallel so client can decrypt without sequential roundtrips
-    const senderUserIds = Array.from(new Set((messages || []).map((m: any) => m.senderUserId).filter(Boolean)));
+    // Resolve sender public keys in parallel
+    const senderUserIds = Array.from(new Set(authorizedMessages.map((m: any) => m.senderUserId).filter(Boolean)));
     const senderKeyMap = new Map<string, string>();
     await Promise.all(senderUserIds.map(async (sUid) => {
       try {
@@ -2561,134 +1895,304 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMessa
       } catch {}
     }));
 
-    // Query all message recipients for this cluster
-    let messageRecipientsMap = new Map<string, Array<{ agentId: string; accountId?: string | null }>>();
-    try {
-      const { data: allRecipients } = await supabase
-        .from(tables.recipients)
-        .select('messageId, recipientAgentId, recipientUserId')
-        .eq('clusterId', clusterId);
-      
-      if (allRecipients && Array.isArray(allRecipients)) {
-        allRecipients.forEach((r: any) => {
-          if (!r.messageId) return;
-          if (!messageRecipientsMap.has(r.messageId)) {
-            messageRecipientsMap.set(r.messageId, []);
-          }
-          messageRecipientsMap.get(r.messageId)!.push({
-            agentId: r.recipientAgentId,
-            accountId: r.recipientUserId || null
-          });
-        });
-      }
-    } catch {}
-
-    // Collect all recipient agent IDs to resolve names and account IDs
-    const allRecipientAgentIds = new Set<string>();
-    messageRecipientsMap.forEach((recList) => {
-      recList.forEach((r) => {
-        if (r.agentId) allRecipientAgentIds.add(r.agentId);
-      });
-    });
-    // Also check keys map for any messages lacking recipient rows
-    (messages || []).forEach((m: any) => {
-      if (!messageRecipientsMap.has(m.id) && m.keys && typeof m.keys === 'object') {
-        const keysList: Array<{ agentId: string; accountId?: string | null }> = [];
-        Object.keys(m.keys).forEach((agentId) => {
-          keysList.push({ agentId, accountId: null });
-          allRecipientAgentIds.add(agentId);
-        });
-        messageRecipientsMap.set(m.id, keysList);
-      }
-    });
-
-    // Resolve recipient user/agent metadata
-    const recipientUserMap = new Map<string, any>();
-    try {
-      const { data: userRows } = await supabase
-        .from('users')
-        .select('id, name, agentId, avatar, account_type, role, is_slave, master_id, is_master_primary');
-      if (userRows && Array.isArray(userRows)) {
-        userRows.forEach((u: any) => {
-          if (u.id) recipientUserMap.set(String(u.id).toLowerCase(), u);
-          if (u.agentId) {
-            recipientUserMap.set(String(u.agentId).toLowerCase(), u);
-            recipientUserMap.set(String(u.agentId).replace(/^@/, '').toLowerCase(), u);
-          }
-        });
-      }
-    } catch {}
-
-    let clusterMembersMap = new Map<string, any>();
-    try {
-      const { data: memberRows } = await supabase
-        .from(tables.members)
-        .select('agentId, userId, name')
-        .eq('clusterId', clusterId);
-      if (memberRows && Array.isArray(memberRows)) {
-        memberRows.forEach((mem: any) => {
-          if (mem.agentId) clusterMembersMap.set(mem.agentId.toLowerCase(), mem);
-        });
-      }
-    } catch {}
-
     res.json({
       success: true,
-      data: (messages || []).map((m: any) => {
-        const isCurrentProtocolV2 = m.version === 2 && m.keyEpoch !== undefined && m.keyEpoch !== null && typeof m.keyEpoch === 'number';
-        const rawRecipients = messageRecipientsMap.get(m.id) || [];
-        const recipients = rawRecipients.map((r) => {
-          const uMatch = (r.agentId ? recipientUserMap.get(r.agentId.toLowerCase()) : null) || 
-                         (r.accountId ? recipientUserMap.get(r.accountId.toLowerCase()) : null) ||
-                         (r.agentId ? clusterMembersMap.get(r.agentId.toLowerCase()) : null);
-          const isSlave = Boolean(
-            uMatch?.account_type === 'slave' ||
-            uMatch?.role === 'slave' ||
-            uMatch?.is_slave === true ||
-            (uMatch?.master_id && !uMatch?.is_master_primary) ||
-            (r.agentId && r.agentId.includes('+AMR-'))
-          );
-          const isMaster = !isSlave;
-          let avatar = uMatch?.avatar;
-          if (isMaster && (!avatar || avatar.includes('robohash.org') || avatar.includes('robohash') || avatar === '🤖')) {
-            const cleanName = (uMatch?.name || r.agentId || 'M').trim().replace(/^@/, '');
-            const initial = (cleanName.charAt(0) || 'M').toUpperCase();
-            avatar = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" fill="#141414"/><text x="50%" y="54%" font-family="monospace" font-size="56" font-weight="900" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">${initial}</text></svg>`)}`;
-          }
-
-          return {
-            agentId: r.agentId,
-            accountId: r.accountId || uMatch?.userId || uMatch?.id || null,
-            name: uMatch?.name || uMatch?.agentName || r.agentId,
-            avatar: avatar || '🤖',
-            isMaster,
-            isSlave
-          };
-        });
-
-        return {
-          id: m.id,
-          messageId: m.id,
-          clusterId: m.clusterId,
-          senderAgentId: m.senderAgentId,
-          senderPublicKey: m.senderUserId ? (senderKeyMap.get(String(m.senderUserId)) || null) : null,
-          content: m.content !== undefined ? m.content : null,
-          ciphertext: m.ciphertext,
-          nonce: m.nonce,
-          version: m.version !== undefined && m.version !== null ? m.version : null,
-          keyEpoch: m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : null,
-          sequence: m.sequence !== undefined ? m.sequence : null,
-          keys: m.keys || null,
-          recipients,
-          isCurrentProtocolV2,
-          createdAt: m.createdAt
-        };
-      })
+      data: authorizedMessages.map((m: any) => ({
+        id: m.id,
+        messageId: m.id,
+        clusterId: m.clusterId,
+        senderAgentId: m.senderAgentId,
+        senderPublicKey: m.senderUserId ? (senderKeyMap.get(String(m.senderUserId)) || null) : null,
+        content: m.content !== undefined ? m.content : null,
+        ciphertext: m.ciphertext,
+        nonce: m.nonce,
+        version: m.version !== undefined && m.version !== null ? m.version : 2,
+        keyEpoch: m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : 1,
+        sequence: m.sequence !== undefined ? m.sequence : null,
+        recipients: recipientsMap.get(m.id) || [],
+        createdAt: m.createdAt
+      }))
     });
   } catch (err: any) {
     console.error('Route handler error [GET /api/clusters/:clusterId/messages]:', err);
     const status = err.statusCode || (err.message?.includes('Forbidden') ? 403 : err.message?.includes('not found') ? 404 : 500);
     res.status(status).json({ success: false, error: { message: err?.message || 'Internal server error.', code: err?.code } });
+  }
+});
+
+// 12a. POST /clusters/:clusterId/key-distribution (Distribute encrypted group key packages to cluster members)
+router.post('/clusters/:clusterId/key-distribution', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const clusterId = req.params.clusterId as string;
+    const { epoch, keyFingerprint, distributions } = req.body || {};
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+    const agentId = req.user!.agentId;
+
+    if (await isClusterDissolved(supabase, clusterId)) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden: This cluster has been dissolved.' } });
+    }
+
+    const isMember = await isClusterMember(supabase, clusterId, userId, agentId);
+    if (!isMember) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden: You must be an active member of this cluster.' } });
+    }
+
+    // Key distributor must be an admin
+    const isAdmin = await (isClusterAdmin as any)(supabase, clusterId, userId, agentId);
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden: Only admin can distribute keys.' } });
+    }
+
+    if (epoch === undefined || typeof epoch !== 'number' || !Number.isFinite(epoch) || epoch < 1) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_EPOCH', message: 'Epoch must be a positive integer (>= 1).' } });
+    }
+
+    if (!Array.isArray(distributions) || distributions.length === 0) {
+      return res.status(400).json({ success: false, error: { code: 'MISSING_DISTRIBUTIONS', message: 'distributions array is required and cannot be empty.' } });
+    }
+
+    // Register epoch in cluster_epochs
+    const epochId = `epoch_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const { error: epochErr } = await supabase.from(tables.epochs).upsert({
+      id: epochId,
+      clusterId,
+      epoch,
+      keyFingerprint: keyFingerprint || 'PENDING',
+      createdAt: now
+    }, { onConflict: 'clusterId,epoch' });
+
+    if (epochErr) {
+      throw new Error(`Failed to upsert cluster epoch: ${epochErr.message}`);
+    }
+
+    // Verify authoritative active members
+    const { data: memberRows, error: memberErr } = await supabase
+      .from(tables.members)
+      .select('agentId, status')
+      .eq('clusterId', clusterId);
+    
+    if (memberErr) {
+      throw new Error(`Failed to query active members for key distribution: ${memberErr.message}`);
+    }
+
+    const activeAgents = new Set<string>();
+    (memberRows || []).forEach((m: any) => {
+      if (m.status !== 'dissolved' && m.status !== 'inactive' && m.status !== 'removed') {
+        const aId = normalizeAgentId(m.agentId);
+        if (aId) activeAgents.add(aId);
+      }
+    });
+
+    const insertedRows: any[] = [];
+    for (const dist of distributions) {
+      const targetAgent = normalizeAgentId(dist.recipientAgentId);
+      if (!targetAgent || !dist.encryptedKeyPackage) continue;
+      if (!activeAgents.has(targetAgent)) continue;
+
+      insertedRows.push({
+        id: `dist_${crypto.randomUUID()}`,
+        clusterId,
+        epoch,
+        recipientAgentId: targetAgent,
+        encryptedKeyPackage: typeof dist.encryptedKeyPackage === 'string' ? dist.encryptedKeyPackage : JSON.stringify(dist.encryptedKeyPackage),
+        createdAt: now
+      });
+    }
+
+    if (insertedRows.length > 0) {
+      const { error: distErr } = await supabase.from(tables.keyDistributions).insert(insertedRows);
+      if (distErr) {
+        throw new Error(`Failed to insert key distributions: ${distErr.message}`);
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        clusterId,
+        epoch,
+        distributedCount: insertedRows.length
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+  }
+});
+
+// 12b. GET /clusters/:clusterId/key-distribution (Retrieve encrypted group key package for the caller)
+router.get('/clusters/:clusterId/key-distribution', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const clusterId = req.params.clusterId as string;
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+    const agentId = req.user!.agentId;
+
+    if (await isClusterDissolved(supabase, clusterId)) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden: This cluster has been dissolved.' } });
+    }
+
+    const isMember = await isClusterMember(supabase, clusterId, userId, agentId);
+    if (!isMember) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden: You must be an active member of this cluster.' } });
+    }
+
+    const rawEpoch = req.query.epoch ? parseInt(String(req.query.epoch), 10) : undefined;
+
+    let targetEpoch = rawEpoch;
+    if (!targetEpoch || isNaN(targetEpoch)) {
+      const { data: epochs } = await supabase
+        .from(tables.epochs)
+        .select('epoch')
+        .eq('clusterId', clusterId)
+        .order('epoch', { ascending: false })
+        .limit(1);
+      targetEpoch = epochs && epochs.length > 0 ? epochs[0].epoch : 1;
+    }
+
+    const callerAgent = normalizeAgentId(agentId);
+
+    const { data: distRows } = await supabase
+      .from(tables.keyDistributions)
+      .select('*')
+      .eq('clusterId', clusterId)
+      .eq('epoch', targetEpoch)
+      .order('createdAt', { ascending: false });
+
+    const matched = (distRows || []).find((d: any) => normalizeAgentId(d.recipientAgentId) === callerAgent);
+
+    if (!matched) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'KEY_PACKAGE_NOT_FOUND',
+          message: `No encrypted key package found for agent ${agentId} at epoch ${targetEpoch}.`
+        }
+      });
+    }
+
+    const { data: epochMeta } = await supabase
+      .from(tables.epochs)
+      .select('keyFingerprint')
+      .eq('clusterId', clusterId)
+      .eq('epoch', targetEpoch)
+      .maybeSingle();
+
+    return res.json({
+      success: true,
+      data: {
+        clusterId,
+        epoch: targetEpoch,
+        keyFingerprint: epochMeta?.keyFingerprint || null,
+        encryptedKeyPackage: matched.encryptedKeyPackage
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
+  }
+});
+
+// 12c. POST /clusters/:clusterId/rotate-key (Initiate cluster group key rotation and advance epoch)
+router.post('/clusters/:clusterId/rotate-key', requireHumanSession, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const clusterId = req.params.clusterId as string;
+    const supabase = getSupabaseClient();
+    const tables = await getClusterTables(supabase);
+    const userId = req.user!.id;
+
+    if (await isClusterDissolved(supabase, clusterId)) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden: This cluster has been dissolved.' } });
+    }
+
+    // Only cluster admin or owner can rotate key
+    const isAdmin = await isClusterAdmin(supabase, clusterId, userId);
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, error: { message: 'Forbidden: Only cluster admin or owner can rotate the group key.' } });
+    }
+
+    // Find current latest epoch
+    const { data: existingEpochs } = await supabase
+      .from(tables.epochs)
+      .select('epoch')
+      .eq('clusterId', clusterId)
+      .order('epoch', { ascending: false })
+      .limit(1);
+
+    const currentEpoch = existingEpochs && existingEpochs.length > 0 ? existingEpochs[0].epoch : 1;
+    const { nextEpoch: userNextEpoch, keyFingerprint, distributions } = req.body || {};
+    const nextEpoch = (typeof userNextEpoch === 'number' && userNextEpoch > currentEpoch) ? userNextEpoch : currentEpoch + 1;
+
+    const epochId = `epoch_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+
+    const { error: epochErr } = await supabase.from(tables.epochs).insert({
+      id: epochId,
+      clusterId,
+      epoch: nextEpoch,
+      keyFingerprint: keyFingerprint || 'ROTATED',
+      createdAt: now
+    });
+
+    if (epochErr) {
+      throw new Error(`Failed to insert rotated cluster epoch: ${epochErr.message}`);
+    }
+
+    let distributedCount = 0;
+    if (Array.isArray(distributions) && distributions.length > 0) {
+      const { data: memberRows, error: memberErr } = await supabase
+        .from(tables.members)
+        .select('agentId, status')
+        .eq('clusterId', clusterId);
+      
+      if (memberErr) {
+        throw new Error(`Failed to query active members for key rotation: ${memberErr.message}`);
+      }
+
+      const activeAgents = new Set<string>();
+      (memberRows || []).forEach((m: any) => {
+        if (m.status !== 'dissolved' && m.status !== 'inactive' && m.status !== 'removed') {
+          const aId = normalizeAgentId(m.agentId);
+          if (aId) activeAgents.add(aId);
+        }
+      });
+
+      const distInserts: any[] = [];
+      for (const d of distributions) {
+        const normTarget = normalizeAgentId(d.recipientAgentId);
+        if (normTarget && d.encryptedKeyPackage && activeAgents.has(normTarget)) {
+          distInserts.push({
+            id: `dist_${crypto.randomUUID()}`,
+            clusterId,
+            epoch: nextEpoch,
+            recipientAgentId: normTarget,
+            encryptedKeyPackage: typeof d.encryptedKeyPackage === 'string' ? d.encryptedKeyPackage : JSON.stringify(d.encryptedKeyPackage),
+            createdAt: now
+          });
+        }
+      }
+      if (distInserts.length > 0) {
+        const { error: distErr } = await supabase.from(tables.keyDistributions).insert(distInserts);
+        if (distErr) {
+          throw new Error(`Failed to insert rotated key distributions: ${distErr.message}`);
+        }
+        distributedCount = distInserts.length;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        clusterId,
+        previousEpoch: currentEpoch,
+        epoch: nextEpoch,
+        distributedCount
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
   }
 });
 
@@ -2772,6 +2276,27 @@ router.delete('/clusters/:clusterId/members/:memberAgentId', requireHumanSession
 
     if (kickErr) {
       throw new Error(`Failed to update member status: ${kickErr.message}`);
+    }
+
+    // Advance cluster epoch upon member removal so future messages require a new key epoch
+    try {
+      const { data: curEpochs } = await supabase
+        .from(tables.epochs)
+        .select('epoch')
+        .eq('clusterId', clusterId)
+        .order('epoch', { ascending: false })
+        .limit(1);
+      const curEp = curEpochs && curEpochs.length > 0 && typeof curEpochs[0].epoch === 'number' ? curEpochs[0].epoch : 1;
+      const nextEp = curEp + 1;
+      await supabase.from(tables.epochs).insert({
+        id: `epoch_${crypto.randomUUID()}`,
+        clusterId,
+        epoch: nextEp,
+        keyFingerprint: 'ROTATION_REQUIRED_MEMBER_REMOVED',
+        createdAt: new Date().toISOString()
+      });
+    } catch (epErr) {
+      console.warn('Failed to advance cluster epoch on member kick:', epErr);
     }
 
     // Broadcast floor activity & metadata lookup

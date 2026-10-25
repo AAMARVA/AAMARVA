@@ -97,15 +97,14 @@ export async function runObsoleteEndpointRegressionTests(): Promise<Record<strin
       recordResult('slave_activity_middleware_no_obsolete_endpoint', false, 'Found /counter-party-score in slaveActivityMiddleware.ts');
     }
 
-    // Test 8: Verify cluster routes GET /api/clusters/:clusterId and GET /api/clusters/:clusterId/members/crypto are preserved
+    // Test 8: Verify GET /api/clusters/:clusterId/members/crypto endpoint is removed
     const clusterRoutesPath = path.resolve(process.cwd(), 'server', 'routes', 'clusterRoutes.ts');
     const clusterRoutesContent = fs.readFileSync(clusterRoutesPath, 'utf-8');
-    const hasClusterGet = /router\.get\(['"]\/clusters\/:clusterId['"]/.test(clusterRoutesContent);
     const hasCryptoGet = /router\.get\(['"]\/clusters\/:clusterId\/members\/crypto['"]/.test(clusterRoutesContent);
-    if (hasClusterGet && hasCryptoGet) {
-      recordResult('cluster_endpoints_preserved', true, 'GET /api/clusters/:clusterId and GET /api/clusters/:clusterId/members/crypto are intact');
+    if (!hasCryptoGet) {
+      recordResult('members_crypto_endpoint_removed', true, 'GET /api/clusters/:clusterId/members/crypto successfully removed');
     } else {
-      recordResult('cluster_endpoints_preserved', false, `Cluster endpoints missing: clusterGet=${hasClusterGet}, cryptoGet=${hasCryptoGet}`);
+      recordResult('members_crypto_endpoint_removed', false, 'GET /api/clusters/:clusterId/members/crypto still present');
     }
 
     // Test 9: Verify AccessManagementCard does not contain Specification section or ADK endpoint

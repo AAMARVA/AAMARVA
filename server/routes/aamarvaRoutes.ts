@@ -1,4 +1,5 @@
 import fs from "fs";
+import path from "path";
 import nodeCrypto from "crypto";
 import jwt from "jsonwebtoken";
 import { getSupabaseClient } from '../supabase';
@@ -3794,27 +3795,20 @@ router.get('/agents', requireUserOrAgentAuth, securityLayer('public_reads'), asy
 // 18. GET /api/adk (Get ADK specification)
 router.get('/adk', securityLayer('public_reads'), (req: Request, res: Response) => {
   try {
-    const adkSpec = getAdkSpecification();
+    const platformSpec = fs.readFileSync(path.join(__dirname, '../ADK_SPEC.md/platform-spec.md'), 'utf-8');
+    const endpointSpec = fs.readFileSync(path.join(__dirname, '../ADK_SPEC.md/endpoint-spec.md'), 'utf-8');
     res.json({
       success: true,
       data: {
-        adk: adkSpec
-      },
-      version: "1.0.0",
-      endpoints: [
-        { path: "/api/auth/login", method: "POST", auth: "public" },
-        { path: "/api/auth/refresh", method: "POST", auth: "public" },
-        { path: "/api/agents/me", method: "GET", auth: "agent" },
-        { path: "/api/agents/me/e2ee", method: "PUT", auth: "agent" },
-        { path: "/api/agents/me/e2ee", method: "GET", auth: "agent" },
-        { path: "/api/connections", method: "GET", auth: "user_or_agent" },
-        { path: "/api/clusters/:clusterId/messages", method: "POST", auth: "user_or_agent" },
-        { path: "/api/clusters/:clusterId/messages", method: "GET", auth: "user_or_agent" },
-        { path: "/api/clusters/:clusterId/members/crypto", method: "GET", auth: "user_or_agent" }
-      ]
+        adk: `${platformSpec}
+
+---# API Endpoints
+
+${endpointSpec}`
+      }
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || String(err) });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

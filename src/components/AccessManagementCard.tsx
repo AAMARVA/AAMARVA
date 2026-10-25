@@ -168,17 +168,7 @@ export const ENDPOINT_POLICIES: EndpointPolicyDefinition[] = [
     identityKey: 'Account ID',
     description: 'View cluster metadata.'
   },
-  {
-    key: 'cluster_get',
-    name: 'Retrieve Cluster Member Crypto',
-    category: 'Multi-Agent Clusters',
-    method: 'GET',
-    path: '/api/clusters/:clusterId/members/crypto',
-    defaultMaxReq: 120,
-    windowLabel: '1 min',
-    identityKey: 'Account ID',
-    description: 'Retrieve active membership and registered E2EE public keys for recipient-specific encryption.'
-  },
+
   {
     key: 'cluster_message_create',
     name: 'Send Encrypted Cluster Message',

@@ -12,10 +12,11 @@
 import { p256 } from '@noble/curves/nist.js';
 
 const DB_NAME = 'aamarva_e2ee_keystore';
-const DB_VERSION = 4; // Incremented for cluster cryptographic state initialization store
+const DB_VERSION = 5; // Incremented for cluster shared group-key store
 const KEY_STORE_NAME = 'agent_keys';
 const EPOCH_STORE_NAME = 'agent_epoch_keys';
 const PINNED_STORE_NAME = 'pinned_peer_keys';
+const CLUSTER_GROUP_KEY_STORE_NAME = 'cluster_group_keys';
 
 
 const KEY_ALGO = { name: 'ECDH', namedCurve: 'P-256' };
@@ -141,6 +142,9 @@ function openKeyDatabase(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(PINNED_STORE_NAME)) {
         db.createObjectStore(PINNED_STORE_NAME, { keyPath: 'peerAgentId' });
+      }
+      if (!db.objectStoreNames.contains(CLUSTER_GROUP_KEY_STORE_NAME)) {
+        db.createObjectStore(CLUSTER_GROUP_KEY_STORE_NAME, { keyPath: 'id' });
       }
 
     };
@@ -2322,4 +2326,198 @@ export function formatDecryptionErrorStatus(
       };
   }
 }
+
+export interface StoredClusterGroupKeyEntry {
+  id: string; // `${clusterId}:${epoch}`
+  clusterId: string;
+  epoch: number;
+  key: CryptoKey;
+  rawKeyBase64?: string;
+  fingerprint?: string;
+  createdAt: string;
+}
+
+const memoryClusterGroupKeyCache = new Map<string, StoredClusterGroupKeyEntry>();
+
+/**
+ * Persists a cluster group key in memory cache and protected IndexedDB storage (cluster_group_keys)
+ */
+export async function saveClusterGroupKey(
+  clusterId: string,
+  epoch: number,
+  groupKey: CryptoKey | Uint8Array | string,
+  fingerprint?: string
+): Promise<void> {
+  const cId = (clusterId || '').trim();
+  if (!cId) throw new Error('Cluster ID cannot be empty.');
+  if (typeof epoch !== 'number' || !Number.isFinite(epoch) || epoch < 1) {
+    throw new Error('Key epoch must be a positive integer >= 1.');
+  }
+
+  const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+  let opKey: CryptoKey;
+  let rawBase64: string | undefined;
+
+  if (typeof groupKey === 'string') {
+    rawBase64 = groupKey.trim();
+    const rawBuf = base64ToBuffer(rawBase64);
+    opKey = await cryptoObj.subtle.importKey(
+      'raw',
+      rawBuf,
+      { name: ENC_ALGO, length: 256 },
+      true,
+      ['encrypt', 'decrypt']
+    );
+  } else if (groupKey instanceof Uint8Array || groupKey instanceof ArrayBuffer) {
+    const u8 = groupKey instanceof Uint8Array ? groupKey : new Uint8Array(groupKey);
+    rawBase64 = bufferToBase64(u8.buffer);
+    opKey = await cryptoObj.subtle.importKey(
+      'raw',
+      u8,
+      { name: ENC_ALGO, length: 256 },
+      true,
+      ['encrypt', 'decrypt']
+    );
+  } else {
+    opKey = groupKey;
+    try {
+      const exp = await cryptoObj.subtle.exportKey('raw', opKey);
+      rawBase64 = bufferToBase64(exp);
+    } catch {}
+  }
+
+  let fp = fingerprint;
+  if (!fp && rawBase64) {
+    const rawBuf = base64ToBuffer(rawBase64);
+    const digestBuf = await cryptoObj.subtle.digest('SHA-256', rawBuf);
+    const hex = Array.from(new Uint8Array(digestBuf))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join(':')
+      .toUpperCase();
+    fp = `SHA256:${hex}`;
+  }
+
+  const id = `${cId}:${epoch}`;
+  const now = new Date().toISOString();
+  const entry: StoredClusterGroupKeyEntry = {
+    id,
+    clusterId: cId,
+    epoch,
+    key: opKey,
+    rawKeyBase64: rawBase64,
+    fingerprint: fp,
+    createdAt: now
+  };
+
+  memoryClusterGroupKeyCache.set(id, entry);
+
+  try {
+    const db = await openKeyDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CLUSTER_GROUP_KEY_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(CLUSTER_GROUP_KEY_STORE_NAME);
+      store.put({
+        id,
+        clusterId: cId,
+        epoch,
+        rawKeyBase64: rawBase64,
+        fingerprint: fp,
+        createdAt: now
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    // Fallback to memory cache
+  }
+}
+
+/**
+ * Retrieves a cluster group key from memory cache or protected IndexedDB storage (cluster_group_keys)
+ */
+export async function getClusterGroupKey(
+  clusterId: string,
+  epoch: number
+): Promise<CryptoKey | null> {
+  const cId = (clusterId || '').trim();
+  const id = `${cId}:${epoch}`;
+
+  if (memoryClusterGroupKeyCache.has(id)) {
+    return memoryClusterGroupKeyCache.get(id)!.key;
+  }
+
+  try {
+    const db = await openKeyDatabase();
+    const stored = await new Promise<any>((resolve, reject) => {
+      const tx = db.transaction(CLUSTER_GROUP_KEY_STORE_NAME, 'readonly');
+      const store = tx.objectStore(CLUSTER_GROUP_KEY_STORE_NAME);
+      const req = store.get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (stored) {
+      const cryptoObj = typeof window !== 'undefined' ? window.crypto : globalThis.crypto;
+      let key = stored.key;
+      if (!key && stored.rawKeyBase64) {
+        const rawBuf = base64ToBuffer(stored.rawKeyBase64);
+        key = await cryptoObj.subtle.importKey(
+          'raw',
+          rawBuf,
+          { name: ENC_ALGO, length: 256 },
+          true,
+          ['encrypt', 'decrypt']
+        );
+      }
+      if (key) {
+        memoryClusterGroupKeyCache.set(id, {
+          id,
+          clusterId: cId,
+          epoch,
+          key,
+          rawKeyBase64: stored.rawKeyBase64,
+          fingerprint: stored.fingerprint,
+          createdAt: stored.createdAt || new Date().toISOString()
+        });
+        return key;
+      }
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+/**
+ * Checks whether the cluster group key for a given epoch is available locally
+ */
+export async function hasClusterGroupKey(
+  clusterId: string,
+  epoch: number
+): Promise<boolean> {
+  const key = await getClusterGroupKey(clusterId, epoch);
+  return key !== null;
+}
+
+/**
+ * Deletes a cluster group key from memory cache and IndexedDB
+ */
+export async function deleteClusterGroupKey(
+  clusterId: string,
+  epoch: number
+): Promise<void> {
+  const cId = (clusterId || '').trim();
+  const id = `${cId}:${epoch}`;
+  memoryClusterGroupKeyCache.delete(id);
+  try {
+    const db = await openKeyDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CLUSTER_GROUP_KEY_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(CLUSTER_GROUP_KEY_STORE_NAME);
+      store.delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {}
+}
+
 

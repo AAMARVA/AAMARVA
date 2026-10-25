@@ -1,7 +1,7 @@
 import { frontendConfig } from '../config';
 import { handleWebAuthnLogin, handleWebAuthnSetup } from './webauthnClient';
-import { getLocalKeyPair, encryptMessage } from '../lib/e2ee';
-import { encryptMessageForRecipients } from '../lib/clusterCrypto';
+import { getLocalKeyPair, encryptMessage, getClusterGroupKey, saveClusterGroupKey } from '../lib/e2ee';
+import { encryptClusterMessage, generateClusterGroupKey, wrapClusterGroupKeyForMember, unwrapClusterGroupKeyFromPackage } from '../lib/clusterCrypto';
 import { getCachedPeerKey, setCachedPeerKey } from '../lib/e2eePrefetch';
 
 export interface UserProfile {
@@ -765,76 +765,102 @@ export async function sendClusterMessageApi(
     );
   }
 
-  // 2. Fetch active members and public keys from the new crypto members endpoint
-  const membersRes = await apiFetch(`/api/clusters/${clusterId}/members/crypto`, {
-    authType: resolvedAuthType,
-    method: 'GET'
-  });
-  const membersList: any[] = Array.isArray(membersRes?.data?.members)
-    ? membersRes.data.members
-    : (Array.isArray(membersRes?.data) ? membersRes.data : []);
+  // 2. Obtain authoritative cluster epoch
+  let clusterEpoch = await getClusterAuthoritativeEpochApi(clusterId, resolvedAuthType);
 
-  const memberPublicKeys: Record<string, any> = {};
-  // Include sender's own public key so sender can decrypt their own message
-  if (localKeys.publicKey) {
-    memberPublicKeys[senderAgentId] = localKeys.publicKey;
-  }
+  // 3. Get or generate cluster group key for this epoch
+  let groupKey = await getClusterGroupKey(clusterId, clusterEpoch);
+  let rawGroupKeyBytes: Uint8Array | undefined;
+  let groupKeyFingerprint: string | undefined;
 
-  const hasExplicitRecipients = options?.selectedRecipientAgentIds !== undefined;
-  const selectedSet = hasExplicitRecipients 
-    ? new Set(options.selectedRecipientAgentIds!.map(id => id.toLowerCase().trim())) 
-    : null;
-
-  if (hasExplicitRecipients && selectedSet && selectedSet.size === 0) {
-    throw new Error('E2EE Error: Explicit recipient selection is empty. No recipients specified.');
-  }
-
-  for (const m of membersList) {
-    if (m.status === 'active' && m.agentId && m.publicKey) {
-      const agentIdLower = m.agentId.toLowerCase().trim();
-      if (!selectedSet || selectedSet.has(agentIdLower)) {
-        memberPublicKeys[m.agentId] = m.publicKey;
+  if (!groupKey) {
+    try {
+      const distRes = await apiFetch(`/api/clusters/${clusterId}/key-distribution?epoch=${clusterEpoch}`, {
+        authType: resolvedAuthType,
+        method: 'GET'
+      });
+      if (distRes?.success && distRes.data?.encryptedKeyPackage) {
+        const unwrapped = await unwrapClusterGroupKeyFromPackage(
+          distRes.data.encryptedKeyPackage,
+          localKeys.privateKey,
+          localKeys.publicKey,
+          clusterId,
+          clusterEpoch
+        );
+        groupKey = unwrapped.groupKey;
+        rawGroupKeyBytes = unwrapped.rawKey;
+        groupKeyFingerprint = distRes.data.keyFingerprint;
+        await saveClusterGroupKey(clusterId, clusterEpoch, rawGroupKeyBytes, groupKeyFingerprint);
       }
+    } catch {}
+  }
+
+  if (!groupKey) {
+    const gen = await generateClusterGroupKey();
+    groupKey = gen.key;
+    rawGroupKeyBytes = gen.rawKey;
+    groupKeyFingerprint = gen.fingerprint;
+    await saveClusterGroupKey(clusterId, clusterEpoch, rawGroupKeyBytes, groupKeyFingerprint);
+
+    try {
+      const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, {
+        authType: resolvedAuthType,
+        method: 'GET'
+      });
+      const membersList = membersRes?.data?.members || membersRes?.members || [];
+      const distributions: any[] = [];
+
+      for (const m of membersList) {
+        if (m.status === 'active' && m.agentId && m.publicKey) {
+          const wrapped = await wrapClusterGroupKeyForMember(
+            rawGroupKeyBytes,
+            localKeys.privateKey,
+            m.publicKey,
+            clusterId,
+            clusterEpoch
+          );
+          distributions.push({
+            recipientAgentId: m.agentId,
+            encryptedKeyPackage: wrapped
+          });
+        }
+      }
+
+      if (distributions.length > 0) {
+        await apiFetch(`/api/clusters/${clusterId}/key-distribution`, {
+          authType: resolvedAuthType,
+          method: 'POST',
+          body: JSON.stringify({
+            epoch: clusterEpoch,
+            keyFingerprint: groupKeyFingerprint,
+            distributions
+          })
+        });
+      }
+    } catch (distErr) {
+      console.warn('Failed to distribute cluster group key to members:', distErr);
     }
   }
 
-  // Ensure at least one intended recipient other than the sender is targeted
-  const recipientCount = Object.keys(memberPublicKeys).filter(
-    id => id.toLowerCase().trim() !== senderAgentId.toLowerCase().trim()
-  ).length;
-
-  if (recipientCount === 0) {
-    throw new Error('E2EE Error: No active cluster recipients with registered public keys selected.');
-  }
-
-  // 2.1 Obtain authoritative cluster epoch / membership version
-  let clusterEpoch = 1;
-  if (membersRes?.data?.membershipVersion && typeof membersRes.data.membershipVersion === 'number') {
-    clusterEpoch = membersRes.data.membershipVersion;
-  } else {
-    clusterEpoch = await getClusterAuthoritativeEpochApi(clusterId, resolvedAuthType);
-  }
-
-  // 3. Encrypt message using recipient-specific E2EE with authoritative cluster epoch
-  const encrypted = await encryptMessageForRecipients(
+  // 4. Encrypt message once using shared group key (O(1) scaling)
+  const encrypted = await encryptClusterMessage(
     plaintext,
-    memberPublicKeys,
-    localKeys.privateKey,
+    groupKey,
     senderAgentId,
     clusterId,
     clusterEpoch
   );
 
-  // 4. Submit encrypted envelope to server
+  // 5. Submit single ciphertext envelope to server
   const res = await apiFetch(`/api/clusters/${clusterId}/messages`, {
     authType: resolvedAuthType,
     method: 'POST',
     body: JSON.stringify({
       ciphertext: encrypted.ciphertext,
+      nonce: encrypted.nonce,
       version: encrypted.version,
-      keyEpoch: clusterEpoch,
-      recipients: Object.keys(encrypted.keys),
-      keys: encrypted.keys
+      keyEpoch: encrypted.keyEpoch,
+      ...(options?.selectedRecipientAgentIds ? { recipientAgentIds: options.selectedRecipientAgentIds } : {})
     })
   });
 

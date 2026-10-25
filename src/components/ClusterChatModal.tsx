@@ -6,9 +6,11 @@ import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
 import { 
   getLocalKeyPair, 
-  StoredAgentKeyEntry
+  StoredAgentKeyEntry,
+  getClusterGroupKey,
+  saveClusterGroupKey
 } from '../lib/e2ee';
-import { decryptMessageForRecipient } from '../lib/clusterCrypto';
+import { decryptClusterMessage, unwrapClusterGroupKeyFromPackage } from '../lib/clusterCrypto';
 import { CapabilityInfoModal } from './CapabilityInfoModal';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { CappedBadge } from './CappedBadge';
@@ -202,6 +204,8 @@ async function decryptClusterMessageEnvelope(
   const content = typeof msg.content === 'string' ? msg.content.trim() : '';
   const senderAgentId = msg.senderAgentId || 'Agent';
   const clusterId = msg.clusterId || 'cluster';
+  const keyEpoch = msg.keyEpoch || 1;
+  const version = msg.version || 2;
 
   // If system broadcast or legacy public notice
   if (content && content !== '🔒 [E2EE Encrypted Payload]' && !ciphertext) {
@@ -211,34 +215,38 @@ async function decryptClusterMessageEnvelope(
     };
   }
 
-  // Isolate historical messages marked incompatible by the server
-  if (msg.isCurrentProtocolV2 === false) {
-    return {
-      text: '',
-      isDecrypted: false,
-      decryptionStatus: {
-        title: '🔒 Historical message incompatible with current E2EE protocol',
-        detail: 'This message does not conform to the current v2 recipient-envelope protocol.',
-        explanation: 'Legacy or incompatible historical messages cannot be decrypted.'
-      }
-    };
-  }
-
-  if (ciphertext && currentLocalKeys && userAgentId) {
+  if (ciphertext && nonce && currentLocalKeys && userAgentId) {
     try {
-      const decKey = currentLocalKeys.privateKey;
-      const senderPubKey = msg.senderPublicKey || msg.e2eePublicKey;
+      let groupKey = await getClusterGroupKey(clusterId, keyEpoch);
+      if (!groupKey) {
+        try {
+          const distRes = await apiFetch(`/api/clusters/${clusterId}/key-distribution?epoch=${keyEpoch}`, { authType: 'human' });
+          if (distRes?.success && distRes.data?.encryptedKeyPackage) {
+            const senderPubKey = msg.senderPublicKey || _members?.find((m: any) => m.agentId?.toLowerCase() === senderAgentId.toLowerCase())?.publicKey;
+            if (currentLocalKeys?.privateKey && senderPubKey) {
+              const unwrapped = await unwrapClusterGroupKeyFromPackage(
+                distRes.data.encryptedKeyPackage,
+                currentLocalKeys.privateKey,
+                senderPubKey,
+                clusterId,
+                keyEpoch
+              );
+              groupKey = unwrapped.groupKey;
+              await saveClusterGroupKey(clusterId, keyEpoch, unwrapped.rawKey, distRes.data.keyFingerprint);
+            }
+          }
+        } catch {}
+      }
 
-      if (senderPubKey && decKey) {
-        const resolvedPlaintext = await decryptMessageForRecipient(
+      if (groupKey) {
+        const resolvedPlaintext = await decryptClusterMessage(
           ciphertext,
-          decKey,
-          { keys: msg.keys || (typeof ciphertext === 'string' && ciphertext.startsWith('{') ? undefined : msg.keys), version: msg.version, keyEpoch: msg.keyEpoch },
-          senderPubKey,
-          userAgentId,
-          clusterId,
+          nonce,
+          groupKey,
           senderAgentId,
-          msg.keyEpoch
+          clusterId,
+          keyEpoch,
+          version
         );
         if (resolvedPlaintext) {
           return {
@@ -252,9 +260,9 @@ async function decryptClusterMessageEnvelope(
         text: '',
         isDecrypted: false,
         decryptionStatus: {
-          title: '🔒 Cannot be decrypted because cryptographic verification failed',
+          title: '🔒 Cannot be decrypted because group key or authentication failed',
           detail: e?.message || 'Authentication tag or key mismatch',
-          explanation: 'Only authorized active cluster members possessing the corresponding recipient envelope can decrypt.'
+          explanation: 'Only authorized active cluster members possessing the corresponding cluster group key can decrypt.'
         }
       };
     }
@@ -421,33 +429,19 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
         console.warn('Could not load cluster metadata via authenticated endpoint:', e);
       }
 
-      // 2. Fetch members with complete multi-tier fallback
+      // 2. Fetch members via public /api/clusters/public/:clusterId/members
       let currentMembers: any[] = [];
-      
-      // Tier 1: Try authenticated /api/clusters/:clusterId/members/crypto
       try {
-        const membersRes = await apiFetch(`/api/clusters/${clusterId}/members/crypto`, { authType: 'human' });
-        if (membersRes?.success && Array.isArray(membersRes.data?.members) && membersRes.data.members.length > 0) {
-          currentMembers = membersRes.data.members;
+        const pubRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'none' });
+        if (pubRes?.success && Array.isArray(pubRes.data?.members) && pubRes.data.members.length > 0) {
+          currentMembers = pubRes.data.members;
+          if (!currentClusterMeta && pubRes.data.cluster) {
+            currentClusterMeta = pubRes.data.cluster;
+            setActiveCluster(currentClusterMeta);
+          }
         }
       } catch (e) {
-        console.warn('Failed to load crypto members:', e);
-      }
-
-      // Tier 2: If no members, try public /api/clusters/public/:clusterId/members
-      if (currentMembers.length === 0) {
-        try {
-          const pubRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'none' });
-          if (pubRes?.success && Array.isArray(pubRes.data?.members) && pubRes.data.members.length > 0) {
-            currentMembers = pubRes.data.members;
-            if (!currentClusterMeta && pubRes.data.cluster) {
-              currentClusterMeta = pubRes.data.cluster;
-              setActiveCluster(currentClusterMeta);
-            }
-          }
-        } catch (e) {
-          console.warn('Failed to load public cluster members:', e);
-        }
+        console.warn('Failed to load public cluster members:', e);
       }
       
       // ... (rest of the function using current values)
