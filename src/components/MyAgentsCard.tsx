@@ -524,82 +524,79 @@ export function MyAgentsCard() {
               </div>
             ) : (
               <div className="space-y-2 max-h-[100px] overflow-y-auto pr-1.5 p-0.5 custom-scrollbar scrollbar-thin scrollbar-thumb-[#141414] scrollbar-track-neutral-100">
-                {slaveAgents.map((sub: any) => (
-                  <div key={sub.id} className={`h-[44px] p-1.5 border-2 flex items-center justify-between gap-2 shrink-0 box-border ${
-                    activeAgentId === sub.id 
-                    ? 'bg-neutral-50 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
-                    : 'bg-white border-[#141414]/30'
-                  }`}>
-                    <div className="flex items-center gap-2 min-w-0">
+                {slaveAgents.map((sub: any) => {
+                  const isCappedActive = Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && (!sub.expires_at || new Date(sub.expires_at).getTime() > Date.now());
+                  return (
+                    <div key={sub.id} className={`h-[44px] p-1.5 border-2 flex items-center justify-between gap-2 shrink-0 box-border ${
+                      activeAgentId === sub.id 
+                      ? 'bg-neutral-50 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]' 
+                      : 'bg-white border-[#141414]/30'
+                    }`}>
+                      <div className="flex items-center gap-2 min-w-0">
 
-                      <AgentAvatar 
-                        name={sub.name || 'Slave Agent'} 
-                        avatar={sub.avatar} 
-                        id={sub.agentId || sub.id} 
-                        isSlave={true}
-                        className="w-8 h-8 rounded-none border border-[#141414] shrink-0" 
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-[10px] font-black uppercase text-[#141414] truncate leading-tight">
-                            {sub.name || 'Slave Agent'}
+                        <AgentAvatar 
+                          name={sub.name || 'Slave Agent'} 
+                          avatar={sub.avatar} 
+                          id={sub.agentId || sub.id} 
+                          isSlave={true}
+                          className="w-8 h-8 rounded-none border border-[#141414] shrink-0" 
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-[10px] font-black uppercase text-[#141414] truncate leading-tight">
+                              {sub.name || 'Slave Agent'}
+                            </p>
+                            {Boolean(sub.hasCapabilityIncrement || sub.plan === 'slave_capability' || sub.isCapped) && (
+                              <CappedBadge expiresAt={sub.expires_at} purchaseDate={sub.plan_created_at || sub.created_at} isCapped={sub.isCapped} />
+                            )}
+                          </div>
+                          <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
+                            @{sub.agentId}
                           </p>
-                          {Boolean(sub.hasCapabilityIncrement || sub.plan === 'slave_capability' || sub.isCapped) && (
-                            <CappedBadge expiresAt={sub.expires_at} purchaseDate={sub.plan_created_at || sub.created_at} isCapped={sub.isCapped} />
-                          )}
                         </div>
-                        <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
-                          @{sub.agentId}
-                        </p>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {activeAgentId !== sub.id && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {activeAgentId !== sub.id && (
+                          <button
+                            type="button"
+                            onClick={() => handleSwitch(sub.id)}
+                            disabled={switchingAgentId === sub.id}
+                            className="px-2 py-0.5 bg-white border border-[#141414] hover:bg-[#141414] hover:text-white text-[8px] font-extrabold uppercase transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            {switchingAgentId === sub.id ? (
+                              <span className="flex items-center gap-1">
+                                <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                              </span>
+                            ) : (
+                              <>
+                                <span>Switch</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+
                         <button
                           type="button"
-                          onClick={() => handleSwitch(sub.id)}
-                          disabled={switchingAgentId === sub.id}
-                          className="px-2 py-0.5 bg-white border border-[#141414] hover:bg-[#141414] hover:text-white text-[8px] font-extrabold uppercase transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
+                          disabled={undeployingAgentId === sub.id || isCappedActive}
+                          className={`p-1 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white transition-all flex items-center justify-center cursor-pointer ${
+                            isCappedActive
+                              ? 'opacity-30 cursor-not-allowed' 
+                              : 'disabled:opacity-50'
+                          }`}
+                          title={
+                            isCappedActive
+                              ? "Cannot undeploy agent with active capped plan"
+                              : "Undeploy slave agent"
+                          }
                         >
-                          {switchingAgentId === sub.id ? (
-                            <span className="flex items-center gap-1">
-                              <RefreshCw className="w-2.5 h-2.5 animate-spin" />
-                            </span>
-                          ) : (
-                            <>
-                              <span>Switch</span>
-                            </>
-                          )}
+                          <Trash2 className="w-3 h-3" />
                         </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
-                        disabled={
-                          undeployingAgentId === sub.id || 
-                          (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
-                           sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
-                        }
-                        className={`p-1 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white transition-all flex items-center justify-center cursor-pointer ${
-                          (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
-                           sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
-                            ? 'opacity-30 cursor-not-allowed' 
-                            : 'disabled:opacity-50'
-                        }`}
-                        title={
-                          (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
-                           sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
-                            ? "Cannot undeploy agent with active capped plan"
-                            : "Undeploy slave agent"
-                        }
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )
           )}
@@ -757,76 +754,73 @@ export function MyAgentsCard() {
 
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-                    {filteredSlaveAgents.map((sub: any) => (
-                      <div
-                        key={sub.id}
-                        className={`p-1.5 border-2 border-[#141414] flex flex-col justify-between gap-1.5 ${
-                          activeAgentId === sub.id
-                            ? 'bg-neutral-100 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                            : 'bg-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <AgentAvatar
-                            name={sub.name || 'Slave Agent'}
-                            avatar={sub.avatar}
-                            id={sub.agentId || sub.id}
-                            className="w-6 h-6 rounded-none border border-[#141414] shrink-0"
-                          />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1">
-                              <p className="text-[9px] font-black uppercase text-[#141414] truncate leading-tight">
-                                {sub.name || 'Slave Agent'}
+                    {filteredSlaveAgents.map((sub: any) => {
+                      const isCappedActive = Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && (!sub.expires_at || new Date(sub.expires_at).getTime() > Date.now());
+                      return (
+                        <div
+                          key={sub.id}
+                          className={`p-1.5 border-2 border-[#141414] flex flex-col justify-between gap-1.5 ${
+                            activeAgentId === sub.id
+                              ? 'bg-neutral-100 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                              : 'bg-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <AgentAvatar
+                              name={sub.name || 'Slave Agent'}
+                              avatar={sub.avatar}
+                              id={sub.agentId || sub.id}
+                              className="w-6 h-6 rounded-none border border-[#141414] shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1">
+                                <p className="text-[9px] font-black uppercase text-[#141414] truncate leading-tight">
+                                  {sub.name || 'Slave Agent'}
+                                </p>
+                                {Boolean(sub.hasCapabilityIncrement || sub.plan === 'slave_capability' || sub.isCapped) && (
+                                  <div onClick={(e) => { e.stopPropagation(); setCapabilityModalAccount({ id: sub.id, name: sub.name || sub.agentId || 'Slave Agent' }); }}>
+                                    <CappedBadge expiresAt={sub.expires_at} purchaseDate={sub.plan_created_at || sub.created_at} isCapped={sub.isCapped} className="cursor-pointer hover:bg-amber-400" />
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
+                                @{sub.agentId}
                               </p>
-                              {Boolean(sub.hasCapabilityIncrement || sub.plan === 'slave_capability' || sub.isCapped) && (
-                                <div onClick={(e) => { e.stopPropagation(); setCapabilityModalAccount({ id: sub.id, name: sub.name || sub.agentId || 'Slave Agent' }); }}>
-                                  <CappedBadge expiresAt={sub.expires_at} purchaseDate={sub.plan_created_at || sub.created_at} isCapped={sub.isCapped} className="cursor-pointer hover:bg-amber-400" />
-                                </div>
-                              )}
                             </div>
-                            <p className="text-[7.5px] text-[#141414] font-bold font-mono italic truncate leading-tight">
-                              @{sub.agentId}
-                            </p>
                           </div>
-                        </div>
 
-                        <div className="flex items-center gap-1 pt-1 border-t border-[#141414]/15">
-                          {activeAgentId !== sub.id && (
+                          <div className="flex items-center gap-1 pt-1 border-t border-[#141414]/15">
+                            {activeAgentId !== sub.id && (
+                              <button
+                                type="button"
+                                onClick={() => handleSwitch(sub.id)}
+                                disabled={switchingAgentId === sub.id}
+                                className="flex-1 py-0.5 bg-white border border-[#141414] hover:bg-[#141414] hover:text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <span>Switch</span>
+                              </button>
+                            )}
                             <button
                               type="button"
-                              onClick={() => handleSwitch(sub.id)}
-                              disabled={switchingAgentId === sub.id}
-                              className="flex-1 py-0.5 bg-white border border-[#141414] hover:bg-[#141414] hover:text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                              onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
+                              disabled={undeployingAgentId === sub.id || isCappedActive}
+                              className={`flex-1 py-0.5 border border-red-900 text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                isCappedActive
+                                  ? 'bg-red-400 opacity-40 cursor-not-allowed'
+                                  : 'bg-red-600 hover:bg-red-700 hover:text-white disabled:opacity-50'
+                              }`}
+                              title={
+                                isCappedActive
+                                  ? "Cannot undeploy agent with active capped plan"
+                                  : "Undeploy slave agent"
+                              }
                             >
-                              <span>Switch</span>
+                              <span>Undeploy</span>
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
-                            disabled={
-                              undeployingAgentId === sub.id || 
-                              (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
-                               sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
-                            }
-                            className={`flex-1 py-0.5 border border-red-900 text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                              (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
-                               sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
-                                ? 'bg-red-400 opacity-40 cursor-not-allowed'
-                                : 'bg-red-600 hover:bg-red-700 hover:text-white disabled:opacity-50'
-                            }`}
-                            title={
-                              (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
-                               sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
-                                ? "Cannot undeploy agent with active capped plan"
-                                : "Undeploy slave agent"
-                            }
-                          >
-                            <span>Undeploy</span>
-                          </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()}

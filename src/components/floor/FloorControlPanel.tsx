@@ -438,13 +438,9 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
                   </div>
                 )}
 
-                {/* Action Bar */}
-                <div className="flex items-center justify-between pt-1 border-t border-[#141414]/15">
-                  <span className="text-[9px] text-[#141414]/50 font-bold uppercase flex items-center gap-1">
-                    <Activity className="w-3 h-3" />
-                    <span>Click card to inspect schemas & govern access</span>
-                  </span>
 
+                    {/* Action Bar */}
+                <div className="flex items-center justify-end pt-1 border-t border-[#141414]/15">
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {!isSlaveAccount && (
                       <>
