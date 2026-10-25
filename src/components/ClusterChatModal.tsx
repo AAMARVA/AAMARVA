@@ -296,7 +296,40 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [activeCluster, setActiveCluster] = useState<any | null>(null);
   const [members, setMembers] = useState<any[]>([]);
+
+  const recipientCandidates = React.useMemo(() => {
+    const myAgentId = (user?.agentId || activeAccount?.agentId || '').toLowerCase().trim();
+    const myUserId = (user?.id || activeAccount?.id || '').toLowerCase().trim();
+    const myName = (user?.name || activeAccount?.name || '').toLowerCase().trim();
+    const myEmail = (user?.email || activeAccount?.email || '').toLowerCase().trim();
+
+    return members.filter((m: any) => {
+      const mAgentId = (m.agentId || '').toLowerCase().trim();
+      const mId = (m.id || '').toLowerCase().trim();
+      const mUserId = (m.userId || m.user_id || '').toLowerCase().trim();
+      const mName = (m.name || m.agentName || '').toLowerCase().trim();
+      const mEmail = (m.email || '').toLowerCase().trim();
+
+      // Strictly exclude user's own account from recipient / slave selection
+      if (myAgentId && (mAgentId === myAgentId || mId === myAgentId)) return false;
+      if (myUserId && (mUserId === myUserId || mId === myUserId)) return false;
+      if (mId.startsWith('admin-') && (mAgentId === myAgentId || !mAgentId || mAgentId === 'amr-tw43-24wu')) return false;
+      if (myEmail && mEmail === myEmail) return false;
+      if (myName && mName === myName && (m.membershipRole === 'admin' || m.membershipRole === 'owner' || m.role === 'admin' || m.role === 'owner')) return false;
+
+      return true;
+    });
+  }, [members, user?.agentId, user?.id, user?.name, user?.email, activeAccount?.agentId, activeAccount?.id, activeAccount?.name, activeAccount?.email]);
+
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (recipientCandidates.length > 0 && selectedRecipientIds.size === 0 && !selectedRecipientIds.has('__NONE__')) {
+      const availableIds = recipientCandidates.filter((m: any) => m.keyStatus === 'available').map((m: any) => m.agentId);
+      setSelectedRecipientIds(new Set(availableIds));
+    }
+  }, [recipientCandidates]);
+
   const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState('');
   const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
@@ -326,29 +359,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
     return messages.filter((m) => Boolean((m.isDecrypted && m.content && m.content.trim().length > 0) || !m.senderAgentId));
   }, [messages]);
 
-  const recipientCandidates = React.useMemo(() => {
-    const myAgentId = (user?.agentId || activeAccount?.agentId || '').toLowerCase().trim();
-    const myUserId = (user?.id || activeAccount?.id || '').toLowerCase().trim();
-    const myName = (user?.name || activeAccount?.name || '').toLowerCase().trim();
-    const myEmail = (user?.email || activeAccount?.email || '').toLowerCase().trim();
 
-    return members.filter((m: any) => {
-      const mAgentId = (m.agentId || '').toLowerCase().trim();
-      const mId = (m.id || '').toLowerCase().trim();
-      const mUserId = (m.userId || m.user_id || '').toLowerCase().trim();
-      const mName = (m.name || m.agentName || '').toLowerCase().trim();
-      const mEmail = (m.email || '').toLowerCase().trim();
-
-      // Strictly exclude user's own account from recipient / slave selection
-      if (myAgentId && (mAgentId === myAgentId || mId === myAgentId)) return false;
-      if (myUserId && (mUserId === myUserId || mId === myUserId)) return false;
-      if (mId.startsWith('admin-') && (mAgentId === myAgentId || !mAgentId || mAgentId === 'amr-tw43-24wu')) return false;
-      if (myEmail && mEmail === myEmail) return false;
-      if (myName && mName === myName && (m.membershipRole === 'admin' || m.membershipRole === 'owner' || m.role === 'admin' || m.role === 'owner')) return false;
-
-      return true;
-    });
-  }, [members, user?.agentId, user?.id, user?.name, user?.email, activeAccount?.agentId, activeAccount?.id, activeAccount?.name, activeAccount?.email]);
 
   const resolveRecipientsList = useCallback((rawRecipients: any[], membersList: any[]): ClusterMessageRecipient[] => {
     return (rawRecipients || []).map((r: any) => {
@@ -1011,8 +1022,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                       {filteredMembers.map((m: any) => {
                         const mId = m.agentId;
                         const availableCandidates = recipientCandidates.filter((mem: any) => mem.keyStatus === 'available');
-                        const isAll = selectedRecipientIds.size === 0 || (selectedRecipientIds.size === availableCandidates.length && !selectedRecipientIds.has('__NONE__'));
-                        const isSelected = m.keyStatus !== 'available' ? false : (selectedRecipientIds.has('__NONE__') ? false : (isAll ? true : selectedRecipientIds.has(mId)));
+                        const isSelected = m.keyStatus !== 'available' ? false : (selectedRecipientIds.has('__NONE__') ? false : (selectedRecipientIds.size === 0 ? true : selectedRecipientIds.has(mId)));
                         const isSlave = Boolean(
                           m.isSlave || 
                           m.role === 'slave' || 
@@ -1028,8 +1038,10 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                                 alert(`Agent ${m.name || mId} has no E2EE key registered and cannot be selected as a recipient.`);
                                 return;
                               }
-                              const availableIds = availableCandidates.map((mem: any) => mem.agentId);
-                              const current = isAll ? new Set(availableIds) : new Set(selectedRecipientIds);
+                              const current = new Set(selectedRecipientIds);
+                              if (current.size === 0 && !current.has('__NONE__')) {
+                                availableCandidates.forEach((mem: any) => current.add(mem.agentId));
+                              }
                               current.delete('__NONE__');
                               if (current.has(mId)) {
                                 current.delete(mId);

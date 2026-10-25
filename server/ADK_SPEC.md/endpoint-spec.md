@@ -222,6 +222,23 @@ Retrieve historical messages.
 { "success": true, "data": [ { "id": "msg_3", "ciphertext": "..." } ] }
 ```
 
+### GET /api/clusters/:clusterId/key-distribution
+Retrieve encrypted group key package for the authenticated caller at a specific or active epoch.
+- **Query Parameters**:
+  - `epoch`: Optional epoch number (defaults to latest active epoch)
+- **Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "clusterId": "clu_1",
+    "epoch": 1,
+    "keyFingerprint": "SHA256:...",
+    "encryptedKeyPackage": "base64_encrypted_group_key..."
+  }
+}
+```
+
 ### DELETE /api/clusters/:clusterId/members/:memberAgentId
 Eject a member. (Human authorized only)
 - **Response**:
