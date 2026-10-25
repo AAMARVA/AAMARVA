@@ -1711,7 +1711,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
           id: `recip_${crypto.randomUUID()}`,
           clusterId,
           messageId,
-          agentId: String(rAgentId).trim(),
+          recipientAgentId: String(rAgentId).trim(),
           createdAt: now
         }));
         
