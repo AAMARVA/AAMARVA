@@ -30,10 +30,15 @@ interface ClusterChatModalProps {
 
 interface ClusterMessageRecipient {
   agentId: string;
+  recipientAgentId?: string;
   accountId?: string | null;
   name?: string | null;
   avatar?: string | null;
   isMaster?: boolean;
+  isSlave?: boolean;
+  hasCapabilityIncrement?: boolean;
+  isCapped?: boolean;
+  expires_at?: string | null;
 }
 
 interface DecryptedClusterMessage {
@@ -61,12 +66,52 @@ interface MessageRecipientsAccordionProps {
   isCurrentUser?: boolean;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   members?: any[];
+  senderAgentId?: string;
 }
 
-const MessageRecipientsAccordion: React.FC<MessageRecipientsAccordionProps> = ({ recipients, isCurrentUser, onOpenAgentProfile, members = [] }) => {
+const MessageRecipientsAccordion: React.FC<MessageRecipientsAccordionProps> = ({
+  recipients,
+  isCurrentUser,
+  onOpenAgentProfile,
+  members = [],
+  senderAgentId
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  if (!recipients || recipients.length === 0) return null;
+  const nonSenderMembers = React.useMemo(() => {
+    if (!members || members.length === 0) return [];
+    const sAid = (senderAgentId || '').toLowerCase().trim();
+    return members.filter((m: any) => {
+      const mAid = (m.agentId || m.id || '').toLowerCase().trim();
+      return mAid && mAid !== sAid;
+    });
+  }, [members, senderAgentId]);
+
+  const effectiveRecipients = React.useMemo(() => {
+    if (!recipients || recipients.length === 0) return [];
+    return recipients.map((r, idx) => {
+      const rawId = String(r.agentId || r.recipientAgentId || '').trim().replace(/^@+/, '');
+      if (rawId) return r;
+      const fallbackMember = nonSenderMembers[idx] || nonSenderMembers[0];
+      if (fallbackMember) {
+        return {
+          ...r,
+          agentId: fallbackMember.agentId,
+          accountId: fallbackMember.userId || fallbackMember.id,
+          name: fallbackMember.name || fallbackMember.agentName || fallbackMember.agentId,
+          avatar: fallbackMember.avatar,
+          isSlave: Boolean(fallbackMember.isSlave),
+          isMaster: !fallbackMember.isSlave,
+          hasCapabilityIncrement: fallbackMember.hasCapabilityIncrement,
+          isCapped: fallbackMember.isCapped,
+          expires_at: fallbackMember.expires_at
+        };
+      }
+      return r;
+    });
+  }, [recipients, nonSenderMembers]);
+
+  if (!effectiveRecipients || effectiveRecipients.length === 0) return null;
 
   return (
     <div className={`mt-2 pt-2 border-t ${isCurrentUser ? 'border-white/20' : 'border-[#141414]/15'}`}>
@@ -77,7 +122,7 @@ const MessageRecipientsAccordion: React.FC<MessageRecipientsAccordionProps> = ({
           isCurrentUser ? 'text-white/90 hover:text-white' : 'text-[#141414]/80 hover:text-[#141414]'
         }`}
       >
-        <span>Recipients ({recipients.length})</span>
+        <span>Recipients ({effectiveRecipients.length})</span>
         <span className="font-bold">{isExpanded ? '⌃' : '⌄'}</span>
       </button>
 
@@ -87,22 +132,54 @@ const MessageRecipientsAccordion: React.FC<MessageRecipientsAccordionProps> = ({
             ? 'bg-black/40 border-white/25 text-white' 
             : 'bg-white border-[#141414]/20 text-[#141414]'
         }`}>
-          {recipients.map((r, idx) => {
-            const displayName = r.name || r.agentId;
+          {effectiveRecipients.map((r, idx) => {
+            const rawAid = String(r.agentId || r.recipientAgentId || '').trim().replace(/^@+/, '');
             const memberMeta = members?.find((m: any) => 
-              (m.agentId && r.agentId && String(m.agentId).toLowerCase() === String(r.agentId).toLowerCase()) ||
+              (m.agentId && rawAid && String(m.agentId).toLowerCase() === rawAid.toLowerCase()) ||
               (m.id && r.accountId && String(m.id).toLowerCase() === String(r.accountId).toLowerCase()) ||
-              (m.id && r.agentId && String(m.id).toLowerCase() === String(r.agentId).toLowerCase())
+              (m.id && rawAid && String(m.id).toLowerCase() === rawAid.toLowerCase())
             );
-            const isMaster = r.isMaster ?? (memberMeta ? !memberMeta.isSlave : undefined);
+            const resolvedAgentId = rawAid || memberMeta?.agentId || '';
+            const displayName =
+              (r.name && r.name.trim() && r.name.toLowerCase() !== resolvedAgentId.toLowerCase() ? r.name.trim() : null) ||
+              (memberMeta?.name && memberMeta.name.trim() ? memberMeta.name.trim() : null) ||
+              (memberMeta?.agentName && memberMeta.agentName.trim() ? memberMeta.agentName.trim() : null) ||
+              (r.name && r.name.trim() ? r.name.trim() : null) ||
+              resolvedAgentId ||
+              'Cluster Member';
+
+            const isSlave = Boolean(
+              memberMeta !== undefined
+                ? memberMeta.isSlave
+                : r.isSlave !== undefined
+                ? r.isSlave
+                : r.isMaster !== undefined
+                ? !r.isMaster
+                : false
+            );
+            const isMaster = !isSlave && Boolean(
+              memberMeta !== undefined
+                ? !memberMeta.isSlave
+                : r.isMaster
+            );
+
             let recipientAvatar = r.avatar || memberMeta?.avatar;
             if (isMaster && (!recipientAvatar || recipientAvatar.includes('robohash') || recipientAvatar === '🤖')) {
-              recipientAvatar = getMasterCustomAvatarSvg(displayName, r.agentId);
+              recipientAvatar = getMasterCustomAvatarSvg(displayName, resolvedAgentId);
             }
+
+            const isCapped = isSlave && Boolean(
+              r.hasCapabilityIncrement ||
+              r.isCapped ||
+              memberMeta?.hasCapabilityIncrement ||
+              memberMeta?.isCapped ||
+              memberMeta?.plan === 'slave_capability'
+            );
+            const expiresAt = r.expires_at || memberMeta?.expires_at || undefined;
 
             return (
               <div 
-                key={idx} 
+                key={resolvedAgentId || idx} 
                 className={`flex items-center gap-2.5 p-2 border ${
                   isCurrentUser
                     ? 'bg-white/10 border-white/20 text-white'
@@ -111,35 +188,47 @@ const MessageRecipientsAccordion: React.FC<MessageRecipientsAccordionProps> = ({
               >
                 <button
                   type="button"
-                  onClick={() => onOpenAgentProfile?.(displayName, undefined, r.agentId)}
+                  onClick={() => onOpenAgentProfile?.(displayName, undefined, resolvedAgentId)}
                   className="shrink-0 hover:scale-105 transition-transform cursor-pointer border-none bg-transparent p-0 focus:outline-none"
                   title={`View profile for ${displayName}`}
                 >
                   <AgentAvatar
                     name={displayName}
                     avatar={recipientAvatar}
-                    id={r.agentId}
+                    id={resolvedAgentId}
                     isMaster={isMaster}
+                    isSlave={isSlave}
                     className="w-8 h-8 border-2 border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)]"
                   />
                 </button>
                 <div className="min-w-0 flex-1 text-left">
-                  <button
-                    type="button"
-                    onClick={() => onOpenAgentProfile?.(displayName, undefined, r.agentId)}
-                    className="hover:underline cursor-pointer text-left block w-full truncate font-black uppercase text-xs tracking-wider"
-                  >
-                    {displayName}
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => onOpenAgentProfile?.(displayName, undefined, resolvedAgentId)}
+                      className="hover:underline cursor-pointer text-left truncate font-black uppercase text-xs tracking-wider"
+                    >
+                      {displayName}
+                    </button>
+                    {isCapped && (
+                      <CappedBadge expiresAt={expiresAt} isCapped={true} />
+                    )}
+                  </div>
                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.2 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                      <span>@{r.agentId}</span>
-                    </span>
-                    {isMaster && (
+                    {resolvedAgentId && (
+                      <span className="relative inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.2 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                        <span>@{resolvedAgentId}</span>
+                      </span>
+                    )}
+                    {isSlave ? (
+                      <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.2 bg-red-600 text-white border border-[#141414]">
+                        SLAVE
+                      </span>
+                    ) : isMaster ? (
                       <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.2 bg-[#141414] text-white border border-[#141414]">
                         MASTER
                       </span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -310,23 +399,11 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
       const mName = (m.name || m.agentName || '').toLowerCase().trim();
       const mEmail = (m.email || '').toLowerCase().trim();
 
-      // Debug
-      if (myAgentId === mAgentId || myAgentId === mId) {
-        console.log('Detected self, filtering out:', mAgentId, myAgentId);
-      } else if (myUserId === mUserId || myUserId === mId) {
-        console.log('Detected self by userId, filtering out:', mUserId, myUserId);
-      }
-      if (!myAgentId) {
-        console.warn('myAgentId is empty!', { userAgentId: user?.agentId, activeAccountAgentId: activeAccount?.agentId });
-      }
-
       // Strictly exclude user's own account from recipient / slave selection
       if (myAgentId && (mAgentId === myAgentId || mId === myAgentId)) {
-        console.log('Filtering out self:', mAgentId, myAgentId);
         return false;
       }
       if (myUserId && (mUserId === myUserId || mId === myUserId)) {
-        console.log('Filtering out self (user id):', mUserId, myUserId);
         return false;
       }
       if (mId.startsWith('admin-') && (mAgentId === myAgentId || !mAgentId || mAgentId === 'amr-tw43-24wu')) return false;
@@ -379,29 +456,47 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
 
   const resolveRecipientsList = useCallback((rawRecipients: any[], membersList: any[]): ClusterMessageRecipient[] => {
-    return (rawRecipients || []).map((r: any) => {
-      const targetAgentId = String(r.agentId || r.id || '').trim();
+    return (rawRecipients || []).map((r: any, idx: number) => {
+      const targetAgentId = String(r.agentId || r.recipientAgentId || r.id || '').trim().replace(/^@+/, '');
       const targetAccountId = r.accountId ? String(r.accountId).trim() : null;
       const mem = (membersList || []).find((m: any) => 
         (m.agentId && targetAgentId && String(m.agentId).toLowerCase() === targetAgentId.toLowerCase()) ||
         (m.id && targetAccountId && String(m.id).toLowerCase() === targetAccountId.toLowerCase()) ||
         (m.id && targetAgentId && String(m.id).toLowerCase() === targetAgentId.toLowerCase())
-      );
-      const isMe = user && (
-        (user.agentId && targetAgentId && String(user.agentId).toLowerCase() === targetAgentId.toLowerCase()) ||
+      ) || (!targetAgentId && membersList && membersList.length > 0 ? membersList.filter((m: any) => m.agentId?.toLowerCase() !== user?.agentId?.toLowerCase())[idx] : undefined);
+
+      const finalAgentId = targetAgentId || mem?.agentId || '';
+      const isMe = Boolean(user && (
+        (user.agentId && finalAgentId && String(user.agentId).toLowerCase() === finalAgentId.toLowerCase()) ||
         (user.id && targetAccountId && String(user.id).toLowerCase() === targetAccountId.toLowerCase()) ||
-        (user.id && targetAgentId && String(user.id).toLowerCase() === targetAgentId.toLowerCase())
+        (user.id && finalAgentId && String(user.id).toLowerCase() === finalAgentId.toLowerCase())
+      ));
+      const isSlave = Boolean(
+        mem !== undefined
+          ? mem.isSlave
+          : r.isSlave !== undefined
+          ? r.isSlave
+          : r.account_type === 'slave' ||
+            r.role === 'slave' ||
+            (isMe ? isSlaveAccount(user) : false)
       );
-      const isMaster = Boolean(
+      const isMaster = !isSlave && Boolean(
         (isMe && !isSlaveAccount(user)) ||
         (mem && !mem.isSlave) ||
-        r.isMaster === true ||
-        (!r.isSlave && r.account_type !== 'slave')
+        r.isMaster === true
       );
 
       let resolvedAvatar = (isMe && user?.avatar && !user.avatar.includes('robohash') && user.avatar !== '🤖')
         ? user.avatar
         : (r.avatar || mem?.avatar);
+
+      const resolvedName =
+        (r.name && r.name.trim() && r.name.toLowerCase() !== finalAgentId.toLowerCase() ? r.name.trim() : null) ||
+        (mem?.name && mem.name.trim() ? mem.name.trim() : null) ||
+        (mem?.agentName && mem.agentName.trim() ? mem.agentName.trim() : null) ||
+        (r.name && r.name.trim() ? r.name.trim() : null) ||
+        (isMe ? user?.name : null) ||
+        finalAgentId;
 
       if (isMaster) {
         if (!resolvedAvatar || resolvedAvatar.includes('robohash') || resolvedAvatar === '🤖') {
@@ -409,115 +504,121 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             ? user.avatar
             : (mem?.avatar && !mem.avatar.includes('robohash') && mem.avatar !== '🤖')
             ? mem.avatar
-            : getMasterCustomAvatarSvg(r.name || mem?.name || (isMe ? user?.name : undefined), targetAgentId);
+            : getMasterCustomAvatarSvg(resolvedName, finalAgentId);
         }
       }
 
       return {
-        agentId: targetAgentId,
-        accountId: targetAccountId || mem?.id || null,
-        name: r.name || mem?.name || (isMe ? user?.name : targetAgentId),
+        agentId: finalAgentId,
+        recipientAgentId: finalAgentId,
+        accountId: targetAccountId || mem?.userId || mem?.id || null,
+        name: resolvedName,
         avatar: resolvedAvatar,
-        isMaster
+        isSlave,
+        isMaster,
+        hasCapabilityIncrement: Boolean(r.hasCapabilityIncrement || mem?.hasCapabilityIncrement || mem?.isCapped),
+        isCapped: Boolean(r.isCapped || r.hasCapabilityIncrement || mem?.isCapped || mem?.hasCapabilityIncrement),
+        expires_at: r.expires_at || mem?.expires_at || null
       };
     });
   }, [user]);
 
   const userRef = useRef(user);
+  const activeAccountRef = useRef(activeAccount);
   const activeClusterRef = useRef(activeCluster);
+  const membersRef = useRef(members);
   const userPasswordRef = useRef(userPassword);
   const activeContextCredentialsRef = useRef(activeContextCredentials);
+  const resolveRecipientsListRef = useRef(resolveRecipientsList);
+  const pollCountRef = useRef(0);
   
   useEffect(() => {
     userRef.current = user;
+    activeAccountRef.current = activeAccount;
     activeClusterRef.current = activeCluster;
+    membersRef.current = members;
     userPasswordRef.current = userPassword;
     activeContextCredentialsRef.current = activeContextCredentials;
-  }, [user, activeCluster, userPassword, activeContextCredentials]);
+    resolveRecipientsListRef.current = resolveRecipientsList;
+  }, [user, activeAccount, activeCluster, members, userPassword, activeContextCredentials, resolveRecipientsList]);
 
   const fetchDetails = useCallback(async (isSilent = false) => {
     if (!clusterId) return;
     if (!isSilent) setIsLoading(true);
 
-    const currentUser = userRef.current;
-    const activeCluster = activeClusterRef.current;
-    const userPassword = userPasswordRef.current;
-    const activeContextCredentials = activeContextCredentialsRef.current;
+    const currentUser = userRef.current || activeAccountRef.current;
+    const currentActiveCluster = activeClusterRef.current;
+    const currentPassword = userPasswordRef.current;
+    const currentCredentials = activeContextCredentialsRef.current;
+    const shouldRefreshMeta = !isSilent || membersRef.current.length === 0 || pollCountRef.current % 4 === 0;
+    pollCountRef.current += 1;
 
     try {
       // 1. Fetch metadata safely
-      let currentClusterMeta = activeCluster;
-      try {
-        const singleRes = await apiFetch(`/api/clusters/${clusterId}`, { authType: 'human' });
-        if (singleRes?.success && singleRes.data) {
-          currentClusterMeta = singleRes.data;
-          setActiveCluster(currentClusterMeta);
-        }
-      } catch (e) {
-        console.warn('Could not load cluster metadata via authenticated endpoint:', e);
+      let currentClusterMeta = currentActiveCluster;
+      if (shouldRefreshMeta) {
+        try {
+          const singleRes = await apiFetch(`/api/clusters/${clusterId}`, { authType: 'human' });
+          if (singleRes?.success && singleRes.data) {
+            currentClusterMeta = singleRes.data;
+            setActiveCluster(currentClusterMeta);
+          }
+        } catch {}
       }
 
       // 2. Fetch members via public /api/clusters/public/:clusterId/members
-      let currentMembers: any[] = [];
-      try {
-        const pubRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'none' });
-        if (pubRes?.success && Array.isArray(pubRes.data?.members) && pubRes.data.members.length > 0) {
-          currentMembers = pubRes.data.members;
-          if (!currentClusterMeta && pubRes.data.cluster) {
-            currentClusterMeta = pubRes.data.cluster;
-            setActiveCluster(currentClusterMeta);
+      let currentMembers: any[] = membersRef.current;
+      if (shouldRefreshMeta) {
+        try {
+          const pubRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'none' });
+          if (pubRes?.success && Array.isArray(pubRes.data?.members) && pubRes.data.members.length > 0) {
+            currentMembers = pubRes.data.members;
+            if (!currentClusterMeta && pubRes.data.cluster) {
+              currentClusterMeta = pubRes.data.cluster;
+              setActiveCluster(currentClusterMeta);
+            }
           }
+        } catch {}
+
+        if (currentMembers.length === 0) {
+          const fallbackAgentId = currentUser?.agentId || 'AMR-TW43-24WU';
+          currentMembers = [
+            {
+              id: `member-${fallbackAgentId}`,
+              agentId: fallbackAgentId,
+              name: currentUser?.name || fallbackAgentId,
+              agentName: currentUser?.name || fallbackAgentId,
+              avatar: currentUser?.avatar || '🤖',
+              role: 'admin',
+              membershipRole: 'owner',
+              status: 'active',
+              publicKey: currentUser?.e2eePublicKey || null,
+              e2eePublicKey: currentUser?.e2eePublicKey || null,
+              keyStatus: currentUser?.e2eePublicKey ? 'available' : 'missing',
+              isSlave: false,
+            }
+          ];
         }
-      } catch (e) {
-        console.warn('Failed to load public cluster members:', e);
+
+        // Ensure all member objects have uniform properties for the SPOG UI
+        currentMembers = currentMembers.map((m: any) => ({
+          ...m,
+          agentId: m.agentId || m.id || 'UNKNOWN_AGENT',
+          name: m.name || m.agentName || m.agentId || 'Agent',
+          membershipRole: m.membershipRole || m.role || 'member',
+          keyStatus: m.keyStatus || (m.publicKey || m.e2eePublicKey ? 'available' : 'missing'),
+          isSlave: Boolean(m.isSlave || m.role === 'slave' || m.account_type === 'slave' || (m.agentId && m.agentId.includes('+AMR-'))),
+        }));
+
+        setMembers(currentMembers);
       }
-      
-      // ... (rest of the function using current values)
-      // NOTE: I need to replace the entire useCallback block, or at least the dependency array and the start of the function. 
-      // The current replacement content is just the beginning. I need to make sure the rest of the function remains.
-      // Actually, replace_file_content replaces a contiguous block. I should replace the useCallback definition entirely.
-
-
-
-      // Tier 4: Fallback to ensure at least current user / cluster owner is present if still empty
-      if (currentMembers.length === 0) {
-        const fallbackAgentId = user?.agentId || 'AMR-TW43-24WU';
-        currentMembers = [
-          {
-            id: `member-${fallbackAgentId}`,
-            agentId: fallbackAgentId,
-            name: user?.name || fallbackAgentId,
-            agentName: user?.name || fallbackAgentId,
-            avatar: user?.avatar || '🤖',
-            role: 'admin',
-            membershipRole: 'owner',
-            status: 'active',
-            publicKey: user?.e2eePublicKey || null,
-            e2eePublicKey: user?.e2eePublicKey || null,
-            keyStatus: user?.e2eePublicKey ? 'available' : 'missing',
-            isSlave: false,
-          }
-        ];
-      }
-
-      // Ensure all member objects have uniform properties for the SPOG UI
-      currentMembers = currentMembers.map((m: any) => ({
-        ...m,
-        agentId: m.agentId || m.id || 'UNKNOWN_AGENT',
-        name: m.name || m.agentName || m.agentId || 'Agent',
-        membershipRole: m.membershipRole || m.role || 'member',
-        keyStatus: m.keyStatus || (m.publicKey || m.e2eePublicKey ? 'available' : 'missing'),
-        isSlave: Boolean(m.isSlave || m.role === 'slave' || m.account_type === 'slave' || (m.agentId && m.agentId.includes('+AMR-'))),
-      }));
-
-      setMembers(currentMembers);
 
       // 3. Fetch messages safely
       try {
         const msgsRes = await apiFetch(`/api/clusters/${clusterId}/messages`, { authType: 'human' });
         if (msgsRes?.success && Array.isArray(msgsRes.data)) {
           const rawList = msgsRes.data;
-          const currentLocalKeys = user?.agentId ? await getLocalKeyPair(user.agentId, undefined, userPassword || undefined) : null;
+          const currentLocalKeys = currentUser?.agentId ? await getLocalKeyPair(currentUser.agentId, undefined, currentPassword || undefined) : null;
 
           const decryptedList: DecryptedClusterMessage[] = await Promise.all(
             rawList.map(async (m: any) => {
@@ -538,15 +639,15 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 `${clusterId}_${m.ciphertext}`
               ]);
 
-              const isSenderMe = user && (user.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
-              const isSenderMaster = Boolean((isSenderMe && !isSlaveAccount(user)) || (memberMeta && !memberMeta.isSlave));
-              let resolvedSenderAvatar = (isSenderMe && user?.avatar && !user.avatar.includes('robohash') && user.avatar !== '🤖')
-                ? user.avatar
+              const isSenderMe = currentUser && (currentUser.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
+              const isSenderMaster = Boolean((isSenderMe && !isSlaveAccount(currentUser)) || (memberMeta && !memberMeta.isSlave));
+              let resolvedSenderAvatar = (isSenderMe && currentUser?.avatar && !currentUser.avatar.includes('robohash') && currentUser.avatar !== '🤖')
+                ? currentUser.avatar
                 : (memberMeta?.avatar || memberMeta?.agentAvatar || m.senderAgentAvatar);
               if (isSenderMaster && (!resolvedSenderAvatar || resolvedSenderAvatar.includes('robohash') || resolvedSenderAvatar === '🤖')) {
-                resolvedSenderAvatar = getMasterCustomAvatarSvg(memberMeta?.agentName || memberMeta?.name || (isSenderMe ? user?.name : undefined), m.senderAgentId);
+                resolvedSenderAvatar = getMasterCustomAvatarSvg(memberMeta?.agentName || memberMeta?.name || (isSenderMe ? currentUser?.name : undefined), m.senderAgentId);
               }
-              const resolvedRecipients = resolveRecipientsList(m.recipients || [], currentMembers);
+              const resolvedRecipients = resolveRecipientsListRef.current(m.recipients || [], currentMembers);
 
               if (cachedPlaintext && !isDecryptionErrorPlaceholder(cachedPlaintext)) {
                 decryptedCacheRef.current.set(cacheKey, cachedPlaintext);
@@ -574,9 +675,9 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               const result = await decryptClusterMessageEnvelope(
                 msgWithMeta,
                 currentLocalKeys,
-                user?.agentId,
-                userPassword,
-                activeContextCredentials,
+                currentUser?.agentId,
+                currentPassword,
+                currentCredentials,
                 currentMembers,
                 currentClusterMeta
               );
@@ -655,19 +756,15 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
           });
         }
 
-      } catch (msgErr) {
-        console.warn('Could not fetch cluster messages:', msgErr);
-      }
-    } catch (err) {
-      console.error('Error in fetchDetails:', err);
-    } finally {
+      } catch {}
+    } catch {} finally {
       if (!isSilent) setIsLoading(false);
     }
-  }, [clusterId]);
+  }, [clusterId, accountId]);
 
   useEffect(() => {
     fetchDetails();
-    const interval = setInterval(() => fetchDetails(true), 3000);
+    const interval = setInterval(() => fetchDetails(true), 4000);
     return () => clearInterval(interval);
   }, [fetchDetails]);
 
@@ -781,7 +878,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                       )}
                       <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <MessageRecipientsAccordion recipients={m.recipients || []} isCurrentUser={isCurrentUser} onOpenAgentProfile={onOpenAgentProfile} members={members} />
+                    <MessageRecipientsAccordion recipients={m.recipients || []} isCurrentUser={isCurrentUser} onOpenAgentProfile={onOpenAgentProfile} members={members} senderAgentId={m.senderAgentId} />
                   </div>
                 </div>
               );
@@ -818,13 +915,20 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               let explicitRecipients: string[] | undefined = undefined;
               if (selectedRecipientIds.size > 0) {
                 explicitRecipients = (Array.from(selectedRecipientIds) as string[]).filter((id) => {
-                  if (!id || id === user.agentId || id === '__NONE__') return false;
-                  const mem = members.find((m: any) => m.agentId === id);
-                  return mem && mem.keyStatus === 'available';
+                  if (!id || id.toLowerCase() === user.agentId?.toLowerCase() || id === '__NONE__') return false;
+                  const mem = members.find((m: any) => m.agentId?.toLowerCase() === id.toLowerCase());
+                  return Boolean(mem && mem.keyStatus === 'available');
                 });
                 if (explicitRecipients.length === 0) {
                   alert('Cannot send message: No valid recipients with E2EE keys selected.');
                   return;
+                }
+              } else if (recipientCandidates.length > 0) {
+                const availCandidates = recipientCandidates
+                  .filter((m: any) => m.agentId && m.agentId.toLowerCase() !== user.agentId?.toLowerCase() && m.keyStatus === 'available')
+                  .map((m: any) => m.agentId);
+                if (availCandidates.length > 0) {
+                  explicitRecipients = availCandidates;
                 }
               }
 
@@ -1058,13 +1162,10 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                               const current = new Set(selectedRecipientIds);
                               current.delete('__NONE__');
                               if (current.has(mId)) {
-                                console.log('Deselecting:', mId);
                                 current.delete(mId);
                               } else {
-                                console.log('Selecting:', mId);
                                 current.add(mId);
                               }
-                              console.log('New recipient set:', Array.from(current));
                               setSelectedRecipientIds(current);
                             }}
                             className={`p-3 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2.5 transition-all ${
@@ -1081,6 +1182,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                                 avatar={m.avatar}
                                 id={mId}
                                 isMaster={!isSlave}
+                                isSlave={isSlave}
                                 className="w-8 h-8 border border-[#141414] shrink-0"
                               />
                               <div className="min-w-0 flex-1 text-left">
@@ -1089,7 +1191,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                                     {m.name || mId}
                                   </p>
                                   {Boolean(m.hasCapabilityIncrement || m.plan === 'slave_capability' || m.isCapped) && !m.isMaster && !m.is_master_primary && m.account_type !== 'master' && (
-                                    <CappedBadge isCapped={true} />
+                                    <CappedBadge expiresAt={m.expires_at} isCapped={true} />
                                   )}
                                 </div>
                                 <p className={`text-[9px] font-mono truncate ${isSelected ? 'text-white/70' : 'text-[#141414]/70'}`}>

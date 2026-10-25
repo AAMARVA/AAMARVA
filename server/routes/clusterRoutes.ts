@@ -318,7 +318,7 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
     if (participantUserIds.size > 0) {
       const { data, error } = await supabase
         .from('users')
-        .select('id, name, agentId, avatar, emailVerified')
+        .select('*')
         .in('id', Array.from(participantUserIds));
       if (data) usersById = data;
       if (error) console.error('Error fetching users by id:', error);
@@ -326,7 +326,7 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
     if (participantAgentIds.size > 0) {
       const { data, error } = await supabase
         .from('users')
-        .select('id, name, agentId, avatar, emailVerified')
+        .select('*')
         .in('agentId', Array.from(participantAgentIds));
       if (data) usersByAgentId = data;
       if (error) console.error('Error fetching users by agentId:', error);
@@ -338,7 +338,10 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       const uId = u.id;
       const aId = u.agentId || u.agent_id;
       if (aId) userMap.set(String(aId).toLowerCase(), u);
-      if (uId) userMap.set(String(uId).toLowerCase(), u);
+      if (uId) {
+        userMap.set(String(uId).toLowerCase(), u);
+        participantUserIds.add(String(uId));
+      }
     });
 
     // Populate E2EE public keys from user auth metadata for cluster members
@@ -346,13 +349,6 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       try {
         const { data: authData } = await supabase.auth.admin.getUserById(uId);
         const meta = authData?.user?.user_metadata;
-        // DEBUG LOGGING
-        console.log('Checking key for uId:', uId, 'User:', userMap.get(String(uId).toLowerCase()));
-        if (meta?.e2eePublicKey) {
-          console.log('Found E2EE key for uId:', uId);
-        } else {
-          console.log('No E2EE key found for uId:', uId, 'Auth meta:', meta);
-        }
         if (meta?.e2eePublicKey) {
           const existing = userMap.get(String(uId).toLowerCase()) || {};
           existing.e2eePublicKey = meta.e2eePublicKey;
@@ -365,41 +361,73 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       } catch {}
     }
 
-    let membersList: any[] = (dbMembers || []).map((m: any) => {
+    const { CapabilityService } = await import('../services/capabilityService.js');
+    const capService = CapabilityService.getInstance();
+
+    let membersList: any[] = await Promise.all((dbMembers || []).map(async (m: any) => {
       const mAgentId = m.agentId || m.agent_id;
       const mUserId = m.userId || m.user_id;
       const u = (mAgentId ? userMap.get(String(mAgentId).toLowerCase()) : null) || 
                 (mUserId ? userMap.get(String(mUserId).toLowerCase()) : null);
       
+      const resolvedAgentId = mAgentId || u?.agentId || u?.agent_id;
       const realName = (u?.name && String(u.name).trim()) || '';
-      const isSlave = Boolean(
+      const isOwnerMember = Boolean(
+        (cluster.ownerAgentId && resolvedAgentId && cluster.ownerAgentId.toLowerCase() === String(resolvedAgentId).toLowerCase()) ||
+        (cluster.ownerUserId && (mUserId || u?.id) && cluster.ownerUserId.toLowerCase() === String(mUserId || u?.id).toLowerCase())
+      );
+      const isSlave = !isOwnerMember && Boolean(
         u?.account_type === 'slave' ||
         u?.role === 'slave' ||
         u?.is_slave === true ||
-        (u?.master_id && !u?.is_master_primary) ||
+        u?.isSlave === true ||
+        (u?.master_id && String(u.master_id).toLowerCase() !== String(u.id).toLowerCase() && !u?.is_master_primary) ||
+        (u?.email && typeof u.email === 'string' && u.email.includes('+AMR-')) ||
         m.role === 'slave' ||
         m.is_slave === true ||
-        (mAgentId && mAgentId.includes('+AMR-'))
+        (resolvedAgentId && String(resolvedAgentId).includes('+AMR-'))
       );
+
+      let hasCapabilityIncrement = false;
+      let expiresAt: string | null = u?.plan_expires_at || u?.expires_at || null;
+      if (isSlave) {
+        try {
+          const cap = (u?.id ? await capService.getAgentCapability(u.id) : null) ||
+                      (resolvedAgentId ? await capService.getAgentCapability(resolvedAgentId) : null);
+          if (cap?.expires_at) expiresAt = cap.expires_at;
+          hasCapabilityIncrement = Boolean(
+            u?.hasCapabilityIncrement ||
+            u?.plan === 'slave_capability' ||
+            (expiresAt && new Date(expiresAt).getTime() > Date.now()) ||
+            (u?.id && await capService.isAgentCapabilityActive(u.id)) ||
+            (resolvedAgentId && await capService.isAgentCapabilityActive(resolvedAgentId))
+          );
+        } catch {}
+      }
 
       return {
         id: m.id,
-        agentId: mAgentId || u?.agentId || u?.agent_id,
-        agentName: realName || mAgentId || 'Cluster Member',
-        name: realName || mAgentId || 'Cluster Member',
+        userId: u?.id || mUserId || null,
+        agentId: resolvedAgentId,
+        agentName: realName || resolvedAgentId || 'Cluster Member',
+        name: realName || resolvedAgentId || 'Cluster Member',
         avatar: u?.avatar || '🤖',
-        role: (cluster.ownerAgentId && mAgentId && cluster.ownerAgentId.toLowerCase() === mAgentId.toLowerCase()) || (cluster.ownerUserId && mUserId && cluster.ownerUserId.toLowerCase() === mUserId.toLowerCase()) ? 'admin' : 'member',
-        membershipRole: (cluster.ownerAgentId && mAgentId && cluster.ownerAgentId.toLowerCase() === mAgentId.toLowerCase()) || (cluster.ownerUserId && mUserId && cluster.ownerUserId.toLowerCase() === mUserId.toLowerCase()) ? 'admin' : 'member',
+        role: isOwnerMember ? 'admin' : 'member',
+        membershipRole: isOwnerMember ? 'admin' : 'member',
         status: m.status || 'active',
         emailVerified: Boolean(u?.emailVerified),
         e2eePublicKey: u?.e2eePublicKey || null,
         publicKey: u?.e2eePublicKey || null,
         keyStatus: u?.e2eePublicKey ? 'available' : 'missing',
         isSlave,
+        isMaster: !isSlave,
+        hasCapabilityIncrement,
+        isCapped: hasCapabilityIncrement,
+        expires_at: expiresAt,
         e2eeKeyEpoch: u?.e2eeKeyEpoch || 1,
         createdAt: m.createdAt || m.created_at
       };
-    });
+    }));
 
     // If no members in DB, ensure Admin is first member with his ID as requested
     if (membersList.length === 0) {
@@ -1862,6 +1890,8 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMessa
     const messages = allClusterMessages || [];
     const messageIds = messages.map((m: any) => m.id);
     let recipientsMap = new Map<string, any[]>();
+    const recipientAgentIdSet = new Set<string>();
+
     if (messageIds.length > 0) {
       const { data: recipRows, error: recipErr } = await supabase
         .from(tables.recipients)
@@ -1872,8 +1902,12 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMessa
       }
       (recipRows || []).forEach((r: any) => {
         const list = recipientsMap.get(r.messageId) || [];
-        list.push({ agentId: r.agentId });
-        recipientsMap.set(r.messageId, list);
+        const resolvedRecipAgentId = String(r.recipientAgentId || r.recipient_agent_id || r.agentId || r.agent_id || '').trim();
+        if (resolvedRecipAgentId) {
+          recipientAgentIdSet.add(resolvedRecipAgentId);
+          list.push({ agentId: resolvedRecipAgentId, recipientAgentId: resolvedRecipAgentId });
+          recipientsMap.set(r.messageId, list);
+        }
       });
     }
 
@@ -1884,6 +1918,21 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMessa
       if (!recips || recips.length === 0) return true; // Broadcast
       return recips.some(r => normalizeAgentId(r.agentId) === callerAgentId) || normalizeAgentId(m.senderAgentId) === callerAgentId;
     });
+
+    // Resolve recipient user profiles so UI has accurate name, avatar, and slave/master status
+    const recipUserMap = new Map<string, any>();
+    if (recipientAgentIdSet.size > 0) {
+      try {
+        const { data: recipUsers } = await supabase
+          .from('users')
+          .select('*')
+          .in('agentId', Array.from(recipientAgentIdSet));
+        (recipUsers || []).forEach((u: any) => {
+          if (u.agentId) recipUserMap.set(String(u.agentId).toLowerCase(), u);
+          if (u.id) recipUserMap.set(String(u.id).toLowerCase(), u);
+        });
+      } catch {}
+    }
 
     // Resolve sender public keys in parallel
     const senderUserIds = Array.from(new Set(authorizedMessages.map((m: any) => m.senderUserId).filter(Boolean)));
@@ -1899,21 +1948,47 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMessa
 
     res.json({
       success: true,
-      data: authorizedMessages.map((m: any) => ({
-        id: m.id,
-        messageId: m.id,
-        clusterId: m.clusterId,
-        senderAgentId: m.senderAgentId,
-        senderPublicKey: m.senderUserId ? (senderKeyMap.get(String(m.senderUserId)) || null) : null,
-        content: m.content !== undefined ? m.content : null,
-        ciphertext: m.ciphertext,
-        nonce: m.nonce,
-        version: m.version !== undefined && m.version !== null ? m.version : 2,
-        keyEpoch: m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : 1,
-        sequence: m.sequence !== undefined ? m.sequence : null,
-        recipients: recipientsMap.get(m.id) || [],
-        createdAt: m.createdAt
-      }))
+      data: authorizedMessages.map((m: any) => {
+        const rawRecips = recipientsMap.get(m.id) || [];
+        const enrichedRecips = rawRecips.map((r: any) => {
+          const aid = String(r.agentId || r.recipientAgentId || '').trim();
+          const u = aid ? recipUserMap.get(aid.toLowerCase()) : null;
+          const isSlave = Boolean(
+            u?.account_type === 'slave' ||
+            u?.role === 'slave' ||
+            u?.is_slave === true ||
+            u?.isSlave === true ||
+            (u?.master_id && String(u.master_id).toLowerCase() !== String(u.id).toLowerCase() && !u?.is_master_primary) ||
+            (u?.email && typeof u.email === 'string' && u.email.includes('+AMR-')) ||
+            (aid && aid.includes('+AMR-'))
+          );
+          return {
+            agentId: u?.agentId || aid,
+            recipientAgentId: u?.agentId || aid,
+            accountId: u?.id || null,
+            name: (u?.name && String(u.name).trim()) || u?.agentId || aid,
+            avatar: u?.avatar || null,
+            isSlave,
+            isMaster: !isSlave
+          };
+        });
+
+        return {
+          id: m.id,
+          messageId: m.id,
+          clusterId: m.clusterId,
+          senderAgentId: m.senderAgentId,
+          senderPublicKey: m.senderUserId ? (senderKeyMap.get(String(m.senderUserId)) || null) : null,
+          content: m.content !== undefined ? m.content : null,
+          ciphertext: m.ciphertext,
+          nonce: m.nonce,
+          version: m.version !== undefined && m.version !== null ? m.version : 2,
+          keyEpoch: m.keyEpoch !== undefined && m.keyEpoch !== null ? m.keyEpoch : 1,
+          sequence: m.sequence !== undefined ? m.sequence : null,
+          recipients: enrichedRecips,
+          createdAt: m.createdAt
+        };
+      })
     });
   } catch (err: any) {
     console.error('Route handler error [GET /api/clusters/:clusterId/messages]:', err);
@@ -2067,8 +2142,9 @@ router.get('/clusters/:clusterId/key-distribution', requireUserOrAgentAuth, asyn
     const matched = (distRows || []).find((d: any) => normalizeAgentId(d.recipientAgentId) === callerAgent);
 
     if (!matched) {
-      return res.status(404).json({
+      return res.status(200).json({
         success: false,
+        data: null,
         error: {
           code: 'KEY_PACKAGE_NOT_FOUND',
           message: `No encrypted key package found for agent ${agentId} at epoch ${targetEpoch}.`
