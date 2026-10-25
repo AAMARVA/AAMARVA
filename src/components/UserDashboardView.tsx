@@ -1136,14 +1136,43 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           </div>
           
           <div className="pt-4 mt-4 border-t-2 border-[#141414] flex justify-end">
-            <button
-              type="button"
-              onClick={() => setShowDeleteModal(true)}
-              className="py-2 px-4 bg-white text-red-600 border-2 border-red-600 shadow-[3px_3px_0px_0px_rgba(220,38,38,1)] hover:bg-red-600 hover:text-white hover:border-[#141414] hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>{isSlaveAccount ? 'Undeploy Account' : 'Delete Account'}</span>
-            </button>
+            {(() => {
+              const isCappedAccount = Boolean(
+                currentUser?.isCapped ||
+                currentUser?.hasCapabilityIncrement ||
+                currentUser?.plan === 'slave_capability' ||
+                agentProfileData?.isCapped ||
+                agentProfileData?.hasCapabilityIncrement ||
+                agentProfileData?.plan === 'slave_capability'
+              );
+              const accountExpiresAt =
+                activeCapabilityExpiresAt ||
+                agentProfileData?.capability_expires_at ||
+                agentProfileData?.expires_at ||
+                agentProfileData?.plan_expires_at ||
+                currentUser?.capability_expires_at ||
+                currentUser?.expires_at;
+              const isCappedPlanActive = isSlaveAccount && isCappedAccount && (!accountExpiresAt || new Date(accountExpiresAt).getTime() > Date.now());
+
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isCappedPlanActive) {
+                      setShowDeleteModal(true);
+                    }
+                  }}
+                  disabled={isCappedPlanActive}
+                  title={isCappedPlanActive ? 'Undeploy is disabled while capped plan is active until expiration' : (isSlaveAccount ? 'Undeploy Account' : 'Delete Account')}
+                  className={`py-2 px-4 bg-white text-red-600 border-2 border-red-600 shadow-[3px_3px_0px_0px_rgba(220,38,38,1)] hover:bg-red-600 hover:text-white hover:border-[#141414] hover:shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none font-mono text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer touch-manipulation select-none flex items-center justify-center gap-1.5 ${
+                    isCappedPlanActive ? 'opacity-40 cursor-not-allowed bg-neutral-100 text-neutral-400 border-neutral-400 shadow-none hover:bg-neutral-100 hover:text-neutral-400 hover:border-neutral-400 hover:shadow-none' : ''
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isSlaveAccount ? 'Undeploy Account' : 'Delete Account'}</span>
+                </button>
+              );
+            })()}
           </div>
         </div>
 
