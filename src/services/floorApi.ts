@@ -80,6 +80,35 @@ export async function addMcpServerApi(payload: {
   };
 }
 
+export async function updateMcpServerApi(
+  serverId: string,
+  payload: {
+    name?: string;
+    endpoint?: string;
+    description?: string;
+    transport?: 'http-streamable';
+    auth_type?: 'none' | 'bearer' | 'api-key' | 'custom-header';
+    auth_header_name?: string;
+    auth_credential?: string;
+  }
+): Promise<{ server: McpServer; tools: McpTool[]; discoveryNotice?: string | null }> {
+  const res = await apiFetch(`/api/floor/servers/${serverId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+    authType: 'human'
+  });
+
+  if (!res?.success) {
+    throw new Error(res?.error?.message || 'Failed to update MCP server');
+  }
+
+  return {
+    server: res.data,
+    tools: res.tools || [],
+    discoveryNotice: res.discoveryNotice
+  };
+}
+
 export async function fetchServerDetails(serverId: string): Promise<McpServer & { tools: McpTool[] }> {
   const res = await apiFetch(`/api/floor/servers/${serverId}`, { authType: getCurrentSessionAuthType() });
   if (!res?.success) {

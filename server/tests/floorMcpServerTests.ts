@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import http from 'http';
 import {
   validateEndpointUrl,
   isIpRestricted,
@@ -41,7 +42,11 @@ import {
   listToolAccessRequests,
   approveToolAccessRequest,
   rejectToolAccessRequest,
-  clearAccessGovernanceForTesting
+  clearAccessGovernanceForTesting,
+  validateAuthHeader,
+  buildAuthHeaders,
+  updateMcpServer,
+  setAllowedTestServerOriginForTesting
 } from '../services/mcpService.js';
 import {
   establishDirectConnection,
@@ -1665,6 +1670,700 @@ export async function runFloorMcpServerTests(): Promise<Record<string, { passed:
   } catch (err: any) {
     results['test_persistent_grants_and_access_requests_lifecycle'] = { passed: false, message: err?.message };
     console.error('[FAILED] test_persistent_grants_and_access_requests_lifecycle exception:', err);
+  }
+
+  // ============================================================================
+  // 34. Strict Auth Header & CRLF Injection Validation
+  // ============================================================================
+  try {
+    // Valid headers should pass
+    const vBearer = validateAuthHeader('bearer', undefined, 'BearerTokenSecret123');
+    const vApiKey = validateAuthHeader('api-key', 'X-API-Key', 'MyApiKey123');
+    const vCustom = validateAuthHeader('custom-header', 'X-Auth-Token', 'CustomValue_123');
+    const vNone = validateAuthHeader('none');
+    const validPassed = vBearer.valid && vApiKey.valid && vCustom.valid && vNone.valid;
+
+    const crlfH = validateAuthHeader('custom-header', 'X-Injected\r\nInjected-Header: evil', 'val');
+    const crlfV = validateAuthHeader('bearer', undefined, 'secret\r\nInjected: evil');
+    const protH = validateAuthHeader('custom-header', 'Host', 'val');
+    const sessH = validateAuthHeader('custom-header', 'Mcp-Session-Id', 'val');
+    const spaceH = validateAuthHeader('custom-header', 'X Bad Header', 'val');
+
+    const crlfHeaderRejected = !crlfH.valid;
+    const crlfValueRejected = !crlfV.valid;
+    const protectedHeaderRejected = !protH.valid;
+    const sessionHeaderRejected = !sessH.valid;
+    const spaceInHeaderRejected = !spaceH.valid;
+
+    if (validPassed && crlfHeaderRejected && crlfValueRejected && protectedHeaderRejected && sessionHeaderRejected && spaceInHeaderRejected) {
+      results['test_auth_header_validation_and_crlf_defense'] = {
+        passed: true,
+        message: 'Strict RFC 7230 header validation, CRLF injection defense, and protected header protection validated'
+      };
+      console.log('[PASSED] test_auth_header_validation_and_crlf_defense: Header injection defense verified');
+    } else {
+      results['test_auth_header_validation_and_crlf_defense'] = {
+        passed: false,
+        message: `Header checks failed: validPassed=${validPassed}, crlfH=${crlfHeaderRejected}, crlfV=${crlfValueRejected}, protH=${protectedHeaderRejected}, sessH=${sessionHeaderRejected}, space=${spaceInHeaderRejected}`
+      };
+      console.error('[FAILED] test_auth_header_validation_and_crlf_defense');
+    }
+  } catch (err: any) {
+    results['test_auth_header_validation_and_crlf_defense'] = { passed: false, message: err?.message };
+    console.error('[FAILED] test_auth_header_validation_and_crlf_defense exception:', err);
+  }
+
+  // Helper to run a controllable test HTTP MCP server
+  interface ControllableServerOptions {
+    expectedAuthType: 'none' | 'bearer' | 'api-key' | 'custom-header';
+    expectedHeaderName?: string;
+    expectedSecret?: string;
+    rejectAuth?: boolean;
+  }
+
+  const startControllableMcpServer = async (opts: ControllableServerOptions): Promise<{
+    server: http.Server;
+    endpoint: string;
+    receivedRequests: Array<{ method: string; url: string; headers: http.IncomingHttpHeaders; body?: any }>;
+    setOptions: (newOpts: Partial<ControllableServerOptions>) => void;
+    stop: () => Promise<void>;
+  }> => {
+    let currentOpts = { ...opts };
+    const receivedRequests: Array<{ method: string; url: string; headers: http.IncomingHttpHeaders; body?: any }> = [];
+
+    const server = http.createServer((req, res) => {
+      let rawBody = '';
+      req.on('data', (chunk) => {
+        rawBody += chunk;
+      });
+      req.on('end', () => {
+        let parsedBody: any = null;
+        try {
+          parsedBody = rawBody ? JSON.parse(rawBody) : null;
+        } catch {}
+
+        receivedRequests.push({
+          method: req.method || 'GET',
+          url: req.url || '/',
+          headers: req.headers,
+          body: parsedBody
+        });
+
+        // Check authentication
+        if (currentOpts.rejectAuth) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: parsedBody?.id || null,
+            error: { code: -32000, message: 'Invalid or missing authentication credentials' }
+          }));
+          return;
+        }
+
+        if (currentOpts.expectedAuthType === 'bearer') {
+          const authHeader = req.headers['authorization'];
+          if (!authHeader || authHeader !== `Bearer ${currentOpts.expectedSecret}`) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              jsonrpc: '2.0',
+              id: parsedBody?.id || null,
+              error: { code: -32000, message: 'Invalid bearer token' }
+            }));
+            return;
+          }
+        } else if (currentOpts.expectedAuthType === 'api-key') {
+          const headerName = (currentOpts.expectedHeaderName || 'X-API-Key').toLowerCase();
+          const val = req.headers[headerName];
+          if (!val || val !== currentOpts.expectedSecret) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              jsonrpc: '2.0',
+              id: parsedBody?.id || null,
+              error: { code: -32000, message: 'Invalid API key' }
+            }));
+            return;
+          }
+        } else if (currentOpts.expectedAuthType === 'custom-header') {
+          const headerName = (currentOpts.expectedHeaderName || 'X-Custom-Auth').toLowerCase();
+          const val = req.headers[headerName];
+          if (!val || val !== currentOpts.expectedSecret) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              jsonrpc: '2.0',
+              id: parsedBody?.id || null,
+              error: { code: -32000, message: 'Invalid custom header credentials' }
+            }));
+            return;
+          }
+        }
+
+        // Handle SSE GET requests
+        if (req.method === 'GET') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+          });
+          res.write(': keep-alive\n\n');
+          return;
+        }
+
+        // Handle JSON-RPC POST requests
+        const method = parsedBody?.method;
+        const reqId = parsedBody?.id;
+
+        if (method === 'initialize') {
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Mcp-Session-Id': 'sess-test-auth-stream-123'
+          });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: reqId,
+            result: {
+              protocolVersion: '2024-11-05',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'Controllable Auth MCP Server', version: '2.0.0' }
+            }
+          }));
+          return;
+        }
+
+        if (method === 'notifications/initialized') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: reqId, result: {} }));
+          return;
+        }
+
+        if (method === 'tools/list') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: reqId,
+            result: {
+              tools: [
+                {
+                  name: 'auth_echo_tool',
+                  description: 'Echos message for authenticated verification',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      echo_payload: { type: 'string' }
+                    },
+                    required: ['echo_payload']
+                  }
+                }
+              ]
+            }
+          }));
+          return;
+        }
+
+        if (method === 'tools/call') {
+          const echoMsg = parsedBody?.params?.arguments?.echo_payload || 'empty';
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            id: reqId,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: `ECHO_VERIFIED: ${echoMsg}`
+                }
+              ]
+            }
+          }));
+          return;
+        }
+
+        // Default fallback
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: reqId, result: {} }));
+      });
+    });
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+
+    const port = (server.address() as any).port;
+    const endpoint = `http://127.0.0.1:${port}/mcp`;
+    setAllowedTestServerOriginForTesting(`http://127.0.0.1:${port}`);
+
+    return {
+      server,
+      endpoint,
+      receivedRequests,
+      setOptions: (newOpts: Partial<ControllableServerOptions>) => {
+        currentOpts = { ...currentOpts, ...newOpts };
+      },
+      stop: async () => {
+        setAllowedTestServerOriginForTesting(null);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    };
+  };
+
+  // ============================================================================
+  // 35. Bearer Token End-to-End Authentication Lifecycle
+  // ============================================================================
+  try {
+    const bearerSecret = 'bearer-token-secret-alpha-998877';
+    const testServer = await startControllableMcpServer({
+      expectedAuthType: 'bearer',
+      expectedSecret: bearerSecret
+    });
+
+    // 1. Connect and discover tools using Bearer Token
+    const discoveryResult = await addMcpServerWithDiscovery(masterUserId, {
+      name: 'Test Bearer MCP Server',
+      endpoint: testServer.endpoint,
+      transport: 'http-streamable',
+      auth_type: 'bearer',
+      auth_credential: bearerSecret
+    });
+
+    const srvId = discoveryResult.server.id;
+    const discoveredTool = discoveryResult.tools[0];
+
+    // Verify that requests to test server carried Authorization: Bearer header
+    const initReq = testServer.receivedRequests.find((r) => r.body?.method === 'initialize');
+    const listReq = testServer.receivedRequests.find((r) => r.body?.method === 'tools/list');
+    const hasAuthOnDiscovery =
+      initReq?.headers['authorization'] === `Bearer ${bearerSecret}` &&
+      listReq?.headers['authorization'] === `Bearer ${bearerSecret}`;
+
+    // 2. Assign tool to slave agent and invoke tool
+    await grantToolAccess(masterUserId, srvId, discoveredTool.id, slaveAgentId);
+
+    const invokeResult = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: slaveAgentId, isMaster: false },
+      discoveredTool.id,
+      { echo_payload: 'hello_bearer_world' }
+    );
+
+    // Verify tool call sent Bearer token
+    const callReq = testServer.receivedRequests.find((r) => r.body?.method === 'tools/call');
+    const hasAuthOnInvoke = callReq?.headers['authorization'] === `Bearer ${bearerSecret}`;
+    const callSucceeded = invokeResult.success && JSON.stringify(invokeResult.result).includes('ECHO_VERIFIED: hello_bearer_world');
+
+    // 3. Verify server details redact credentials
+    const serverDetails = await getMcpServer(masterUserId, srvId);
+    const isCredentialRedacted =
+      serverDetails.has_credential === true &&
+      !(serverDetails as any).auth_credential &&
+      !(serverDetails as any).encrypted_credential;
+
+    await removeMcpServer(masterUserId, srvId);
+    await testServer.stop();
+
+    if (hasAuthOnDiscovery && hasAuthOnInvoke && callSucceeded && isCredentialRedacted) {
+      results['test_controllable_mcp_server_bearer_authentication'] = {
+        passed: true,
+        message: 'Bearer Token end-to-end authentication verified across initialization, tools/list, tool invocation, and credential redaction'
+      };
+      console.log('[PASSED] test_controllable_mcp_server_bearer_authentication: Bearer Token auth verified');
+    } else {
+      results['test_controllable_mcp_server_bearer_authentication'] = {
+        passed: false,
+        message: `Bearer auth failed: discAuth=${hasAuthOnDiscovery}, invAuth=${hasAuthOnInvoke}, callOk=${callSucceeded}, redOk=${isCredentialRedacted}`
+      };
+      console.error('[FAILED] test_controllable_mcp_server_bearer_authentication');
+    }
+  } catch (err: any) {
+    setAllowedTestServerOriginForTesting(null);
+    results['test_controllable_mcp_server_bearer_authentication'] = { passed: false, message: err?.message };
+    console.error('[FAILED] test_controllable_mcp_server_bearer_authentication exception:', err);
+  }
+
+  // ============================================================================
+  // 36. API Key End-to-End Authentication Lifecycle (X-API-Key)
+  // ============================================================================
+  try {
+    const apiKeySecret = 'apikey-live-secret-beta-112233';
+    const testServer = await startControllableMcpServer({
+      expectedAuthType: 'api-key',
+      expectedHeaderName: 'X-API-Key',
+      expectedSecret: apiKeySecret
+    });
+
+    const discoveryResult = await addMcpServerWithDiscovery(masterUserId, {
+      name: 'Test API Key MCP Server',
+      endpoint: testServer.endpoint,
+      transport: 'http-streamable',
+      auth_type: 'api-key',
+      auth_header_name: 'X-API-Key',
+      auth_credential: apiKeySecret
+    });
+
+    const srvId = discoveryResult.server.id;
+    const discoveredTool = discoveryResult.tools[0];
+
+    // Verify that requests carried X-API-Key header and did NOT treat as Bearer token
+    const initReq = testServer.receivedRequests.find((r) => r.body?.method === 'initialize');
+    const listReq = testServer.receivedRequests.find((r) => r.body?.method === 'tools/list');
+    const hasApiKeyOnDiscovery =
+      initReq?.headers['x-api-key'] === apiKeySecret &&
+      listReq?.headers['x-api-key'] === apiKeySecret &&
+      !initReq?.headers['authorization'];
+
+    // Assign and invoke tool
+    await grantToolAccess(masterUserId, srvId, discoveredTool.id, slaveAgentId);
+
+    const invokeResult = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: slaveAgentId, isMaster: false },
+      discoveredTool.id,
+      { echo_payload: 'hello_api_key_world' }
+    );
+
+    const callReq = testServer.receivedRequests.find((r) => r.body?.method === 'tools/call');
+    const hasApiKeyOnInvoke =
+      callReq?.headers['x-api-key'] === apiKeySecret &&
+      !callReq?.headers['authorization'];
+    const callSucceeded = invokeResult.success && JSON.stringify(invokeResult.result).includes('ECHO_VERIFIED: hello_api_key_world');
+
+    await removeMcpServer(masterUserId, srvId);
+    await testServer.stop();
+
+    if (hasApiKeyOnDiscovery && hasApiKeyOnInvoke && callSucceeded) {
+      results['test_controllable_mcp_server_api_key_authentication'] = {
+        passed: true,
+        message: 'API Key (X-API-Key) authentication verified across handshake, discovery, and tool execution without Bearer confusion'
+      };
+      console.log('[PASSED] test_controllable_mcp_server_api_key_authentication: API Key auth verified');
+    } else {
+      results['test_controllable_mcp_server_api_key_authentication'] = {
+        passed: false,
+        message: `API Key check failed: disc=${hasApiKeyOnDiscovery}, inv=${hasApiKeyOnInvoke}, call=${callSucceeded}`
+      };
+      console.error('[FAILED] test_controllable_mcp_server_api_key_authentication');
+    }
+  } catch (err: any) {
+    setAllowedTestServerOriginForTesting(null);
+    results['test_controllable_mcp_server_api_key_authentication'] = { passed: false, message: err?.message };
+    console.error('[FAILED] test_controllable_mcp_server_api_key_authentication exception:', err);
+  }
+
+  // ============================================================================
+  // 37. Custom Header End-to-End Authentication Lifecycle (X-Auth-Token)
+  // ============================================================================
+  try {
+    const customHeaderName = 'X-Auth-Token';
+    const customSecret = 'custom-auth-token-gamma-334455';
+    const testServer = await startControllableMcpServer({
+      expectedAuthType: 'custom-header',
+      expectedHeaderName: customHeaderName,
+      expectedSecret: customSecret
+    });
+
+    const discoveryResult = await addMcpServerWithDiscovery(masterUserId, {
+      name: 'Test Custom Header MCP Server',
+      endpoint: testServer.endpoint,
+      transport: 'http-streamable',
+      auth_type: 'custom-header',
+      auth_header_name: customHeaderName,
+      auth_credential: customSecret
+    });
+
+    const srvId = discoveryResult.server.id;
+    const discoveredTool = discoveryResult.tools[0];
+
+    const initReq = testServer.receivedRequests.find((r) => r.body?.method === 'initialize');
+    const listReq = testServer.receivedRequests.find((r) => r.body?.method === 'tools/list');
+    const hasCustomHeaderOnDiscovery =
+      initReq?.headers['x-auth-token'] === customSecret &&
+      listReq?.headers['x-auth-token'] === customSecret;
+
+    await grantToolAccess(masterUserId, srvId, discoveredTool.id, slaveAgentId);
+
+    const invokeResult = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: slaveAgentId, isMaster: false },
+      discoveredTool.id,
+      { echo_payload: 'hello_custom_header_world' }
+    );
+
+    const callReq = testServer.receivedRequests.find((r) => r.body?.method === 'tools/call');
+    const hasCustomHeaderOnInvoke = callReq?.headers['x-auth-token'] === customSecret;
+    const callSucceeded = invokeResult.success && JSON.stringify(invokeResult.result).includes('ECHO_VERIFIED: hello_custom_header_world');
+
+    await removeMcpServer(masterUserId, srvId);
+    await testServer.stop();
+
+    if (hasCustomHeaderOnDiscovery && hasCustomHeaderOnInvoke && callSucceeded) {
+      results['test_controllable_mcp_server_custom_header_authentication'] = {
+        passed: true,
+        message: 'Custom Header (X-Auth-Token) authentication verified across handshake, discovery, and tool execution'
+      };
+      console.log('[PASSED] test_controllable_mcp_server_custom_header_authentication: Custom Header auth verified');
+    } else {
+      results['test_controllable_mcp_server_custom_header_authentication'] = {
+        passed: false,
+        message: `Custom header check failed: disc=${hasCustomHeaderOnDiscovery}, inv=${hasCustomHeaderOnInvoke}, call=${callSucceeded}`
+      };
+      console.error('[FAILED] test_controllable_mcp_server_custom_header_authentication');
+    }
+  } catch (err: any) {
+    setAllowedTestServerOriginForTesting(null);
+    results['test_controllable_mcp_server_custom_header_authentication'] = { passed: false, message: err?.message };
+    console.error('[FAILED] test_controllable_mcp_server_custom_header_authentication exception:', err);
+  }
+
+  // ============================================================================
+  // 38. No Auth End-to-End Authentication Lifecycle
+  // ============================================================================
+  try {
+    const testServer = await startControllableMcpServer({
+      expectedAuthType: 'none'
+    });
+
+    const discoveryResult = await addMcpServerWithDiscovery(masterUserId, {
+      name: 'Test No Auth MCP Server',
+      endpoint: testServer.endpoint,
+      transport: 'http-streamable',
+      auth_type: 'none'
+    });
+
+    const srvId = discoveryResult.server.id;
+    const discoveredTool = discoveryResult.tools[0];
+
+    const initReq = testServer.receivedRequests.find((r) => r.body?.method === 'initialize');
+    const hasNoAuthHeader = !initReq?.headers['authorization'] && !initReq?.headers['x-api-key'];
+
+    await grantToolAccess(masterUserId, srvId, discoveredTool.id, slaveAgentId);
+
+    const invokeResult = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: slaveAgentId, isMaster: false },
+      discoveredTool.id,
+      { echo_payload: 'hello_no_auth' }
+    );
+
+    const callSucceeded = invokeResult.success && JSON.stringify(invokeResult.result).includes('ECHO_VERIFIED: hello_no_auth');
+
+    await removeMcpServer(masterUserId, srvId);
+    await testServer.stop();
+
+    if (hasNoAuthHeader && callSucceeded) {
+      results['test_controllable_mcp_server_no_auth'] = {
+        passed: true,
+        message: 'No Auth connection and execution verified with zero authentication headers sent'
+      };
+      console.log('[PASSED] test_controllable_mcp_server_no_auth: No Auth verified');
+    } else {
+      results['test_controllable_mcp_server_no_auth'] = {
+        passed: false,
+        message: `No auth check failed: noHeader=${hasNoAuthHeader}, callOk=${callSucceeded}`
+      };
+      console.error('[FAILED] test_controllable_mcp_server_no_auth');
+    }
+  } catch (err: any) {
+    setAllowedTestServerOriginForTesting(null);
+    results['test_controllable_mcp_server_no_auth'] = { passed: false, message: err?.message };
+    console.error('[FAILED] test_controllable_mcp_server_no_auth exception:', err);
+  }
+
+  // ============================================================================
+  // 39. Clear Error Reporting on HTTP 401/403 (No False 0 Tools or Zombie Servers)
+  // ============================================================================
+  try {
+    const testServer = await startControllableMcpServer({
+      expectedAuthType: 'bearer',
+      expectedSecret: 'legitimate_token',
+      rejectAuth: true // Always rejects with 401
+    });
+
+    let registrationError: any = null;
+    try {
+      await addMcpServerWithDiscovery(masterUserId, {
+        name: 'Zombie Check Server',
+        endpoint: testServer.endpoint,
+        transport: 'http-streamable',
+        auth_type: 'bearer',
+        auth_credential: 'wrong_secret_token'
+      });
+    } catch (err: any) {
+      registrationError = err;
+    }
+
+    // Check that registration failed with clear authentication error message
+    const errorMentionsAuth =
+      registrationError?.message?.includes('Authentication failed (HTTP 401)') ||
+      registrationError?.message?.includes('401') ||
+      registrationError?.message?.includes('Invalid or missing authentication');
+
+    // Verify that NO zombie server record was saved in database
+    const existingServers = await listUserMcpServers(masterUserId);
+    const zombieSaved = existingServers.some((s) => s.endpoint === testServer.endpoint);
+
+    await testServer.stop();
+
+    if (errorMentionsAuth && !zombieSaved) {
+      results['test_mcp_server_auth_failure_error_reporting'] = {
+        passed: true,
+        message: 'Authentication rejection reports explicit HTTP 401 failure and prevents zombie server registration'
+      };
+      console.log('[PASSED] test_mcp_server_auth_failure_error_reporting: 401 failure handling verified');
+    } else {
+      results['test_mcp_server_auth_failure_error_reporting'] = {
+        passed: false,
+        message: `Failure reporting check failed: mentionsAuth=${errorMentionsAuth}, zombieSaved=${zombieSaved}, msg=${registrationError?.message}`
+      };
+      console.error('[FAILED] test_mcp_server_auth_failure_error_reporting');
+    }
+  } catch (err: any) {
+    setAllowedTestServerOriginForTesting(null);
+    results['test_mcp_server_auth_failure_error_reporting'] = { passed: false, message: err?.message };
+    console.error('[FAILED] test_mcp_server_auth_failure_error_reporting exception:', err);
+  }
+
+  // ============================================================================
+  // 40. Credential Preservation When Editing and Clean Switching
+  // ============================================================================
+  try {
+    const initialSecret = 'preserved-bearer-secret-001';
+    const testServer = await startControllableMcpServer({
+      expectedAuthType: 'bearer',
+      expectedSecret: initialSecret
+    });
+
+    const initialReg = await addMcpServerWithDiscovery(masterUserId, {
+      name: 'Preserve Credential Test Server',
+      endpoint: testServer.endpoint,
+      transport: 'http-streamable',
+      auth_type: 'bearer',
+      auth_credential: initialSecret
+    });
+
+    const srvId = initialReg.server.id;
+    const initialToolId = initialReg.tools[0].id;
+    await grantToolAccess(masterUserId, srvId, initialToolId, slaveAgentId);
+
+    // 1. Edit server display name without providing auth_credential: must preserve existing credential
+    const updateResult = await updateMcpServer(masterUserId, srvId, {
+      name: 'Preserve Credential Test Server - Renamed',
+      auth_type: 'bearer'
+      // auth_credential is intentionally omitted
+    });
+
+    const updatedNameMatches = updateResult.server.name === 'Preserve Credential Test Server - Renamed';
+    const hasCredentialPreserved = updateResult.server.has_credential === true;
+
+    // Tool invocation should still succeed using the preserved decrypted secret
+    const invokePostUpdate = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: slaveAgentId, isMaster: false },
+      initialToolId,
+      { echo_payload: 'preserved_credential_test' }
+    );
+    const invokePreservedOk = invokePostUpdate.success;
+
+    // 2. Switch auth method to 'none': must clear stored credential
+    testServer.setOptions({ expectedAuthType: 'none', expectedSecret: undefined });
+    const switchResult = await updateMcpServer(masterUserId, srvId, {
+      auth_type: 'none'
+    });
+
+    const credentialCleared = switchResult.server.has_credential === false;
+
+    // 3. Changing to api-key without providing a credential must reject (prevent accidental stale reuse)
+    let switchWithoutCredentialRejected = false;
+    try {
+      await updateMcpServer(masterUserId, srvId, {
+        auth_type: 'api-key',
+        auth_header_name: 'X-API-Key'
+      });
+    } catch (err: any) {
+      switchWithoutCredentialRejected = true;
+    }
+
+    await removeMcpServer(masterUserId, srvId);
+    await testServer.stop();
+
+    if (updatedNameMatches && hasCredentialPreserved && invokePreservedOk && credentialCleared && switchWithoutCredentialRejected) {
+      results['test_mcp_server_credential_preservation_and_auth_switch'] = {
+        passed: true,
+        message: 'Credential preservation during metadata update, clean deletion on switch to none, and stale reuse prevention validated'
+      };
+      console.log('[PASSED] test_mcp_server_credential_preservation_and_auth_switch: Credential lifecycle verified');
+    } else {
+      results['test_mcp_server_credential_preservation_and_auth_switch'] = {
+        passed: false,
+        message: `Preservation check failed: nameMatch=${updatedNameMatches}, hasCred=${hasCredentialPreserved}, invOk=${invokePreservedOk}, credCleared=${credentialCleared}, switchRejected=${switchWithoutCredentialRejected}`
+      };
+      console.error('[FAILED] test_mcp_server_credential_preservation_and_auth_switch');
+    }
+  } catch (err: any) {
+    setAllowedTestServerOriginForTesting(null);
+    results['test_mcp_server_credential_preservation_and_auth_switch'] = { passed: false, message: err?.message };
+    console.error('[FAILED] test_mcp_server_credential_preservation_and_auth_switch exception:', err);
+  }
+
+  // ============================================================================
+  // 41. AAMARVA Account Authorization Independence from MCP Server Auth
+  // ============================================================================
+  try {
+    const bearerSecret = 'account-independence-token-9988';
+    const testServer = await startControllableMcpServer({
+      expectedAuthType: 'bearer',
+      expectedSecret: bearerSecret
+    });
+
+    const srvReg = await addMcpServerWithDiscovery(masterUserId, {
+      name: 'Account Independence Server',
+      endpoint: testServer.endpoint,
+      transport: 'http-streamable',
+      auth_type: 'bearer',
+      auth_credential: bearerSecret
+    });
+
+    const srvId = srvReg.server.id;
+    const toolId = srvReg.tools[0].id;
+
+    // External MCP connection is 100% authenticated, but unauthorizedAgentId has NOT been granted permission
+    const unauthCall = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: unauthorizedAgentId, isMaster: false },
+      toolId,
+      { echo_payload: 'unauthorized_attempt' }
+    );
+
+    const unauthBlocked = !unauthCall.success && unauthCall.error?.includes('not authorized');
+
+    // Now grant slaveAgentId and verify slaveAgentId succeeds
+    await grantToolAccess(masterUserId, srvId, toolId, slaveAgentId);
+    const authCall = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: slaveAgentId, isMaster: false },
+      toolId,
+      { echo_payload: 'authorized_slave_call' }
+    );
+    const authSuccess = authCall.success;
+
+    // Unauthorized agent still blocked
+    const unauthCall2 = await invokeAuthorizedTool(
+      { userId: masterUserId, agentId: unauthorizedAgentId, isMaster: false },
+      toolId,
+      { echo_payload: 'unauthorized_attempt_2' }
+    );
+    const unauthStillBlocked = !unauthCall2.success && unauthCall2.error?.includes('not authorized');
+
+    await removeMcpServer(masterUserId, srvId);
+    await testServer.stop();
+
+    if (unauthBlocked && authSuccess && unauthStillBlocked) {
+      results['test_account_authorization_independence_from_mcp_auth'] = {
+        passed: true,
+        message: 'Strict independence between external MCP authentication and internal AAMARVA account authorization verified'
+      };
+      console.log('[PASSED] test_account_authorization_independence_from_mcp_auth: Account-level authorization independence verified');
+    } else {
+      results['test_account_authorization_independence_from_mcp_auth'] = {
+        passed: false,
+        message: `Independence check failed: unauthBlocked=${unauthBlocked}, authOk=${authSuccess}, unauth2Blocked=${unauthStillBlocked}`
+      };
+      console.error('[FAILED] test_account_authorization_independence_from_mcp_auth');
+    }
+  } catch (err: any) {
+    setAllowedTestServerOriginForTesting(null);
+    results['test_account_authorization_independence_from_mcp_auth'] = { passed: false, message: err?.message };
+    console.error('[FAILED] test_account_authorization_independence_from_mcp_auth exception:', err);
   }
 
   return results;

@@ -1,15 +1,20 @@
-import React, { useState } from 'react';
-import { X, Server, Shield, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
-import { addMcpServerApi, McpServer, McpTool } from '../../services/floorApi';
-import { BrutalistLoader } from '../BrutalistLoader';
+import React, { useState, useEffect } from 'react';
+import { X, Server, Shield, AlertCircle, ArrowRight } from 'lucide-react';
+import { addMcpServerApi, updateMcpServerApi, McpServer, McpTool } from '../../services/floorApi';
 
 interface AddIntegrationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (server: McpServer, tools: McpTool[]) => void;
+  serverToEdit?: McpServer | null;
 }
 
-export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  serverToEdit
+}) => {
   const [name, setName] = useState('');
   const [endpoint, setEndpoint] = useState('');
   const [description, setDescription] = useState('');
@@ -20,7 +25,50 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isEditMode = Boolean(serverToEdit);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (serverToEdit) {
+        setName(serverToEdit.name || '');
+        setEndpoint(serverToEdit.endpoint || '');
+        setDescription(serverToEdit.description || '');
+        setAuthType(serverToEdit.auth_type || 'none');
+        setAuthHeaderName(
+          serverToEdit.auth_header_name ||
+          (serverToEdit.auth_type === 'custom-header' ? 'X-Custom-Auth' : 'X-API-Key')
+        );
+        setAuthCredential('');
+      } else {
+        setName('');
+        setEndpoint('');
+        setDescription('');
+        setAuthType('none');
+        setAuthHeaderName('X-API-Key');
+        setAuthCredential('');
+      }
+      setError(null);
+    }
+  }, [isOpen, serverToEdit]);
+
   if (!isOpen) return null;
+
+  const handleAuthTypeChange = (newType: 'none' | 'bearer' | 'api-key' | 'custom-header') => {
+    setAuthType(newType);
+    // Clear credential so previous type's secret is never accidentally reused
+    setAuthCredential('');
+    if (newType === 'api-key' && (!authHeaderName || authHeaderName === 'X-Custom-Auth')) {
+      setAuthHeaderName('X-API-Key');
+    } else if (newType === 'custom-header' && (!authHeaderName || authHeaderName === 'X-API-Key')) {
+      setAuthHeaderName('X-Custom-Auth');
+    }
+  };
+
+  const hasPreservedCredential = Boolean(
+    isEditMode &&
+    serverToEdit?.has_credential &&
+    authType === serverToEdit.auth_type
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,25 +80,67 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen
       return;
     }
 
-    if (!trimmedEndpoint.startsWith('http://') && !trimmedEndpoint.startsWith('https://') && !trimmedEndpoint.startsWith('mock://')) {
+    if (
+      !trimmedEndpoint.startsWith('http://') &&
+      !trimmedEndpoint.startsWith('https://') &&
+      !trimmedEndpoint.startsWith('mock://')
+    ) {
       setError('Endpoint must begin with https:// or http://');
+      return;
+    }
+
+    if (authType === 'api-key' || authType === 'custom-header') {
+      const trimmedHeader = (authHeaderName || '').trim();
+      if (!trimmedHeader) {
+        setError('Header name cannot be empty for API Key or Custom Header authentication.');
+        return;
+      }
+      if (!/^[a-zA-Z0-9!#$%&'*+-.^_`|~]+$/.test(trimmedHeader)) {
+        setError('Invalid header name. Header must contain only valid RFC 7230 token characters and no whitespace.');
+        return;
+      }
+    }
+
+    if (authType !== 'none' && !hasPreservedCredential && !authCredential.trim()) {
+      setError(`Secret / Token is required for ${authType === 'bearer' ? 'Bearer Token' : authType === 'api-key' ? 'API Key' : 'Custom Header'} authentication.`);
       return;
     }
 
     setIsLoading(true);
     try {
-      const res = await addMcpServerApi({
-        name: name.trim(),
-        endpoint: trimmedEndpoint,
-        description: description.trim() || undefined,
-        transport,
-        auth_type: authType,
-        auth_header_name: authType === 'custom-header' || authType === 'api-key' ? authHeaderName : undefined,
-        auth_credential: authType !== 'none' ? authCredential.trim() : undefined
-      });
+      if (isEditMode && serverToEdit) {
+        const res = await updateMcpServerApi(serverToEdit.id, {
+          name: name.trim(),
+          endpoint: trimmedEndpoint,
+          description: description.trim() || undefined,
+          transport,
+          auth_type: authType,
+          auth_header_name:
+            authType === 'custom-header' || authType === 'api-key'
+              ? authHeaderName.trim()
+              : undefined,
+          auth_credential: authCredential.trim() ? authCredential.trim() : undefined
+        });
 
-      onSuccess(res.server, res.tools);
-      onClose();
+        onSuccess(res.server, res.tools);
+        onClose();
+      } else {
+        const res = await addMcpServerApi({
+          name: name.trim(),
+          endpoint: trimmedEndpoint,
+          description: description.trim() || undefined,
+          transport,
+          auth_type: authType,
+          auth_header_name:
+            authType === 'custom-header' || authType === 'api-key'
+              ? authHeaderName.trim()
+              : undefined,
+          auth_credential: authType !== 'none' ? authCredential.trim() : undefined
+        });
+
+        onSuccess(res.server, res.tools);
+        onClose();
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to connect and discover tools from MCP server.');
     } finally {
@@ -66,7 +156,7 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen
           <div className="flex items-center gap-2">
             <Server className="w-4 h-4 text-white" />
             <span className="text-xs font-black uppercase tracking-wider">
-              CONNECT MCP SERVER / INTEGRATION
+              {isEditMode ? 'EDIT MCP SERVER / INTEGRATION' : 'CONNECT MCP SERVER / INTEGRATION'}
             </span>
           </div>
           <button
@@ -96,7 +186,7 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen
               Remote Model Context Protocol (MCP) Stream
             </span>
             <p className="text-[10px] text-[#141414]/70 leading-relaxed font-sans">
-              Connects to an external MCP server via Streamable HTTP/SSE. The server will perform a live protocol initialization handshake (<code className="bg-white px-1 border border-[#141414]/20">tools/list</code>) and automatically discover all exposed capabilities.
+              Connects to an external MCP server via Streamable HTTP/SSE. The server performs a live protocol initialization handshake (<code className="bg-white px-1 border border-[#141414]/20">initialize</code> & <code className="bg-white px-1 border border-[#141414]/20">tools/list</code>) and automatically discovers all exposed capabilities.
             </p>
           </div>
 
@@ -148,7 +238,7 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen
                 Authentication Method
               </span>
               <span className="text-[9px] font-bold text-[#141414]/60">
-                Credentials are encrypted & never returned to client
+                Credentials encrypted & never returned to client
               </span>
             </div>
 
@@ -157,8 +247,8 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen
                 <button
                   key={method}
                   type="button"
-                  onClick={() => setAuthType(method)}
-                  className={`p-2 border-2 border-[#141414] text-[10px] font-bold uppercase transition-all ${
+                  onClick={() => handleAuthTypeChange(method)}
+                  className={`p-2 border-2 border-[#141414] text-[10px] font-bold uppercase transition-all cursor-pointer ${
                     authType === method
                       ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
                       : 'bg-white text-[#141414] hover:bg-neutral-100'
@@ -174,7 +264,7 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen
                 {(authType === 'api-key' || authType === 'custom-header') && (
                   <div>
                     <label className="block text-[9px] font-black uppercase tracking-wider text-[#141414]/70 mb-1">
-                      Header Name
+                      Header Name <span className="text-red-600">*</span>
                     </label>
                     <input
                       type="text"
@@ -188,13 +278,27 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen
                 )}
 
                 <div>
-                  <label className="block text-[9px] font-black uppercase tracking-wider text-[#141414]/70 mb-1">
-                    {authType === 'bearer' ? 'Bearer Token' : 'Secret / Key Value'} <span className="text-red-600">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[9px] font-black uppercase tracking-wider text-[#141414]/70">
+                      {authType === 'bearer' ? 'Bearer Token' : 'Secret / Key Value'}{' '}
+                      {!hasPreservedCredential && <span className="text-red-600">*</span>}
+                    </label>
+                    {hasPreservedCredential && (
+                      <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1 border border-green-300">
+                        Existing Credential Stored
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="password"
-                    required
-                    placeholder="Enter authentication secret or token..."
+                    required={!hasPreservedCredential}
+                    placeholder={
+                      hasPreservedCredential
+                        ? 'Leave blank to keep existing credential, or enter new secret'
+                        : authType === 'bearer'
+                        ? 'Enter bearer access token...'
+                        : 'Enter secret or API key value...'
+                    }
                     value={authCredential}
                     onChange={(e) => setAuthCredential(e.target.value)}
                     className="w-full bg-[#FAF9F5] border-2 border-[#141414] p-1.5 text-xs font-mono"
@@ -238,11 +342,11 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({ isOpen
                   <div className="w-3.5 h-3.5 border-2 border-white relative overflow-hidden">
                     <div className="absolute inset-0 bg-white animate-pulse" />
                   </div>
-                  <span>Handshaking & Discovering...</span>
+                  <span>{isEditMode ? 'Validating & Re-syncing...' : 'Handshaking & Discovering...'}</span>
                 </>
               ) : (
                 <>
-                  <span>Connect & Discover Tools</span>
+                  <span>{isEditMode ? 'Save & Re-sync Tools' : 'Connect & Discover Tools'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}

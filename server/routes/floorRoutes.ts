@@ -6,6 +6,7 @@ import {
   listUserMcpServers,
   getMcpServer,
   addMcpServerWithDiscovery,
+  updateMcpServer,
   revalidateAndSyncMcpServer,
   removeMcpServer,
   listToolsForServer,
@@ -104,7 +105,12 @@ router.post(
         discoveryNotice: result.error || null
       });
     } catch (err: any) {
-      res.status(400).json({ success: false, error: { message: err?.message || 'Failed to connect and register MCP server.' } });
+      const isAuth = err?.message?.includes('401') || err?.message?.includes('Unauthorized');
+      const isForbidden = err?.message?.includes('403') || err?.message?.includes('Forbidden');
+      res.status(isAuth ? 401 : isForbidden ? 403 : 400).json({
+        success: false,
+        error: { message: err?.message || 'Failed to connect and register MCP server.' }
+      });
     }
   }
 );
@@ -136,6 +142,48 @@ router.get(
 );
 
 /**
+ * 3b. PUT /api/floor/servers/:id
+ * Update server configuration, credentials, and re-sync discovered tools (Human/Master only)
+ */
+router.put(
+  '/servers/:id',
+  requireHumanSession,
+  securityLayer('floor_manage'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user!.id;
+      const serverId = req.params.id as string;
+      const { name, endpoint, description, transport, auth_type, auth_header_name, auth_credential } = req.body;
+
+      const result = await updateMcpServer(userId, serverId, {
+        name,
+        endpoint,
+        description,
+        transport,
+        auth_type,
+        auth_header_name,
+        auth_credential
+      });
+
+      res.json({
+        success: true,
+        data: result.server,
+        tools: result.tools,
+        discoveryNotice: result.error || null
+      });
+    } catch (err: any) {
+      const isNotFound = err?.message?.includes('not found');
+      const isAuth = err?.message?.includes('401') || err?.message?.includes('Unauthorized');
+      const isForbidden = err?.message?.includes('403') || err?.message?.includes('Forbidden');
+      res.status(isNotFound ? 404 : isAuth ? 401 : isForbidden ? 403 : 400).json({
+        success: false,
+        error: { message: err?.message || 'Failed to update MCP server.' }
+      });
+    }
+  }
+);
+
+/**
  * 4. POST /api/floor/servers/:id/reconnect
  * Re-validate connection and re-sync discovered tools from the remote server
  */
@@ -149,14 +197,30 @@ router.post(
       const serverId = req.params.id as string;
       const result = await revalidateAndSyncMcpServer(userId, serverId);
 
+      if (result.error) {
+        const isAuth = result.error.includes('401') || result.error.includes('Unauthorized');
+        const isForbidden = result.error.includes('403') || result.error.includes('Forbidden');
+        return res.status(isAuth ? 401 : isForbidden ? 403 : 400).json({
+          success: false,
+          error: { message: result.error },
+          data: result.server,
+          tools: result.tools
+        });
+      }
+
       res.json({
         success: true,
         data: result.server,
         tools: result.tools,
-        discoveryNotice: result.error || null
+        discoveryNotice: null
       });
     } catch (err: any) {
-      res.status(400).json({ success: false, error: { message: err?.message || 'Re-validation failed.' } });
+      const isAuth = err?.message?.includes('401') || err?.message?.includes('Unauthorized');
+      const isForbidden = err?.message?.includes('403') || err?.message?.includes('Forbidden');
+      res.status(isAuth ? 401 : isForbidden ? 403 : 400).json({
+        success: false,
+        error: { message: err?.message || 'Re-validation failed.' }
+      });
     }
   }
 );

@@ -452,11 +452,32 @@ export function isHostnameRestricted(hostname: string): boolean {
   return false;
 }
 
+let allowedTestServerOrigin: string | null = null;
+
+export function setAllowedTestServerOriginForTesting(origin: string | null): void {
+  if (process.env.NODE_ENV !== 'production') {
+    allowedTestServerOrigin = origin;
+  }
+}
+
 export const safeLookup = (
   hostname: string,
   options: any,
   callback: (err: NodeJS.ErrnoException | null, address: any, family?: number) => void
 ) => {
+  if (
+    isStrictTestEnvironment() &&
+    process.env.NODE_ENV !== 'production' &&
+    allowedTestServerOrigin
+  ) {
+    try {
+      const allowed = new URL(allowedTestServerOrigin);
+      if (hostname.toLowerCase() === allowed.hostname.toLowerCase()) {
+        return dns.lookup(hostname, options, callback);
+      }
+    } catch {}
+  }
+
   if (isHostnameRestricted(hostname)) {
     const err: any = new Error(`SSRF blocked: Domain '${hostname}' is restricted.`);
     err.code = 'ENOTFOUND';
@@ -559,6 +580,16 @@ export async function validateEndpointUrl(
         error: 'Restricted target: Mock endpoints are strictly prohibited outside automated test environments.'
       };
     }
+    return { valid: true };
+  }
+
+  // Allow explicitly registered local test server only during automated testing
+  if (
+    isStrictTestEnvironment() &&
+    process.env.NODE_ENV !== 'production' &&
+    allowedTestServerOrigin &&
+    trimmed.startsWith(allowedTestServerOrigin)
+  ) {
     return { valid: true };
   }
 
@@ -730,7 +761,71 @@ export function sanitizeServerInfo(serverInfo: Record<string, any> | undefined):
   return copy;
 }
 
-function buildAuthHeaders(
+/**
+ * RFC 7230 / RFC 9110 HTTP Header validation.
+ * Rejects header injection, CRLF characters, whitespace, and protected protocol headers.
+ */
+export function validateAuthHeader(
+  authType: 'none' | 'bearer' | 'api-key' | 'custom-header',
+  headerName?: string,
+  credential?: string
+): { valid: boolean; error?: string; normalizedHeaderName?: string } {
+  if (authType === 'none') {
+    return { valid: true };
+  }
+
+  // Credential must be non-empty and free of CRLF characters (header injection defense)
+  if (!credential || typeof credential !== 'string' || !credential.trim()) {
+    return { valid: false, error: 'Authentication credential / secret is required.' };
+  }
+
+  if (/[\r\n]/.test(credential)) {
+    return { valid: false, error: 'Authentication credential contains illegal newline or carriage return characters.' };
+  }
+
+  if (authType === 'bearer') {
+    return { valid: true };
+  }
+
+  // Header name validation for api-key and custom-header
+  const rawHeader = (headerName || (authType === 'api-key' ? 'X-API-Key' : '')).trim();
+  if (!rawHeader) {
+    return { valid: false, error: 'Header name is required for API Key and Custom Header authentication.' };
+  }
+
+  if (/[\r\n\s]/.test(rawHeader)) {
+    return { valid: false, error: 'Header name contains illegal whitespace or newline characters.' };
+  }
+
+  // RFC 7230 token characters: 1*tchar
+  if (!/^[a-zA-Z0-9!#$%&'*+\-.^_`|~]+$/.test(rawHeader)) {
+    return { valid: false, error: `Invalid header name '${rawHeader}'. Header names must contain only valid HTTP token characters.` };
+  }
+
+  // Protected / forbidden transport and protocol headers
+  const forbiddenHeaders = new Set([
+    'host',
+    'content-length',
+    'transfer-encoding',
+    'connection',
+    'upgrade',
+    'te',
+    'trailer',
+    'mcp-session-id',
+    'mcp-protocol-version',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization'
+  ]);
+
+  if (forbiddenHeaders.has(rawHeader.toLowerCase())) {
+    return { valid: false, error: `Header '${rawHeader}' is a protected protocol header and cannot be overridden.` };
+  }
+
+  return { valid: true, normalizedHeaderName: rawHeader };
+}
+
+export function buildAuthHeaders(
   authType: 'none' | 'bearer' | 'api-key' | 'custom-header',
   credential?: string,
   headerName?: string
@@ -749,8 +844,9 @@ function buildAuthHeaders(
   } else if (authType === 'api-key') {
     const keyHeader = headerName?.trim() || 'X-API-Key';
     headers[keyHeader] = credential;
-  } else if (authType === 'custom-header' && headerName?.trim()) {
-    headers[headerName.trim()] = credential;
+  } else if (authType === 'custom-header') {
+    const targetHeader = headerName?.trim() || 'X-API-Key';
+    headers[targetHeader] = credential;
   }
 
   return headers;
@@ -1010,12 +1106,18 @@ export async function testMcpConnectionAndDiscover(
       const initRes = await sendMcpRpcRequest(endpoint, initPayload, headers, 8000);
 
       if (initRes.status >= 400) {
+        const errorMsg = initRes.status === 401
+          ? `Authentication failed (HTTP 401): ${typeof initRes.data === 'object' && initRes.data?.error ? (initRes.data.error.message || JSON.stringify(initRes.data.error)) : 'Invalid or rejected credentials.'}`
+          : initRes.status === 403
+          ? `Authentication forbidden (HTTP 403): ${typeof initRes.data === 'object' && initRes.data?.error ? (initRes.data.error.message || JSON.stringify(initRes.data.error)) : 'Access denied by remote MCP server.'}`
+          : `MCP handshake failed with HTTP ${initRes.status}: ${JSON.stringify(initRes.data?.error || initRes.data)}`;
+
         return {
           success: false,
           status: 'error',
           serverInfo: {},
           tools: [],
-          error: `MCP handshake failed with HTTP ${initRes.status}: ${JSON.stringify(initRes.data?.error || initRes.data)}`
+          error: errorMsg
         };
       }
 
@@ -1048,12 +1150,18 @@ export async function testMcpConnectionAndDiscover(
       const listRes = await sendMcpRpcRequest(endpoint, listPayload, headers, 8000);
 
       if (listRes.status >= 400 || listRes.data?.error) {
+        const errorMsg = listRes.status === 401
+          ? 'Authentication failed (HTTP 401) during tool discovery.'
+          : listRes.status === 403
+          ? 'Authentication forbidden (HTTP 403) during tool discovery.'
+          : `Tool discovery failed: ${listRes.data?.error?.message || `HTTP ${listRes.status}`}`;
+
         return {
           success: false,
           status: 'error',
           serverInfo: cleanServerInfo,
           tools: [],
-          error: `Tool discovery failed: ${listRes.data?.error?.message || `HTTP ${listRes.status}`}`
+          error: errorMsg
         };
       }
 
@@ -1074,13 +1182,22 @@ export async function testMcpConnectionAndDiscover(
         sessionId: activeSessionId
       };
     } catch (fallbackErr: any) {
-      const message = fallbackErr.response?.data?.error?.message || fallbackErr.message || sdkErr.message || 'Unknown network error';
+      const status = fallbackErr.response?.status;
+      const data = fallbackErr.response?.data;
+      let message = '';
+      if (status === 401) {
+        message = `Authentication failed (HTTP 401): ${typeof data === 'object' && data?.error ? (data.error.message || JSON.stringify(data.error)) : 'Remote MCP server rejected credentials.'}`;
+      } else if (status === 403) {
+        message = `Authentication forbidden (HTTP 403): ${typeof data === 'object' && data?.error ? (data.error.message || JSON.stringify(data.error)) : 'Access denied by remote MCP server.'}`;
+      } else {
+        message = fallbackErr.response?.data?.error?.message || fallbackErr.message || sdkErr.message || 'Unknown network error';
+      }
       return {
         success: false,
         status: 'error',
         serverInfo: {},
         tools: [],
-        error: `Connection error: ${message}`
+        error: message.startsWith('Authentication') ? message : `Connection error: ${message}`
       };
     }
   }
@@ -1236,12 +1353,57 @@ export async function executeRemoteMcpTool(
       result: toolRes
     };
   } catch (sdkErr: any) {
-    // No automatic duplicate tool execution fallback after an MCP SDK invocation fails.
-    // Report execution failure directly without a second retry attempt.
-    return {
-      success: false,
-      error: `Execution error: ${sdkErr?.message || 'Remote MCP server failed to execute tool'}`
-    };
+    const errMsg = sdkErr?.message || '';
+    if (errMsg.includes('401') || errMsg.includes('Unauthorized')) {
+      return {
+        success: false,
+        error: `Authentication failed (HTTP 401): Remote MCP server rejected credentials for tool '${tool.name}'.`
+      };
+    }
+    if (errMsg.includes('403') || errMsg.includes('Forbidden')) {
+      return {
+        success: false,
+        error: `Authentication forbidden (HTTP 403): Remote MCP server denied access to tool '${tool.name}'.`
+      };
+    }
+
+    // Fall back to direct Streamable HTTP JSON-RPC tools/call if SDK connect/transport failed
+    try {
+      const callPayload = {
+        jsonrpc: '2.0',
+        id: crypto.randomUUID(),
+        method: 'tools/call',
+        params: {
+          name: tool.name,
+          arguments: toolArgs || {}
+        }
+      };
+      const rpcRes = await sendMcpRpcRequest(server.endpoint, callPayload, headers, 15000);
+      if (rpcRes.status === 401) {
+        return { success: false, error: 'Authentication failed (HTTP 401): Remote MCP server rejected credentials.' };
+      }
+      if (rpcRes.status === 403) {
+        return { success: false, error: 'Authentication forbidden (HTTP 403): Remote MCP server denied execution.' };
+      }
+      if (rpcRes.status >= 400 || rpcRes.data?.error) {
+        return {
+          success: false,
+          error: `Execution error (HTTP ${rpcRes.status}): ${rpcRes.data?.error?.message || JSON.stringify(rpcRes.data)}`
+        };
+      }
+      if (rpcRes.sessionId && rpcRes.sessionId !== storedSessionId) {
+        serverSessionStore.set(server.id, rpcRes.sessionId);
+      }
+      return {
+        success: true,
+        result: rpcRes.data?.result
+      };
+    } catch (fallbackErr: any) {
+      return {
+        success: false,
+        error: `Execution error: ${fallbackErr?.message || sdkErr?.message || 'Remote MCP server failed to execute tool'}`
+      };
+    }
   } finally {
     if (client) {
       await client.close().catch(() => {});
@@ -1378,8 +1540,19 @@ export async function addMcpServerWithDiscovery(
     throw new Error(ssrf.error || 'Invalid or forbidden endpoint URL.');
   }
 
+  // 1b. Validate authentication header and credential
+  const headerValidation = validateAuthHeader(authType, headerName, credential);
+  if (!headerValidation.valid) {
+    throw new Error(headerValidation.error || 'Invalid authentication parameters.');
+  }
+  const normalizedHeaderName = headerValidation.normalizedHeaderName;
+
   // 2. Perform live protocol handshake and discovery
-  const discovery = await testMcpConnectionAndDiscover(endpoint, authType, credential, headerName, transport);
+  const discovery = await testMcpConnectionAndDiscover(endpoint, authType, credential, normalizedHeaderName, transport);
+
+  if (!discovery.success || discovery.status === 'error') {
+    throw new Error(discovery.error || 'Failed to authenticate and connect to MCP server.');
+  }
 
   const serverId = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -1402,7 +1575,7 @@ export async function addMcpServerWithDiscovery(
     transport,
     endpoint,
     auth_type: authType,
-    auth_header_name: headerName,
+    auth_header_name: normalizedHeaderName,
     auth_credential_encrypted: encryptedCredential,
     session_id_encrypted: encryptedSessionId,
     status: discovery.status,
@@ -1532,6 +1705,266 @@ export async function addMcpServerWithDiscovery(
     server: sanitized,
     tools: savedTools,
     error: discovery.error
+  };
+}
+
+/**
+ * Updates an existing MCP server configuration.
+ * - If auth_type changed to 'none': clears credential and header name.
+ * - If auth_type changed to credentialed method: requires a new credential and never reuses stale credentials.
+ * - If auth_type is unchanged: preserves existing encrypted credential if omitted/blank, or updates if provided.
+ * - Validates header names (no CRLF, valid HTTP token chars, no protected headers).
+ * - Tests the updated connection and re-syncs tools.
+ */
+export async function updateMcpServer(
+  userId: string,
+  serverId: string,
+  params: {
+    name?: string;
+    endpoint?: string;
+    description?: string;
+    transport?: 'http-streamable' | 'http-sse';
+    auth_type?: 'none' | 'bearer' | 'api-key' | 'custom-header';
+    auth_header_name?: string;
+    auth_credential?: string;
+  }
+): Promise<{ server: McpServerRecord; tools: McpToolRecord[]; error?: string }> {
+  const supabase = getSupabaseClient();
+  let existing: McpServerRecord | null = null;
+
+  try {
+    const { data, error } = await supabase
+      .from('mcp_servers')
+      .select('*')
+      .eq('id', serverId)
+      .eq('owner_id', userId)
+      .maybeSingle();
+
+    if (error && shouldFailOnDbError()) {
+      throw error;
+    }
+    existing = data;
+  } catch (err) {
+    if (shouldFailOnDbError()) throw err;
+  }
+
+  if (!existing) {
+    existing = inMemoryServers.get(serverId) || null;
+    if (existing && existing.owner_id !== userId) existing = null;
+  }
+
+  if (!existing) {
+    throw new Error('MCP server not found or unauthorized.');
+  }
+
+  const targetName = params.name !== undefined ? params.name.trim() : existing.name;
+  if (!targetName) {
+    throw new Error('Server display name cannot be empty.');
+  }
+
+  const targetEndpoint = params.endpoint !== undefined ? params.endpoint.trim() : existing.endpoint;
+  const targetTransport = params.transport !== undefined ? params.transport : existing.transport;
+  const targetDescription = params.description !== undefined ? params.description.trim() : existing.description;
+  const targetAuthType = params.auth_type !== undefined ? params.auth_type : existing.auth_type;
+
+  let finalEncryptedCredential: string | undefined = undefined;
+  let finalHeaderName: string | undefined = undefined;
+  let rawCredentialToTest: string | undefined = undefined;
+
+  if (targetAuthType === 'none') {
+    finalEncryptedCredential = undefined;
+    finalHeaderName = undefined;
+    rawCredentialToTest = undefined;
+  } else if (targetAuthType !== existing.auth_type) {
+    // Auth method changed: require a fresh credential; do NOT reuse stale credential
+    const newCred = params.auth_credential?.trim();
+    if (!newCred) {
+      throw new Error(`A credential is required when changing authentication method to '${targetAuthType}'.`);
+    }
+
+    const validation = validateAuthHeader(targetAuthType, params.auth_header_name, newCred);
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+
+    finalHeaderName = validation.normalizedHeaderName;
+    finalEncryptedCredential = encryptMcpCredential(newCred);
+    rawCredentialToTest = newCred;
+  } else {
+    // Same auth method: if new secret provided, update; otherwise preserve existing
+    const newCred = params.auth_credential?.trim();
+    if (newCred) {
+      const validation = validateAuthHeader(targetAuthType, params.auth_header_name || existing.auth_header_name, newCred);
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+      finalHeaderName = validation.normalizedHeaderName;
+      finalEncryptedCredential = encryptMcpCredential(newCred);
+      rawCredentialToTest = newCred;
+    } else {
+      finalEncryptedCredential = existing.auth_credential_encrypted;
+      finalHeaderName = params.auth_header_name !== undefined ? params.auth_header_name.trim() : existing.auth_header_name;
+      if (finalEncryptedCredential) {
+        try {
+          rawCredentialToTest = decryptMcpCredential(finalEncryptedCredential);
+        } catch {
+          throw new Error('Failed to decrypt existing stored credential.');
+        }
+      }
+    }
+  }
+
+  // SSRF validation
+  const ssrf = await validateEndpointUrl(targetEndpoint, targetAuthType, Boolean(finalEncryptedCredential));
+  if (!ssrf.valid) {
+    throw new Error(ssrf.error || 'Invalid endpoint URL.');
+  }
+
+  // Live test and discovery
+  const discovery = await testMcpConnectionAndDiscover(
+    targetEndpoint,
+    targetAuthType,
+    rawCredentialToTest,
+    finalHeaderName,
+    targetTransport
+  );
+
+  if (!discovery.success || discovery.status === 'error') {
+    throw new Error(discovery.error || 'Failed to authenticate and connect to MCP server with updated configuration.');
+  }
+
+  const now = new Date().toISOString();
+  let updatedEncryptedSessionId = existing.session_id_encrypted;
+  if (discovery.sessionId) {
+    serverSessionStore.set(serverId, discovery.sessionId);
+    updatedEncryptedSessionId = encryptMcpCredential(discovery.sessionId);
+  }
+
+  const updatedRecord: McpServerRecord = {
+    ...existing,
+    name: targetName,
+    endpoint: targetEndpoint,
+    description: targetDescription,
+    transport: targetTransport,
+    auth_type: targetAuthType,
+    auth_header_name: finalHeaderName,
+    auth_credential_encrypted: finalEncryptedCredential,
+    session_id_encrypted: updatedEncryptedSessionId,
+    status: discovery.status,
+    last_checked: now,
+    last_error: undefined,
+    server_info: sanitizeServerInfo(discovery.serverInfo),
+    updated_at: now
+  };
+
+  try {
+    const hasCol = await checkSessionIdColumnSupport();
+    const updatePayload: any = {
+      name: targetName,
+      endpoint: targetEndpoint,
+      description: targetDescription,
+      transport: targetTransport,
+      auth_type: targetAuthType,
+      auth_header_name: finalHeaderName || null,
+      auth_credential_encrypted: finalEncryptedCredential || null,
+      status: discovery.status,
+      last_checked: now,
+      last_error: null,
+      server_info: {
+        ...sanitizeServerInfo(discovery.serverInfo),
+        ...(updatedEncryptedSessionId ? { _session_id_encrypted: updatedEncryptedSessionId } : {})
+      },
+      updated_at: now
+    };
+    if (hasCol && updatedEncryptedSessionId) {
+      updatePayload.session_id_encrypted = updatedEncryptedSessionId;
+    }
+
+    const { error } = await supabase
+      .from('mcp_servers')
+      .update(updatePayload)
+      .eq('id', serverId);
+
+    if (error && shouldFailOnDbError()) {
+      throw error;
+    }
+  } catch (err) {
+    if (shouldFailOnDbError()) throw err;
+  }
+
+  inMemoryServers.set(serverId, updatedRecord);
+
+  // Sync tools
+  const existingTools = await listToolsForServer(userId, serverId);
+  const remoteToolMap = new Map<string, { name: string; description?: string; inputSchema?: Record<string, any> }>();
+  for (const rt of discovery.tools) {
+    remoteToolMap.set(rt.name, rt);
+  }
+
+  const finalTools: McpToolRecord[] = [];
+  for (const localTool of existingTools) {
+    const remoteDef = remoteToolMap.get(localTool.name);
+    if (remoteDef) {
+      localTool.description = remoteDef.description || '';
+      localTool.input_schema = remoteDef.inputSchema || { type: 'object' };
+      localTool.updated_at = now;
+      inMemoryTools.set(localTool.id, localTool);
+      try {
+        await supabase
+          .from('mcp_tools')
+          .update({
+            description: localTool.description,
+            input_schema: localTool.input_schema,
+            updated_at: now
+          })
+          .eq('id', localTool.id);
+      } catch {}
+      finalTools.push(localTool);
+      remoteToolMap.delete(localTool.name);
+    } else {
+      inMemoryTools.delete(localTool.id);
+      try {
+        await supabase.from('mcp_tools').delete().eq('id', localTool.id);
+      } catch {}
+    }
+  }
+
+  for (const [, newTool] of remoteToolMap) {
+    const toolId = crypto.randomUUID();
+    const toolRecord: McpToolRecord = {
+      id: toolId,
+      server_id: serverId,
+      owner_id: userId,
+      name: newTool.name,
+      description: newTool.description || '',
+      input_schema: newTool.inputSchema || { type: 'object' },
+      is_enabled: true,
+      created_at: now,
+      updated_at: now
+    };
+    inMemoryTools.set(toolId, toolRecord);
+    try {
+      await supabase.from('mcp_tools').insert(toolRecord);
+    } catch {}
+    finalTools.push(toolRecord);
+  }
+
+  const assignments = await listAssignmentsForServer(serverId);
+  const uniqueAssigned = new Set(assignments.map((a) => a.agent_id));
+
+  const sanitized = {
+    ...updatedRecord,
+    has_credential: Boolean(finalEncryptedCredential),
+    auth_credential_encrypted: undefined,
+    session_id_encrypted: undefined,
+    server_info: sanitizeServerInfo(updatedRecord.server_info),
+    tools_count: finalTools.length,
+    assigned_agents_count: uniqueAssigned.size
+  };
+
+  return {
+    server: sanitized,
+    tools: finalTools
   };
 }
 

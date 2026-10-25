@@ -14,7 +14,8 @@ import {
   Check,
   XCircle,
   Clock,
-  ShieldAlert
+  ShieldAlert,
+  Settings
 } from 'lucide-react';
 import {
   fetchMcpServers,
@@ -54,6 +55,7 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [serverToEdit, setServerToEdit] = useState<McpServer | null>(null);
   const [selectedServer, setSelectedServer] = useState<McpServer | null>(null);
   const [selectedServerTools, setSelectedServerTools] = useState<McpTool[]>([]);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState<boolean>(false);
@@ -173,7 +175,10 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
           {!isSlaveAccount && (
             <button
               type="button"
-              onClick={() => setIsAddModalOpen(true)}
+              onClick={() => {
+                setServerToEdit(null);
+                setIsAddModalOpen(true);
+              }}
               className="px-4 py-2 bg-[#141414] text-white hover:bg-black font-black text-xs uppercase tracking-wider border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] cursor-pointer flex items-center justify-center gap-2 shrink-0"
             >
               <Plus className="w-4 h-4" />
@@ -445,6 +450,18 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
                       <>
                         <button
                           type="button"
+                          onClick={() => {
+                            setServerToEdit(server);
+                            setIsAddModalOpen(true);
+                          }}
+                          className="px-2 py-0.5 bg-white border border-[#141414] hover:bg-neutral-100 text-[9px] font-bold uppercase transition-all flex items-center gap-1"
+                          title="Edit server configuration and credentials"
+                        >
+                          <Settings className="w-2.5 h-2.5" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={(e) => handleReconnectQuick(e, server.id)}
                           disabled={isReconnecting}
                           className="px-2 py-0.5 bg-white border border-[#141414] hover:bg-neutral-100 text-[9px] font-bold uppercase transition-all flex items-center gap-1"
@@ -478,14 +495,28 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
         </div>
       )}
 
-      {/* Add Integration Modal */}
+      {/* Add / Edit Integration Modal */}
       <AddIntegrationModal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onSuccess={(newServer) => {
-          setServers((prev) => [newServer, ...prev]);
-          setSuccessMsg(`MCP Server '${newServer.name}' connected & registered successfully!`);
+        serverToEdit={serverToEdit}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setServerToEdit(null);
+        }}
+        onSuccess={(savedServer, savedTools) => {
+          if (serverToEdit) {
+            setServers((prev) => prev.map((s) => (s.id === savedServer.id ? savedServer : s)));
+            if (selectedServer && selectedServer.id === savedServer.id) {
+              setSelectedServer(savedServer);
+              setSelectedServerTools(savedTools);
+            }
+            setSuccessMsg(`MCP Server '${savedServer.name}' configuration updated & tools re-synced!`);
+          } else {
+            setServers((prev) => [savedServer, ...prev]);
+            setSuccessMsg(`MCP Server '${savedServer.name}' connected & registered successfully!`);
+          }
           setTimeout(() => setSuccessMsg(null), 3000);
+          setServerToEdit(null);
         }}
       />
 
@@ -497,6 +528,10 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
         fleetAgents={fleetAgents}
         isSlaveAccount={isSlaveAccount}
         onOpenAgentProfile={onOpenAgentProfile}
+        onEditServer={(srv) => {
+          setServerToEdit(srv);
+          setIsAddModalOpen(true);
+        }}
         onClose={() => setIsDetailsModalOpen(false)}
         onServerUpdated={(updatedServer, updatedTools) => {
           setSelectedServer(updatedServer);

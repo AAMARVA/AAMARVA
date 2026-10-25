@@ -17,7 +17,8 @@ import {
   Check,
   XCircle,
   Plus,
-  Inbox
+  Inbox,
+  Settings
 } from 'lucide-react';
 import {
   McpServer,
@@ -45,6 +46,7 @@ interface IntegrationDetailsModalProps {
   onClose: () => void;
   onServerUpdated: (server: McpServer, tools: McpTool[]) => void;
   onServerDeleted: (serverId: string) => void;
+  onEditServer?: (server: McpServer) => void;
   isSlaveAccount?: boolean;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
@@ -57,6 +59,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   onClose,
   onServerUpdated,
   onServerDeleted,
+  onEditServer,
   isSlaveAccount = false,
   onOpenAgentProfile
 }) => {
@@ -286,11 +289,14 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
         {/* Server Sub-Header Info Banner */}
         <div className="p-3 bg-[#FAF9F5] border-b-2 border-[#141414] text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
           <div className="space-y-0.5 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] font-bold text-[#141414]/60 uppercase">ENDPOINT:</span>
               <code className="text-[10px] font-bold truncate max-w-md bg-white px-1.5 py-0.5 border border-[#141414]/20">
                 {server.endpoint}
               </code>
+              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-white border border-[#141414]/40">
+                AUTH: {server.auth_type === 'none' ? 'No Auth' : server.auth_type === 'bearer' ? 'Bearer Token' : server.auth_type === 'api-key' ? `API Key (${server.auth_header_name || 'X-API-Key'})` : `Custom (${server.auth_header_name || 'Header'})`}
+              </span>
             </div>
             {server.description && (
               <p className="text-[10px] text-[#141414]/70 font-sans truncate">{server.description}</p>
@@ -302,6 +308,17 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
           {!isSlaveAccount && (
             <div className="flex items-center gap-2 shrink-0">
+              {onEditServer && (
+                <button
+                  type="button"
+                  onClick={() => onEditServer(server)}
+                  className="px-2.5 py-1 bg-white text-[#141414] hover:bg-neutral-100 border border-[#141414] text-[10px] font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="Edit endpoint and authentication credentials"
+                >
+                  <Settings className="w-3 h-3" />
+                  <span>Edit</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleReconnect}
