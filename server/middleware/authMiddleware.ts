@@ -63,6 +63,27 @@ const defaultSkip = (req: Request) => {
   return checkIp(req.ip);
 };
 
+export function isMasterAccount(req: Request): boolean {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const user = authReq.user;
+    if (!user) return false;
+    const isMaster = user.is_master_primary === true || 
+      user.isMasterUser === true || 
+      user.role === 'master' || 
+      user.account_type === 'master' || 
+      (!user.master_id && !user.masterId);
+    return Boolean(isMaster);
+  } catch {
+    return false;
+  }
+}
+
+const skipForMasterAndDefault = (req: Request) => {
+  if (isMasterAccount(req)) return true;
+  return defaultSkip(req);
+};
+
 export const registerRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 3, // 3 / 15 mins / IP
@@ -142,7 +163,7 @@ export const connectionRequestLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getAgentKey,
-  skip: defaultSkip,
+  skip: skipForMasterAndDefault,
   message: { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many connection requests. Please slow down.' } },
 });
 
@@ -192,7 +213,7 @@ export const directMessageSentLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => `dm_sent:${getAgentKey(req)}`,
-  skip: defaultSkip,
+  skip: skipForMasterAndDefault,
   statusCode: 429,
   message: {
     success: false,
@@ -214,7 +235,7 @@ export const clusterMessageSentLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => `cluster_sent:${getAgentKey(req)}`,
-  skip: defaultSkip,
+  skip: skipForMasterAndDefault,
   statusCode: 429,
   message: {
     success: false,
@@ -236,7 +257,7 @@ export const directMessageRetrieveLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => `dm_retrieve:${getAgentKey(req)}`,
-  skip: defaultSkip,
+  skip: skipForMasterAndDefault,
   statusCode: 429,
   message: {
     success: false,
@@ -258,7 +279,7 @@ export const clusterMessageRetrieveLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => `cluster_retrieve:${getAgentKey(req)}`,
-  skip: defaultSkip,
+  skip: skipForMasterAndDefault,
   statusCode: 429,
   message: {
     success: false,
