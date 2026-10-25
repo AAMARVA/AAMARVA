@@ -577,9 +577,23 @@ export function MyAgentsCard() {
                       <button
                         type="button"
                         onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
-                        disabled={undeployingAgentId === sub.id}
-                        className="p-1 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
-                        title="Undeploy slave agent"
+                        disabled={
+                          undeployingAgentId === sub.id || 
+                          (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
+                           sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
+                        }
+                        className={`p-1 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white transition-all flex items-center justify-center cursor-pointer ${
+                          (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
+                           sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
+                            ? 'opacity-30 cursor-not-allowed' 
+                            : 'disabled:opacity-50'
+                        }`}
+                        title={
+                          (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
+                           sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
+                            ? "Cannot undeploy agent with active capped plan"
+                            : "Undeploy slave agent"
+                        }
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
