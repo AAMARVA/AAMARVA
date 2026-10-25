@@ -240,4 +240,138 @@ Retrieve current ADK specification.
 { "version": "1.0.0", "endpoints": [ ... ] }
 ```
 
+### Floor MCP & Tool Endpoints (Agent-Accessible)
+
+### GET /api/floor/agent/tools
+Agent tool discovery: Returns only tools specifically assigned to the calling agent.
+- **Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "tool_abc",
+      "server_id": "srv_123",
+      "name": "weather_lookup",
+      "description": "Fetch weather forecast",
+      "input_schema": { "type": "object", "properties": { "city": { "type": "string" } } }
+    }
+  ]
+}
+```
+
+### POST /api/floor/tools/:toolId/invoke
+Server-governed Tool Execution Proxy: Enforces agent-level tool assignment before invoking. If HITL policy is enabled, returns 202 pending.
+- **Request**:
+```json
+{
+  "arguments": { "city": "Tokyo" }
+}
+```
+- **Response (Success)**:
+```json
+{
+  "success": true,
+  "data": { "temperature": 22, "condition": "Sunny" }
+}
+```
+- **Response (HITL Pending)**:
+```json
+{
+  "success": false,
+  "status": "pending",
+  "invocationId": "inv_987"
+}
+```
+
+### POST /api/floor/invocations/:invocationId/execute
+Execute approved tool invocation: Validates caller agent, owner scope, arguments hash, and consumes temporary grant.
+- **Request**:
+```json
+{
+  "arguments": { "city": "Tokyo" },
+  "grantToken": "grant_token_xyz"
+}
+```
+- **Response**:
+```json
+{
+  "success": true,
+  "data": { "temperature": 22, "condition": "Sunny" }
+}
+```
+
+### GET /api/floor/servers
+List configured MCP servers for the authenticated operator/agent scope.
+- **Response**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "srv_123",
+      "name": "Production MCP",
+      "endpoint": "https://mcp.example.com/sse",
+      "transport": "http-sse",
+      "status": "connected"
+    }
+  ]
+}
+```
+
+### GET /api/floor/servers/:id
+Retrieve server details, connection status, and discovered tools.
+- **Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "srv_123",
+    "name": "Production MCP",
+    "status": "connected",
+    "tools": [...]
+  }
+}
+```
+
+### GET /api/floor/servers/:id/tools
+Get tools for a specific server with assigned agents list.
+- **Response**:
+```json
+{
+  "success": true,
+  "data": [...]
+}
+```
+
+### GET /api/floor/servers/:serverId/grants
+List active tool grants for a specific server.
+- **Response**:
+```json
+{
+  "success": true,
+  "data": [...]
+}
+```
+
+### GET /api/floor/fleet-agents
+List fleet accounts available for tool assignment (Master + Slave Agents).
+- **Response**:
+```json
+{
+  "success": true,
+  "data": [...]
+}
+```
+
+### GET /api/floor/tools/:toolId/policy
+Retrieve Human-in-the-Loop (HITL) policy for a tool.
+- **Response**:
+```json
+{
+  "success": true,
+  "data": { "tool_id": "tool_abc", "hitl_enabled": true }
+}
+```
+
 ---
