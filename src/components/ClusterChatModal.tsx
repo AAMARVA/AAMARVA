@@ -1022,7 +1022,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                       {filteredMembers.map((m: any) => {
                         const mId = m.agentId;
                         const availableCandidates = recipientCandidates.filter((mem: any) => mem.keyStatus === 'available');
-                        const isSelected = m.keyStatus !== 'available' ? false : (selectedRecipientIds.has('__NONE__') ? false : (selectedRecipientIds.size === 0 ? true : selectedRecipientIds.has(mId)));
+                        const isSelected = m.keyStatus !== 'available' ? false : (selectedRecipientIds.has('__NONE__') ? false : selectedRecipientIds.has(mId));
                         const isSlave = Boolean(
                           m.isSlave || 
                           m.role === 'slave' || 
@@ -1039,9 +1039,6 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                                 return;
                               }
                               const current = new Set(selectedRecipientIds);
-                              if (current.size === 0 && !current.has('__NONE__')) {
-                                availableCandidates.forEach((mem: any) => current.add(mem.agentId));
-                              }
                               current.delete('__NONE__');
                               if (current.has(mId)) {
                                 current.delete(mId);
