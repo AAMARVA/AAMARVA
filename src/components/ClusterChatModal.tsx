@@ -310,9 +310,25 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
       const mName = (m.name || m.agentName || '').toLowerCase().trim();
       const mEmail = (m.email || '').toLowerCase().trim();
 
+      // Debug
+      if (myAgentId === mAgentId || myAgentId === mId) {
+        console.log('Detected self, filtering out:', mAgentId, myAgentId);
+      } else if (myUserId === mUserId || myUserId === mId) {
+        console.log('Detected self by userId, filtering out:', mUserId, myUserId);
+      }
+      if (!myAgentId) {
+        console.warn('myAgentId is empty!', { userAgentId: user?.agentId, activeAccountAgentId: activeAccount?.agentId });
+      }
+
       // Strictly exclude user's own account from recipient / slave selection
-      if (myAgentId && (mAgentId === myAgentId || mId === myAgentId)) return false;
-      if (myUserId && (mUserId === myUserId || mId === myUserId)) return false;
+      if (myAgentId && (mAgentId === myAgentId || mId === myAgentId)) {
+        console.log('Filtering out self:', mAgentId, myAgentId);
+        return false;
+      }
+      if (myUserId && (mUserId === myUserId || mId === myUserId)) {
+        console.log('Filtering out self (user id):', mUserId, myUserId);
+        return false;
+      }
       if (mId.startsWith('admin-') && (mAgentId === myAgentId || !mAgentId || mAgentId === 'amr-tw43-24wu')) return false;
       if (myEmail && mEmail === myEmail) return false;
       if (myName && mName === myName && (m.membershipRole === 'admin' || m.membershipRole === 'owner' || m.role === 'admin' || m.role === 'owner')) return false;
@@ -1042,10 +1058,13 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                               const current = new Set(selectedRecipientIds);
                               current.delete('__NONE__');
                               if (current.has(mId)) {
+                                console.log('Deselecting:', mId);
                                 current.delete(mId);
                               } else {
+                                console.log('Selecting:', mId);
                                 current.add(mId);
                               }
+                              console.log('New recipient set:', Array.from(current));
                               setSelectedRecipientIds(current);
                             }}
                             className={`p-3 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col justify-between gap-2.5 transition-all ${
