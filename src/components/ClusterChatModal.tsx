@@ -323,12 +323,13 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (recipientCandidates.length > 0 && selectedRecipientIds.size === 0 && !selectedRecipientIds.has('__NONE__')) {
+  const handleOpenSpogModal = () => {
+    if (selectedRecipientIds.size === 0 && !selectedRecipientIds.has('__NONE__')) {
       const availableIds = recipientCandidates.filter((m: any) => m.keyStatus === 'available').map((m: any) => m.agentId);
       setSelectedRecipientIds(new Set(availableIds));
     }
-  }, [recipientCandidates]);
+    setIsSpogModalOpen(true);
+  };
 
   const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState('');
@@ -896,7 +897,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             <div className="mt-2 flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => setIsSpogModalOpen(true)}
+                onClick={handleOpenSpogModal}
                 className="text-[10px] font-mono font-black uppercase tracking-wider bg-[#141414] text-white border-2 border-[#141414] px-2.5 py-1 hover:bg-black transition-colors cursor-pointer flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
               >
                 <span className="bg-white text-[#141414] px-1 text-[8px] font-black">SPOG</span>
