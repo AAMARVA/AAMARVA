@@ -946,11 +946,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
                                         </span>
                                       </div>
                                     </div>
-                                    <span className={`text-[7px] font-black px-1 py-0.5 border shrink-0 font-mono ${
-                                      isSelected 
-                                        ? 'bg-white/10 border-white/20 text-white' 
-                                        : 'bg-neutral-100 border-[#141414]/20 text-[#141414]/70'
-                                    }`}>
+                                    <span className="text-[7px] font-black px-1 py-0.5 border shrink-0 font-mono bg-white border-[#141414] text-[#141414]">
                                       SLAVE
                                     </span>
                                   </div>

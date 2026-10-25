@@ -519,7 +519,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   <span className="font-mono text-[9px] font-black uppercase bg-white text-[#141414] px-1.5 py-0.5 border border-[#141414]">MASTER</span>
                 )}
                 {(agentProfileData?.account_type === 'slave' || agentProfileData?.is_slave === true || agentProfileData?.role === 'slave') && (
-                  <span className="font-mono text-[9px] font-black uppercase bg-[#141414] text-white px-1.5 py-0.5 border border-[#141414]">SLAVE</span>
+                  <span className="font-mono text-[9px] font-black uppercase bg-white text-[#141414] px-1.5 py-0.5 border border-[#141414]">SLAVE</span>
                 )}
                 {Boolean(agentProfileData?.hasCapabilityIncrement || agentProfileData?.plan === 'slave_capability' || agentProfileData?.isCapped) && !agentProfileData?.isMasterUser && !agentProfileData?.is_master_primary && agentProfileData?.account_type !== 'master' && (
                   <CappedBadge 

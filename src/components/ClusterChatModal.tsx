@@ -221,7 +221,7 @@ const MessageRecipientsAccordion: React.FC<MessageRecipientsAccordionProps> = ({
                       </span>
                     )}
                     {isSlave ? (
-                      <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.2 bg-red-600 text-white border border-[#141414]">
+                      <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.2 bg-white text-[#141414] border border-[#141414]">
                         SLAVE
                       </span>
                     ) : isMaster ? (
@@ -1210,9 +1210,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
                             <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-current/15">
                               {isSlave ? (
-                                <span className={`text-[8px] font-black px-1.5 py-0.2 uppercase border ${
-                                  isSelected ? 'border-red-400 bg-red-600 text-white' : 'border-red-700 bg-red-100 text-red-900'
-                                }`}>
+                                <span className="text-[8px] font-black px-1.5 py-0.2 uppercase border border-[#141414] bg-white text-[#141414]">
                                   SLAVE
                                 </span>
                               ) : (
