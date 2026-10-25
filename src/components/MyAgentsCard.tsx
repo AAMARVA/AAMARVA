@@ -804,8 +804,23 @@ export function MyAgentsCard() {
                           <button
                             type="button"
                             onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
-                            disabled={undeployingAgentId === sub.id}
-                            className="flex-1 py-0.5 bg-red-600 border border-red-900 text-white hover:bg-red-700 hover:text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                            disabled={
+                              undeployingAgentId === sub.id || 
+                              (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
+                               sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
+                            }
+                            className={`flex-1 py-0.5 border border-red-900 text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                              (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
+                               sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
+                                ? 'bg-red-400 opacity-40 cursor-not-allowed'
+                                : 'bg-red-600 hover:bg-red-700 hover:text-white disabled:opacity-50'
+                            }`}
+                            title={
+                              (Boolean(sub.isCapped || sub.hasCapabilityIncrement || sub.plan === 'slave_capability') && 
+                               sub.expires_at && new Date(sub.expires_at).getTime() > Date.now())
+                                ? "Cannot undeploy agent with active capped plan"
+                                : "Undeploy slave agent"
+                            }
                           >
                             <span>Undeploy</span>
                           </button>

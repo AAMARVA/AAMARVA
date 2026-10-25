@@ -412,7 +412,17 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                     }).catch(err => alert(err?.message));
                   }
                 }}
-                className="px-2.5 py-1 bg-neutral-200 text-[#141414] text-white hover:bg-neutral-200 text-[#141414] font-black uppercase text-[9px] tracking-wider border border-[#141414] cursor-pointer transition-all shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)]"
+                disabled={Boolean(subAccountData?.isCapped || subAccountData?.hasCapabilityIncrement || subAccountData?.plan === 'slave_capability') && subAccountData?.expires_at && new Date(subAccountData.expires_at).getTime() > Date.now()}
+                className={`px-2.5 py-1 font-black uppercase text-[9px] tracking-wider border border-[#141414] transition-all shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] ${
+                  Boolean(subAccountData?.isCapped || subAccountData?.hasCapabilityIncrement || subAccountData?.plan === 'slave_capability') && subAccountData?.expires_at && new Date(subAccountData.expires_at).getTime() > Date.now()
+                    ? 'bg-neutral-300 text-neutral-500 cursor-not-allowed opacity-50 shadow-none'
+                    : 'bg-red-600 text-white hover:bg-red-700 cursor-pointer'
+                }`}
+                title={
+                  Boolean(subAccountData?.isCapped || subAccountData?.hasCapabilityIncrement || subAccountData?.plan === 'slave_capability') && subAccountData?.expires_at && new Date(subAccountData.expires_at).getTime() > Date.now()
+                    ? "Cannot undeploy agent with active capped plan"
+                    : "Undeploy slave agent"
+                }
               >
                 UNDEPLOY
               </button>
