@@ -19,8 +19,7 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({
   onClick,
   size = 'sm'
 }) => {
-  console.log('CappedBadge: isCapped=', isCapped, 'expiresAt=', expiresAt);
-  if (!isCapped || !expiresAt) return null;
+  if (!isCapped && !expiresAt) return null;
 
   const [currentTimestamp, setCurrentTimestamp] = React.useState(() => Date.now());
 

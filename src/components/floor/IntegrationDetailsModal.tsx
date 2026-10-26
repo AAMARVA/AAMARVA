@@ -127,8 +127,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   if (!isOpen || !server) return null;
 
   const currentTool = tools.find((t) => t.id === selectedToolId) || tools[0];
-  const uniqueFleetAgents = Array.from(new Map(fleetAgents.map(a => [a.id, a])).values());
-  const slaveFleetAgents = uniqueFleetAgents;
+  const slaveFleetAgents = fleetAgents;
   const activeFleetAgents = slaveFleetAgents.length > 0 ? slaveFleetAgents : [
     {
       id: server.owner_id || 'default_agent_1',
@@ -684,9 +683,9 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                                 {agent.name}
                                               </span>
                                               <CappedBadge
-                                                expiresAt={agent.isCapped ? agent.expires_at : undefined}
+                                                expiresAt={agent.expires_at || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()}
                                                 purchaseDate={agent.plan_created_at || agent.created_at}
-                                                isCapped={agent.isCapped}
+                                                isCapped={true}
                                                 size="sm"
                                               />
                                             </div>
