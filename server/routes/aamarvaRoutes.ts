@@ -1644,21 +1644,6 @@ router.post(['/auth/master/undeploy-slave-agent', '/v1/auth/master/undeploy-slav
       return res.status(403).json({ success: false, error: { message: 'You are not authorized to undeploy this agent.' } });
     }
 
-    const { CapabilityService } = await import('../services/capabilityService.js');
-    const cap = await CapabilityService.getInstance().getAgentCapability(subAgent.id) || await CapabilityService.getInstance().getAgentCapability(subAgent.agentId);
-    const expiresAt = cap?.expires_at || subAgent.plan_expires_at || subAgent.expires_at;
-    const isCappedActive = Boolean(
-      subAgent.isCapped ||
-      subAgent.hasCapabilityIncrement ||
-      subAgent.plan === 'slave_capability' ||
-      (expiresAt && new Date(expiresAt).getTime() > Date.now()) ||
-      await CapabilityService.getInstance().isAgentCapabilityActive(subAgent.id) ||
-      await CapabilityService.getInstance().isAgentCapabilityActive(subAgent.agentId)
-    );
-    if (isCappedActive && (!expiresAt || new Date(expiresAt).getTime() > Date.now())) {
-      return res.status(400).json({ success: false, error: { message: 'Cannot undeploy agent while capped plan is active until expiration.' } });
-    }
-
     const targetUUID = subAgent.id;
 
     // 3. Clean up dependent child records to prevent foreign key violations

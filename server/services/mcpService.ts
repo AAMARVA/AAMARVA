@@ -3574,9 +3574,7 @@ export async function getAuthorizedToolsForAgent(
           id: grant.id,
           server_id: grant.server_id,
           tool_id: grant.tool_id,
-          owner_id: (grant as any).owner_id || grant.account_id,
           agent_id: grant.account_id,
-          granted_by: (grant as any).granted_by || caller.agentId || caller.userId,
           created_at: grant.created_at
         });
       }
@@ -3597,9 +3595,7 @@ export async function getAuthorizedToolsForAgent(
               id: g.id,
               server_id: g.server_id,
               tool_id: g.tool_id,
-              owner_id: (g as any).owner_id || g.account_id,
               agent_id: g.account_id,
-              granted_by: (g as any).granted_by || caller.agentId || caller.userId,
               created_at: g.created_at
             });
           }
