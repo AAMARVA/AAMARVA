@@ -576,23 +576,17 @@ export function MyAgentsCard() {
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
-                          disabled={undeployingAgentId === sub.id || isCappedActive}
-                          className={`p-1 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white transition-all flex items-center justify-center cursor-pointer ${
-                            isCappedActive
-                              ? 'opacity-30 cursor-not-allowed' 
-                              : 'disabled:opacity-50'
-                          }`}
-                          title={
-                            isCappedActive
-                              ? "Cannot undeploy agent with active capped plan"
-                              : "Undeploy slave agent"
-                          }
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                        {!isCappedActive && (
+                          <button
+                            type="button"
+                            onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
+                            disabled={undeployingAgentId === sub.id}
+                            className="p-1 bg-white border border-[#141414] hover:border-[#141414] text-[#141414] font-bold hover:bg-white transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
+                            title="Undeploy slave agent"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -800,23 +794,17 @@ export function MyAgentsCard() {
                                 <span>Switch</span>
                               </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
-                              disabled={undeployingAgentId === sub.id || isCappedActive}
-                              className={`flex-1 py-0.5 border border-red-900 text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                isCappedActive
-                                  ? 'bg-red-400 opacity-40 cursor-not-allowed'
-                                  : 'bg-red-600 hover:bg-red-700 hover:text-white disabled:opacity-50'
-                              }`}
-                              title={
-                                isCappedActive
-                                  ? "Cannot undeploy agent with active capped plan"
-                                  : "Undeploy slave agent"
-                              }
-                            >
-                              <span>Undeploy</span>
-                            </button>
+                            {!isCappedActive && (
+                              <button
+                                type="button"
+                                onClick={() => initiateUndeploy(sub.id, sub.name || 'Slave Agent', sub.agentId)}
+                                disabled={undeployingAgentId === sub.id}
+                                className="flex-1 py-0.5 border border-red-900 text-white text-[7.5px] font-extrabold uppercase transition-all flex items-center justify-center gap-1 cursor-pointer bg-red-600 hover:bg-red-700 hover:text-white disabled:opacity-50"
+                                title="Undeploy slave agent"
+                              >
+                                <span>Undeploy</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
