@@ -127,7 +127,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   if (!isOpen || !server) return null;
 
   const currentTool = tools.find((t) => t.id === selectedToolId) || tools[0];
-  const uniqueFleetAgents = Array.from(new Map((fleetAgents as FleetAgent[]).map(a => [a.id, a])).values());
+  const uniqueFleetAgents = Array.from(new Map(fleetAgents.map(a => [a.id, a])).values());
   const slaveFleetAgents = uniqueFleetAgents.filter(a => !a.isMaster && !!a.agentId && a.agentId !== server.owner_id);
   const activeFleetAgents = slaveFleetAgents;
 
@@ -799,7 +799,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 {filteredRequests.map((req) => {
                   const isProcessing = processingRequestId === req.id;
                   const isArgsExpanded = expandedReqArgsId === req.id;
-                  const reqAgent = (fleetAgents as FleetAgent[]).find(
+                  const reqAgent = fleetAgents.find(
                     (a) => a.agentId === req.account_id || a.id === req.account_id
                   );
 
