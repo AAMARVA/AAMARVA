@@ -683,9 +683,9 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                                 {agent.name}
                                               </span>
                                               <CappedBadge
-                                                expiresAt={agent.expires_at || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()}
+                                                expiresAt={agent.isCapped ? agent.expires_at : undefined}
                                                 purchaseDate={agent.plan_created_at || agent.created_at}
-                                                isCapped={true}
+                                                isCapped={agent.isCapped}
                                                 size="sm"
                                               />
                                             </div>
