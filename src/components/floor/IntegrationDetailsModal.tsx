@@ -1081,7 +1081,12 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     {filtered.map((agent) => {
-                      const isAssigned = spogModalTab === 'assigned';
+                      const targetId = agent.agentId || agent.id;
+                      const isAssigned =
+                        (currentTool?.assigned_agents || []).includes(targetId) ||
+                        (currentTool?.assigned_agents || []).includes(agent.id) ||
+                        (currentTool?.assigned_agents || []).includes(agent.agentId);
+                      const isUpdating = revokingTarget === targetId;
 
                       return (
                         <div
@@ -1125,11 +1130,33 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                 size="sm"
                               />
                             )}
-                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 border ${
-                              isAssigned ? 'bg-[#141414] text-white border-[#141414]' : 'bg-neutral-100 text-[#141414]/70 border-neutral-300'
-                            }`}>
-                              {isAssigned ? 'Assigned' : 'Unassigned'}
-                            </span>
+                            {!isSlaveAccount ? (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleAssignment(currentTool.id, targetId, isAssigned)}
+                                disabled={isUpdating}
+                                className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider border-2 transition-all cursor-pointer flex items-center justify-center gap-1 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 ${
+                                  isAssigned
+                                    ? 'bg-[#141414] text-white border-[#141414] hover:bg-red-700 hover:border-red-700'
+                                    : 'bg-white text-[#141414] border-[#141414] hover:bg-[#141414] hover:text-white'
+                                }`}
+                                title={isAssigned ? `Unassign tool from ${agent.name}` : `Assign tool to ${agent.name}`}
+                              >
+                                {isUpdating ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                ) : isAssigned ? (
+                                  'Unassign'
+                                ) : (
+                                  '+ Assign'
+                                )}
+                              </button>
+                            ) : (
+                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 border ${
+                                isAssigned ? 'bg-[#141414] text-white border-[#141414]' : 'bg-neutral-100 text-[#141414]/70 border-neutral-300'
+                              }`}>
+                                {isAssigned ? 'Assigned' : 'Unassigned'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
