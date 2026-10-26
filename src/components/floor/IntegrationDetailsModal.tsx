@@ -127,7 +127,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   if (!isOpen || !server) return null;
 
   const currentTool = tools.find((t) => t.id === selectedToolId) || tools[0];
-  const slaveFleetAgents = fleetAgents;
+  const uniqueFleetAgents = Array.from(new Map(fleetAgents.map(a => [a.id, a])).values());
+  const slaveFleetAgents = uniqueFleetAgents;
   const activeFleetAgents = slaveFleetAgents.length > 0 ? slaveFleetAgents : [
     {
       id: server.owner_id || 'default_agent_1',
