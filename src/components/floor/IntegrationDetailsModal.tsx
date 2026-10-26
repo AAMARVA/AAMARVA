@@ -73,6 +73,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   const [assignedSubTab, setAssignedSubTab] = useState<'assigned' | 'unassigned'>('assigned');
   const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
   const [spogSearchQuery, setSpogSearchQuery] = useState('');
+  const [spogModalTab, setSpogModalTab] = useState<'assigned' | 'unassigned'>('assigned');
 
   // Grants state
   const [, setGrants] = useState<McpToolGrant[]>([]);
@@ -143,6 +144,24 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   ] as FleetAgent[]);
 
   const nonMasterFleetAgents = activeFleetAgents.filter((agent) => !agent.isMaster);
+
+  const assignedAgents = nonMasterFleetAgents.filter((agent) => {
+    const targetId = agent.agentId || agent.id;
+    return (
+      (currentTool?.assigned_agents || []).includes(targetId) ||
+      (currentTool?.assigned_agents || []).includes(agent.id) ||
+      (currentTool?.assigned_agents || []).includes(agent.agentId)
+    );
+  });
+
+  const unassignedAgents = nonMasterFleetAgents.filter((agent) => {
+    const targetId = agent.agentId || agent.id;
+    return !(
+      (currentTool?.assigned_agents || []).includes(targetId) ||
+      (currentTool?.assigned_agents || []).includes(agent.id) ||
+      (currentTool?.assigned_agents || []).includes(agent.agentId)
+    );
+  });
 
   const handleReconnect = async () => {
     setIsReconnecting(true);
@@ -597,25 +616,6 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
                       <div className="space-y-2">
                         {(() => {
-                          const nonMasterFleetAgents = activeFleetAgents.filter((agent) => !agent.isMaster);
-                          const assignedAgents = nonMasterFleetAgents.filter((agent) => {
-                            const targetId = agent.agentId || agent.id;
-                            return (
-                              (currentTool.assigned_agents || []).includes(targetId) ||
-                              (currentTool.assigned_agents || []).includes(agent.id) ||
-                              (currentTool.assigned_agents || []).includes(agent.agentId)
-                            );
-                          });
-
-                          const unassignedAgents = nonMasterFleetAgents.filter((agent) => {
-                            const targetId = agent.agentId || agent.id;
-                            return !(
-                              (currentTool.assigned_agents || []).includes(targetId) ||
-                              (currentTool.assigned_agents || []).includes(agent.id) ||
-                              (currentTool.assigned_agents || []).includes(agent.agentId)
-                            );
-                          });
-
                           const displayedAgents = assignedSubTab === 'assigned' ? assignedAgents : unassignedAgents;
 
                           return (
@@ -647,12 +647,22 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => setIsSpogModalOpen(true)}
-                                  className="px-2.5 py-1 text-[10px] font-mono font-black uppercase bg-[#141414] text-white border-2 border-[#141414] hover:bg-black transition-colors cursor-pointer flex items-center gap-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
-                                  title="Open SPOG Fleet Overview"
+                                  onClick={() => {
+                                    setSpogModalTab(assignedSubTab);
+                                    setIsSpogModalOpen(true);
+                                  }}
+                                  className={`px-3 py-1 text-[10px] font-mono font-black uppercase border-2 transition-all cursor-pointer flex items-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 ${
+                                    assignedSubTab === 'assigned'
+                                      ? 'bg-emerald-900 text-white border-[#141414] hover:bg-emerald-950'
+                                      : 'bg-amber-900 text-white border-[#141414] hover:bg-amber-950'
+                                  }`}
+                                  title={`Open SPOG Overview for ${assignedSubTab === 'assigned' ? 'Assigned' : 'Unassigned'} Slaves`}
                                 >
                                   <span className="bg-white text-[#141414] px-1 text-[8px] font-black">SPOG</span>
-                                  <span>Overview</span>
+                                  <span>{assignedSubTab === 'assigned' ? 'Assigned SPOG' : 'Unassigned SPOG'}</span>
+                                  <span className="bg-white/20 px-1.5 py-0.2 text-[9px] text-white font-bold">
+                                    {assignedSubTab === 'assigned' ? assignedAgents.length : unassignedAgents.length}
+                                  </span>
                                 </button>
                               </div>
 
@@ -1006,7 +1016,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                   SPOG
                 </span>
                 <span className="text-xs font-black uppercase tracking-widest">
-                  FLEET OVERVIEW — SLAVE NODES ({nonMasterFleetAgents.length})
+                  FLEET OVERVIEW — {spogModalTab === 'assigned' ? 'ASSIGNED SLAVES' : 'UNASSIGNED SLAVES'}
                 </span>
               </div>
               <button
@@ -1018,10 +1028,32 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
               </button>
             </div>
 
-            <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between gap-2 shrink-0">
-              <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
-                Slave Selection Protocol
-              </span>
+            <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSpogModalTab('assigned')}
+                  className={`px-3 py-1 text-[10px] font-black uppercase border-2 transition-all cursor-pointer ${
+                    spogModalTab === 'assigned'
+                      ? 'bg-emerald-800 text-white border-[#141414]'
+                      : 'bg-white text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
+                  }`}
+                >
+                  Assigned SPOG ({assignedAgents.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSpogModalTab('unassigned')}
+                  className={`px-3 py-1 text-[10px] font-black uppercase border-2 transition-all cursor-pointer ${
+                    spogModalTab === 'unassigned'
+                      ? 'bg-amber-800 text-white border-[#141414]'
+                      : 'bg-white text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
+                  }`}
+                >
+                  Unassigned SPOG ({unassignedAgents.length})
+                </button>
+              </div>
+
               <input
                 type="text"
                 placeholder="SEARCH SLAVE..."
@@ -1033,7 +1065,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
               {(() => {
-                const filtered = nonMasterFleetAgents.filter((agent) => {
+                const targetPool = spogModalTab === 'assigned' ? assignedAgents : unassignedAgents;
+                const filtered = targetPool.filter((agent) => {
                   if (!spogSearchQuery.trim()) return true;
                   const q = spogSearchQuery.toLowerCase();
                   const name = (agent.name || '').toLowerCase();
@@ -1044,7 +1077,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 if (filtered.length === 0) {
                   return (
                     <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
-                      No slave agents match search query.
+                      No {spogModalTab} slave agents match search query.
                     </div>
                   );
                 }
@@ -1052,11 +1085,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     {filtered.map((agent) => {
-                      const targetId = agent.agentId || agent.id;
-                      const isAssigned =
-                        (currentTool?.assigned_agents || []).includes(targetId) ||
-                        (currentTool?.assigned_agents || []).includes(agent.id) ||
-                        (currentTool?.assigned_agents || []).includes(agent.agentId);
+                      const isAssigned = spogModalTab === 'assigned';
 
                       return (
                         <div
@@ -1080,7 +1109,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             </div>
                           </div>
                           <span className={`text-[9px] font-black uppercase px-2 py-0.5 border ${
-                            isAssigned ? 'bg-green-100 text-green-900 border-green-600' : 'bg-neutral-100 text-neutral-600 border-neutral-300'
+                            isAssigned ? 'bg-green-100 text-green-900 border-green-600' : 'bg-amber-100 text-amber-900 border-amber-600'
                           }`}>
                             {isAssigned ? 'Assigned' : 'Unassigned'}
                           </span>
