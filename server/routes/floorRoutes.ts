@@ -536,14 +536,13 @@ router.get(
         }
         const expiresAt = cap?.expires_at || s.plan_expires_at || s.expires_at || null;
         const isCapped = s.isCapped === true || (s.plan && s.plan.includes('capped'));
-        const isMaster = (s.id === masterUserId && (!s.master_id || s.is_master_primary === true)) || s.account_type === 'master' || s.is_master_primary === true;
 
         accountsMap.set(s.id, {
           id: s.id,
           agentId: s.agentId || s.id,
           name: s.name || s.agentId || 'Agent Node',
           avatar: s.avatar || '🤖',
-          isMaster: isMaster,
+          isMaster: false,
           hasCapabilityIncrement: Boolean(
             s.hasCapabilityIncrement ||
             s.plan === 'slave_capability' ||
