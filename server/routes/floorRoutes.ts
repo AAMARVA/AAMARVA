@@ -476,10 +476,22 @@ router.get(
       const masterUserId = req.user!.masterId || req.user!.id;
       const supabase = getSupabaseClient();
 
-      const { data: slaves } = await supabase
+      // Fetch all users / agents from users table
+      const { data: allUsers } = await supabase
         .from('users')
-        .select('id, agentId, name, avatar, account_type, created_at, plan_created_at, expires_at, plan_expires_at, hasCapabilityIncrement, plan, isCapped')
-        .or(`id.eq.${masterUserId},master_id.eq.${masterUserId}`);
+        .select('id, agentId, name, avatar, account_type, created_at, plan_created_at, expires_at, plan_expires_at, hasCapabilityIncrement, plan, isCapped, master_id, role');
+
+      const slaves = Array.isArray(allUsers) && allUsers.length > 0 ? allUsers : [];
+      const targetSlaves = slaves.length > 0 ? slaves : [
+        {
+          id: req.user!.id,
+          agentId: req.user!.agentId || req.user!.id,
+          name: req.user!.agentId || 'Master Operator',
+          avatar: '⚡',
+          isMaster: true,
+          isCapped: false
+        }
+      ];
 
       let capService: any = null;
       try {
@@ -489,43 +501,33 @@ router.get(
         // capability service optional
       }
 
-      const accounts = Array.isArray(slaves) && slaves.length > 0
-        ? await Promise.all(slaves.map(async (s: any) => {
-            let cap: any = null;
-            if (capService && s.id !== masterUserId) {
-              try {
-                cap = await capService.getAgentCapability(s.id);
-              } catch (e) {}
-            }
-            const expiresAt = cap?.expires_at || s.plan_expires_at || s.expires_at || null;
-            return {
-              id: s.id,
-              agentId: s.agentId || s.id,
-              name: s.name || s.agentId || 'Agent Node',
-              avatar: s.avatar || '🤖',
-              isMaster: s.id === masterUserId,
-              hasCapabilityIncrement: Boolean(
-                s.hasCapabilityIncrement ||
-                s.plan === 'slave_capability' ||
-                (expiresAt && new Date(expiresAt).getTime() > Date.now())
-              ),
-              plan: s.plan,
-              isCapped: s.isCapped ?? true,
-              expires_at: expiresAt,
-              plan_created_at: s.plan_created_at,
-              created_at: s.created_at
-            };
-          }))
-        : [
-            {
-              id: req.user!.id,
-              agentId: req.user!.agentId || req.user!.id,
-              name: req.user!.agentId || 'Master Operator',
-              avatar: '⚡',
-              isMaster: true,
-              isCapped: false
-            }
-          ];
+      const accounts = await Promise.all(targetSlaves.map(async (s: any) => {
+        let cap: any = null;
+        if (capService && s.id !== masterUserId) {
+          try {
+            cap = await capService.getAgentCapability(s.id);
+          } catch (e) {}
+        }
+        const expiresAt = cap?.expires_at || s.plan_expires_at || s.expires_at || null;
+        const isMasterUser = s.id === masterUserId || s.account_type === 'master' || s.role === 'master' || s.isMaster === true;
+        return {
+          id: s.id,
+          agentId: s.agentId || s.id,
+          name: s.name || s.agentId || 'Agent Node',
+          avatar: s.avatar || '🤖',
+          isMaster: isMasterUser,
+          hasCapabilityIncrement: Boolean(
+            s.hasCapabilityIncrement ||
+            s.plan === 'slave_capability' ||
+            (expiresAt && new Date(expiresAt).getTime() > Date.now())
+          ),
+          plan: s.plan,
+          isCapped: s.isCapped ?? true,
+          expires_at: expiresAt,
+          plan_created_at: s.plan_created_at,
+          created_at: s.created_at
+        };
+      }));
 
       res.json({ success: true, data: accounts });
     } catch (err: any) {
