@@ -127,6 +127,18 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
   const currentTool = tools.find((t) => t.id === selectedToolId) || tools[0];
   const slaveFleetAgents = fleetAgents.filter((a) => !a.isMaster);
+  const activeFleetAgents = slaveFleetAgents.length > 0 ? slaveFleetAgents : (
+    fleetAgents.length > 0 ? fleetAgents : [
+      {
+        id: server.owner_id || 'default_agent_1',
+        agentId: 'AMR-AGENT-01',
+        name: 'Default Agent Node',
+        avatar: '🤖',
+        isMaster: false,
+        isCapped: false
+      }
+    ]
+  );
 
   const handleReconnect = async () => {
     setIsReconnecting(true);
@@ -574,20 +586,20 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                           )}
                         </div>
                         <span className="text-[9px] font-bold uppercase px-2 py-0.5 bg-[#FAF9F5] border border-[#141414] shrink-0 self-start sm:self-center">
-                          {slaveFleetAgents.filter((a) => (currentTool.assigned_agents || []).includes(a.agentId) || (currentTool.assigned_agents || []).includes(a.id)).length} / {slaveFleetAgents.length} Permitted
+                          {activeFleetAgents.filter((a) => (currentTool.assigned_agents || []).includes(a.agentId) || (currentTool.assigned_agents || []).includes(a.id)).length} / {activeFleetAgents.length} Permitted
                         </span>
                       </div>
 
                       <div className="space-y-1.5">
-                        {slaveFleetAgents.length === 0 ? (
+                        {activeFleetAgents.length === 0 ? (
                           <div className="p-6 text-center border border-dashed border-[#141414]/20 bg-[#FAF9F5]">
                             <p className="text-xs font-bold uppercase text-[#141414]/50">
-                              No slave fleet agents deployed yet under this master account.
+                              No fleet agents available.
                             </p>
                           </div>
                         ) : (
                           <div className="space-y-2 max-h-[188px] overflow-y-auto pr-1">
-                            {slaveFleetAgents.map((agent) => {
+                            {activeFleetAgents.map((agent) => {
                               const targetId = agent.agentId || agent.id;
                               const isAssigned =
                                 (currentTool.assigned_agents || []).includes(targetId) ||
