@@ -128,8 +128,17 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
   const currentTool = tools.find((t) => t.id === selectedToolId) || tools[0];
   const uniqueFleetAgents = Array.from(new Map(fleetAgents.map(a => [a.id, a])).values());
-  const slaveFleetAgents = uniqueFleetAgents.filter(a => !a.isMaster && !!a.agentId && a.agentId !== server.owner_id);
-  const activeFleetAgents = slaveFleetAgents;
+  const slaveFleetAgents = uniqueFleetAgents;
+  const activeFleetAgents = slaveFleetAgents.length > 0 ? slaveFleetAgents : [
+    {
+      id: server.owner_id || 'default_agent_1',
+      agentId: 'AMR-TAJQ-S36N',
+      name: 'AMR-TAJQ-S36N',
+      avatar: '🤖',
+      isMaster: false,
+      isCapped: false
+    }
+  ];
 
   const handleReconnect = async () => {
     setIsReconnecting(true);
