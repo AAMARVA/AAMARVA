@@ -761,7 +761,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                             type="button"
                                             onClick={() => handleToggleAssignment(currentTool.id, targetId, isAssigned, agent)}
                                             disabled={isUpdating}
-                                            className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-2 transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                                            title={isAssigned ? `Unassign tool from ${agent.name}` : `Assign tool to ${agent.name}`}
+                                            className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-2 transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 ${
                                               isAssigned
                                                 ? 'bg-[#141414] text-white border-[#141414] hover:bg-red-700 hover:border-red-700'
                                                 : 'bg-white text-[#141414] border-[#141414] hover:bg-[#141414] hover:text-white'
@@ -771,8 +772,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                               <RefreshCw className="w-3 h-3 animate-spin" />
                                             ) : isAssigned ? (
                                               <>
-                                                <Check className="w-3 h-3" />
-                                                <span>Assigned</span>
+                                                <X className="w-3 h-3" />
+                                                <span>Unassign</span>
                                               </>
                                             ) : (
                                               <>
@@ -1191,9 +1192,15 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                 {isUpdating ? (
                                   <RefreshCw className="w-3 h-3 animate-spin" />
                                 ) : isAssigned ? (
-                                  'Unassign'
+                                  <>
+                                    <X className="w-2.5 h-2.5" />
+                                    <span>Unassign</span>
+                                  </>
                                 ) : (
-                                  '+ Assign'
+                                  <>
+                                    <Plus className="w-2.5 h-2.5" />
+                                    <span>Assign</span>
+                                  </>
                                 )}
                               </button>
                             ) : (
