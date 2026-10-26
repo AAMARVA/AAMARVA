@@ -63,6 +63,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   isSlaveAccount = false,
   onOpenAgentProfile
 }) => {
+  const [localTools, setLocalTools] = useState<McpTool[]>(tools);
   const [activeTab, setActiveTab] = useState<'tools' | 'assignment' | 'requests'>('tools');
   const [selectedToolId, setSelectedToolId] = useState<string | null>(tools[0]?.id || null);
   const [expandedSchemaToolId, setExpandedSchemaToolId] = useState<string | null>(null);
@@ -87,12 +88,15 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
   const [expandedReqArgsId, setExpandedReqArgsId] = useState<string | null>(null);
 
+  useEffect(() => {
+    setLocalTools(tools);
+  }, [tools]);
 
   useEffect(() => {
-    if (tools.length > 0 && !selectedToolId) {
-      setSelectedToolId(tools[0].id);
+    if (localTools.length > 0 && !selectedToolId) {
+      setSelectedToolId(localTools[0].id);
     }
-  }, [tools, selectedToolId]);
+  }, [localTools, selectedToolId]);
 
   const loadGrants = async () => {
     if (!server) return;
@@ -129,7 +133,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
   if (!isOpen || !server) return null;
 
-  const currentTool = tools.find((t) => t.id === selectedToolId) || tools[0];
+  const currentTool = localTools.find((t) => t.id === selectedToolId) || localTools[0];
   const uniqueFleetAgents = Array.from(new Map(fleetAgents.map(a => [a.id, a])).values());
   const slaveFleetAgents = uniqueFleetAgents as FleetAgent[];
   const activeFleetAgents: FleetAgent[] = slaveFleetAgents.length > 0 ? slaveFleetAgents : ([
@@ -169,6 +173,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
     setActionSuccess(null);
     try {
       const res = await reconnectMcpServerApi(server.id);
+      setLocalTools(res.tools);
       onServerUpdated(res.server, res.tools);
       setActionSuccess('Reconnected successfully & tools refreshed!');
       setTimeout(() => setActionSuccess(null), 3000);
@@ -197,35 +202,67 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
     }
   };
 
-  const handleToggleAssignment = async (toolId: string, accountId: string, currentAssigned: boolean) => {
+  const handleToggleAssignment = async (
+    toolId: string,
+    accountId: string,
+    currentAssigned: boolean,
+    agentObj?: FleetAgent
+  ) => {
     if (!toolId || !accountId) return;
     setRevokingTarget(accountId);
     setActionError(null);
     setActionSuccess(null);
+
+    const agent = agentObj || activeFleetAgents.find((a) => a.agentId === accountId || a.id === accountId);
+    const cleanAccountId = accountId.replace(/^@/, '');
+    const cleanAgentId = agent?.agentId ? agent.agentId.replace(/^@/, '') : '';
+    const allIds = Array.from(
+      new Set(
+        [
+          accountId,
+          cleanAccountId,
+          `@${cleanAccountId}`,
+          agent?.id,
+          agent?.agentId,
+          cleanAgentId,
+          cleanAgentId ? `@${cleanAgentId}` : null
+        ].filter(Boolean)
+      )
+    ) as string[];
+
+    const nextGranted = !currentAssigned;
+    const prevTools = localTools;
+
+    // Instant Synchronous Shift: Immediately update state so profile jumps to other side with zero lag
+    const updatedTools = localTools.map((t) => {
+      if (t.id !== toolId) return t;
+      const currentAssignedList = t.assigned_agents || [];
+      const nextAssignedList = nextGranted
+        ? Array.from(new Set([...currentAssignedList, ...allIds]))
+        : currentAssignedList.filter((a) => !allIds.includes(a));
+      return { ...t, assigned_agents: nextAssignedList };
+    });
+
+    setLocalTools(updatedTools);
+    onServerUpdated(server, updatedTools);
+
     try {
-      const nextGranted = !currentAssigned;
       await Promise.all([
         setToolAssignmentApi(toolId, accountId, nextGranted),
         setToolGrantApi(toolId, accountId, nextGranted).catch(() => {})
       ]);
 
-      const updatedTools = tools.map((t) => {
-        if (t.id !== toolId) return t;
-        const currentAssignedList = t.assigned_agents || [];
-        const nextAssignedList = nextGranted
-          ? Array.from(new Set([...currentAssignedList, accountId]))
-          : currentAssignedList.filter((a) => a !== accountId);
-        return { ...t, assigned_agents: nextAssignedList };
-      });
-      onServerUpdated(server, updatedTools);
       setActionSuccess(
         nextGranted
-          ? `Tool access granted to ${accountId}`
+          ? `Tool access granted to ${accountId} — Free tool execution active (No HITL)`
           : `Tool access revoked from ${accountId}`
       );
       setTimeout(() => setActionSuccess(null), 3000);
       loadGrants();
     } catch (err: any) {
+      // Revert if API failed
+      setLocalTools(prevTools);
+      onServerUpdated(server, prevTools);
       setActionError(err?.message || 'Failed to update tool assignment.');
     } finally {
       setRevokingTarget(null);
@@ -244,11 +281,12 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
       await loadGrants();
       // Update tool assignment in tools state
       if (res.grant) {
-        const updatedTools = tools.map((t) => {
+        const updatedTools = localTools.map((t) => {
           if (t.id !== res.grant.tool_id) return t;
           const nextAssigned = Array.from(new Set([...(t.assigned_agents || []), res.grant.account_id]));
           return { ...t, assigned_agents: nextAssigned };
         });
+        setLocalTools(updatedTools);
         onServerUpdated(server, updatedTools);
       }
       setActionSuccess(`Access request approved! Permanent grant issued for ${res.request.account_id}.`);
@@ -405,7 +443,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
             }`}
           >
             <Wrench className="w-3.5 h-3.5" />
-            <span>Discovered Tools ({tools.length})</span>
+            <span>Discovered Tools ({localTools.length})</span>
           </button>
 
           <button
@@ -451,7 +489,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
         {/* Tab 1: Tools & Schema Inspection */}
         {activeTab === 'tools' && (
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {tools.length === 0 ? (
+            {localTools.length === 0 ? (
               <div className="p-8 text-center border-2 border-dashed border-[#141414]/20 bg-[#FAF9F5]">
                 <Wrench className="w-8 h-8 text-[#141414]/30 mx-auto mb-2" />
                 <p className="text-xs font-bold uppercase">No tools discovered from this server.</p>
@@ -460,7 +498,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 </p>
               </div>
             ) : (
-              tools.map((tool) => {
+              localTools.map((tool) => {
                 const isSchemaExpanded = expandedSchemaToolId === tool.id;
                 const assignedCount = (tool.assigned_agents || []).length;
 
@@ -536,7 +574,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
               </p>
             </div>
 
-            {tools.length === 0 ? (
+            {localTools.length === 0 ? (
               <div className="p-8 text-center border-2 border-dashed border-[#141414]/20 bg-[#FAF9F5]">
                 <p className="text-xs font-bold uppercase text-[#141414]/50">No tools available to govern.</p>
               </div>
@@ -545,10 +583,10 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                 {/* Left Column: Tools List */}
                 <div className="space-y-2 border-2 border-[#141414] p-2.5 bg-[#FAF9F5]">
                   <span className="text-[10px] font-black uppercase text-[#141414]/70 px-1 block">
-                    Select Tool ({tools.length})
+                    Select Tool ({localTools.length})
                   </span>
                   <div className="space-y-1.5 max-h-[250px] overflow-y-auto">
-                    {tools.map((tool) => {
+                    {localTools.map((tool) => {
                       const isSelected = tool.id === selectedToolId;
                       const assignedCount = (tool.assigned_agents || []).length;
                       return (
@@ -724,7 +762,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                         {!isSlaveAccount && (
                                           <button
                                             type="button"
-                                            onClick={() => handleToggleAssignment(currentTool.id, targetId, isAssigned)}
+                                            onClick={() => handleToggleAssignment(currentTool.id, targetId, isAssigned, agent)}
                                             disabled={isUpdating}
                                             className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-2 transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                                               isAssigned
@@ -1111,9 +1149,20 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                               <span className="font-bold text-xs uppercase truncate text-[#141414] group-hover:underline">
                                 {agent.name}
                               </span>
-                              <span className="text-[10px] text-[#141414]/60 truncate font-mono">
-                                @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
-                              </span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] text-[#141414]/60 truncate font-mono">
+                                  @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
+                                </span>
+                                {isAssigned ? (
+                                  <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-green-50 text-green-800 border border-green-600">
+                                    Free Use (No HITL)
+                                  </span>
+                                ) : (
+                                  <span className="text-[8px] font-bold uppercase px-1 py-0.2 bg-neutral-100 text-neutral-500 border border-neutral-300">
+                                    Requires Assign
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
 
@@ -1133,7 +1182,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             {!isSlaveAccount ? (
                               <button
                                 type="button"
-                                onClick={() => handleToggleAssignment(currentTool.id, targetId, isAssigned)}
+                                onClick={() => handleToggleAssignment(currentTool.id, targetId, isAssigned, agent)}
                                 disabled={isUpdating}
                                 className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider border-2 transition-all cursor-pointer flex items-center justify-center gap-1 shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 ${
                                   isAssigned
