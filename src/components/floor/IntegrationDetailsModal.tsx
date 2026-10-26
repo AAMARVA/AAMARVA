@@ -1088,19 +1088,36 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                           key={agent.id}
                           className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
                         >
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div
+                            className={`flex items-center gap-2.5 min-w-0 flex-1 ${
+                              onOpenAgentProfile ? 'cursor-pointer group' : ''
+                            }`}
+                            onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
+                            title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
+                          >
                             <AgentAvatar
                               name={agent.name}
                               avatar={agent.avatar}
                               id={agent.agentId || agent.id}
+                              isMaster={false}
                               className="w-8 h-8 border border-[#141414] shrink-0"
                             />
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-bold text-xs uppercase truncate text-[#141414]">
-                                {agent.name}
-                              </span>
-                              <span className="text-[10px] text-[#141414]/60 truncate">
-                                @{agent.agentId || agent.id}
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-xs uppercase truncate text-[#141414] group-hover:underline">
+                                  {agent.name}
+                                </span>
+                                {Boolean(agent.expires_at && !isNaN(new Date(agent.expires_at).getTime())) && (
+                                  <CappedBadge
+                                    expiresAt={agent.expires_at}
+                                    purchaseDate={agent.plan_created_at}
+                                    isCapped={agent.isCapped}
+                                    size="sm"
+                                  />
+                                )}
+                              </div>
+                              <span className="text-[10px] text-[#141414]/60 truncate font-mono">
+                                @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
                               </span>
                             </div>
                           </div>
