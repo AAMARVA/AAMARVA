@@ -395,37 +395,34 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
               >
                 {isSwitching ? 'SWITCHING...' : 'SWITCH >'}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm(`Are you sure you want to undeploy slave agent @${subAccountData?.agentId || inferredAgentId}?`)) {
-                    apiFetch('/api/auth/master/undeploy-slave-agent', {
-                      method: 'POST',
-                      authType: 'human',
-                      body: JSON.stringify({ subAgentId: subAccountData?.id || inferredAgentId })
-                    }).then(res => {
-                      if (res?.success) {
-                        window.location.reload();
-                      } else {
-                        alert(res?.error?.message || 'Failed to undeploy');
+              {(() => {
+                const isCappedActive = Boolean(subAccountData?.isCapped || subAccountData?.hasCapabilityIncrement || subAccountData?.plan === 'slave_capability') && (!subAccountData?.expires_at || new Date(subAccountData.expires_at).getTime() > Date.now());
+                if (isCappedActive) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to undeploy slave agent @${subAccountData?.agentId || inferredAgentId}?`)) {
+                        apiFetch('/api/auth/master/undeploy-slave-agent', {
+                          method: 'POST',
+                          authType: 'human',
+                          body: JSON.stringify({ subAgentId: subAccountData?.id || inferredAgentId })
+                        }).then(res => {
+                          if (res?.success) {
+                            window.location.reload();
+                          } else {
+                            alert(res?.error?.message || 'Failed to undeploy');
+                          }
+                        }).catch(err => alert(err?.message));
                       }
-                    }).catch(err => alert(err?.message));
-                  }
-                }}
-                disabled={Boolean(subAccountData?.isCapped || subAccountData?.hasCapabilityIncrement || subAccountData?.plan === 'slave_capability') && (!subAccountData?.expires_at || new Date(subAccountData.expires_at).getTime() > Date.now())}
-                className={`px-2.5 py-1 font-black uppercase text-[9px] tracking-wider border border-[#141414] transition-all shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] ${
-                  Boolean(subAccountData?.isCapped || subAccountData?.hasCapabilityIncrement || subAccountData?.plan === 'slave_capability') && (!subAccountData?.expires_at || new Date(subAccountData.expires_at).getTime() > Date.now())
-                    ? 'bg-neutral-300 text-neutral-500 cursor-not-allowed opacity-50 shadow-none'
-                    : 'bg-red-600 text-white hover:bg-red-700 cursor-pointer'
-                }`}
-                title={
-                  Boolean(subAccountData?.isCapped || subAccountData?.hasCapabilityIncrement || subAccountData?.plan === 'slave_capability') && (!subAccountData?.expires_at || new Date(subAccountData.expires_at).getTime() > Date.now())
-                    ? "Cannot undeploy agent with active capped plan"
-                    : "Undeploy slave agent"
-                }
-              >
-                UNDEPLOY
-              </button>
+                    }}
+                    className="px-2.5 py-1 font-black uppercase text-[9px] tracking-wider border border-[#141414] transition-all shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] bg-red-600 text-white hover:bg-red-700 cursor-pointer"
+                    title="Undeploy slave agent"
+                  >
+                    UNDEPLOY
+                  </button>
+                );
+              })()}
             </div>
           </div>
         )}
