@@ -46,6 +46,7 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
 }) => {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [fleetAgents, setFleetAgents] = useState<FleetAgent[]>([]);
+  const [allTools, setAllTools] = useState<McpTool[]>([]);
   const [pendingInvocations, setPendingInvocations] = useState<PendingInvocation[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -73,6 +74,22 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
       setServers(serversData);
       setFleetAgents(agentsData);
       setPendingInvocations(pendingData);
+
+      // Pre-fetch tools for all servers to calculate fleet assignments across all tools
+      try {
+        const detailsList = await Promise.all(
+          serversData.map((s) => fetchServerDetails(s.id).catch(() => null))
+        );
+        const toolsCollected: McpTool[] = [];
+        detailsList.forEach((d) => {
+          if (d?.tools && Array.isArray(d.tools)) {
+            toolsCollected.push(...d.tools);
+          }
+        });
+        setAllTools(toolsCollected);
+      } catch (toolsErr) {
+        console.warn('Failed to pre-fetch server tools:', toolsErr);
+      }
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to load MCP servers.');
     } finally {
@@ -155,6 +172,39 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
     );
   });
 
+  // Distinct assigned and unassigned slave calculations (strictly excluding master accounts)
+  const uniqueFleetAgents: FleetAgent[] = Array.from(new Map<string, FleetAgent>(fleetAgents.map((a) => [a.id, a])).values());
+  const nonMasterFleetAgents = uniqueFleetAgents.filter((agent: FleetAgent) => !agent.isMaster);
+
+  // Set of all agent IDs that have been assigned to at least one tool
+  const assignedAgentIds = new Set<string>();
+  allTools.forEach((tool) => {
+    (tool.assigned_agents || []).forEach((id) => {
+      if (!id) return;
+      assignedAgentIds.add(id);
+      const clean = id.replace(/^@+/, '');
+      assignedAgentIds.add(clean);
+      assignedAgentIds.add(`@${clean}`);
+    });
+  });
+
+  const assignedSlavesCount = nonMasterFleetAgents.filter((agent) => {
+    const targetId = agent.agentId || agent.id;
+    const cleanAgentId = agent.agentId ? agent.agentId.replace(/^@+/, '') : '';
+    return (
+      assignedAgentIds.has(targetId) ||
+      assignedAgentIds.has(agent.id) ||
+      assignedAgentIds.has(agent.agentId) ||
+      (cleanAgentId && assignedAgentIds.has(cleanAgentId)) ||
+      (cleanAgentId && assignedAgentIds.has(`@${cleanAgentId}`))
+    );
+  }).length;
+
+  const assignedCount = allTools.length > 0
+    ? assignedSlavesCount
+    : Math.min(nonMasterFleetAgents.length, servers.reduce((acc, s) => acc + (s.assigned_agents_count || 0), 0));
+  const unassignedCount = Math.max(0, nonMasterFleetAgents.length - assignedCount);
+
   return (
     <div className="w-full space-y-4 font-mono text-[#141414] text-left">
       {/* Top Banner / Hero Card */}
@@ -194,20 +244,18 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
             <span className="text-sm font-black">{servers.length} Configured</span>
           </div>
           <div className="p-2.5 bg-[#FAF9F5] border border-[#141414]/30 space-y-0.5">
-            <span className="text-[9px] uppercase font-bold text-[#141414]/60 block">ACTIVE CONNECTIONS</span>
-            <span className="text-sm font-black text-green-700">
-              {servers.filter((s) => s.status === 'connected').length} Live
-            </span>
-          </div>
-          <div className="p-2.5 bg-[#FAF9F5] border border-[#141414]/30 space-y-0.5">
             <span className="text-[9px] uppercase font-bold text-[#141414]/60 block">DISCOVERED TOOLS</span>
             <span className="text-sm font-black">
               {servers.reduce((acc, s) => acc + (s.tools_count || 0), 0)} Available
             </span>
           </div>
           <div className="p-2.5 bg-[#FAF9F5] border border-[#141414]/30 space-y-0.5">
-            <span className="text-[9px] uppercase font-bold text-[#141414]/60 block">FLEET NODES</span>
-            <span className="text-sm font-black">{fleetAgents.length} Accounts</span>
+            <span className="text-[9px] uppercase font-bold text-[#141414]/60 block">ASSIGNED SLAVES</span>
+            <span className="text-sm font-black">{assignedCount} Assigned</span>
+          </div>
+          <div className="p-2.5 bg-[#FAF9F5] border border-[#141414]/30 space-y-0.5">
+            <span className="text-[9px] uppercase font-bold text-[#141414]/60 block">UNASSIGNED SLAVES</span>
+            <span className="text-sm font-black">{unassignedCount} Unassigned</span>
           </div>
         </div>
       </div>
@@ -528,14 +576,22 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
           setServerToEdit(srv);
           setIsAddModalOpen(true);
         }}
-        onClose={() => setIsDetailsModalOpen(false)}
+        onClose={() => {
+          setIsDetailsModalOpen(false);
+          loadData();
+        }}
         onServerUpdated={(updatedServer, updatedTools) => {
           setSelectedServer(updatedServer);
           setSelectedServerTools(updatedTools);
           setServers((prev) => prev.map((s) => (s.id === updatedServer.id ? updatedServer : s)));
+          setAllTools((prev) => {
+            const filtered = prev.filter((t) => t.server_id !== updatedServer.id);
+            return [...filtered, ...updatedTools];
+          });
         }}
         onServerDeleted={(deletedServerId) => {
           setServers((prev) => prev.filter((s) => s.id !== deletedServerId));
+          setAllTools((prev) => prev.filter((t) => t.server_id !== deletedServerId));
           setIsDetailsModalOpen(false);
         }}
       />
