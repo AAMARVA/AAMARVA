@@ -251,7 +251,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
       setActionSuccess(
         nextGranted
-          ? `Tool access granted to ${accountId} — Free tool execution active (No HITL)`
+          ? `Tool access granted to ${accountId}`
           : `Tool access revoked from ${accountId}`
       );
       setTimeout(() => setActionSuccess(null), 3000);
@@ -1147,20 +1147,9 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                               <span className="font-bold text-xs uppercase truncate text-[#141414] group-hover:underline">
                                 {agent.name}
                               </span>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] text-[#141414]/60 truncate font-mono">
-                                  @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
-                                </span>
-                                {isAssigned ? (
-                                  <span className="text-[8px] font-black uppercase px-1 py-0.2 bg-green-50 text-green-800 border border-green-600">
-                                    Free Use (No HITL)
-                                  </span>
-                                ) : (
-                                  <span className="text-[8px] font-bold uppercase px-1 py-0.2 bg-neutral-100 text-neutral-500 border border-neutral-300">
-                                    Requires Assign
-                                  </span>
-                                )}
-                              </div>
+                              <span className="text-[10px] text-[#141414]/60 truncate font-mono">
+                                @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
+                              </span>
                             </div>
                           </div>
 
