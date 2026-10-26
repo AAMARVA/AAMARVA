@@ -586,13 +586,14 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                           )}
                         </div>
                         <span className="text-[9px] font-bold uppercase px-2 py-0.5 bg-[#FAF9F5] border border-[#141414] shrink-0 self-start sm:self-center">
-                          {activeFleetAgents.filter((a) => (currentTool.assigned_agents || []).includes(a.agentId) || (currentTool.assigned_agents || []).includes(a.id)).length} / {activeFleetAgents.length} Permitted
+                          {activeFleetAgents.filter((a) => !a.isMaster && ((currentTool.assigned_agents || []).includes(a.agentId) || (currentTool.assigned_agents || []).includes(a.id))).length} / {activeFleetAgents.filter((a) => !a.isMaster).length} Permitted
                         </span>
                       </div>
 
                       <div className="space-y-2">
                         {(() => {
-                          const assignedAgents = activeFleetAgents.filter((agent) => {
+                          const nonMasterFleetAgents = activeFleetAgents.filter((agent) => !agent.isMaster);
+                          const assignedAgents = nonMasterFleetAgents.filter((agent) => {
                             const targetId = agent.agentId || agent.id;
                             return (
                               (currentTool.assigned_agents || []).includes(targetId) ||
@@ -601,7 +602,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             );
                           });
 
-                          const unassignedAgents = activeFleetAgents.filter((agent) => {
+                          const unassignedAgents = nonMasterFleetAgents.filter((agent) => {
                             const targetId = agent.agentId || agent.id;
                             return !(
                               (currentTool.assigned_agents || []).includes(targetId) ||
