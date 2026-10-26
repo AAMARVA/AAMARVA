@@ -524,7 +524,10 @@ router.get(
         capService = mod.CapabilityService?.getInstance?.();
       } catch (e) {}
 
-      const accounts = await Promise.all(allAgentsList.map(async (s: any) => {
+      const accountsMap = new Map<string, any>();
+      for (const s of allAgentsList) {
+        if (accountsMap.has(s.id)) continue;
+        
         let cap: any = null;
         if (capService) {
           try {
@@ -532,7 +535,9 @@ router.get(
           } catch (e) {}
         }
         const expiresAt = cap?.expires_at || s.plan_expires_at || s.expires_at || null;
-        return {
+        const isCapped = s.isCapped === true || (s.plan && s.plan.includes('capped'));
+
+        accountsMap.set(s.id, {
           id: s.id,
           agentId: s.agentId || s.id,
           name: s.name || s.agentId || 'Agent Node',
@@ -544,23 +549,14 @@ router.get(
             (expiresAt && new Date(expiresAt).getTime() > Date.now())
           ),
           plan: s.plan,
-          isCapped: s.isCapped ?? true,
+          isCapped: isCapped,
           expires_at: expiresAt,
           plan_created_at: s.plan_created_at,
           created_at: s.created_at
-        };
-      }));
+        });
+      }
 
-      const finalAccounts = accounts.length > 0 ? accounts : [
-        {
-          id: req.user!.id,
-          agentId: req.user!.agentId || 'AMR-TAJQ-S36N',
-          name: req.user!.name || 'AMR-TAJQ-S36N',
-          avatar: '🤖',
-          isMaster: false,
-          isCapped: false
-        }
-      ];
+      const finalAccounts = Array.from(accountsMap.values());
 
       res.json({ success: true, data: finalAccounts });
     } catch (err: any) {
