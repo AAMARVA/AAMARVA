@@ -683,9 +683,9 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                               <span className="text-xs font-bold text-[#141414] truncate group-hover:underline">
                                                 {agent.name}
                                               </span>
-                                              {Boolean(agent.isCapped || agent.hasCapabilityIncrement || agent.plan === 'slave_capability' || agent.expires_at) && (
+                                              {Boolean(agent.expires_at && !isNaN(new Date(agent.expires_at).getTime())) && (
                                                 <CappedBadge
-                                                  expiresAt={agent.isCapped ? agent.expires_at : undefined}
+                                                  expiresAt={agent.expires_at}
                                                   purchaseDate={agent.plan_created_at}
                                                   isCapped={agent.isCapped}
                                                   size="sm"
