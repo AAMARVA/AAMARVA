@@ -473,43 +473,62 @@ router.get(
   securityLayer('floor_reads'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const masterUserId = req.user!.masterId || req.user!.id;
       const supabase = getSupabaseClient();
 
-      // Fetch all users / agents from users table
-      const { data: allUsers } = await supabase
-        .from('users')
-        .select('id, agentId, name, avatar, account_type, created_at, plan_created_at, expires_at, plan_expires_at, hasCapabilityIncrement, plan, isCapped, master_id, role');
-
-      const slaves = Array.isArray(allUsers) && allUsers.length > 0 ? allUsers : [];
-      const targetSlaves = slaves.length > 0 ? slaves : [
-        {
-          id: req.user!.id,
-          agentId: req.user!.agentId || req.user!.id,
-          name: req.user!.agentId || 'Master Operator',
-          avatar: '⚡',
-          isMaster: true,
-          isCapped: false
+      let authUsers: any[] = [];
+      try {
+        const { data } = await supabase.auth.admin.listUsers();
+        if (data && data.users) {
+          authUsers = data.users;
         }
-      ];
+      } catch (e) {}
+
+      const { data: tableUsers } = await supabase
+        .from('users')
+        .select('*');
+
+      const userMap = new Map<string, any>();
+
+      if (Array.isArray(tableUsers)) {
+        for (const u of tableUsers) {
+          userMap.set(u.id, u);
+          if (u.agentId) userMap.set(u.agentId, u);
+        }
+      }
+
+      if (Array.isArray(authUsers)) {
+        for (const au of authUsers) {
+          const existing = userMap.get(au.id) || {};
+          userMap.set(au.id, {
+            ...existing,
+            id: au.id,
+            agentId: existing.agentId || au.user_metadata?.agentId || au.email?.split('@')[0],
+            name: existing.name || au.user_metadata?.name || au.email?.split('@')[0] || 'Agent Node',
+            avatar: existing.avatar || au.user_metadata?.avatar || '🤖',
+            created_at: existing.created_at || au.created_at,
+            plan: existing.plan || au.user_metadata?.plan,
+            hasCapabilityIncrement: existing.hasCapabilityIncrement || au.user_metadata?.hasCapabilityIncrement,
+            isCapped: existing.isCapped ?? au.user_metadata?.isCapped ?? true
+          });
+        }
+      }
+
+      const allAgentsList = Array.from(userMap.values());
 
       let capService: any = null;
       try {
         const mod = await import('../services/capabilityService.js');
         capService = mod.CapabilityService?.getInstance?.();
-      } catch (e) {
-        // capability service optional
-      }
+      } catch (e) {}
 
-      const accounts = await Promise.all(targetSlaves.map(async (s: any) => {
+      const accounts = await Promise.all(allAgentsList.map(async (s: any) => {
         let cap: any = null;
-        if (capService && s.id !== masterUserId) {
+        if (capService) {
           try {
-            cap = await capService.getAgentCapability(s.id);
+            cap = await capService.getAgentCapability(s.id) || await capService.getAgentCapability(s.agentId);
           } catch (e) {}
         }
         const expiresAt = cap?.expires_at || s.plan_expires_at || s.expires_at || null;
-        const isMasterUser = false; // Always include as assignable agent node
         return {
           id: s.id,
           agentId: s.agentId || s.id,
@@ -529,7 +548,18 @@ router.get(
         };
       }));
 
-      res.json({ success: true, data: accounts });
+      const finalAccounts = accounts.length > 0 ? accounts : [
+        {
+          id: req.user!.id,
+          agentId: req.user!.agentId || 'AMR-TAJQ-S36N',
+          name: req.user!.name || 'AMR-TAJQ-S36N',
+          avatar: '🤖',
+          isMaster: false,
+          isCapped: false
+        }
+      ];
+
+      res.json({ success: true, data: finalAccounts });
     } catch (err: any) {
       res.status(500).json({ success: false, error: { message: err?.message || 'Failed to list fleet accounts.' } });
     }
