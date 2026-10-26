@@ -71,6 +71,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [assignedSubTab, setAssignedSubTab] = useState<'assigned' | 'unassigned'>('assigned');
+  const [isSpogModalOpen, setIsSpogModalOpen] = useState(false);
+  const [spogSearchQuery, setSpogSearchQuery] = useState('');
 
   // Grants state
   const [, setGrants] = useState<McpToolGrant[]>([]);
@@ -139,6 +141,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
       isCapped: false
     }
   ] as FleetAgent[]);
+
+  const nonMasterFleetAgents = activeFleetAgents.filter((agent) => !agent.isMaster);
 
   const handleReconnect = async () => {
     setIsReconnecting(true);
@@ -265,8 +269,9 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   const pendingRequestsCount = requests.filter((r) => r.status === 'pending').length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-      <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-4xl max-h-[92vh] flex flex-col font-mono text-[#141414] my-auto overflow-hidden">
+    <>
+      <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+        <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-4xl max-h-[92vh] flex flex-col font-mono text-[#141414] my-auto overflow-hidden">
         {/* Modal Header */}
         <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-2 border-[#141414] select-none shrink-0">
           <div className="flex items-center gap-3">
@@ -615,28 +620,39 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
                           return (
                             <div className="space-y-2">
-                              <div className="flex items-center gap-1 border-b border-[#141414]/20 pb-2">
+                              <div className="flex items-center justify-between gap-2 border-b border-[#141414]/20 pb-2">
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setAssignedSubTab('assigned')}
+                                    className={`px-3 py-1 text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                                      assignedSubTab === 'assigned'
+                                        ? 'bg-[#141414] text-white border-[#141414]'
+                                        : 'bg-[#FAF9F5] text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
+                                    }`}
+                                  >
+                                    Assigned Slaves ({assignedAgents.length})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAssignedSubTab('unassigned')}
+                                    className={`px-3 py-1 text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                                      assignedSubTab === 'unassigned'
+                                        ? 'bg-[#141414] text-white border-[#141414]'
+                                        : 'bg-[#FAF9F5] text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
+                                    }`}
+                                  >
+                                    Unassigned Slaves ({unassignedAgents.length})
+                                  </button>
+                                </div>
                                 <button
                                   type="button"
-                                  onClick={() => setAssignedSubTab('assigned')}
-                                  className={`px-3 py-1 text-[10px] font-black uppercase border transition-all cursor-pointer ${
-                                    assignedSubTab === 'assigned'
-                                      ? 'bg-[#141414] text-white border-[#141414]'
-                                      : 'bg-[#FAF9F5] text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
-                                  }`}
+                                  onClick={() => setIsSpogModalOpen(true)}
+                                  className="px-2.5 py-1 text-[10px] font-mono font-black uppercase bg-[#141414] text-white border-2 border-[#141414] hover:bg-black transition-colors cursor-pointer flex items-center gap-1 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
+                                  title="Open SPOG Fleet Overview"
                                 >
-                                  Assigned Slaves ({assignedAgents.length})
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setAssignedSubTab('unassigned')}
-                                  className={`px-3 py-1 text-[10px] font-black uppercase border transition-all cursor-pointer ${
-                                    assignedSubTab === 'unassigned'
-                                      ? 'bg-[#141414] text-white border-[#141414]'
-                                      : 'bg-[#FAF9F5] text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
-                                  }`}
-                                >
-                                  Unassigned Slaves ({unassignedAgents.length})
+                                  <span className="bg-white text-[#141414] px-1 text-[8px] font-black">SPOG</span>
+                                  <span>Overview</span>
                                 </button>
                               </div>
 
@@ -979,5 +995,115 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
         </div>
       </div>
     </div>
+
+      {/* SPOG Modal - Fleet Overview */}
+      {isSpogModalOpen && (
+        <div className="fixed inset-0 z-70 overflow-y-auto bg-black/80 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
+          <div className="relative w-full max-w-4xl bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] max-h-[90vh] flex flex-col font-mono">
+            <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="bg-white text-[#141414] px-1.5 py-0.5 text-[9px] font-black tracking-widest">
+                  SPOG
+                </span>
+                <span className="text-xs font-black uppercase tracking-widest">
+                  FLEET OVERVIEW — SLAVE NODES ({nonMasterFleetAgents.length})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSpogModalOpen(false)}
+                className="p-1 bg-white text-[#141414] border-2 border-white hover:bg-black hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-[#F5F4F0] px-4 py-2.5 border-b-2 border-[#141414] flex items-center justify-between gap-2 shrink-0">
+              <span className="text-xs font-black uppercase tracking-wider text-[#141414]">
+                Slave Selection Protocol
+              </span>
+              <input
+                type="text"
+                placeholder="SEARCH SLAVE..."
+                value={spogSearchQuery}
+                onChange={(e) => setSpogSearchQuery(e.target.value)}
+                className="px-2.5 py-1 text-xs font-bold uppercase bg-white border-2 border-[#141414] focus:outline-hidden"
+              />
+            </div>
+
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
+              {(() => {
+                const filtered = nonMasterFleetAgents.filter((agent) => {
+                  if (!spogSearchQuery.trim()) return true;
+                  const q = spogSearchQuery.toLowerCase();
+                  const name = (agent.name || '').toLowerCase();
+                  const aid = (agent.agentId || agent.id || '').toLowerCase();
+                  return name.includes(q) || aid.includes(q);
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="p-8 border-2 border-dashed border-[#141414]/30 text-center text-xs font-bold text-[#141414]/60 uppercase tracking-widest bg-neutral-50">
+                      No slave agents match search query.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {filtered.map((agent) => {
+                      const targetId = agent.agentId || agent.id;
+                      const isAssigned =
+                        (currentTool?.assigned_agents || []).includes(targetId) ||
+                        (currentTool?.assigned_agents || []).includes(agent.id) ||
+                        (currentTool?.assigned_agents || []).includes(agent.agentId);
+
+                      return (
+                        <div
+                          key={agent.id}
+                          className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <AgentAvatar
+                              name={agent.name}
+                              avatar={agent.avatar}
+                              id={agent.agentId || agent.id}
+                              className="w-8 h-8 border border-[#141414] shrink-0"
+                            />
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-bold text-xs uppercase truncate text-[#141414]">
+                                {agent.name}
+                              </span>
+                              <span className="text-[10px] text-[#141414]/60 truncate">
+                                @{agent.agentId || agent.id}
+                              </span>
+                            </div>
+                          </div>
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 border ${
+                            isAssigned ? 'bg-green-100 text-green-900 border-green-600' : 'bg-neutral-100 text-neutral-600 border-neutral-300'
+                          }`}>
+                            {isAssigned ? 'Assigned' : 'Unassigned'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="bg-[#E4E3E0] px-4 py-3 border-t-4 border-[#141414] flex items-center justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsSpogModalOpen(false)}
+                className="px-4 py-1.5 bg-white text-[#141414] border-2 border-[#141414] text-xs font-black uppercase hover:bg-[#141414] hover:text-white transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
