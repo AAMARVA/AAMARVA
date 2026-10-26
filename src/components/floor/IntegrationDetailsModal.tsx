@@ -683,12 +683,14 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                               <span className="text-xs font-bold text-[#141414] truncate group-hover:underline">
                                                 {agent.name}
                                               </span>
-                                              <CappedBadge
-                                                expiresAt={agent.isCapped ? agent.expires_at : undefined}
-                                                purchaseDate={agent.plan_created_at || agent.created_at}
-                                                isCapped={agent.isCapped}
-                                                size="sm"
-                                              />
+                                              {Boolean(agent.isCapped || agent.hasCapabilityIncrement || agent.plan === 'slave_capability' || agent.expires_at) && (
+                                                <CappedBadge
+                                                  expiresAt={agent.isCapped ? agent.expires_at : undefined}
+                                                  purchaseDate={agent.plan_created_at}
+                                                  isCapped={agent.isCapped}
+                                                  size="sm"
+                                                />
+                                              )}
                                             </div>
                                             <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
                                               @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
