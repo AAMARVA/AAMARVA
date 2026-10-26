@@ -127,10 +127,17 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   if (!isOpen || !server) return null;
 
   const currentTool = tools.find((t) => t.id === selectedToolId) || tools[0];
-  const slaveFleetAgents = fleetAgents.filter(
-    (a) => !a.isMaster && a.account_type !== 'master' && a.role !== 'master' && !a.is_master_primary
-  );
-  const activeFleetAgents = slaveFleetAgents;
+  const slaveFleetAgents = fleetAgents;
+  const activeFleetAgents = slaveFleetAgents.length > 0 ? slaveFleetAgents : [
+    {
+      id: server.owner_id || 'default_agent_1',
+      agentId: 'AMR-TAJQ-S36N',
+      name: 'AMR-TAJQ-S36N',
+      avatar: '🤖',
+      isMaster: false,
+      isCapped: false
+    }
+  ];
 
   const handleReconnect = async () => {
     setIsReconnecting(true);

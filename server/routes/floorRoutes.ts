@@ -509,13 +509,13 @@ router.get(
           } catch (e) {}
         }
         const expiresAt = cap?.expires_at || s.plan_expires_at || s.expires_at || null;
-        const isMasterUser = s.id === masterUserId || s.account_type === 'master' || s.role === 'master' || s.isMaster === true;
+        const isMasterUser = false; // Always include as assignable agent node
         return {
           id: s.id,
           agentId: s.agentId || s.id,
           name: s.name || s.agentId || 'Agent Node',
           avatar: s.avatar || '🤖',
-          isMaster: isMasterUser,
+          isMaster: false,
           hasCapabilityIncrement: Boolean(
             s.hasCapabilityIncrement ||
             s.plan === 'slave_capability' ||
