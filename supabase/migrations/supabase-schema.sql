@@ -1177,6 +1177,7 @@ CREATE INDEX IF NOT EXISTS idx_mcp_tool_requests_account ON mcp_tool_requests(ac
 CREATE INDEX IF NOT EXISTS idx_mcp_tool_requests_status ON mcp_tool_requests(status);
 CREATE INDEX IF NOT EXISTS idx_mcp_tool_requests_caller ON mcp_tool_requests(caller_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_tool_requests_pending ON mcp_tool_requests(server_id, tool_id, account_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_tool_requests_unique_pending ON mcp_tool_requests(server_id, tool_id, account_id) WHERE status = 'pending';
 
 -- Enable Row Level Security (RLS) for all FLOOR tables
 ALTER TABLE mcp_servers ENABLE ROW LEVEL SECURITY;

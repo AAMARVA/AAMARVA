@@ -2642,6 +2642,32 @@ export async function listToolGrantsForServer(
   return Array.from(grantsMap.values());
 }
 
+// Concurrency mutex for access request creation to prevent race condition duplicates
+const accessRequestLocks = new Map<string, Promise<void>>();
+
+async function acquireAccessRequestLock<T>(lockKey: string, fn: () => Promise<T>): Promise<T> {
+  while (accessRequestLocks.has(lockKey)) {
+    try {
+      await accessRequestLocks.get(lockKey);
+    } catch {
+      // Continue and try again
+    }
+  }
+
+  let resolveLock: () => void = () => {};
+  const lockPromise = new Promise<void>((resolve) => {
+    resolveLock = resolve;
+  });
+  accessRequestLocks.set(lockKey, lockPromise);
+
+  try {
+    return await fn();
+  } finally {
+    accessRequestLocks.delete(lockKey);
+    resolveLock();
+  }
+}
+
 /**
  * Records or updates an access request when an unauthorized caller invokes a tool.
  * Deduplicates pending requests by updating the existing pending request timestamp & args.
@@ -2657,112 +2683,164 @@ export async function recordOrReuseAccessRequest(params: {
   requestedOperation?: string;
   arguments?: Record<string, any>;
 }): Promise<McpToolRequestRecord> {
-  const now = new Date().toISOString();
+  const lockKey = `${params.serverId}:${params.toolId}:${params.accountId}`;
+  return await acquireAccessRequestLock(lockKey, async () => {
+    const now = new Date().toISOString();
 
-  // 1. Check in-memory for existing pending request for this account + tool + server
-  for (const req of inMemoryToolRequests.values()) {
-    if (
-      req.server_id === params.serverId &&
-      req.tool_id === params.toolId &&
-      req.account_id === params.accountId &&
-      req.status === 'pending'
-    ) {
-      req.updated_at = now;
-      if (params.arguments) req.arguments = params.arguments;
-      if (params.requestedOperation) req.requested_operation = params.requestedOperation;
-      if (params.agentName) req.agent_name = params.agentName;
+    // 1. Check in-memory for existing pending request for this account + tool + server
+    for (const req of inMemoryToolRequests.values()) {
+      if (
+        req.server_id === params.serverId &&
+        req.tool_id === params.toolId &&
+        req.account_id === params.accountId &&
+        req.status === 'pending'
+      ) {
+        req.updated_at = now;
+        if (params.arguments) req.arguments = params.arguments;
+        if (params.requestedOperation) req.requested_operation = params.requestedOperation;
+        if (params.agentName) req.agent_name = params.agentName;
 
-      if (isSupabaseConfigured()) {
-        try {
-          const supabase = getSupabaseClient();
+        if (isSupabaseConfigured()) {
+          try {
+            const supabase = getSupabaseClient();
+            await supabase
+              .from('mcp_tool_requests')
+              .update({
+                updated_at: now,
+                arguments: req.arguments,
+                requested_operation: req.requested_operation,
+                agent_name: req.agent_name
+              })
+              .eq('id', req.id);
+          } catch {}
+        }
+        return req;
+      }
+    }
+
+    // 2. Check Supabase for existing pending request
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseClient();
+        const { data: existing, error: findErr } = await supabase
+          .from('mcp_tool_requests')
+          .select('*')
+          .eq('server_id', params.serverId)
+          .eq('tool_id', params.toolId)
+          .eq('account_id', params.accountId)
+          .eq('status', 'pending')
+          .maybeSingle();
+
+        if (!findErr && existing) {
+          existing.updated_at = now;
+          existing.arguments = params.arguments || existing.arguments;
+          existing.requested_operation = params.requestedOperation || existing.requested_operation;
+          if (params.agentName) existing.agent_name = params.agentName;
+
           await supabase
             .from('mcp_tool_requests')
             .update({
               updated_at: now,
-              arguments: req.arguments,
-              requested_operation: req.requested_operation,
-              agent_name: req.agent_name
+              arguments: existing.arguments,
+              requested_operation: existing.requested_operation,
+              agent_name: existing.agent_name
             })
-            .eq('id', req.id);
-        } catch {}
-      }
-      return req;
+            .eq('id', existing.id);
+
+          inMemoryToolRequests.set(existing.id, existing);
+          return existing;
+        }
+      } catch {}
     }
-  }
 
-  // 2. Check Supabase for existing pending request
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = getSupabaseClient();
-      const { data: existing, error: findErr } = await supabase
-        .from('mcp_tool_requests')
-        .select('*')
-        .eq('server_id', params.serverId)
-        .eq('tool_id', params.toolId)
-        .eq('account_id', params.accountId)
-        .eq('status', 'pending')
-        .maybeSingle();
+    // 3. Create brand-new pending request
+    const newReqId = `req_${crypto.randomBytes(8).toString('hex')}`;
+    const newRecord: McpToolRequestRecord = {
+      id: newReqId,
+      server_id: params.serverId,
+      tool_id: params.toolId,
+      tool_name: params.toolName,
+      server_name: params.serverName,
+      account_id: params.accountId,
+      caller_id: params.callerId,
+      agent_name: params.agentName || params.accountId,
+      requested_operation: params.requestedOperation || 'tool_invocation',
+      arguments: params.arguments || {},
+      status: 'pending',
+      created_at: now,
+      updated_at: now
+    };
 
-      if (!findErr && existing) {
-        existing.updated_at = now;
-        existing.arguments = params.arguments || existing.arguments;
-        existing.requested_operation = params.requestedOperation || existing.requested_operation;
-        if (params.agentName) existing.agent_name = params.agentName;
-
-        await supabase
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
           .from('mcp_tool_requests')
-          .update({
-            updated_at: now,
-            arguments: existing.arguments,
-            requested_operation: existing.requested_operation,
-            agent_name: existing.agent_name
-          })
-          .eq('id', existing.id);
+          .insert(newRecord)
+          .select()
+          .single();
 
-        inMemoryToolRequests.set(existing.id, existing);
-        return existing;
+        if (error) {
+          if (
+            error.code === '23505' ||
+            error.message?.includes('duplicate key') ||
+            error.message?.includes('unique constraint') ||
+            error.message?.includes('unique_pending')
+          ) {
+            const { data: existingConflict } = await supabase
+              .from('mcp_tool_requests')
+              .select('*')
+              .eq('server_id', params.serverId)
+              .eq('tool_id', params.toolId)
+              .eq('account_id', params.accountId)
+              .eq('status', 'pending')
+              .maybeSingle();
+
+            if (existingConflict) {
+              existingConflict.updated_at = now;
+              if (params.arguments) existingConflict.arguments = params.arguments;
+              inMemoryToolRequests.set(existingConflict.id, existingConflict);
+              return existingConflict;
+            }
+          }
+          if (shouldFailOnDbError()) {
+            throw new Error(`Database error creating access request: ${error.message}`);
+          }
+        }
+        if (data) Object.assign(newRecord, data);
+      } catch (err: any) {
+        if (
+          err?.code === '23505' ||
+          err?.message?.includes('duplicate key') ||
+          err?.message?.includes('unique constraint') ||
+          err?.message?.includes('unique_pending')
+        ) {
+          try {
+            const supabase = getSupabaseClient();
+            const { data: existingConflict } = await supabase
+              .from('mcp_tool_requests')
+              .select('*')
+              .eq('server_id', params.serverId)
+              .eq('tool_id', params.toolId)
+              .eq('account_id', params.accountId)
+              .eq('status', 'pending')
+              .maybeSingle();
+
+            if (existingConflict) {
+              existingConflict.updated_at = now;
+              if (params.arguments) existingConflict.arguments = params.arguments;
+              inMemoryToolRequests.set(existingConflict.id, existingConflict);
+              return existingConflict;
+            }
+          } catch {}
+        }
+        if (shouldFailOnDbError()) throw err;
       }
-    } catch {}
-  }
-
-  // 3. Create brand-new pending request
-  const newReqId = `req_${crypto.randomBytes(8).toString('hex')}`;
-  const newRecord: McpToolRequestRecord = {
-    id: newReqId,
-    server_id: params.serverId,
-    tool_id: params.toolId,
-    tool_name: params.toolName,
-    server_name: params.serverName,
-    account_id: params.accountId,
-    caller_id: params.callerId,
-    agent_name: params.agentName || params.accountId,
-    requested_operation: params.requestedOperation || 'tool_invocation',
-    arguments: params.arguments || {},
-    status: 'pending',
-    created_at: now,
-    updated_at: now
-  };
-
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from('mcp_tool_requests')
-        .insert(newRecord)
-        .select()
-        .single();
-
-      if (error && shouldFailOnDbError()) {
-        throw new Error(`Database error creating access request: ${error.message}`);
-      }
-      if (data) Object.assign(newRecord, data);
-    } catch (err: any) {
-      if (shouldFailOnDbError()) throw err;
     }
-  }
 
-  inMemoryToolRequests.set(newRecord.id, newRecord);
-  return newRecord;
+    inMemoryToolRequests.set(newRecord.id, newRecord);
+    return newRecord;
+  });
 }
 
 /**
@@ -3486,6 +3564,44 @@ export async function getAuthorizedToolsForAgent(
   );
   for (const m of inMem) {
     if (!assignments.some((a) => a.id === m.id)) assignments.push(m);
+  }
+
+  // Also include any tools with active grants for this agent/user
+  for (const grant of inMemoryPersistentGrants.values()) {
+    if ((grant.account_id === caller.agentId || grant.account_id === caller.userId) && grant.status === 'active') {
+      if (!assignments.some((a) => a.tool_id === grant.tool_id)) {
+        assignments.push({
+          id: grant.id,
+          server_id: grant.server_id,
+          tool_id: grant.tool_id,
+          agent_id: grant.account_id,
+          created_at: grant.created_at
+        });
+      }
+    }
+  }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const { data: dbGrants } = await supabase
+        .from('mcp_tool_grants')
+        .select('*')
+        .or(`account_id.eq.${caller.agentId},account_id.eq.${caller.userId}`)
+        .eq('status', 'active');
+      if (Array.isArray(dbGrants)) {
+        for (const g of dbGrants) {
+          if (!assignments.some((a) => a.tool_id === g.tool_id)) {
+            assignments.push({
+              id: g.id,
+              server_id: g.server_id,
+              tool_id: g.tool_id,
+              agent_id: g.account_id,
+              created_at: g.created_at
+            });
+          }
+        }
+      }
+    } catch {}
   }
 
   const results: Array<{ id: string; name: string; description: string; input_schema: any; server_name: string }> = [];

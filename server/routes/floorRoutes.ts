@@ -559,6 +559,14 @@ router.post(
         if (result.error === 'HITL_APPROVAL_REQUIRED') {
           return res.status(202).json({ success: false, status: 'pending', invocationId: result.invocationId });
         }
+        if (result.requiresAccessApproval) {
+          return res.status(403).json({
+            success: false,
+            error: { message: result.error },
+            requestId: result.requestId,
+            requiresAccessApproval: true
+          });
+        }
         const isForbidden = result.error?.includes('Forbidden') || result.error?.includes('not authorized');
         return res.status(isForbidden ? 403 : 400).json({
           success: false,

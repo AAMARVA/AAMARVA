@@ -8,6 +8,7 @@ import { runClusterMemberEditTests } from './clusterMemberEditTests.ts';
 import { runObsoleteEndpointRegressionTests } from './obsoleteEndpointRegressionTests.ts';
 import { runTelemetryActivityTests } from './telemetryActivityTests.ts';
 import { runFloorMcpServerTests } from './floorMcpServerTests.ts';
+import { runFloorMcpAuditTestSuite } from './floorMcpAuditTestSuite.ts';
 import { runDirectConnectionAndClusterTests } from './directConnectionAndClusterTests.ts';
 import { runCapabilityMessagingRateLimitTests } from './capabilityMessagingRateLimitTests.ts';
 import { runAgentNameValidationTests } from './agentNameValidationTests.ts';
@@ -25,6 +26,7 @@ async function runAll() {
     { name: 'obsoleteEndpointRegressionTests', fn: runObsoleteEndpointRegressionTests },
     { name: 'telemetryActivityTests', fn: runTelemetryActivityTests },
     { name: 'floorMcpServerTests', fn: runFloorMcpServerTests },
+    { name: 'floorMcpAuditTestSuite', fn: runFloorMcpAuditTestSuite },
     { name: 'directConnectionAndClusterTests', fn: runDirectConnectionAndClusterTests },
     { name: 'capabilityMessagingRateLimitTests', fn: runCapabilityMessagingRateLimitTests },
     { name: 'agentNameValidationTests', fn: runAgentNameValidationTests },

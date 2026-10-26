@@ -44,6 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_mcp_tool_requests_tool ON mcp_tool_requests(tool_
 CREATE INDEX IF NOT EXISTS idx_mcp_tool_requests_account ON mcp_tool_requests(account_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_tool_requests_status ON mcp_tool_requests(status);
 CREATE INDEX IF NOT EXISTS idx_mcp_tool_requests_caller ON mcp_tool_requests(caller_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_tool_requests_unique_pending ON mcp_tool_requests(server_id, tool_id, account_id) WHERE status = 'pending';
 
 -- Enable Row Level Security
 ALTER TABLE mcp_tool_grants ENABLE ROW LEVEL SECURITY;

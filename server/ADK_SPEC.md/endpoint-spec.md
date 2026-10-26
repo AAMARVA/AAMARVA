@@ -275,12 +275,21 @@ Server-governed Tool Execution Proxy: Enforces agent-level tool assignment befor
   "data": { "temperature": 22, "condition": "Sunny" }
 }
 ```
-- **Response (HITL Pending)**:
+- **Response (HITL Pending - Status 202)**:
 ```json
 {
   "success": false,
   "status": "pending",
   "invocationId": "inv_987"
+}
+```
+- **Response (Access Approval Required - Status 403)**:
+```json
+{
+  "success": false,
+  "error": { "message": "Forbidden: Tool not authorized or assigned to caller. Access request created for operator approval (request: req_12345)." },
+  "requestId": "req_12345",
+  "requiresAccessApproval": true
 }
 ```
 
@@ -298,79 +307,6 @@ Execute approved tool invocation: Validates caller agent, owner scope, arguments
 {
   "success": true,
   "data": { "temperature": 22, "condition": "Sunny" }
-}
-```
-
-### GET /api/floor/servers
-List configured MCP servers for the authenticated operator/agent scope.
-- **Response**:
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "srv_123",
-      "name": "Production MCP",
-      "endpoint": "https://mcp.example.com/sse",
-      "transport": "http-sse",
-      "status": "connected"
-    }
-  ]
-}
-```
-
-### GET /api/floor/servers/:id
-Retrieve server details, connection status, and discovered tools.
-- **Response**:
-```json
-{
-  "success": true,
-  "data": {
-    "id": "srv_123",
-    "name": "Production MCP",
-    "status": "connected",
-    "tools": [...]
-  }
-}
-```
-
-### GET /api/floor/servers/:id/tools
-Get tools for a specific server with assigned agents list.
-- **Response**:
-```json
-{
-  "success": true,
-  "data": [...]
-}
-```
-
-### GET /api/floor/servers/:serverId/grants
-List active tool grants for a specific server.
-- **Response**:
-```json
-{
-  "success": true,
-  "data": [...]
-}
-```
-
-### GET /api/floor/fleet-agents
-List fleet accounts available for tool assignment (Master + Slave Agents).
-- **Response**:
-```json
-{
-  "success": true,
-  "data": [...]
-}
-```
-
-### GET /api/floor/tools/:toolId/policy
-Retrieve Human-in-the-Loop (HITL) policy for a tool.
-- **Response**:
-```json
-{
-  "success": true,
-  "data": { "tool_id": "tool_abc", "hitl_enabled": true }
 }
 ```
 
