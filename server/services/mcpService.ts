@@ -524,7 +524,7 @@ export function createSsrfSafeAgent(isHttps: boolean) {
   const agentOptions = {
     lookup: safeLookup,
     keepAlive: false,
-    timeout: 15000
+    timeout: 30000
   };
 
   return isHttps ? new https.Agent(agentOptions) : new http.Agent(agentOptions);
@@ -894,7 +894,7 @@ async function sendMcpRpcRequest(
   endpoint: string,
   payload: Record<string, any>,
   headers: Record<string, string>,
-  timeoutMs = 12000
+  timeoutMs = 25000
 ): Promise<{ status: number; data: any; sessionId?: string; error?: string }> {
   const isHttps = endpoint.startsWith('https:');
   const agent = createSsrfSafeAgent(isHttps);
@@ -1103,7 +1103,7 @@ export async function testMcpConnectionAndDiscover(
         }
       };
 
-      const initRes = await sendMcpRpcRequest(endpoint, initPayload, headers, 8000);
+      const initRes = await sendMcpRpcRequest(endpoint, initPayload, headers, 25000);
 
       if (initRes.status >= 400) {
         const errorMsg = initRes.status === 401
@@ -1135,7 +1135,7 @@ export async function testMcpConnectionAndDiscover(
           endpoint,
           { jsonrpc: '2.0', method: 'notifications/initialized' },
           headers,
-          4000
+          8000
         );
       } catch {}
 
@@ -1147,7 +1147,7 @@ export async function testMcpConnectionAndDiscover(
         params: {}
       };
 
-      const listRes = await sendMcpRpcRequest(endpoint, listPayload, headers, 8000);
+      const listRes = await sendMcpRpcRequest(endpoint, listPayload, headers, 25000);
 
       if (listRes.status >= 400 || listRes.data?.error) {
         const errorMsg = listRes.status === 401
@@ -1192,12 +1192,16 @@ export async function testMcpConnectionAndDiscover(
       } else {
         message = fallbackErr.response?.data?.error?.message || fallbackErr.message || sdkErr.message || 'Unknown network error';
       }
+      let finalError = message.startsWith('Authentication') ? message : `Connection error: ${message}`;
+      if (/timeout/i.test(message)) {
+        finalError += ' (Remote instance took too long to respond. If hosted on a free tier like Render, it may be waking up from sleep; wait a few seconds and click Re-Sync)';
+      }
       return {
         success: false,
         status: 'error',
         serverInfo: {},
         tools: [],
-        error: message.startsWith('Authentication') ? message : `Connection error: ${message}`
+        error: finalError
       };
     }
   }

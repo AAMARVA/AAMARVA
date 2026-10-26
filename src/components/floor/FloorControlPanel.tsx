@@ -214,7 +214,7 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
             <div className="flex items-center gap-2">
               <Server className="w-5 h-5 text-[#141414]" />
               <h1 className="text-sm sm:text-base font-black tracking-tight uppercase">
-                AAMARVA FLOOR // TOOLS & MCP GOVERNANCE
+                FLOOR // TOOLS & MCP GOVERNANCE
               </h1>
             </div>
             <p className="text-[11px] text-[#141414]/70 font-sans leading-relaxed">
