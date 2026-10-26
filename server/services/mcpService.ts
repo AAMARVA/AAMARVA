@@ -2314,7 +2314,14 @@ export async function setToolAssignment(
     }
     return { success: true, assigned: false };
   } else {
-    // Grant access
+    // Grant access (idempotent)
+    // Check if already in memory
+    for (const v of inMemoryAssignments.values()) {
+      if (v.tool_id === toolId && v.agent_id === agentId) {
+        return { success: true, assigned: true };
+      }
+    }
+
     const assignmentId = crypto.randomUUID();
     const assignmentRecord: McpToolAssignmentRecord = {
       id: assignmentId,
@@ -2327,12 +2334,24 @@ export async function setToolAssignment(
     };
 
     try {
-      const { error } = await supabase.from('mcp_tool_assignments').insert(assignmentRecord);
-      if (error && shouldFailOnDbError()) {
-        throw new Error(`Database error granting assignment: ${error.message}`);
+      const { error } = await supabase
+        .from('mcp_tool_assignments')
+        .upsert(assignmentRecord, { onConflict: 'tool_id,agent_id' });
+      if (error) {
+        const isDuplicate =
+          error.code === '23505' ||
+          error.message?.includes('duplicate key') ||
+          error.message?.includes('unique constraint');
+        if (!isDuplicate && shouldFailOnDbError()) {
+          throw new Error(`Database error granting assignment: ${error.message}`);
+        }
       }
-    } catch (err) {
-      if (shouldFailOnDbError()) throw err;
+    } catch (err: any) {
+      const isDuplicate =
+        err?.code === '23505' ||
+        err?.message?.includes('duplicate key') ||
+        err?.message?.includes('unique constraint');
+      if (!isDuplicate && shouldFailOnDbError()) throw err;
     }
 
     inMemoryAssignments.set(assignmentId, assignmentRecord);

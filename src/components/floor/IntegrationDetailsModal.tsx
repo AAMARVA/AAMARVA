@@ -247,10 +247,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
     onServerUpdated(server, updatedTools);
 
     try {
-      await Promise.all([
-        setToolAssignmentApi(toolId, accountId, nextGranted),
-        setToolGrantApi(toolId, accountId, nextGranted).catch(() => {})
-      ]);
+      await setToolAssignmentApi(toolId, accountId, nextGranted);
 
       setActionSuccess(
         nextGranted
