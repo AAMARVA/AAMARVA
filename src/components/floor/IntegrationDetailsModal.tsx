@@ -70,6 +70,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [assignedSubTab, setAssignedSubTab] = useState<'assigned' | 'unassigned'>('assigned');
 
   // Grants state
   const [, setGrants] = useState<McpToolGrant[]>([]);
@@ -590,95 +591,146 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                         </span>
                       </div>
 
-                      <div className="space-y-1.5">
-                        {activeFleetAgents.length === 0 ? (
-                          <div className="p-6 text-center border border-dashed border-[#141414]/20 bg-[#FAF9F5]">
-                            <p className="text-xs font-bold uppercase text-[#141414]/50">
-                              No fleet agents available.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="space-y-2 max-h-[188px] overflow-y-auto pr-1">
-                            {activeFleetAgents.map((agent) => {
-                              const targetId = agent.agentId || agent.id;
-                              const isAssigned =
-                                (currentTool.assigned_agents || []).includes(targetId) ||
-                                (currentTool.assigned_agents || []).includes(agent.id) ||
-                                (currentTool.assigned_agents || []).includes(agent.agentId);
-                              const isUpdating = revokingTarget === targetId;
+                      <div className="space-y-2">
+                        {(() => {
+                          const assignedAgents = activeFleetAgents.filter((agent) => {
+                            const targetId = agent.agentId || agent.id;
+                            return (
+                              (currentTool.assigned_agents || []).includes(targetId) ||
+                              (currentTool.assigned_agents || []).includes(agent.id) ||
+                              (currentTool.assigned_agents || []).includes(agent.agentId)
+                            );
+                          });
 
-                              return (
-                                <div
-                                  key={agent.id}
-                                  className={`p-2 border-2 transition-all flex items-center justify-between gap-2.5 ${
-                                    isAssigned
-                                      ? 'bg-[#FAF9F5] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                                      : 'bg-white border-[#141414]/20 hover:border-[#141414]/50'
+                          const unassignedAgents = activeFleetAgents.filter((agent) => {
+                            const targetId = agent.agentId || agent.id;
+                            return !(
+                              (currentTool.assigned_agents || []).includes(targetId) ||
+                              (currentTool.assigned_agents || []).includes(agent.id) ||
+                              (currentTool.assigned_agents || []).includes(agent.agentId)
+                            );
+                          });
+
+                          const displayedAgents = assignedSubTab === 'assigned' ? assignedAgents : unassignedAgents;
+
+                          return (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-1 border-b border-[#141414]/20 pb-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setAssignedSubTab('assigned')}
+                                  className={`px-3 py-1 text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                                    assignedSubTab === 'assigned'
+                                      ? 'bg-[#141414] text-white border-[#141414]'
+                                      : 'bg-[#FAF9F5] text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
                                   }`}
                                 >
-                                  <div
-                                    className={`flex items-center gap-2.5 min-w-0 flex-1 ${
-                                      onOpenAgentProfile ? 'cursor-pointer group' : ''
-                                    }`}
-                                    onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
-                                    title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
-                                  >
-                                    <AgentAvatar
-                                      id={agent.agentId || agent.id}
-                                      name={agent.name}
-                                      avatar={agent.avatar}
-                                      isMaster={false}
-                                      className="w-7 h-7 rounded-full border border-[#141414] shrink-0"
-                                    />
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-xs font-bold text-[#141414] truncate group-hover:underline">
-                                          {agent.name}
-                                        </span>
-                                        <CappedBadge
-                                          expiresAt={agent.expires_at || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()}
-                                          purchaseDate={agent.plan_created_at || agent.created_at}
-                                          isCapped={true}
-                                          size="sm"
-                                        />
-                                      </div>
-                                      <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
-                                        @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
-                                      </span>
-                                    </div>
-                                  </div>
+                                  Assigned Slaves ({assignedAgents.length})
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setAssignedSubTab('unassigned')}
+                                  className={`px-3 py-1 text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                                    assignedSubTab === 'unassigned'
+                                      ? 'bg-[#141414] text-white border-[#141414]'
+                                      : 'bg-[#FAF9F5] text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
+                                  }`}
+                                >
+                                  Unassigned Slaves ({unassignedAgents.length})
+                                </button>
+                              </div>
 
-                                  {!isSlaveAccount && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleToggleAssignment(currentTool.id, targetId, isAssigned)}
-                                      disabled={isUpdating}
-                                      className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-2 transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                                        isAssigned
-                                          ? 'bg-[#141414] text-white border-[#141414] hover:bg-red-700 hover:border-red-700'
-                                          : 'bg-white text-[#141414] border-[#141414] hover:bg-[#141414] hover:text-white'
-                                      }`}
-                                    >
-                                      {isUpdating ? (
-                                        <RefreshCw className="w-3 h-3 animate-spin" />
-                                      ) : isAssigned ? (
-                                        <>
-                                          <Check className="w-3 h-3" />
-                                          <span>Assigned</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Plus className="w-3 h-3" />
-                                          <span>Assign</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  )}
+                              {displayedAgents.length === 0 ? (
+                                <div className="p-6 text-center border border-dashed border-[#141414]/20 bg-[#FAF9F5]">
+                                  <p className="text-xs font-bold uppercase text-[#141414]/50">
+                                    No {assignedSubTab} agents found.
+                                  </p>
                                 </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                              ) : (
+                                <div className="space-y-2 max-h-[170px] overflow-y-auto pr-1">
+                                  {displayedAgents.map((agent) => {
+                                    const targetId = agent.agentId || agent.id;
+                                    const isAssigned =
+                                      (currentTool.assigned_agents || []).includes(targetId) ||
+                                      (currentTool.assigned_agents || []).includes(agent.id) ||
+                                      (currentTool.assigned_agents || []).includes(agent.agentId);
+                                    const isUpdating = revokingTarget === targetId;
+
+                                    return (
+                                      <div
+                                        key={agent.id}
+                                        className={`p-2 border-2 transition-all flex items-center justify-between gap-2.5 ${
+                                          isAssigned
+                                            ? 'bg-[#FAF9F5] border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                                            : 'bg-white border-[#141414]/20 hover:border-[#141414]/50'
+                                        }`}
+                                      >
+                                        <div
+                                          className={`flex items-center gap-2.5 min-w-0 flex-1 ${
+                                            onOpenAgentProfile ? 'cursor-pointer group' : ''
+                                          }`}
+                                          onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
+                                          title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
+                                        >
+                                          <AgentAvatar
+                                            id={agent.agentId || agent.id}
+                                            name={agent.name}
+                                            avatar={agent.avatar}
+                                            isMaster={false}
+                                            className="w-7 h-7 rounded-full border border-[#141414] shrink-0"
+                                          />
+                                          <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-xs font-bold text-[#141414] truncate group-hover:underline">
+                                                {agent.name}
+                                              </span>
+                                              <CappedBadge
+                                                expiresAt={agent.expires_at || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()}
+                                                purchaseDate={agent.plan_created_at || agent.created_at}
+                                                isCapped={true}
+                                                size="sm"
+                                              />
+                                            </div>
+                                            <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
+                                              @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        {!isSlaveAccount && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleAssignment(currentTool.id, targetId, isAssigned)}
+                                            disabled={isUpdating}
+                                            className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-2 transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                                              isAssigned
+                                                ? 'bg-[#141414] text-white border-[#141414] hover:bg-red-700 hover:border-red-700'
+                                                : 'bg-white text-[#141414] border-[#141414] hover:bg-[#141414] hover:text-white'
+                                            }`}
+                                          >
+                                            {isUpdating ? (
+                                              <RefreshCw className="w-3 h-3 animate-spin" />
+                                            ) : isAssigned ? (
+                                              <>
+                                                <Check className="w-3 h-3" />
+                                                <span>Assigned</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Plus className="w-3 h-3" />
+                                                <span>Assign</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   ) : null}
