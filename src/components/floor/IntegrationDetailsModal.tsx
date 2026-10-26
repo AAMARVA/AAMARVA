@@ -1086,10 +1086,10 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                       return (
                         <div
                           key={agent.id}
-                          className="flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+                          className="relative flex items-center justify-between gap-3 p-3 bg-white border-2 border-[#141414] shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] min-h-[64px]"
                         >
                           <div
-                            className={`flex items-center gap-2.5 min-w-0 flex-1 ${
+                            className={`flex items-center gap-2.5 min-w-0 flex-1 pr-1 ${
                               onOpenAgentProfile ? 'cursor-pointer group' : ''
                             }`}
                             onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
@@ -1103,29 +1103,34 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                               className="w-8 h-8 border border-[#141414] shrink-0"
                             />
                             <div className="flex flex-col min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-bold text-xs uppercase truncate text-[#141414] group-hover:underline">
-                                  {agent.name}
-                                </span>
-                                {Boolean(agent.expires_at && !isNaN(new Date(agent.expires_at).getTime())) && (
-                                  <CappedBadge
-                                    expiresAt={agent.expires_at}
-                                    purchaseDate={agent.plan_created_at}
-                                    isCapped={agent.isCapped}
-                                    size="sm"
-                                  />
-                                )}
-                              </div>
+                              <span className="font-bold text-xs uppercase truncate text-[#141414] group-hover:underline">
+                                {agent.name}
+                              </span>
                               <span className="text-[10px] text-[#141414]/60 truncate font-mono">
                                 @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
                               </span>
                             </div>
                           </div>
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 border ${
-                            isAssigned ? 'bg-[#141414] text-white border-[#141414]' : 'bg-neutral-100 text-[#141414]/70 border-neutral-300'
+
+                          <div className={`flex flex-col items-end shrink-0 gap-1.5 ${
+                            Boolean(agent.expires_at && !isNaN(new Date(agent.expires_at).getTime()))
+                              ? 'justify-between self-stretch'
+                              : 'justify-center'
                           }`}>
-                            {isAssigned ? 'Assigned' : 'Unassigned'}
-                          </span>
+                            {Boolean(agent.expires_at && !isNaN(new Date(agent.expires_at).getTime())) && (
+                              <CappedBadge
+                                expiresAt={agent.expires_at}
+                                purchaseDate={agent.plan_created_at}
+                                isCapped={agent.isCapped}
+                                size="sm"
+                              />
+                            )}
+                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 border ${
+                              isAssigned ? 'bg-[#141414] text-white border-[#141414]' : 'bg-neutral-100 text-[#141414]/70 border-neutral-300'
+                            }`}>
+                              {isAssigned ? 'Assigned' : 'Unassigned'}
+                            </span>
+                          </div>
                         </div>
                       );
                     })}
