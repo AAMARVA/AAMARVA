@@ -651,11 +651,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                     setSpogModalTab(assignedSubTab);
                                     setIsSpogModalOpen(true);
                                   }}
-                                  className={`px-3 py-1 text-[10px] font-mono font-black uppercase border-2 transition-all cursor-pointer flex items-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5 ${
-                                    assignedSubTab === 'assigned'
-                                      ? 'bg-emerald-900 text-white border-[#141414] hover:bg-emerald-950'
-                                      : 'bg-amber-900 text-white border-[#141414] hover:bg-amber-950'
-                                  }`}
+                                  className="px-3 py-1 text-[10px] font-mono font-black uppercase bg-[#141414] text-white border-2 border-[#141414] hover:bg-black transition-all cursor-pointer flex items-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] active:translate-x-0.5 active:translate-y-0.5"
                                   title={`Open SPOG Overview for ${assignedSubTab === 'assigned' ? 'Assigned' : 'Unassigned'} Slaves`}
                                 >
                                   <span className="bg-white text-[#141414] px-1 text-[8px] font-black">SPOG</span>
@@ -1035,7 +1031,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                   onClick={() => setSpogModalTab('assigned')}
                   className={`px-3 py-1 text-[10px] font-black uppercase border-2 transition-all cursor-pointer ${
                     spogModalTab === 'assigned'
-                      ? 'bg-emerald-800 text-white border-[#141414]'
+                      ? 'bg-[#141414] text-white border-[#141414]'
                       : 'bg-white text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
                   }`}
                 >
@@ -1046,7 +1042,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                   onClick={() => setSpogModalTab('unassigned')}
                   className={`px-3 py-1 text-[10px] font-black uppercase border-2 transition-all cursor-pointer ${
                     spogModalTab === 'unassigned'
-                      ? 'bg-amber-800 text-white border-[#141414]'
+                      ? 'bg-[#141414] text-white border-[#141414]'
                       : 'bg-white text-[#141414]/70 border-[#141414]/30 hover:border-[#141414]'
                   }`}
                 >
@@ -1109,7 +1105,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             </div>
                           </div>
                           <span className={`text-[9px] font-black uppercase px-2 py-0.5 border ${
-                            isAssigned ? 'bg-green-100 text-green-900 border-green-600' : 'bg-amber-100 text-amber-900 border-amber-600'
+                            isAssigned ? 'bg-[#141414] text-white border-[#141414]' : 'bg-neutral-100 text-[#141414]/70 border-neutral-300'
                           }`}>
                             {isAssigned ? 'Assigned' : 'Unassigned'}
                           </span>
