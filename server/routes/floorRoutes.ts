@@ -513,10 +513,7 @@ router.get(
         }
       }
 
-      const masterUserId = req.user!.masterId || req.user!.id;
-      const allAgentsList = Array.from(userMap.values()).filter(
-        (a) => a.master_id === masterUserId || a.id === masterUserId
-      );
+      const allAgentsList = Array.from(userMap.values());
 
       let capService: any = null;
       try {
@@ -524,10 +521,7 @@ router.get(
         capService = mod.CapabilityService?.getInstance?.();
       } catch (e) {}
 
-      const accountsMap = new Map<string, any>();
-      for (const s of allAgentsList) {
-        if (accountsMap.has(s.id)) continue;
-        
+      const accounts = await Promise.all(allAgentsList.map(async (s: any) => {
         let cap: any = null;
         if (capService) {
           try {
@@ -535,9 +529,7 @@ router.get(
           } catch (e) {}
         }
         const expiresAt = cap?.expires_at || s.plan_expires_at || s.expires_at || null;
-        const isCapped = s.isCapped === true || (s.plan && s.plan.includes('capped'));
-
-        accountsMap.set(s.id, {
+        return {
           id: s.id,
           agentId: s.agentId || s.id,
           name: s.name || s.agentId || 'Agent Node',
@@ -549,14 +541,23 @@ router.get(
             (expiresAt && new Date(expiresAt).getTime() > Date.now())
           ),
           plan: s.plan,
-          isCapped: isCapped,
+          isCapped: s.isCapped ?? true,
           expires_at: expiresAt,
           plan_created_at: s.plan_created_at,
           created_at: s.created_at
-        });
-      }
+        };
+      }));
 
-      const finalAccounts = Array.from(accountsMap.values());
+      const finalAccounts = accounts.length > 0 ? accounts : [
+        {
+          id: req.user!.id,
+          agentId: req.user!.agentId || 'AMR-TAJQ-S36N',
+          name: req.user!.name || 'AMR-TAJQ-S36N',
+          avatar: '🤖',
+          isMaster: false,
+          isCapped: false
+        }
+      ];
 
       res.json({ success: true, data: finalAccounts });
     } catch (err: any) {
