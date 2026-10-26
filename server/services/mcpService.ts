@@ -3576,7 +3576,7 @@ export async function getAuthorizedToolsForAgent(
           tool_id: grant.tool_id,
           agent_id: grant.account_id,
           created_at: grant.created_at
-        });
+        } as any);
       }
     }
   }
@@ -3597,7 +3597,7 @@ export async function getAuthorizedToolsForAgent(
               tool_id: g.tool_id,
               agent_id: g.account_id,
               created_at: g.created_at
-            });
+            } as any);
           }
         }
       }

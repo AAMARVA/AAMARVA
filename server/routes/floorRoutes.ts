@@ -515,7 +515,11 @@ router.get(
 
       const masterUserId = req.user!.masterId || req.user!.id;
       const allAgentsList = Array.from(userMap.values()).filter(
-        (a) => a.master_id === masterUserId || a.id === masterUserId
+        (a) => a.master_id === masterUserId && 
+               a.id !== masterUserId && 
+               a.account_type !== 'master' && 
+               a.isMasterUser !== true && 
+               a.is_master_primary !== true
       );
 
       let capService: any = null;
