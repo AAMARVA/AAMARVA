@@ -19,7 +19,7 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({
   onClick,
   size = 'sm'
 }) => {
-  const effectiveIsCapped = Boolean(isCapped) && Boolean(expiresAt);
+  const effectiveIsCapped = isCapped || Boolean(expiresAt) || Boolean(purchaseDate) || Boolean(createdAt);
   if (!effectiveIsCapped) return null;
 
   const [currentTimestamp, setCurrentTimestamp] = React.useState(() => Date.now());
@@ -59,8 +59,6 @@ export const CappedBadge: React.FC<CappedBadgeProps> = ({
 
     return remainingDays;
   }, [expiresAt, purchaseDate, createdAt, currentTimestamp]);
-
-  if (daysLeft === null) return null;
 
   const badgeTextClass = size === 'md' 
     ? 'text-[10px] px-2 py-0.5' 
