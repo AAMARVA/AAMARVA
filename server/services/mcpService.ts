@@ -676,25 +676,68 @@ export async function validateEndpointUrl(
  */
 export async function verifyAgentInOperatorFleet(operatorUserId: string, targetAgentId: string): Promise<boolean> {
   if (!operatorUserId || !targetAgentId) return false;
+
+  const cleanOperator = operatorUserId.trim().replace(/^@/, '').toLowerCase();
+  const cleanTarget = targetAgentId.trim().replace(/^@/, '').toLowerCase();
+
   // An operator can always assign tools to their primary account
-  if (targetAgentId === operatorUserId) return true;
+  if (cleanTarget === cleanOperator || targetAgentId === operatorUserId) return true;
 
   const supabase = getSupabaseClient();
-  try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, agentId, master_id')
-      .or(`id.eq.${targetAgentId},agentId.eq.${targetAgentId}`)
-      .maybeSingle();
+  const operatorCandidateIds = new Set<string>([
+    operatorUserId,
+    operatorUserId.trim(),
+    cleanOperator,
+    `@${cleanOperator}`
+  ]);
 
-    if (!error && data) {
-      return data.id === operatorUserId || data.master_id === operatorUserId;
-    }
-  } catch {}
+  // Attempt to resolve operator's own record from users table to get both id and agentId
+  if (isSupabaseConfigured()) {
+    try {
+      const { data: opUser } = await supabase
+        .from('users')
+        .select('id, agentId, master_id')
+        .or(`id.eq.${operatorUserId},agentId.eq.${operatorUserId},agentId.eq.${cleanOperator},agentId.ilike.${cleanOperator}`)
+        .maybeSingle();
+
+      if (opUser) {
+        if (opUser.id) operatorCandidateIds.add(opUser.id);
+        if (opUser.agentId) {
+          operatorCandidateIds.add(opUser.agentId);
+          operatorCandidateIds.add(opUser.agentId.replace(/^@/, '').toLowerCase());
+        }
+      }
+    } catch {}
+  }
+
+  // Look up target agent
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .or(`id.eq.${targetAgentId},id.eq.${cleanTarget},agentId.eq.${targetAgentId},agentId.eq.${cleanTarget},agentId.ilike.${cleanTarget}`)
+        .maybeSingle();
+
+      if (!error && data) {
+        const targetId = data.id;
+        const targetAgentIdVal = data.agentId ? String(data.agentId).replace(/^@/, '').toLowerCase() : '';
+        const targetMasterId = data.master_id || data.masterUserId;
+
+        if (operatorCandidateIds.has(targetId) || (targetAgentIdVal && operatorCandidateIds.has(targetAgentIdVal))) {
+          return true;
+        }
+
+        if (targetMasterId && (operatorCandidateIds.has(targetMasterId) || operatorCandidateIds.has(String(targetMasterId).replace(/^@/, '').toLowerCase()))) {
+          return true;
+        }
+      }
+    } catch {}
+  }
 
   // In test / offline mode, check naming convention or local fleet registry
   if (isStrictTestEnvironment()) {
-    if (targetAgentId.includes('slave') || targetAgentId === operatorUserId) {
+    if (cleanTarget.includes('slave') || cleanTarget === cleanOperator) {
       return true;
     }
   }
@@ -2291,7 +2334,8 @@ export async function setToolAssignment(
     } catch {}
   }
 
-  if (!tool || tool.owner_id !== userId) {
+  const isOwner = tool && (tool.owner_id === userId || (await verifyAgentInOperatorFleet(userId, tool.owner_id)));
+  if (!tool || !isOwner) {
     throw new Error('Tool not found or unauthorized.');
   }
 
@@ -2307,6 +2351,13 @@ export async function setToolAssignment(
       if (error && shouldFailOnDbError()) {
         throw new Error(`Database error revoking assignment: ${error.message}`);
       }
+      try {
+        await supabase
+          .from('mcp_tool_grants')
+          .update({ status: 'revoked', updated_at: new Date().toISOString() })
+          .eq('tool_id', toolId)
+          .eq('account_id', agentId);
+      } catch {}
     } catch (err) {
       if (shouldFailOnDbError()) throw err;
     }
@@ -2315,6 +2366,14 @@ export async function setToolAssignment(
       if (v.tool_id === toolId && v.agent_id === agentId) {
         inMemoryAssignments.delete(k);
       }
+    }
+    for (const [k, v] of inMemoryPersistentGrants.entries()) {
+      if (v.tool_id === toolId && (v.account_id === agentId || v.account_id?.replace(/^@/, '') === agentId.replace(/^@/, ''))) {
+        v.status = 'revoked';
+      }
+    }
+    if (tool && Array.isArray(tool.assigned_agents)) {
+      tool.assigned_agents = tool.assigned_agents.filter((a: string) => a !== agentId && a.replace(/^@/, '') !== agentId.replace(/^@/, ''));
     }
     return { success: true, assigned: false };
   } else {
@@ -2385,12 +2444,33 @@ export async function hasActiveToolGrant(
     new Set([rawId, strippedId, atId, rawId.toLowerCase(), strippedId.toLowerCase(), atId.toLowerCase()])
   );
 
+  // Look up user in database to resolve all aliases (UUID vs agentId)
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data: u } = await supabase
+        .from('users')
+        .select('id, agentId')
+        .or(`id.eq.${rawId},id.eq.${strippedId},agentId.eq.${rawId},agentId.eq.${strippedId},agentId.ilike.${strippedId}`)
+        .maybeSingle();
+      if (u) {
+        if (u.id) candidateAccounts.push(u.id);
+        if (u.agentId) {
+          candidateAccounts.push(u.agentId);
+          candidateAccounts.push(u.agentId.toLowerCase());
+          candidateAccounts.push(u.agentId.replace(/^@/, ''));
+          candidateAccounts.push(`@${u.agentId.replace(/^@/, '')}`);
+        }
+      }
+    } catch {}
+  }
+
   // 1. Check in-memory persistent grants first
   for (const grant of inMemoryPersistentGrants.values()) {
     if (
       grant.server_id === serverId &&
       grant.tool_id === toolId &&
-      candidateAccounts.includes(grant.account_id)
+      candidateAccounts.some(c => c === grant.account_id || c.toLowerCase() === grant.account_id?.toLowerCase() || c.replace(/^@/, '').toLowerCase() === grant.account_id?.replace(/^@/, '').toLowerCase())
     ) {
       if (grant.status === 'revoked') return false;
       if (grant.status === 'active') return true;
@@ -2428,7 +2508,7 @@ export async function hasActiveToolGrant(
   const isAssigned = assignments.some(
     (a) =>
       a.tool_id === toolId &&
-      candidateAccounts.includes(a.agent_id)
+      candidateAccounts.some(c => c === a.agent_id || c.toLowerCase() === a.agent_id?.toLowerCase() || c.replace(/^@/, '').toLowerCase() === a.agent_id?.replace(/^@/, '').toLowerCase())
   );
   if (isAssigned) {
     // Verify it was not explicitly revoked in memory
@@ -2436,13 +2516,22 @@ export async function hasActiveToolGrant(
       if (
         grant.server_id === serverId &&
         grant.tool_id === toolId &&
-        candidateAccounts.includes(grant.account_id) &&
+        candidateAccounts.some(c => c === grant.account_id || c.toLowerCase() === grant.account_id?.toLowerCase() || c.replace(/^@/, '').toLowerCase() === grant.account_id?.replace(/^@/, '').toLowerCase()) &&
         grant.status === 'revoked'
       ) {
         return false;
       }
     }
     return true;
+  }
+
+  // 4. Check if tool record has assigned_agents array
+  const tool = await getToolRecord(toolId);
+  if (tool && Array.isArray(tool.assigned_agents)) {
+    const isDirectlyAssigned = tool.assigned_agents.some(ag =>
+      candidateAccounts.some(c => c === ag || c.toLowerCase() === ag?.toLowerCase() || c.replace(/^@/, '').toLowerCase() === ag?.replace(/^@/, '').toLowerCase())
+    );
+    if (isDirectlyAssigned) return true;
   }
 
   return false;
@@ -2469,7 +2558,8 @@ export async function grantToolAccess(
 
   // 2. Verify tool exists, belongs to this server and is owned by operator
   const tool = await getToolRecord(toolId);
-  if (!tool || tool.owner_id !== operatorUserId || tool.server_id !== serverId) {
+  const isOwner = tool && (tool.owner_id === operatorUserId || (await verifyAgentInOperatorFleet(operatorUserId, tool.owner_id)));
+  if (!tool || !isOwner || tool.server_id !== serverId) {
     throw new Error('MCP tool not found or unauthorized.');
   }
 
@@ -2570,7 +2660,8 @@ export async function revokeToolAccess(
   }
 
   const tool = await getToolRecord(toolId);
-  if (!tool || tool.owner_id !== operatorUserId || tool.server_id !== serverId) {
+  const isOwner = tool && (tool.owner_id === operatorUserId || (await verifyAgentInOperatorFleet(operatorUserId, tool.owner_id)));
+  if (!tool || !isOwner || tool.server_id !== serverId) {
     throw new Error('MCP tool not found or unauthorized.');
   }
 
@@ -3682,10 +3773,65 @@ export async function getAuthorizedToolsForAgent(
     accessStatus: string;
   }> = [];
 
-  // 1. If caller is Master Operator, they own the floor and can discover all enabled tools across their connected servers
+  // Build exhaustive candidate list for caller identity
+  const candidateIds = new Set<string>();
+  const addCandidate = (val?: string) => {
+    if (!val || typeof val !== 'string') return;
+    const raw = val.trim();
+    if (!raw) return;
+    const stripped = raw.replace(/^@/, '');
+    candidateIds.add(raw);
+    candidateIds.add(raw.toLowerCase());
+    candidateIds.add(raw.toUpperCase());
+    candidateIds.add(stripped);
+    candidateIds.add(stripped.toLowerCase());
+    candidateIds.add(stripped.toUpperCase());
+    candidateIds.add(`@${stripped}`);
+    candidateIds.add(`@${stripped}`.toLowerCase());
+    candidateIds.add(`@${stripped}`.toUpperCase());
+  };
+
+  addCandidate(caller.userId);
+  addCandidate(caller.agentId);
+  addCandidate(caller.name);
+  addCandidate(caller.email);
+
+  // Look up user in database to resolve all alternate IDs and master ID
+  if (isSupabaseConfigured()) {
+    try {
+      let dbUser: any = null;
+      if (caller.userId) {
+        const { data } = await supabase.from('users').select('*').eq('id', caller.userId).maybeSingle();
+        if (data) dbUser = data;
+      }
+      if (!dbUser && caller.agentId) {
+        const cleanAg = caller.agentId.replace(/^@/, '');
+        const { data } = await supabase.from('users').select('*').or(`agentId.eq.${caller.agentId},agentId.eq.${cleanAg},agentId.ilike.${cleanAg}`).maybeSingle();
+        if (data) dbUser = data;
+      }
+
+      if (dbUser) {
+        addCandidate(dbUser.id);
+        addCandidate(dbUser.agentId);
+        addCandidate(dbUser.name);
+        addCandidate(dbUser.email);
+        if ((dbUser.master_id || dbUser.masterUserId) && !caller.masterId) {
+          caller.masterId = dbUser.master_id || dbUser.masterUserId;
+        }
+      }
+    } catch {}
+  }
+
+  // 1. If caller is Master Operator, they own the floor and can discover all enabled tools across their servers
   if (caller.isMaster) {
     let servers: McpServerRecord[] = [];
-    const ownerIds = Array.from(new Set([caller.userId, caller.masterId].filter(Boolean))) as string[];
+    const ownerIdsSet = new Set<string>([caller.userId, caller.masterId].filter(Boolean) as string[]);
+    if (caller.agentId) {
+      ownerIdsSet.add(caller.agentId);
+      ownerIdsSet.add(caller.agentId.replace(/^@/, ''));
+    }
+    const ownerIds = Array.from(ownerIdsSet);
+
     if (isSupabaseConfigured() && ownerIds.length > 0) {
       try {
         const { data } = await supabase
@@ -3741,7 +3887,8 @@ export async function getAuthorizedToolsForAgent(
     for (const tool of allOwnerTools) {
       if (tool.is_enabled === false) continue;
       const server = serverMap.get(tool.server_id);
-      const isServerDisabled = server && ['disabled', 'disconnected', 'error'].includes(String(server.status).toLowerCase());
+      // Only hide tools if the server is explicitly disabled by the operator
+      const isServerDisabled = server && String(server.status).toLowerCase() === 'disabled';
       if (isServerDisabled) continue;
 
       const policy = await getToolHitlPolicy(tool.id);
@@ -3764,85 +3911,35 @@ export async function getAuthorizedToolsForAgent(
     return results;
   }
 
-  // 2. Autonomous Agent Discovery: Resolve all candidate identifiers for the agent
+  // 2. Autonomous Agent Discovery (Slave / Fleet Agent)
   let assignments: McpToolAssignmentRecord[] = [];
-
-  const candidateIds = new Set<string>();
-  const addCandidate = (val?: string) => {
-    if (!val || typeof val !== 'string') return;
-    const raw = val.trim();
-    if (!raw) return;
-    const stripped = raw.replace(/^@/, '');
-    candidateIds.add(raw);
-    candidateIds.add(raw.toLowerCase());
-    candidateIds.add(raw.toUpperCase());
-    candidateIds.add(stripped);
-    candidateIds.add(stripped.toLowerCase());
-    candidateIds.add(stripped.toUpperCase());
-    candidateIds.add(`@${stripped}`);
-    candidateIds.add(`@${stripped}`.toLowerCase());
-    candidateIds.add(`@${stripped}`.toUpperCase());
-  };
-
-  addCandidate(caller.userId);
-  addCandidate(caller.agentId);
-  addCandidate(caller.name);
-  addCandidate(caller.email);
-
-  // Also query users table to resolve alternate agentId, name, email, and master_id
-  if (isSupabaseConfigured()) {
-    try {
-      let dbUser: any = null;
-      if (caller.userId) {
-        const { data } = await supabase.from('users').select('*').eq('id', caller.userId).maybeSingle();
-        if (data) dbUser = data;
-      }
-      if (!dbUser && caller.agentId) {
-        const { data } = await supabase.from('users').select('*').eq('agentId', caller.agentId).maybeSingle();
-        if (data) dbUser = data;
-      }
-      if (!dbUser && caller.agentId) {
-        const { data } = await supabase.from('users').select('*').ilike('agentId', caller.agentId.replace(/^@/, '')).maybeSingle();
-        if (data) dbUser = data;
-      }
-
-      if (dbUser) {
-        addCandidate(dbUser.id);
-        addCandidate(dbUser.agentId);
-        addCandidate(dbUser.name);
-        addCandidate(dbUser.email);
-        if ((dbUser.master_id || dbUser.masterUserId) && !caller.masterId) {
-          caller.masterId = dbUser.master_id || dbUser.masterUserId;
-        }
-      }
-    } catch {}
-  }
-
   const candidateList = Array.from(candidateIds);
 
+  // A. Query mcp_tool_assignments table by agent_id candidates
   if (isSupabaseConfigured() && candidateList.length > 0) {
     try {
       const { data } = await supabase
         .from('mcp_tool_assignments')
         .select('*')
         .in('agent_id', candidateList);
-      if (Array.isArray(data)) assignments = data;
+      if (Array.isArray(data)) assignments.push(...data);
     } catch {}
 
-    // Also fetch all fleet assignments for operator to do robust in-memory case-insensitive match
-    if (caller.masterId) {
+    // B. Also query fleet assignments case-insensitively
+    const fleetOwnerIds = Array.from(new Set([caller.masterId, caller.userId].filter(Boolean) as string[]));
+    if (fleetOwnerIds.length > 0) {
       try {
         const { data: fleetAssns } = await supabase
           .from('mcp_tool_assignments')
           .select('*')
-          .eq('owner_id', caller.masterId);
+          .in('owner_id', fleetOwnerIds);
         if (Array.isArray(fleetAssns)) {
           for (const fa of fleetAssns) {
             const faNorm = fa.agent_id ? fa.agent_id.replace(/^@/, '').toLowerCase() : '';
             const matches = candidateList.some(
               (c) => c === fa.agent_id || c.toLowerCase() === fa.agent_id?.toLowerCase() || (faNorm && c.replace(/^@/, '').toLowerCase() === faNorm)
             );
-            if (matches && !assignments.some((a) => a.id === fa.id)) {
+            if (matches && !assignments.some((a) => a.id === fa.id || a.tool_id === fa.tool_id)) {
               assignments.push(fa);
             }
           }
@@ -3851,14 +3948,15 @@ export async function getAuthorizedToolsForAgent(
     }
   }
 
+  // C. In-memory assignments
   const inMem = Array.from(inMemoryAssignments.values()).filter(
     (a) => candidateIds.has(a.agent_id) || candidateIds.has(a.agent_id.replace(/^@/, '').toLowerCase())
   );
   for (const m of inMem) {
-    if (!assignments.some((a) => a.id === m.id)) assignments.push(m);
+    if (!assignments.some((a) => a.id === m.id || a.tool_id === m.tool_id)) assignments.push(m);
   }
 
-  // Also include any tools with active grants for this agent/user
+  // D. In-memory persistent grants
   for (const grant of inMemoryPersistentGrants.values()) {
     if ((candidateIds.has(grant.account_id) || candidateIds.has(grant.account_id.replace(/^@/, '').toLowerCase())) && grant.status === 'active') {
       if (!assignments.some((a) => a.tool_id === grant.tool_id)) {
@@ -3875,6 +3973,7 @@ export async function getAuthorizedToolsForAgent(
     }
   }
 
+  // E. Database active tool grants
   if (isSupabaseConfigured() && candidateList.length > 0) {
     try {
       const { data: dbGrants } = await supabase
@@ -3899,13 +3998,13 @@ export async function getAuthorizedToolsForAgent(
       }
     } catch {}
 
-    // Also check fleet grants under caller.masterId
-    if (caller.masterId) {
+    const fleetOwnerIds = Array.from(new Set([caller.masterId, caller.userId].filter(Boolean) as string[]));
+    if (fleetOwnerIds.length > 0) {
       try {
         const { data: fleetGrants } = await supabase
           .from('mcp_tool_grants')
           .select('*')
-          .eq('granted_by', caller.masterId)
+          .in('granted_by', fleetOwnerIds)
           .eq('status', 'active');
         if (Array.isArray(fleetGrants)) {
           for (const fg of fleetGrants) {
@@ -3918,7 +4017,7 @@ export async function getAuthorizedToolsForAgent(
                 id: fg.id,
                 server_id: fg.server_id,
                 tool_id: fg.tool_id,
-                owner_id: caller.masterId,
+                owner_id: caller.masterId || caller.userId,
                 agent_id: fg.account_id,
                 granted_by: fg.granted_by,
                 created_at: fg.created_at
@@ -3930,30 +4029,88 @@ export async function getAuthorizedToolsForAgent(
     }
   }
 
+  // F. Also check tools that have assigned_agents column containing caller candidate
+  if (isSupabaseConfigured()) {
+    try {
+      const { data: allDbTools } = await supabase.from('mcp_tools').select('*');
+      if (Array.isArray(allDbTools)) {
+        for (const t of allDbTools) {
+          if (Array.isArray(t.assigned_agents) && t.assigned_agents.length > 0) {
+            const isAssigned = t.assigned_agents.some((ag: string) => {
+              const agNorm = String(ag).replace(/^@/, '').toLowerCase();
+              return candidateList.some(
+                (c) => c === ag || c.toLowerCase() === ag.toLowerCase() || (agNorm && c.replace(/^@/, '').toLowerCase() === agNorm)
+              );
+            });
+            if (isAssigned && !assignments.some((a) => a.tool_id === t.id)) {
+              assignments.push({
+                id: `asgn_direct_${t.id}`,
+                server_id: t.server_id,
+                tool_id: t.id,
+                owner_id: t.owner_id,
+                agent_id: caller.agentId || caller.userId,
+                granted_by: t.owner_id,
+                created_at: t.created_at
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // G. In-memory tools assigned_agents
+  for (const t of inMemoryTools.values()) {
+    if (Array.isArray(t.assigned_agents) && t.assigned_agents.length > 0) {
+      const isAssigned = t.assigned_agents.some((ag: string) => {
+        const agNorm = String(ag).replace(/^@/, '').toLowerCase();
+        return candidateList.some(
+          (c) => c === ag || c.toLowerCase() === ag.toLowerCase() || (agNorm && c.replace(/^@/, '').toLowerCase() === agNorm)
+        );
+      });
+      if (isAssigned && !assignments.some((a) => a.tool_id === t.id)) {
+        assignments.push({
+          id: `asgn_mem_${t.id}`,
+          server_id: t.server_id,
+          tool_id: t.id,
+          owner_id: t.owner_id,
+          agent_id: caller.agentId || caller.userId,
+          granted_by: t.owner_id,
+          created_at: t.created_at
+        });
+      }
+    }
+  }
+
+  // Resolve tool records and filter out only explicitly disabled tools/servers
   for (const assn of assignments) {
     let tool = inMemoryTools.get(assn.tool_id);
-    if (!tool) {
+    if (!tool && isSupabaseConfigured()) {
       try {
         const { data } = await supabase.from('mcp_tools').select('*').eq('id', assn.tool_id).maybeSingle();
         if (data) tool = data;
       } catch {}
     }
-    if (!tool) {
+    if (!tool && isSupabaseConfigured()) {
       try {
         const { data } = await supabase.from('mcp_tools').select('*').ilike('name', assn.tool_id).maybeSingle();
         if (data) tool = data;
       } catch {}
     }
+
     const targetServerId = assn.server_id || tool?.server_id;
     let server = targetServerId ? inMemoryServers.get(targetServerId) : null;
-    if (!server && targetServerId) {
+    if (!server && targetServerId && isSupabaseConfigured()) {
       try {
         const { data } = await supabase.from('mcp_servers').select('*').eq('id', targetServerId).maybeSingle();
         if (data) server = data;
       } catch {}
     }
-    const serverIsDisabled = server && ['disabled', 'disconnected', 'error'].includes(String(server.status).toLowerCase());
+
+    // Only skip if server or tool is explicitly disabled
+    const serverIsDisabled = server && String(server.status).toLowerCase() === 'disabled';
     const isToolEnabled = tool && tool.is_enabled !== false;
+
     if (tool && isToolEnabled && !serverIsDisabled) {
       const policy = await getToolHitlPolicy(tool.id);
       const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';

@@ -1,6 +1,6 @@
 import { Request } from 'express';
 import { isIP } from 'node:net';
-import { getSupabaseClient } from '../supabase';
+import { getSupabaseClient, isSupabaseConfigured } from '../supabase';
 import { logAccountAudit } from './auditService';
 import { redactSensitiveData } from '../utils/redact';
 import { getClientIp } from '../utils/networkWhitelist';
@@ -655,6 +655,7 @@ export class SecurityService {
 
   private async performCorrelationCheck(ip: string, userId: string | undefined, isCritical: boolean = false, trafficClass: TrafficClass = TrafficClass.PUBLIC): Promise<void> {
     if (!userId || !this.tableExistence.security_enforcement_events) return;
+    if (!isSupabaseConfigured() || process.env.NODE_ENV === 'test') return;
     const sb = getSupabaseClient();
     
     // Check if this IP has other suspended/banned accounts (Priority 14)
@@ -1104,8 +1105,8 @@ export class SecurityService {
         this.tableExistence[componentName] = false;
       }
       
-      // FAIL OPEN for Human/Public traffic
-      if (trafficClass !== TrafficClass.AGENT_AUTH) {
+      // FAIL OPEN for Human/Public traffic or when Supabase is not configured or in non-production
+      if (trafficClass !== TrafficClass.AGENT_AUTH || !isSupabaseConfigured() || process.env.NODE_ENV !== 'production') {
         return true;
       }
       

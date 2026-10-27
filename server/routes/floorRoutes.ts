@@ -1103,7 +1103,9 @@ router.get(
         req.user?.role === 'slave' ||
         (req.user?.agentId && req.user?.agentId.toLowerCase().includes('slave')) ||
         (req.user?.master_id && req.user?.master_id !== req.user?.id) ||
-        (req.user?.masterId && req.user?.masterId !== req.user?.id)
+        (req.user?.masterId && req.user?.masterId !== req.user?.id) ||
+        ((req.user as any)?.masterUserId && (req.user as any)?.masterUserId !== req.user?.id) ||
+        (req.user?.email && typeof req.user.email === 'string' && req.user.email.includes('+AMR-'))
       );
       const isMaster = !isSlave;
 
@@ -1112,7 +1114,7 @@ router.get(
         agentId: req.user!.agentId || req.user!.id,
         name: req.user!.name,
         email: req.user!.email,
-        masterId: req.user!.masterId || req.user!.master_id,
+        masterId: req.user!.masterId || req.user!.master_id || (req.user as any)?.masterUserId,
         isMaster
       };
 
