@@ -1382,7 +1382,7 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
     // 1. Cluster existence and dissolution check
     const { data: cluster, error: clusterErr } = await supabase
       .from(tables.clusters)
-      .select('id, status')
+      .select('id, status, ownerAgentId')
       .eq('id', clusterId)
       .maybeSingle();
 
@@ -1738,8 +1738,22 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
       }
       messageInserted = true;
 
-      const recipientIds = body.recipientAgentIds || body.recipients || [];
-      if (Array.isArray(recipientIds) && recipientIds.length > 0) {
+      const recipientSet = new Set<string>();
+      const rawRecips = body.recipientAgentIds || body.recipients || [];
+      if (Array.isArray(rawRecips)) {
+        rawRecips.forEach((r: any) => {
+          if (r) recipientSet.add(String(r).trim());
+        });
+      }
+      if (cluster?.ownerAgentId) {
+        recipientSet.add(String(cluster.ownerAgentId).trim());
+      }
+      if (agentId) {
+        recipientSet.add(String(agentId).trim());
+      }
+      const recipientIds = Array.from(recipientSet);
+
+      if (recipientIds.length > 0) {
         // Validate recipients are active members
         const { data: activeMembers } = await supabase
           .from(tables.members)
@@ -1749,7 +1763,10 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
         const activeMemberIds = new Set(activeMembers?.map(m => normalizeAgentId(m.agentId)) || []);
         
         for (const rId of recipientIds) {
-          if (!activeMemberIds.has(normalizeAgentId(rId))) {
+          const normR = normalizeAgentId(rId);
+          const isOwner = cluster?.ownerAgentId && normR === normalizeAgentId(cluster.ownerAgentId);
+          const isSender = agentId && normR === normalizeAgentId(agentId);
+          if (!activeMemberIds.has(normR) && !isOwner && !isSender) {
             throw new Error(`Invalid or inactive recipient: ${rId}`);
           }
         }
@@ -1930,12 +1947,13 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMessa
       });
     }
 
-    // Filter messages for recipient authorization
+    // Filter messages for strict recipient-only authorization:
+    // A message is visible if and only if the caller's agentId is explicitly included in the message's recipient list.
+    // Being a cluster member, master account, administrator, or message sender does NOT grant implicit access.
     const callerAgentId = normalizeAgentId(req.user!.agentId);
     const authorizedMessages = messages.filter((m: any) => {
-      const recips = recipientsMap.get(m.id);
-      if (!recips || recips.length === 0) return true; // Broadcast
-      return recips.some(r => normalizeAgentId(r.agentId) === callerAgentId) || normalizeAgentId(m.senderAgentId) === callerAgentId;
+      const recips = recipientsMap.get(m.id) || [];
+      return recips.some(r => normalizeAgentId(r.agentId) === callerAgentId);
     });
 
     // Resolve recipient user profiles so UI has accurate name, avatar, and slave/master status
