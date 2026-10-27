@@ -1096,7 +1096,7 @@ router.get(
   securityLayer('floor_reads'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const isSlave = Boolean(
+      let isSlave = Boolean(
         req.user?.is_slave === true ||
         req.user?.isSlave === true ||
         req.user?.account_type === 'slave' ||
@@ -1107,6 +1107,32 @@ router.get(
         ((req.user as any)?.masterUserId && (req.user as any)?.masterUserId !== req.user?.id) ||
         (req.user?.email && typeof req.user.email === 'string' && req.user.email.includes('+AMR-'))
       );
+
+      let masterId = req.user?.masterId || req.user?.master_id || (req.user as any)?.masterUserId;
+
+      if (!isSlave && req.user?.id) {
+        try {
+          const supabase = getSupabaseClient();
+          const { data: dbUser } = await supabase
+            .from('users')
+            .select('master_id, is_master_primary, role, account_type, is_slave')
+            .eq('id', req.user.id)
+            .maybeSingle();
+
+          if (dbUser) {
+            if (
+              (dbUser.master_id && !dbUser.is_master_primary) ||
+              dbUser.role === 'slave' ||
+              dbUser.account_type === 'slave' ||
+              dbUser.is_slave === true
+            ) {
+              isSlave = true;
+              masterId = dbUser.master_id || masterId;
+            }
+          }
+        } catch {}
+      }
+
       const isMaster = !isSlave;
 
       const caller = {
@@ -1114,7 +1140,7 @@ router.get(
         agentId: req.user!.agentId || req.user!.id,
         name: req.user!.name,
         email: req.user!.email,
-        masterId: req.user!.masterId || req.user!.master_id || (req.user as any)?.masterUserId,
+        masterId,
         isMaster
       };
 

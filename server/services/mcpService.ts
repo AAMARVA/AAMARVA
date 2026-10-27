@@ -3818,6 +3818,15 @@ export async function getAuthorizedToolsForAgent(
         if ((dbUser.master_id || dbUser.masterUserId) && !caller.masterId) {
           caller.masterId = dbUser.master_id || dbUser.masterUserId;
         }
+        if (
+          (dbUser.master_id && !dbUser.is_master_primary) ||
+          (dbUser.masterUserId && !dbUser.is_master_primary) ||
+          dbUser.role === 'slave' ||
+          dbUser.account_type === 'slave' ||
+          dbUser.is_slave === true
+        ) {
+          caller.isMaster = false;
+        }
       }
     } catch {}
   }

@@ -696,7 +696,7 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
     const supabase = getSupabaseClient();
     const { data: user, error } = await supabase
       .from('users')
-      .select('status, emailVerified, id, agentId, whitelisted_networks, passwordChangedAt')
+      .select('status, emailVerified, id, agentId, name, avatar, email, master_id, is_master_primary, role, account_type, is_slave, whitelisted_networks, passwordChangedAt')
       .eq('id', payload.id)
       .maybeSingle();
 
@@ -785,7 +785,14 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
     }
 
     const clientIp = getClientIp(req);
-    const isSlaveAccount = Boolean((user.master_id && !user.is_master_primary) || user.type === 'agent' || user.role === 'slave' || user.account_type === 'slave' || user.is_slave === true);
+    const resolvedMasterId = masterId;
+    const isSlaveAccount = Boolean(
+      (resolvedMasterId && !isMasterPrimary) ||
+      user.role === 'slave' ||
+      user.account_type === 'slave' ||
+      user.is_slave === true ||
+      (user as any).isSlave === true
+    );
     if (isSlaveAccount && !isIpAllowed(clientIp, user.whitelisted_networks)) {
       res.status(403).json({
         success: false,
@@ -803,10 +810,12 @@ export async function requireAgentAuth(req: AuthenticatedRequest, res: Response,
       agentId: user.agentId,
       name: (user as any).name || payload.name,
       avatar: (user as any).avatar || payload.avatar,
+      email: (user as any).email || payload.email,
       emailVerified: Boolean(user.emailVerified === true),
-      master_id: (user as any).master_id,
-      is_master_primary: (user as any).is_master_primary,
-      account_type: isSlaveAccount ? 'slave' : 'master',
+      master_id: resolvedMasterId,
+      masterId: resolvedMasterId,
+      is_master_primary: isMasterPrimary,
+      account_type: isSlaveAccount ? 'slave' : ((user as any).account_type || 'master'),
       role: isSlaveAccount ? 'slave' : ((user as any).role || 'agent'),
       is_slave: isSlaveAccount,
       isSlave: isSlaveAccount,
@@ -935,10 +944,8 @@ export async function requireUserOrAgentAuth(req: AuthenticatedRequest, res: Res
 
     try {
       const agentPayload = verifyAgentAccessToken(candidateSession);
-      if (agentPayload && agentPayload.agentId) {
-        req.user = agentPayload;
-        req.authType = 'agent';
-        return enforceSlavePostGuard(req, res, next);
+      if (agentPayload && (agentPayload.agentId || agentPayload.id)) {
+        return await requireAgentAuth(req, res, () => enforceSlavePostGuard(req, res, next));
       }
     } catch (e) {}
   }
