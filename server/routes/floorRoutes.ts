@@ -1096,7 +1096,8 @@ router.get(
   securityLayer('floor_reads'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const isMaster = Boolean(
+      const isAgent = Boolean(req.user?.agentId || req.authType === 'agent');
+      const isMaster = !isAgent && Boolean(
         req.authType === 'human' ||
         req.user?.role === 'master' ||
         req.user?.account_type === 'master' ||

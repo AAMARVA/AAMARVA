@@ -2381,13 +2381,16 @@ export async function hasActiveToolGrant(
   const rawId = accountId.trim();
   const strippedId = rawId.replace(/^@/, '');
   const atId = `@${strippedId}`;
+  const candidateAccounts = Array.from(
+    new Set([rawId, strippedId, atId, rawId.toLowerCase(), strippedId.toLowerCase(), atId.toLowerCase()])
+  );
 
   // 1. Check in-memory persistent grants first
   for (const grant of inMemoryPersistentGrants.values()) {
     if (
       grant.server_id === serverId &&
       grant.tool_id === toolId &&
-      (grant.account_id === rawId || grant.account_id === strippedId || grant.account_id === atId || grant.account_id.toLowerCase() === strippedId.toLowerCase())
+      candidateAccounts.includes(grant.account_id)
     ) {
       if (grant.status === 'revoked') return false;
       if (grant.status === 'active') return true;
@@ -2403,7 +2406,7 @@ export async function hasActiveToolGrant(
         .select('*')
         .eq('server_id', serverId)
         .eq('tool_id', toolId)
-        .or(`account_id.eq.${rawId},account_id.eq.${strippedId},account_id.eq.${atId}`)
+        .in('account_id', candidateAccounts)
         .maybeSingle();
 
       if (error && shouldFailOnDbError()) {
@@ -2425,7 +2428,7 @@ export async function hasActiveToolGrant(
   const isAssigned = assignments.some(
     (a) =>
       a.tool_id === toolId &&
-      (a.agent_id === rawId || a.agent_id === strippedId || a.agent_id === atId || a.agent_id.toLowerCase() === strippedId.toLowerCase())
+      candidateAccounts.includes(a.agent_id)
   );
   if (isAssigned) {
     // Verify it was not explicitly revoked in memory
@@ -2433,7 +2436,7 @@ export async function hasActiveToolGrant(
       if (
         grant.server_id === serverId &&
         grant.tool_id === toolId &&
-        (grant.account_id === rawId || grant.account_id === strippedId || grant.account_id === atId || grant.account_id.toLowerCase() === strippedId.toLowerCase()) &&
+        candidateAccounts.includes(grant.account_id) &&
         grant.status === 'revoked'
       ) {
         return false;
@@ -3105,10 +3108,17 @@ export async function rejectToolAccessRequest(
 }
 
 export async function getToolRecord(toolId: string): Promise<McpToolRecord | null> {
+  if (!toolId || typeof toolId !== 'string') return null;
+  const trimmed = toolId.trim();
+
   if (isSupabaseConfigured()) {
     try {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase.from('mcp_tools').select('*').eq('id', toolId).maybeSingle();
+      let { data, error } = await supabase.from('mcp_tools').select('*').eq('id', trimmed).maybeSingle();
+      if (!data) {
+        const { data: byName } = await supabase.from('mcp_tools').select('*').ilike('name', trimmed).maybeSingle();
+        data = byName;
+      }
       if (error && shouldFailOnDbError()) {
         throw new Error(`Database error retrieving tool: ${error.message}`);
       }
@@ -3121,7 +3131,15 @@ export async function getToolRecord(toolId: string): Promise<McpToolRecord | nul
       if (shouldFailOnDbError()) throw err;
     }
   }
-  return inMemoryTools.get(toolId) || null;
+
+  const byId = inMemoryTools.get(trimmed);
+  if (byId) return byId;
+  for (const t of inMemoryTools.values()) {
+    if (t.id === trimmed || t.name === trimmed || t.name.toLowerCase() === trimmed.toLowerCase()) {
+      return t;
+    }
+  }
+  return null;
 }
 
 export async function getToolHitlPolicy(toolId: string): Promise<McpToolPolicyRecord | null> {
@@ -3667,24 +3685,28 @@ export async function getAuthorizedToolsForAgent(
   // 1. If caller is Master Operator, they own the floor and can discover all enabled tools across their connected servers
   if (caller.isMaster) {
     let servers: McpServerRecord[] = [];
-    if (isSupabaseConfigured()) {
+    const ownerIds = Array.from(new Set([caller.userId, caller.masterId].filter(Boolean))) as string[];
+    if (isSupabaseConfigured() && ownerIds.length > 0) {
       try {
         const { data } = await supabase
           .from('mcp_servers')
           .select('*')
-          .or(`owner_id.eq.${caller.userId},owner_id.eq.${caller.masterId || caller.userId}`);
+          .in('owner_id', ownerIds);
         if (Array.isArray(data)) servers = data;
       } catch {}
     }
     const inMemServers = Array.from(inMemoryServers.values()).filter(
-      (s) => s.owner_id === caller.userId || s.owner_id === (caller.masterId || caller.userId)
+      (s) => ownerIds.includes(s.owner_id)
     );
     for (const s of inMemServers) {
       if (!servers.some((existing) => existing.id === s.id)) servers.push(s);
     }
 
     for (const server of servers) {
-      const isServerConnected = server.status === 'connected' || String(server.status).toLowerCase() === 'connected';
+      const isServerConnected =
+        !server.status ||
+        ['connected', 'active', 'ready', 'online'].includes(String(server.status).toLowerCase()) ||
+        (!['error', 'disconnected', 'disabled'].includes(String(server.status).toLowerCase()));
       if (!isServerConnected) continue;
 
       let toolsForServer: McpToolRecord[] = [];
@@ -3703,17 +3725,19 @@ export async function getAuthorizedToolsForAgent(
         if (tool.is_enabled === false) continue;
         const policy = await getToolHitlPolicy(tool.id);
         const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
-        results.push({
-          id: tool.id,
-          server_id: server.id,
-          server_name: server.name,
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.input_schema,
-          inputSchema: tool.input_schema,
-          access_status: accessStatus,
-          accessStatus: accessStatus
-        });
+        if (!results.some((r) => r.id === tool.id)) {
+          results.push({
+            id: tool.id,
+            server_id: server.id,
+            server_name: server.name,
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.input_schema,
+            inputSchema: tool.input_schema,
+            access_status: accessStatus,
+            accessStatus: accessStatus
+          });
+        }
       }
     }
 
@@ -3724,31 +3748,46 @@ export async function getAuthorizedToolsForAgent(
   let assignments: McpToolAssignmentRecord[] = [];
 
   const candidateIds = new Set<string>();
-  if (caller.userId) candidateIds.add(caller.userId.trim());
-  if (caller.agentId) {
-    const raw = caller.agentId.trim();
+  const addCandidate = (val?: string) => {
+    if (!val || typeof val !== 'string') return;
+    const raw = val.trim();
+    if (!raw) return;
     const stripped = raw.replace(/^@/, '');
     candidateIds.add(raw);
+    candidateIds.add(raw.toLowerCase());
     candidateIds.add(stripped);
+    candidateIds.add(stripped.toLowerCase());
     candidateIds.add(`@${stripped}`);
-  }
+    candidateIds.add(`@${stripped}`.toLowerCase());
+  };
 
-  // Also query users table to resolve alternate agentId/UUID if Supabase is configured
+  addCandidate(caller.userId);
+  addCandidate(caller.agentId);
+
+  // Also query users table to resolve alternate agentId, name, email, and master_id
   if (isSupabaseConfigured()) {
     try {
-      const { data: dbUser } = await supabase
-        .from('users')
-        .select('id, agentId')
-        .or(`id.eq.${caller.userId},agentId.eq.${caller.agentId || caller.userId}`)
-        .maybeSingle();
+      let dbUser: any = null;
+      if (caller.userId) {
+        const { data } = await supabase.from('users').select('*').eq('id', caller.userId).maybeSingle();
+        if (data) dbUser = data;
+      }
+      if (!dbUser && caller.agentId) {
+        const { data } = await supabase.from('users').select('*').eq('agentId', caller.agentId).maybeSingle();
+        if (data) dbUser = data;
+      }
+      if (!dbUser && caller.agentId) {
+        const { data } = await supabase.from('users').select('*').ilike('agentId', caller.agentId.replace(/^@/, '')).maybeSingle();
+        if (data) dbUser = data;
+      }
+
       if (dbUser) {
-        if (dbUser.id) candidateIds.add(dbUser.id);
-        if (dbUser.agentId) {
-          const uRaw = dbUser.agentId.trim();
-          const uStripped = uRaw.replace(/^@/, '');
-          candidateIds.add(uRaw);
-          candidateIds.add(uStripped);
-          candidateIds.add(`@${uStripped}`);
+        addCandidate(dbUser.id);
+        addCandidate(dbUser.agentId);
+        addCandidate(dbUser.name);
+        addCandidate(dbUser.email);
+        if (dbUser.master_id && !caller.masterId) {
+          caller.masterId = dbUser.master_id;
         }
       }
     } catch {}
@@ -3758,17 +3797,37 @@ export async function getAuthorizedToolsForAgent(
 
   if (isSupabaseConfigured() && candidateList.length > 0) {
     try {
-      const orFilter = candidateList.map((id) => `agent_id.eq.${id}`).join(',');
       const { data } = await supabase
         .from('mcp_tool_assignments')
         .select('*')
-        .or(orFilter);
+        .in('agent_id', candidateList);
       if (Array.isArray(data)) assignments = data;
     } catch {}
+
+    // Also fetch all fleet assignments for operator to do robust in-memory case-insensitive match
+    if (caller.masterId) {
+      try {
+        const { data: fleetAssns } = await supabase
+          .from('mcp_tool_assignments')
+          .select('*')
+          .eq('owner_id', caller.masterId);
+        if (Array.isArray(fleetAssns)) {
+          for (const fa of fleetAssns) {
+            const faNorm = fa.agent_id ? fa.agent_id.replace(/^@/, '').toLowerCase() : '';
+            const matches = candidateList.some(
+              (c) => c === fa.agent_id || c.toLowerCase() === fa.agent_id?.toLowerCase() || (faNorm && c.replace(/^@/, '').toLowerCase() === faNorm)
+            );
+            if (matches && !assignments.some((a) => a.id === fa.id)) {
+              assignments.push(fa);
+            }
+          }
+        }
+      } catch {}
+    }
   }
 
   const inMem = Array.from(inMemoryAssignments.values()).filter(
-    (a) => candidateIds.has(a.agent_id) || candidateIds.has(a.agent_id.replace(/^@/, ''))
+    (a) => candidateIds.has(a.agent_id) || candidateIds.has(a.agent_id.replace(/^@/, '').toLowerCase())
   );
   for (const m of inMem) {
     if (!assignments.some((a) => a.id === m.id)) assignments.push(m);
@@ -3776,7 +3835,7 @@ export async function getAuthorizedToolsForAgent(
 
   // Also include any tools with active grants for this agent/user
   for (const grant of inMemoryPersistentGrants.values()) {
-    if ((candidateIds.has(grant.account_id) || candidateIds.has(grant.account_id.replace(/^@/, ''))) && grant.status === 'active') {
+    if ((candidateIds.has(grant.account_id) || candidateIds.has(grant.account_id.replace(/^@/, '').toLowerCase())) && grant.status === 'active') {
       if (!assignments.some((a) => a.tool_id === grant.tool_id)) {
         assignments.push({
           id: grant.id,
@@ -3793,11 +3852,10 @@ export async function getAuthorizedToolsForAgent(
 
   if (isSupabaseConfigured() && candidateList.length > 0) {
     try {
-      const orFilter = candidateList.map((id) => `account_id.eq.${id}`).join(',');
       const { data: dbGrants } = await supabase
         .from('mcp_tool_grants')
         .select('*')
-        .or(orFilter)
+        .in('account_id', candidateList)
         .eq('status', 'active');
       if (Array.isArray(dbGrants)) {
         for (const g of dbGrants) {
@@ -3825,6 +3883,12 @@ export async function getAuthorizedToolsForAgent(
         if (data) tool = data;
       } catch {}
     }
+    if (!tool) {
+      try {
+        const { data } = await supabase.from('mcp_tools').select('*').ilike('name', assn.tool_id).maybeSingle();
+        if (data) tool = data;
+      } catch {}
+    }
     const targetServerId = assn.server_id || tool?.server_id;
     let server = targetServerId ? inMemoryServers.get(targetServerId) : null;
     if (!server && targetServerId) {
@@ -3833,22 +3897,27 @@ export async function getAuthorizedToolsForAgent(
         if (data) server = data;
       } catch {}
     }
-    const isServerConnected = server && (server.status === 'connected' || String(server.status).toLowerCase() === 'connected');
+    const isServerConnected =
+      !server?.status ||
+      ['connected', 'active', 'ready', 'online'].includes(String(server.status).toLowerCase()) ||
+      (!['error', 'disconnected', 'disabled'].includes(String(server?.status).toLowerCase()));
     const isToolEnabled = tool && tool.is_enabled !== false;
     if (tool && isToolEnabled && server && isServerConnected) {
       const policy = await getToolHitlPolicy(tool.id);
       const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
-      results.push({
-        id: tool.id,
-        server_id: server.id,
-        server_name: server.name,
-        name: tool.name,
-        description: tool.description,
-        input_schema: tool.input_schema,
-        inputSchema: tool.input_schema,
-        access_status: accessStatus,
-        accessStatus: accessStatus
-      });
+      if (!results.some((r) => r.id === tool!.id)) {
+        results.push({
+          id: tool.id,
+          server_id: server.id,
+          server_name: server.name,
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.input_schema,
+          inputSchema: tool.input_schema,
+          access_status: accessStatus,
+          accessStatus: accessStatus
+        });
+      }
     }
   }
 
