@@ -1096,9 +1096,20 @@ router.get(
   securityLayer('floor_reads'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
+      const isMaster = Boolean(
+        req.authType === 'human' ||
+        req.user?.role === 'master' ||
+        req.user?.account_type === 'master' ||
+        req.user?.is_master_primary === true ||
+        req.user?.isMasterUser === true ||
+        (!req.user?.master_id && !req.user?.masterId)
+      );
+
       const caller = {
         userId: req.user!.id,
-        agentId: req.user!.agentId || req.user!.id
+        agentId: req.user!.agentId || req.user!.id,
+        masterId: req.user!.masterId || req.user!.master_id,
+        isMaster
       };
 
       const tools = await getAuthorizedToolsForAgent(caller);

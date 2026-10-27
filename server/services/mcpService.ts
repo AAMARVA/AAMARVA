@@ -3649,9 +3649,78 @@ export async function invokeAuthorizedTool(
  * Returns tools authorized exclusively for the requesting agent
  */
 export async function getAuthorizedToolsForAgent(
-  caller: { userId: string; agentId: string; masterId?: string }
+  caller: { userId: string; agentId: string; masterId?: string; isMaster?: boolean }
 ): Promise<Array<{ id: string; name: string; description: string; input_schema: any; server_name: string }>> {
   const supabase = getSupabaseClient();
+  const results: Array<{
+    id: string;
+    server_id: string;
+    server_name: string;
+    name: string;
+    description: string;
+    input_schema: any;
+    inputSchema: any;
+    access_status: string;
+    accessStatus: string;
+  }> = [];
+
+  // 1. If caller is Master Operator, they own the floor and can discover all enabled tools across their connected servers
+  if (caller.isMaster) {
+    let servers: McpServerRecord[] = [];
+    if (isSupabaseConfigured()) {
+      try {
+        const { data } = await supabase
+          .from('mcp_servers')
+          .select('*')
+          .or(`owner_id.eq.${caller.userId},owner_id.eq.${caller.masterId || caller.userId}`);
+        if (Array.isArray(data)) servers = data;
+      } catch {}
+    }
+    const inMemServers = Array.from(inMemoryServers.values()).filter(
+      (s) => s.owner_id === caller.userId || s.owner_id === (caller.masterId || caller.userId)
+    );
+    for (const s of inMemServers) {
+      if (!servers.some((existing) => existing.id === s.id)) servers.push(s);
+    }
+
+    for (const server of servers) {
+      const isServerConnected = server.status === 'connected' || String(server.status).toLowerCase() === 'connected';
+      if (!isServerConnected) continue;
+
+      let toolsForServer: McpToolRecord[] = [];
+      if (isSupabaseConfigured()) {
+        try {
+          const { data } = await supabase.from('mcp_tools').select('*').eq('server_id', server.id);
+          if (Array.isArray(data)) toolsForServer = data;
+        } catch {}
+      }
+      const inMemTools = Array.from(inMemoryTools.values()).filter((t) => t.server_id === server.id);
+      for (const t of inMemTools) {
+        if (!toolsForServer.some((existing) => existing.id === t.id)) toolsForServer.push(t);
+      }
+
+      for (const tool of toolsForServer) {
+        if (tool.is_enabled === false) continue;
+        const policy = await getToolHitlPolicy(tool.id);
+        const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
+        results.push({
+          id: tool.id,
+          server_id: server.id,
+          server_name: server.name,
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.input_schema,
+          inputSchema: tool.input_schema,
+          access_status: accessStatus,
+          accessStatus: accessStatus
+        });
+      }
+    }
+
+    return results;
+  }
+
+  // 2. Autonomous Agent Discovery: Resolve all candidate identifiers for the agent
   let assignments: McpToolAssignmentRecord[] = [];
 
   const candidateIds = new Set<string>();
@@ -3748,18 +3817,6 @@ export async function getAuthorizedToolsForAgent(
     } catch {}
   }
 
-  const results: Array<{
-    id: string;
-    server_id: string;
-    server_name: string;
-    name: string;
-    description: string;
-    input_schema: any;
-    inputSchema: any;
-    access_status: string;
-    accessStatus: string;
-  }> = [];
-
   for (const assn of assignments) {
     let tool = inMemoryTools.get(assn.tool_id);
     if (!tool) {
@@ -3768,10 +3825,11 @@ export async function getAuthorizedToolsForAgent(
         if (data) tool = data;
       } catch {}
     }
-    let server = inMemoryServers.get(assn.server_id);
-    if (!server) {
+    const targetServerId = assn.server_id || tool?.server_id;
+    let server = targetServerId ? inMemoryServers.get(targetServerId) : null;
+    if (!server && targetServerId) {
       try {
-        const { data } = await supabase.from('mcp_servers').select('*').eq('id', assn.server_id).maybeSingle();
+        const { data } = await supabase.from('mcp_servers').select('*').eq('id', targetServerId).maybeSingle();
         if (data) server = data;
       } catch {}
     }
