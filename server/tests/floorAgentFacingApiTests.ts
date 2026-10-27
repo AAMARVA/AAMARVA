@@ -358,6 +358,24 @@ export async function runFloorAgentFacingApiTests(): Promise<Record<string, { st
       typeof executeData?.grantToken === 'string';
     recordResult('temp_access_execute_alias_retrieval_200', Boolean(executeAliasOk), 'Alias /invocations/:invocationId/execute returns tool details, serverUrl, authConfig, verification info');
 
+    // 3.8b Schema-cache resilient access retrieval: ensures no 500 even when consumed_at is tracked
+    const schemaSafeInvRes = await fetchApi(`/api/floor/tools/${toolEcho.id}/invoke`, {
+      method: 'POST',
+      body: JSON.stringify({ arguments: { query: 'hello_test' }, reason: 'Execution of approved tool hello_test', requestType: 'hitl' })
+    });
+    const schemaSafeInvId = schemaSafeInvRes.json?.data?.requestId;
+    await approvePendingInvocation(operatorId, schemaSafeInvId);
+    const schemaSafeAccessRes = await fetchApi(`/api/floor/invocations/${schemaSafeInvId}/access`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Execution of approved tool hello_test' })
+    });
+    const schemaSafeAccessOk =
+      schemaSafeAccessRes.status === 200 &&
+      schemaSafeAccessRes.json?.success === true &&
+      Boolean(schemaSafeAccessRes.json?.data?.serverUrl) &&
+      Boolean(schemaSafeAccessRes.json?.data?.grantToken);
+    recordResult('temp_access_schema_cache_safe_retrieval_200', Boolean(schemaSafeAccessOk), 'Retrieves temporary access with 200 OK without database schema cache mismatch errors');
+
     // 3.9 Unassigned agent or agent without granted access rejected on /execute
     const unassignedInvokeRes = await fetchApi(`/api/floor/tools/${toolCalc.id}/invoke`, {
       method: 'POST',

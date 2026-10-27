@@ -37,3 +37,8 @@ CREATE TABLE IF NOT EXISTS tool_execution_grants (
 ALTER TABLE mcp_tool_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pending_tool_invocations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tool_execution_grants ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE pending_tool_invocations ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMPTZ;
+ALTER TABLE pending_tool_invocations ADD COLUMN IF NOT EXISTS retrieved_at TIMESTAMPTZ;
+ALTER TABLE pending_tool_invocations ADD COLUMN IF NOT EXISTS grant_token_hash TEXT;
+

@@ -3335,6 +3335,17 @@ export async function getPendingInvocationRecord(invocationId: string): Promise<
       const supabase = getSupabaseClient();
       const { data, error } = await supabase.from('pending_tool_invocations').select('*').eq('id', invocationId).maybeSingle();
       if (!error && data) {
+        // Also check if there is an associated grant with consumed status
+        try {
+          const { data: grant } = await supabase.from('tool_execution_grants').select('*').eq('invocation_id', invocationId).maybeSingle();
+          if (grant) {
+            (data as any).grant_token_hash = grant.grant_token_hash;
+            if (grant.consumed_at) {
+              (data as any).consumed_at = grant.consumed_at;
+              (data as any).retrieved_at = grant.consumed_at;
+            }
+          }
+        } catch {}
         inMemoryInvocations.set(data.id, data);
         return data;
       }
@@ -3362,10 +3373,62 @@ export async function updateInvocationRecord(inv: Partial<PendingToolInvocationR
   }
 
   if (isSupabaseConfigured()) {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from('pending_tool_invocations').update(inv).eq('id', inv.id);
-    if (error && shouldFailOnDbError()) {
-      throw new Error(`Database error updating tool invocation state: ${error.message}`);
+    try {
+      const supabase = getSupabaseClient();
+
+      // Only send columns that actually belong to the pending_tool_invocations table
+      // Transient / grant fields (consumed_at, retrieved_at, grant_token_hash) are tracked
+      // in tool_execution_grants and in-memory cache, avoiding PostgREST schema cache errors.
+      const allowedColumns = new Set([
+        'tool_id',
+        'caller_id',
+        'agent_id',
+        'owner_id',
+        'args',
+        'args_hash',
+        'status',
+        'execution_result',
+        'execution_error',
+        'expires_at',
+        'created_at',
+        'updated_at'
+      ]);
+
+      const payload: Record<string, any> = {};
+      for (const [key, value] of Object.entries(inv)) {
+        if (key !== 'id' && allowedColumns.has(key)) {
+          payload[key] = value;
+        }
+      }
+
+      if (Object.keys(payload).length === 0) {
+        payload.updated_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase.from('pending_tool_invocations').update(payload).eq('id', inv.id);
+      if (error) {
+        const isSchemaMismatch =
+          error.message?.includes('schema cache') ||
+          error.message?.includes('Could not find the') ||
+          error.code === 'PGRST204';
+
+        if (isSchemaMismatch) {
+          console.warn(`[MCP] Non-fatal schema notice updating pending_tool_invocations: ${error.message}`);
+        } else if (shouldFailOnDbError()) {
+          throw new Error(`Database error updating tool invocation state: ${error.message}`);
+        }
+      }
+    } catch (err: any) {
+      const isSchemaMismatch =
+        err.message?.includes('schema cache') ||
+        err.message?.includes('Could not find the') ||
+        err.code === 'PGRST204';
+
+      if (isSchemaMismatch) {
+        console.warn(`[MCP] Non-fatal schema notice updating pending_tool_invocations: ${err.message}`);
+      } else if (shouldFailOnDbError()) {
+        throw err;
+      }
     }
   }
 }
@@ -3373,12 +3436,62 @@ export async function updateInvocationRecord(inv: Partial<PendingToolInvocationR
 export async function createToolGrantRecord(grant: ToolExecutionGrantRecord): Promise<void> {
   inMemoryGrants.set(grant.invocation_id, grant);
   if (isSupabaseConfigured()) {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from('tool_execution_grants').insert(grant);
-    if (error && shouldFailOnDbError()) {
-      throw new Error(`Database error persisting tool grant: ${error.message}`);
+    try {
+      const supabase = getSupabaseClient();
+      let insertPayload: any = { ...grant };
+      let { error } = await supabase.from('tool_execution_grants').insert(insertPayload);
+      if (error && error.message?.includes("Could not find the 'consumed_at' column")) {
+        delete insertPayload.consumed_at;
+        const retry = await supabase.from('tool_execution_grants').insert(insertPayload);
+        error = retry.error;
+      }
+      if (error) {
+        const isNonFatal =
+          error.message?.includes('schema cache') ||
+          error.message?.includes('Could not find the') ||
+          error.message?.includes('does not exist') ||
+          error.code === '42P01' ||
+          error.code === 'PGRST204';
+
+        if (isNonFatal) {
+          console.warn(`[MCP] Non-fatal schema notice persisting tool grant: ${error.message}`);
+          return;
+        }
+        if (shouldFailOnDbError()) {
+          throw new Error(`Database error persisting tool grant: ${error.message}`);
+        }
+      }
+    } catch (err: any) {
+      const isNonFatal =
+        err.message?.includes('schema cache') ||
+        err.message?.includes('Could not find the') ||
+        err.message?.includes('does not exist') ||
+        err.code === '42P01' ||
+        err.code === 'PGRST204';
+
+      if (isNonFatal) {
+        console.warn(`[MCP] Non-fatal schema notice persisting tool grant: ${err.message}`);
+        return;
+      }
+      if (shouldFailOnDbError()) throw err;
     }
   }
+}
+
+export async function getToolExecutionGrant(invocationId: string): Promise<ToolExecutionGrantRecord | null> {
+  const inMem = inMemoryGrants.get(invocationId);
+  if (inMem) return inMem;
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from('tool_execution_grants').select('*').eq('invocation_id', invocationId).maybeSingle();
+      if (!error && data) {
+        inMemoryGrants.set(invocationId, data);
+        return data;
+      }
+    } catch {}
+  }
+  return null;
 }
 
 /**

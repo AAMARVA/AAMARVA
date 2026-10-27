@@ -20,6 +20,7 @@ import {
   getPendingInvocationRecord,
   updateInvocationRecord,
   createToolGrantRecord,
+  getToolExecutionGrant,
   approvePendingInvocation,
   denyPendingInvocation,
   listPendingInvocationsForOwner,
@@ -1015,7 +1016,8 @@ const handleTemporaryAccess = async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
-    // Anti-replay / token reuse protection
+    // Anti-replay / token reuse protection: prevent replay across both in-memory and persisted grants
+    const targetInvocationId = invocation?.id || accessReq?.id || invocationId;
     if (invocation && ((invocation as any).consumed_at || (invocation as any).retrieved_at)) {
       return res.status(409).json({
         success: false,
@@ -1024,10 +1026,33 @@ const handleTemporaryAccess = async (req: AuthenticatedRequest, res: Response) =
       });
     }
 
+    if (accessReq && ((accessReq as any).consumed_at || (accessReq as any).retrieved_at)) {
+      return res.status(409).json({
+        success: false,
+        error: { code: 'CONFLICT', message: 'Temporary access credentials have already been retrieved or consumed.' },
+        message: 'Temporary access credentials have already been retrieved or consumed.'
+      });
+    }
+
+    if (targetInvocationId) {
+      const existingGrant = await getToolExecutionGrant(targetInvocationId);
+      if (existingGrant && (existingGrant as any).consumed_at) {
+        return res.status(409).json({
+          success: false,
+          error: { code: 'CONFLICT', message: 'Temporary access credentials have already been retrieved or consumed.' },
+          message: 'Temporary access credentials have already been retrieved or consumed.'
+        });
+      }
+    }
+
     const nowIso = new Date().toISOString();
     if (invocation) {
       (invocation as any).retrieved_at = nowIso;
       (invocation as any).consumed_at = nowIso;
+    }
+    if (accessReq) {
+      (accessReq as any).retrieved_at = nowIso;
+      (accessReq as any).consumed_at = nowIso;
     }
 
     // Generate single-use temporary token
@@ -1043,7 +1068,18 @@ const handleTemporaryAccess = async (req: AuthenticatedRequest, res: Response) =
         invocation_id: invocation.id,
         grant_token_hash: grantTokenHash,
         expires_at: invocation.expires_at,
-        created_at: nowIso
+        created_at: nowIso,
+        consumed_at: nowIso
+      });
+    } else if (accessReq) {
+      (accessReq as any).grant_token_hash = grantTokenHash;
+      await createToolGrantRecord({
+        id: `grant_${crypto.randomBytes(8).toString('hex')}`,
+        invocation_id: accessReq.id,
+        grant_token_hash: grantTokenHash,
+        expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
+        created_at: nowIso,
+        consumed_at: nowIso
       });
     }
 
