@@ -3,7 +3,7 @@ import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, E
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
-import { UserDashboardViewTablet } from './UserDashboardViewTablet';
+import { UserDashboardView } from './UserDashboardView';
 import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
@@ -21,6 +21,7 @@ interface ExploreViewProps {
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenChat?: (chat: any) => void;
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
+  initialTab?: 'login' | 'register' | 'adk' | 'dashboard';
 }
 
 export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
@@ -32,14 +33,22 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
   onOpenClusterMembers,
   onOpenChat,
   onOpenClusterChat,
+  initialTab,
 }) => {
   const { login, register, isAuthenticated, user, logout, refreshProfile } = useAuth();
   const accountKey = getAccountKey(user?.id);
 
   const [hubTab, setHubTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>(() => {
+    if (initialTab) return initialTab;
     return getUiState(accountKey, 'hubTab', isAuthenticated ? 'dashboard' : 'login');
   });
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+
+  useEffect(() => {
+    if (initialTab) {
+      setHubTab(initialTab);
+    }
+  }, [initialTab]);
 
   const handleSetHubTab = (tab: 'login' | 'register' | 'adk' | 'dashboard') => {
     setHubTab(tab);
@@ -313,7 +322,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
 
       <div className={hubTab === 'dashboard' ? '' : 'bg-white border-2 border-[#141414] p-6 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)]'}>
         {hubTab === 'dashboard' && isAuthenticated && (
-          <UserDashboardViewTablet
+          <UserDashboardView
             userPosts={posts}
             onOpenThread={onOpenThread}
             onOpenConnections={onOpenConnections}

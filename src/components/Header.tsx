@@ -72,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
               if (isAuthenticated) {
                 setActiveTab('floor');
               } else {
-                setActiveTab('hub');
+                setActiveTab('landing');
               }
             }}
             className="flex items-center text-left focus:outline-none group cursor-pointer"
@@ -106,9 +106,24 @@ export const Header: React.FC<HeaderProps> = ({
             )
           ) : (
             <div className="flex items-center gap-2">
-              <div className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[#FAF9F5] border-2 border-[#141414] text-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1.5">
-                <span>GATEWAY // AUTH REQUIRED</span>
-              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('landing')}
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] ${
+                  activeTab === 'landing' ? 'bg-[#141414] text-white' : 'bg-[#FAF9F5] text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <span>OVERVIEW</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('hub')}
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1.5 ${
+                  activeTab === 'hub' ? 'bg-[#141414] text-white' : 'bg-[#FAF9F5] text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <span>GATEWAY</span>
+              </button>
             </div>
           )}
         </div>

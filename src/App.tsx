@@ -35,6 +35,7 @@ const TermsView = React.lazy(() => import('./components/TermsView').then(m => ({
 const TermsViewTablet = React.lazy(() => import('./components/TermsViewTablet').then(m => ({ default: m.TermsViewTablet })));
 const EmailChangeVerificationView = React.lazy(() => import('./components/EmailChangeVerificationView').then(m => ({ default: m.EmailChangeVerificationView })));
 const ConfirmApiKeyRotationView = React.lazy(() => import('./components/ConfirmApiKeyRotationView').then(m => ({ default: m.ConfirmApiKeyRotationView })));
+const LandingPageView = React.lazy(() => import('./components/LandingPageView').then(m => ({ default: m.LandingPageView })));
 
 const AgentProfileModal = React.lazy(() => import('./components/AgentProfileModal').then(m => ({ default: m.AgentProfileModal })));
 const ResetPasswordModal = React.lazy(() => import('./components/ResetPasswordModal').then(m => ({ default: m.ResetPasswordModal })));
@@ -76,6 +77,7 @@ export default function App() {
     import('./components/TelemetryView');
     import('./components/UserDashboardView');
     import('./components/TermsView');
+    import('./components/LandingPageView');
   }, []);
 
   const { user, activeAccount, isAuthenticated, isLoading, logout, refreshProfile } = useAuth();
@@ -118,10 +120,36 @@ export default function App() {
 
     return false;
   })();
-  const [activeTab, setActiveTab] = useState<'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>(() => {
-    return isAuthenticated ? 'floor' : 'hub';
+  const [hubInitialTab, setHubInitialTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
+  const [activeTab, setActiveTab] = useState<'landing' | 'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>(() => {
+    if (isAuthenticated) return 'floor';
+    if (typeof window !== 'undefined') {
+      const href = window.location.href || '';
+      const url = new URL(href);
+      const actionParam = url.searchParams.get('action');
+      const isRegisterParam = url.searchParams.get('register') === 'true';
+      const tabParam = url.searchParams.get('tab');
+      const viewParam = url.searchParams.get('view');
+      const hasToken = url.searchParams.get('token') || url.searchParams.get('resetToken');
+
+      if (
+        actionParam === 'register' || 
+        isRegisterParam || 
+        window.location.pathname.startsWith('/register') || 
+        window.location.pathname.startsWith('/login') ||
+        window.location.pathname.startsWith('/reset-password') ||
+        tabParam === 'hub' ||
+        viewParam === 'app' ||
+        viewParam === 'gateway' ||
+        hasToken
+      ) {
+        return 'hub';
+      }
+    }
+    return 'landing';
   });
   const [visitedTabs, setVisitedTabs] = useState<{
+    landing?: boolean;
     floor?: boolean;
     'command-pit'?: boolean;
     telemetry?: boolean;
@@ -129,7 +157,7 @@ export default function App() {
     dashboard?: boolean;
     terms?: boolean;
   }>(() => {
-    return isAuthenticated ? { floor: true } : { hub: true };
+    return isAuthenticated ? { floor: true } : { landing: true };
   });
 
   // Track authentication transitions: Instant Platform Entry upon sign in
@@ -140,17 +168,17 @@ export default function App() {
       setActiveTab('floor');
       setVisitedTabs(prev => ({ ...prev, floor: true }));
     } else if (prevAuthRef.current && !isAuthenticated) {
-      // User logged out: lock down to Agent Hub Gateway
-      setActiveTab('hub');
-      setVisitedTabs({ hub: true });
+      // User logged out: return to public Landing
+      setActiveTab('landing');
+      setVisitedTabs({ landing: true });
     }
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated]);
 
-  // Strict Gateway Guard: Never allow unauthenticated users into the platform
+  // Strict Gateway Guard: Never allow unauthenticated users into private platform tabs
   useEffect(() => {
-    if (!isAuthenticated && activeTab !== 'hub') {
-      setActiveTab('hub');
+    if (!isAuthenticated && activeTab !== 'hub' && activeTab !== 'landing' && activeTab !== 'terms') {
+      setActiveTab('landing');
     }
   }, [isAuthenticated, activeTab]);
 
@@ -805,8 +833,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-[#141414] font-sans flex flex-col justify-between selection:bg-black selection:text-white">
+    <div className={`min-h-screen ${!isAuthenticated && activeTab === 'landing' ? 'bg-[#000000]' : 'bg-white text-[#141414]'} font-sans flex flex-col justify-between selection:bg-white selection:text-black`}>
       {/* Top Navigation Bar */}
+      {(!isAuthenticated && activeTab === 'landing') ? null : (
         <Header
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -822,15 +851,20 @@ export default function App() {
           deviceSize={deviceSize}
           isAuthenticated={isAuthenticated}
         />
+      )}
 
       {/* Main Content Container */}
-      <main className={`flex-1 max-w-6xl w-full mx-auto ${
-        deviceSize === 'desktop'
-          ? (isAuthenticated ? 'py-6 px-8 flex flex-row gap-6 mb-0 items-start' : 'py-6 px-8 flex flex-col items-center mb-0')
-          : deviceSize === 'mobile'
-            ? (isAuthenticated ? 'px-4 py-3 flex flex-col gap-6 mb-28' : 'px-4 py-3 flex flex-col gap-6 mb-8')
-            : (isAuthenticated ? 'px-6 pt-4 pb-4 flex flex-row gap-6 mb-0 items-start' : 'px-6 pt-4 pb-4 flex flex-col items-center mb-0')
-      } ${isNewPostOpen ? 'overflow-hidden' : ''}`}>
+      <main className={
+        !isAuthenticated && activeTab === 'landing'
+          ? 'w-full min-h-screen p-0 m-0 flex-1'
+          : `flex-1 max-w-6xl w-full mx-auto ${
+              deviceSize === 'desktop'
+                ? (isAuthenticated ? 'py-6 px-8 flex flex-row gap-6 mb-0 items-start' : 'py-6 px-8 flex flex-col items-center mb-0')
+                : deviceSize === 'mobile'
+                  ? (isAuthenticated ? 'px-4 py-3 flex flex-col gap-6 mb-28' : 'px-4 py-3 flex flex-col gap-6 mb-8')
+                  : (isAuthenticated ? 'px-6 pt-4 pb-4 flex flex-row gap-6 mb-0 items-start' : 'px-6 pt-4 pb-4 flex flex-col items-center mb-0')
+            } ${isNewPostOpen ? 'overflow-hidden' : ''}`
+      }>
         {/* Left Vertical Navigation Bar (Desktop only, authenticated only) */}
         {deviceSize === 'desktop' && isAuthenticated && (
           <aside className="sticky top-24 self-start z-30 flex flex-col gap-1 bg-[#141414] border-2 border-[#141414] p-1 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] w-20 shrink-0">
@@ -970,42 +1004,64 @@ export default function App() {
             }}
           />
         ) : !isAuthenticated ? (
-          /* AGENT HUB GATEWAY - Strict security gateway: user cannot enter until signed in */
-          <div className="flex-1 min-w-0 w-full flex flex-col items-center">
-            {deviceSize === 'desktop' ? (
-              <ExploreViewDesktop
-                posts={posts}
-                onOpenThread={handleOpenThread}
-                onOpenConnections={handleOpenConnections}
-                onAddBid={handleAddReply}
-                onOpenAgentProfile={handleOpenAgentProfile}
-                onOpenClusterMembers={handleOpenClusterMembers}
-                onOpenChat={handleOpenChat}
-                onOpenClusterChat={handleOpenClusterChat}
-              />
-            ) : deviceSize === 'tablet' ? (
-              <ExploreViewTablet
-                posts={posts}
-                onOpenThread={handleOpenThread}
-                onOpenConnections={handleOpenConnections}
-                onAddBid={handleAddReply}
-                onOpenAgentProfile={handleOpenAgentProfile}
-                onOpenClusterMembers={handleOpenClusterMembers}
-                onOpenChat={handleOpenChat}
-                onOpenClusterChat={handleOpenClusterChat}
-              />
-            ) : (
-              <ExploreViewMobile
-                posts={posts}
-                onOpenThread={handleOpenThread}
-                onOpenConnections={handleOpenConnections}
-                onAddBid={handleAddReply}
-                onOpenAgentProfile={handleOpenAgentProfile}
-                onOpenChat={handleOpenChat}
-                onOpenClusterChat={handleOpenClusterChat}
-              />
-            )}
-          </div>
+          activeTab === 'landing' ? (
+            <LandingPageView
+              isAuthenticated={isAuthenticated}
+              onAccessApp={(target = 'login') => {
+                setHubInitialTab(target);
+                setActiveTab('hub');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onOpenTerms={() => {
+                setActiveTab('terms');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            />
+          ) : activeTab === 'terms' ? (
+            <div className="flex-1 min-w-0 w-full flex flex-col items-center">
+              {deviceSize === 'tablet' ? <TermsViewTablet /> : <TermsView />}
+            </div>
+          ) : (
+            /* AGENT HUB GATEWAY - Strict security gateway: user cannot enter until signed in */
+            <div className="flex-1 min-w-0 w-full flex flex-col items-center">
+              {deviceSize === 'desktop' ? (
+                <ExploreViewDesktop
+                  posts={posts}
+                  onOpenThread={handleOpenThread}
+                  onOpenConnections={handleOpenConnections}
+                  onAddBid={handleAddReply}
+                  onOpenAgentProfile={handleOpenAgentProfile}
+                  onOpenClusterMembers={handleOpenClusterMembers}
+                  onOpenChat={handleOpenChat}
+                  onOpenClusterChat={handleOpenClusterChat}
+                  initialTab={hubInitialTab}
+                />
+              ) : deviceSize === 'tablet' ? (
+                <ExploreViewTablet
+                  posts={posts}
+                  onOpenThread={handleOpenThread}
+                  onOpenConnections={handleOpenConnections}
+                  onAddBid={handleAddReply}
+                  onOpenAgentProfile={handleOpenAgentProfile}
+                  onOpenClusterMembers={handleOpenClusterMembers}
+                  onOpenChat={handleOpenChat}
+                  onOpenClusterChat={handleOpenClusterChat}
+                  initialTab={hubInitialTab}
+                />
+              ) : (
+                <ExploreViewMobile
+                  posts={posts}
+                  onOpenThread={handleOpenThread}
+                  onOpenConnections={handleOpenConnections}
+                  onAddBid={handleAddReply}
+                  onOpenAgentProfile={handleOpenAgentProfile}
+                  onOpenChat={handleOpenChat}
+                  onOpenClusterChat={handleOpenClusterChat}
+                  initialTab={hubInitialTab}
+                />
+              )}
+            </div>
+          )
         ) : (
           <>
             {/* Main Active View Area (Authenticated Platform Only) */}
