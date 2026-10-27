@@ -2867,6 +2867,29 @@ export async function recordOrReuseAccessRequest(params: {
 }
 
 /**
+ * Retrieves a persistent tool access request record by its ID.
+ */
+export async function getToolAccessRequestRecord(requestId: string): Promise<McpToolRequestRecord | null> {
+  const inMem = inMemoryToolRequests.get(requestId);
+  if (inMem) return inMem;
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from('mcp_tool_requests')
+        .select('*')
+        .eq('id', requestId)
+        .maybeSingle();
+      if (!error && data) {
+        inMemoryToolRequests.set(data.id, data);
+        return data;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+/**
  * Lists tool access requests for an operator's MCP servers.
  * Supports filtering by serverId and request status ('pending', 'approved', 'rejected', 'all').
  */
@@ -3521,10 +3544,52 @@ export async function invokeAuthorizedTool(
   } else {
     const policy = await getToolHitlPolicy(toolId);
     if (policy && policy.hitl_enabled) {
-      const invId = `inv_${crypto.randomBytes(8).toString('hex')}`;
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
       const argsHash = hashToolArguments(args);
       const nowIso = new Date().toISOString();
+
+      // Deduplicate: Check in-memory for existing pending, unexpired invocation for this agent + tool + args
+      for (const inv of inMemoryInvocations.values()) {
+        if (
+          inv.tool_id === toolId &&
+          (inv.agent_id === caller.agentId || inv.caller_id === caller.userId) &&
+          inv.args_hash === argsHash &&
+          inv.status === 'pending' &&
+          new Date(inv.expires_at).getTime() > Date.now()
+        ) {
+          return {
+            success: false,
+            requiresApproval: true,
+            error: 'HITL_APPROVAL_REQUIRED',
+            invocationId: inv.id
+          };
+        }
+      }
+
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: existing } = await supabase
+            .from('pending_tool_invocations')
+            .select('*')
+            .eq('tool_id', toolId)
+            .eq('agent_id', caller.agentId)
+            .eq('args_hash', argsHash)
+            .eq('status', 'pending')
+            .gt('expires_at', nowIso)
+            .maybeSingle();
+          if (existing) {
+            inMemoryInvocations.set(existing.id, existing);
+            return {
+              success: false,
+              requiresApproval: true,
+              error: 'HITL_APPROVAL_REQUIRED',
+              invocationId: existing.id
+            };
+          }
+        } catch {}
+      }
+
+      const invId = `inv_${crypto.randomBytes(8).toString('hex')}`;
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
       const pendingRecord: PendingToolInvocationRecord = {
         id: invId,
@@ -3631,7 +3696,17 @@ export async function getAuthorizedToolsForAgent(
     } catch {}
   }
 
-  const results: Array<{ id: string; name: string; description: string; input_schema: any; server_name: string }> = [];
+  const results: Array<{
+    id: string;
+    server_id: string;
+    server_name: string;
+    name: string;
+    description: string;
+    input_schema: any;
+    inputSchema: any;
+    access_status: string;
+    accessStatus: string;
+  }> = [];
 
   for (const assn of assignments) {
     let tool = inMemoryTools.get(assn.tool_id);
@@ -3649,12 +3724,18 @@ export async function getAuthorizedToolsForAgent(
       } catch {}
     }
     if (tool && tool.is_enabled && server && server.status === 'connected') {
+      const policy = await getToolHitlPolicy(tool.id);
+      const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
       results.push({
         id: tool.id,
+        server_id: server.id,
+        server_name: server.name,
         name: tool.name,
         description: tool.description,
         input_schema: tool.input_schema,
-        server_name: server.name
+        inputSchema: tool.input_schema,
+        access_status: accessStatus,
+        accessStatus: accessStatus
       });
     }
   }

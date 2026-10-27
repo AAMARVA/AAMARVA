@@ -242,9 +242,10 @@ Retrieve current ADK specification.
 
 ### Floor MCP & Tool Endpoints (Agent-Accessible)
 
-### GET /api/floor/agent/tools
-Agent tool discovery: Returns only tools specifically assigned to the calling agent.
-- **Response**:
+### 1. Discover Tools: GET /api/floor/agent/tools
+Return tools available to the authenticated agent, including each tool's ID, name, description, input schema, and relevant access status.
+- **Request Body**: None
+- **Response (Status 200)**:
 ```json
 {
   "success": true,
@@ -252,61 +253,83 @@ Agent tool discovery: Returns only tools specifically assigned to the calling ag
     {
       "id": "tool_abc",
       "server_id": "srv_123",
+      "server_name": "Weather Service",
       "name": "weather_lookup",
       "description": "Fetch weather forecast",
-      "input_schema": { "type": "object", "properties": { "city": { "type": "string" } } }
+      "input_schema": { "type": "object", "properties": { "city": { "type": "string" } } },
+      "inputSchema": { "type": "object", "properties": { "city": { "type": "string" } } },
+      "access_status": "granted",
+      "accessStatus": "granted"
     }
   ]
 }
 ```
 
-### POST /api/floor/tools/:toolId/invoke
-Server-governed Tool Execution Proxy: Enforces agent-level tool assignment before invoking. If HITL policy is enabled, returns 202 pending.
-- **Request**:
+### 2. Send Tool Request: POST /api/floor/tools/:toolId/invoke
+Submit a request to use a specific tool with intended arguments. If additional access or human approval is required, creates/reuses a request and returns status 202 without executing the tool.
+- **Request Body**:
 ```json
 {
-  "arguments": { "city": "Tokyo" }
+  "arguments": { "city": "Tokyo" },
+  "reason": "Retrieve the current weather in Tokyo to answer the user's question.",
+  "requestType": "access"
 }
 ```
-- **Response (Success)**:
+- **Response (Permitted Direct Execution - Status 200)**:
 ```json
 {
   "success": true,
   "data": { "temperature": 22, "condition": "Sunny" }
 }
 ```
-- **Response (HITL Pending - Status 202)**:
+- **Response (Access or HITL Request Created - Status 202)**:
 ```json
 {
   "success": false,
   "status": "pending",
-  "invocationId": "inv_987"
-}
-```
-- **Response (Access Approval Required - Status 403)**:
-```json
-{
-  "success": false,
-  "error": { "message": "Forbidden: Tool not authorized or assigned to caller. Access request created for operator approval (request: req_12345)." },
-  "requestId": "req_12345",
-  "requiresAccessApproval": true
+  "data": {
+    "requestId": "req_12345",
+    "status": "pending"
+  },
+  "requestId": "req_12345"
 }
 ```
 
-### POST /api/floor/invocations/:invocationId/execute
-Execute approved tool invocation: Validates caller agent, owner scope, arguments hash, and consumes temporary grant.
-- **Request**:
+### 3. Get Temporary Access: POST /api/floor/invocations/:invocationId/access (or alias /execute)
+Retrieve temporary credentials or access parameters for an approved invocation. This endpoint does NOT execute the tool.
+- **Request Body**:
 ```json
 {
-  "arguments": { "city": "Tokyo" },
-  "grantToken": "grant_token_xyz"
+  "reason": "Retrieve temporary authorization for the approved tool invocation."
 }
 ```
-- **Response**:
+- **Response (Status 200)**:
 ```json
 {
   "success": true,
-  "data": { "temperature": 22, "condition": "Sunny" }
+  "data": {
+    "invocationId": "inv_987",
+    "toolId": "tool_abc",
+    "tokenType": "Bearer",
+    "grantToken": "grant_...",
+    "accessToken": "grant_...",
+    "scope": "tool:invoke",
+    "expiresAt": "2026-10-26T15:00:00.000Z",
+    "approvedArguments": { "city": "Tokyo" }
+  }
+}
+```
+
+### 4. Check Request Status: GET /api/floor/requests/:requestId
+Check status of a pending or processed tool request or pending invocation belonging to the authenticated agent.
+- **Response (Status 200)**:
+```json
+{
+  "success": true,
+  "data": {
+    "requestId": "req_12345",
+    "status": "pending"
+  }
 }
 ```
 

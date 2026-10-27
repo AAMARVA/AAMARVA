@@ -13,6 +13,7 @@ import { runDirectConnectionAndClusterTests } from './directConnectionAndCluster
 import { runCapabilityMessagingRateLimitTests } from './capabilityMessagingRateLimitTests.ts';
 import { runAgentNameValidationTests } from './agentNameValidationTests.ts';
 import { runQwenLangchainIntegrationTests } from './qwenLangchainIntegrationTests.ts';
+import { runFloorAgentFacingApiTests } from './floorAgentFacingApiTests.ts';
 
 async function runAll() {
   const suites = [
@@ -27,6 +28,7 @@ async function runAll() {
     { name: 'telemetryActivityTests', fn: runTelemetryActivityTests },
     { name: 'floorMcpServerTests', fn: runFloorMcpServerTests },
     { name: 'floorMcpAuditTestSuite', fn: runFloorMcpAuditTestSuite },
+    { name: 'floorAgentFacingApiTests', fn: runFloorAgentFacingApiTests },
     { name: 'directConnectionAndClusterTests', fn: runDirectConnectionAndClusterTests },
     { name: 'capabilityMessagingRateLimitTests', fn: runCapabilityMessagingRateLimitTests },
     { name: 'agentNameValidationTests', fn: runAgentNameValidationTests },

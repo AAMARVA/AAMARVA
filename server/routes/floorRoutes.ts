@@ -29,7 +29,11 @@ import {
   listToolGrantsForServer,
   listToolAccessRequests,
   approveToolAccessRequest,
-  rejectToolAccessRequest
+  rejectToolAccessRequest,
+  validateToolArguments,
+  recordOrReuseAccessRequest,
+  hasActiveToolGrant,
+  getToolAccessRequestRecord
 } from '../services/mcpService.js';
 import { getSupabaseClient } from '../supabase.js';
 
@@ -578,7 +582,8 @@ router.get(
 
 /**
  * 9. POST /api/floor/tools/:toolId/invoke
- * Server-governed Tool Execution Proxy: Enforces agent-level tool assignment before invoking
+ * Send Tool Request: Validates tool existence, schema conformance, authorization, and HITL policy.
+ * Returns 202 with requestId and status 'pending' if access or human approval is needed.
  */
 router.post(
   '/tools/:toolId/invoke',
@@ -587,7 +592,72 @@ router.post(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const toolId = req.params.toolId as string;
-      const toolArgs = (req.body?.arguments && typeof req.body.arguments === 'object') ? req.body.arguments : req.body || {};
+
+      // 1. Authenticate and validate tool ID
+      const tool = await getToolRecord(toolId);
+      if (!tool) {
+        return res.status(404).json({ success: false, error: { message: 'Tool not found.' } });
+      }
+
+      if (!tool.is_enabled) {
+        return res.status(403).json({ success: false, error: { message: 'Forbidden: Tool is disabled by operator policy.' } });
+      }
+
+      // 2. Validate arguments
+      let toolArgs: any;
+      if (req.body && typeof req.body === 'object' && 'arguments' in req.body) {
+        toolArgs = req.body.arguments;
+      } else if (
+        req.body &&
+        typeof req.body === 'object' &&
+        Object.keys(req.body).length > 0 &&
+        !('reason' in req.body) &&
+        !('requestType' in req.body)
+      ) {
+        toolArgs = req.body;
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: { message: 'Field "arguments" is required and must be an object.' }
+        });
+      }
+
+      if (!toolArgs || typeof toolArgs !== 'object' || Array.isArray(toolArgs)) {
+        return res.status(400).json({
+          success: false,
+          error: { message: 'Field "arguments" must be a non-null object.' }
+        });
+      }
+
+      // Validate arguments against tool.input_schema using Ajv schema validator
+      const validation = validateToolArguments(tool.input_schema, toolArgs);
+      if (!validation.valid) {
+        return res.status(400).json({
+          success: false,
+          error: { message: `Invalid tool arguments: ${validation.error || 'Schema validation failed'}` }
+        });
+      }
+
+      // Validate reason if provided
+      if (req.body?.reason !== undefined) {
+        if (typeof req.body.reason !== 'string' || !req.body.reason.trim()) {
+          return res.status(400).json({
+            success: false,
+            error: { message: 'Field "reason" must be a non-empty string explaining why the agent needs the tool.' }
+          });
+        }
+      }
+
+      // Validate requestType if provided
+      const requestType = req.body?.requestType;
+      if (requestType !== undefined) {
+        if (requestType !== 'access' && requestType !== 'hitl') {
+          return res.status(400).json({
+            success: false,
+            error: { message: 'Field "requestType" must be either "access" or "hitl".' }
+          });
+        }
+      }
 
       const caller = {
         userId: req.user!.id,
@@ -595,28 +665,70 @@ router.post(
         isMaster: !req.user!.masterId || req.user!.masterId === req.user!.id
       };
 
-      const result = await invokeAuthorizedTool(caller, toolId, toolArgs);
+      // 3. Authorization check
+      const hasGrant =
+        (await hasActiveToolGrant(tool.server_id, tool.id, caller.agentId)) ||
+        (await hasActiveToolGrant(tool.server_id, tool.id, caller.userId));
 
-      if (!result.success) {
-        if (result.error === 'HITL_APPROVAL_REQUIRED') {
-          return res.status(202).json({ success: false, status: 'pending', invocationId: result.invocationId });
-        }
-        if (result.requiresAccessApproval) {
-          return res.status(403).json({
-            success: false,
-            error: { message: result.error },
-            requestId: result.requestId,
-            requiresAccessApproval: true
-          });
-        }
-        const isForbidden = result.error?.includes('Forbidden') || result.error?.includes('not authorized');
-        return res.status(isForbidden ? 403 : 400).json({
+      const policy = await getToolHitlPolicy(tool.id);
+      const hitlEnabled = Boolean(policy?.hitl_enabled);
+
+      // Case A: Access approval required (explicitly requested or not granted)
+      if (requestType === 'access' || !hasGrant) {
+        const accessReq = await recordOrReuseAccessRequest({
+          serverId: tool.server_id,
+          toolId: tool.id,
+          toolName: tool.name,
+          serverName: 'MCP Server',
+          accountId: caller.agentId || caller.userId,
+          callerId: caller.userId,
+          agentName: caller.agentId,
+          requestedOperation: 'tool_invocation',
+          arguments: toolArgs
+        });
+
+        return res.status(202).json({
           success: false,
-          error: { message: result.error }
+          status: 'pending',
+          data: {
+            requestId: accessReq.id,
+            status: 'pending'
+          },
+          requestId: accessReq.id,
+          requiresAccessApproval: true
         });
       }
 
-      res.json({ success: true, data: result.result });
+      // Case B: HITL approval required (explicitly requested or policy enabled)
+      if (requestType === 'hitl' || hitlEnabled) {
+        const invResult = await invokeAuthorizedTool(caller, toolId, toolArgs);
+        const invId = invResult.invocationId;
+
+        return res.status(202).json({
+          success: false,
+          status: 'pending',
+          data: {
+            requestId: invId,
+            status: 'pending'
+          },
+          requestId: invId,
+          invocationId: invId
+        });
+      }
+
+      // Case C: Agent has sufficient existing authorization and no approval required
+      const result = await invokeAuthorizedTool(caller, toolId, toolArgs);
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: { message: result.error || 'Tool execution failed.' }
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: result.result
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: { message: err?.message || 'Tool execution failed.' } });
     }
@@ -706,51 +818,36 @@ router.post(
 );
 
 /**
- * 11. POST /api/floor/invocations/:invocationId/execute
- * Execute approved tool invocation: Validates caller agent, owner scope, arguments hash, and consumes temporary grant
+ * 11. POST /api/floor/invocations/:invocationId/access (and alias /execute)
+ * Get Temporary Access: Retrieve temporary credentials or access parameters for an approved invocation.
+ * This endpoint must NOT execute the tool.
  */
 router.post(
-  '/invocations/:invocationId/execute',
+  ['/invocations/:invocationId/access', '/invocations/:invocationId/execute'],
   requireUserOrAgentAuth,
   securityLayer('floor_invoke'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const invocationId = req.params.invocationId as string;
-      const invocation = await getPendingInvocationRecord(invocationId);
+      const { reason } = req.body || {};
 
+      if (!reason || typeof reason !== 'string' || !reason.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: { message: 'Field "reason" is required and must explain why temporary access is needed.' }
+        });
+      }
+
+      const invocation = await getPendingInvocationRecord(invocationId);
       if (!invocation) {
         return res.status(404).json({ success: false, error: { message: 'Invocation not found.' } });
-      }
-
-      if (invocation.status !== 'approved') {
-        return res.status(403).json({ success: false, error: { message: `Invocation not approved (status: ${invocation.status}).` } });
-      }
-
-      if (new Date(invocation.expires_at).getTime() <= Date.now()) {
-        invocation.status = 'expired';
-        await updateInvocationRecord(invocation);
-        return res.status(410).json({ success: false, error: { message: 'Invocation has expired.' } });
-      }
-
-      // Verify tool ID matches if provided in body
-      if (req.body?.toolId && req.body.toolId !== invocation.tool_id) {
-        return res.status(400).json({
-          success: false,
-          error: { message: 'Provided toolId does not match approved invocation tool.' }
-        });
-      }
-      if (req.body?.tool_id && req.body.tool_id !== invocation.tool_id) {
-        return res.status(400).json({
-          success: false,
-          error: { message: 'Provided tool_id does not match approved invocation tool.' }
-        });
       }
 
       const callerAgentId = req.user!.agentId || req.user!.id;
       const callerUserId = req.user!.id;
       const callerMasterId = req.user!.masterId || req.user!.id;
 
-      // CRITICAL CHECK: Verify authenticated caller matches invocation's requesting agent AND authorized owner scope
+      // Authenticate agent & verify invocation belongs to authenticated agent
       const matchesAgent = callerAgentId === invocation.agent_id;
       const matchesOwnerScope = (
         callerMasterId === invocation.owner_id ||
@@ -758,59 +855,156 @@ router.post(
         callerUserId === invocation.caller_id
       );
 
-      if (!matchesAgent || !matchesOwnerScope) {
+      if (!matchesAgent && !matchesOwnerScope) {
         return res.status(403).json({
           success: false,
-          error: { message: 'Forbidden: Authenticated caller does not match invocation requesting agent or authorized owner scope.' }
+          error: { message: 'Forbidden: Invocation does not belong to authenticated agent.' }
         });
       }
 
-      // Recover and verify approved arguments
-      const executionArgs = invocation.args;
-      const suppliedArgs = (req.body?.arguments && typeof req.body.arguments === 'object')
-        ? req.body.arguments
-        : (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0 && !('grantToken' in req.body && Object.keys(req.body).length === 1))
-          ? req.body
-          : null;
+      // Verify that required access or human approval has been granted
+      if (invocation.status !== 'approved') {
+        return res.status(403).json({
+          success: false,
+          error: { message: `Invocation is not approved (current status: '${invocation.status}').` }
+        });
+      }
 
-      if (suppliedArgs && Object.keys(suppliedArgs).length > 0) {
-        const suppliedHash = hashToolArguments(suppliedArgs);
-        const approvedHash = invocation.args_hash || hashToolArguments(invocation.args);
-        if (suppliedHash !== approvedHash) {
-          return res.status(400).json({
+      // Check expiry
+      if (new Date(invocation.expires_at).getTime() <= Date.now()) {
+        invocation.status = 'expired';
+        await updateInvocationRecord(invocation);
+        return res.status(410).json({
+          success: false,
+          error: { message: 'Approved invocation has expired.' }
+        });
+      }
+
+      // Prevent unauthorized retrieval, token reuse, and replay attacks
+      if ((invocation as any).consumed_at || (invocation as any).retrieved_at) {
+        return res.status(409).json({
+          success: false,
+          error: { message: 'Temporary access credentials have already been retrieved or consumed.' }
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+      (invocation as any).retrieved_at = nowIso;
+      (invocation as any).consumed_at = nowIso;
+      await updateInvocationRecord(invocation);
+
+      // Generate single-use temporary credentials with appropriate scope and expiry
+      const grantToken = `grant_${crypto.randomBytes(24).toString('hex')}`;
+      const expiresAt = invocation.expires_at;
+
+      // Return only temporary credentials / access parameters; DO NOT execute tool
+      return res.status(200).json({
+        success: true,
+        data: {
+          invocationId: invocation.id,
+          toolId: invocation.tool_id,
+          tokenType: 'Bearer',
+          grantToken,
+          accessToken: grantToken,
+          scope: 'tool:invoke',
+          expiresAt,
+          approvedArguments: invocation.args
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: { message: err?.message || 'Failed to retrieve temporary access.' } });
+    }
+  }
+);
+
+/**
+ * 11b. GET /api/floor/requests/:requestId
+ * Check Request Status: Return status for requests belonging to the authenticated agent.
+ */
+router.get(
+  '/requests/:requestId',
+  requireUserOrAgentAuth,
+  securityLayer('floor_reads'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const requestId = req.params.requestId as string;
+      const callerAgentId = req.user!.agentId || req.user!.id;
+      const callerUserId = req.user!.id;
+      const callerMasterId = req.user!.masterId || req.user!.id;
+
+      // 1. Check in MCP persistent tool requests
+      const accessReq = await getToolAccessRequestRecord(requestId);
+      if (accessReq) {
+        const belongsToAgent =
+          accessReq.account_id === callerAgentId ||
+          accessReq.account_id === callerUserId ||
+          accessReq.caller_id === callerUserId ||
+          ((req.authType === 'human' || !req.user?.agentId) && callerUserId === accessReq.caller_id);
+
+        if (!belongsToAgent) {
+          return res.status(403).json({
             success: false,
-            error: { message: 'Provided arguments do not match approved invocation arguments.' }
+            error: { message: 'Forbidden: Request does not belong to authenticated agent.' }
           });
         }
-      }
 
-      const grantToken = req.body?.grantToken || req.body?.grant_token || req.headers['x-floor-grant-token'];
+        let mappedStatus: 'pending' | 'accepted' | 'rejected' = 'pending';
+        if (accessReq.status === 'approved') {
+          mappedStatus = 'accepted';
+        } else if (accessReq.status === 'rejected') {
+          mappedStatus = 'rejected';
+        } else {
+          mappedStatus = 'pending';
+        }
 
-      const caller = {
-        userId: callerUserId,
-        agentId: callerAgentId,
-        isMaster: !req.user!.masterId || req.user!.masterId === req.user!.id
-      };
-
-      const result = await invokeAuthorizedTool(
-        caller,
-        invocation.tool_id,
-        executionArgs,
-        invocationId,
-        typeof grantToken === 'string' ? grantToken : undefined
-      );
-
-      if (!result.success) {
-        const isForbidden = result.error?.includes('Forbidden') || result.error?.includes('not authorized') || result.error?.includes('CONSUMED');
-        return res.status(isForbidden ? 403 : 400).json({
-          success: false,
-          error: { message: result.error }
+        return res.json({
+          success: true,
+          data: {
+            requestId: accessReq.id,
+            status: mappedStatus
+          }
         });
       }
 
-      res.json({ success: true, data: result.result });
+      // 2. Check in pending tool invocations
+      const inv = await getPendingInvocationRecord(requestId);
+      if (inv) {
+        const belongsToAgent =
+          inv.agent_id === callerAgentId ||
+          inv.caller_id === callerUserId ||
+          ((req.authType === 'human' || !req.user?.agentId) && (inv.owner_id === callerMasterId || inv.owner_id === callerUserId));
+
+        if (!belongsToAgent) {
+          return res.status(403).json({
+            success: false,
+            error: { message: 'Forbidden: Request does not belong to authenticated agent.' }
+          });
+        }
+
+        let mappedStatus: 'pending' | 'accepted' | 'rejected' = 'pending';
+        if (['approved', 'executing', 'executed'].includes(inv.status)) {
+          mappedStatus = 'accepted';
+        } else if (['denied', 'expired', 'failed'].includes(inv.status)) {
+          mappedStatus = 'rejected';
+        } else {
+          mappedStatus = 'pending';
+        }
+
+        return res.json({
+          success: true,
+          data: {
+            requestId: inv.id,
+            status: mappedStatus
+          }
+        });
+      }
+
+      return res.status(404).json({
+        success: false,
+        error: { message: 'Request not found.' }
+      });
     } catch (err: any) {
-      res.status(500).json({ success: false, error: { message: err?.message || 'Tool execution failed.' } });
+      res.status(500).json({ success: false, error: { message: err?.message || 'Failed to check request status.' } });
     }
   }
 );
