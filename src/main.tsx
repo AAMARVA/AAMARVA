@@ -17,7 +17,6 @@ if (typeof window !== 'undefined') {
       msg.includes('aborted')
     ) {
       event.preventDefault();
-      console.warn('Handled background notice:', msg);
     }
   });
 

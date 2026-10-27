@@ -203,14 +203,15 @@ export interface PendingInvocation {
 }
 
 export async function fetchPendingInvocations(): Promise<PendingInvocation[]> {
-  const res = await apiFetch('/api/floor/pending-invocations', { authType: 'human' });
-  if (!res?.success) {
-    throw new Error(res?.error?.message || 'Failed to fetch pending tool invocations');
+  try {
+    const res = await apiFetch('/api/floor/pending-invocations', { authType: 'human' });
+    if (res?.success && Array.isArray(res.data)) {
+      return res.data;
+    }
+    return [];
+  } catch {
+    return [];
   }
-  if (Array.isArray(res.data)) {
-    return res.data;
-  }
-  return [];
 }
 
 export async function resolvePendingInvocationApi(invocationId: string, approved: boolean): Promise<boolean> {

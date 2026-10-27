@@ -136,11 +136,19 @@ export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}):
     }
   }
 
-  let response = await fetch(fullUrl, {
-    ...options,
-    headers,
-    credentials: 'include',
-  });
+  let response: Response;
+  try {
+    response = await fetch(fullUrl, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
+  } catch (netErr: any) {
+    if (options.signal?.aborted || netErr?.name === 'AbortError') {
+      return { success: false, aborted: true };
+    }
+    return { success: false, error: { message: netErr?.message || 'Network request failed' } };
+  }
 
   // Handle agent token refresh ONLY for agent requests with an existing token (never for human sessions)
   if (authType === 'agent' && response.status === 401 && endpoint !== '/api/auth/refresh' && endpoint !== '/api/auth/login' && (getAccessToken() || getRefreshToken())) {
