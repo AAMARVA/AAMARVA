@@ -128,15 +128,16 @@ async function verifyFloorEndpoint() {
     process.exit(1);
   }
 
-  // 4. Query as Slave Agent before assignment: Zero tools (Zero-Trust)
+  // 4. Query as Slave Agent before assignment: Available tools discoverable with accessStatus 'unassigned'
   console.log('\n--- Step 2: Slave Agent calling GET /api/floor/agent/tools (Pre-Assignment) ---');
   const slavePreRes = await callApi('/api/floor/agent/tools', slaveToken);
   console.log(`Slave Pre-Assignment HTTP Status: ${slavePreRes.status}`);
   console.log(`Slave Pre-Assignment Tools Returned: ${slavePreRes.json?.data?.length}`);
-  if (slavePreRes.status === 200 && slavePreRes.json?.data?.length === 0) {
-    console.log('✅ Slave Agent has 0 tools by default (Zero-Trust isolation verified).');
+  const preAssignedTool = slavePreRes.json?.data?.find((t: any) => t.id === targetTool.id);
+  if (slavePreRes.status === 200 && preAssignedTool && preAssignedTool.accessStatus === 'unassigned') {
+    console.log('✅ Slave Agent discovers available tools with accessStatus "unassigned".');
   } else {
-    console.error('❌ Expected 0 tools for unassigned slave, got:', slavePreRes.json);
+    console.error('❌ Expected unassigned accessStatus for unassigned slave, got:', slavePreRes.json);
     process.exit(1);
   }
 
@@ -145,20 +146,20 @@ async function verifyFloorEndpoint() {
   await grantToolAccess(operatorId, mcpServer.id, targetTool.id, slaveAgentId);
   console.log('Tool access granted successfully.');
 
-  // 6. Query as Slave Agent after assignment: Tool should now be present!
+  // 6. Query as Slave Agent after assignment: Tool should now be granted!
   console.log('\n--- Step 4: Slave Agent calling GET /api/floor/agent/tools (Post-Assignment) ---');
   const slavePostRes = await callApi('/api/floor/agent/tools', slaveToken);
   console.log(`Slave Post-Assignment HTTP Status: ${slavePostRes.status}`);
   console.log(`Slave Post-Assignment Tools Returned: ${slavePostRes.json?.data?.length}`);
   const assignedTool = slavePostRes.json?.data?.find((t: any) => t.id === targetTool.id);
 
-  if (slavePostRes.status === 200 && assignedTool) {
-    console.log('✅ Assigned Tool found in response!');
+  if (slavePostRes.status === 200 && assignedTool && (assignedTool.accessStatus === 'granted' || assignedTool.access_status === 'granted')) {
+    console.log('✅ Assigned Tool found in response with accessStatus "granted"!');
     console.log('Tool Payload:', JSON.stringify(assignedTool, null, 2));
     console.log(`accessStatus: ${assignedTool.accessStatus || assignedTool.access_status}`);
     console.log(`server_name: ${assignedTool.server_name}`);
   } else {
-    console.error('❌ Assigned tool not returned in slave response:', slavePostRes.json);
+    console.error('❌ Assigned tool not returned with granted status:', slavePostRes.json);
     process.exit(1);
   }
 
@@ -180,10 +181,11 @@ async function verifyFloorEndpoint() {
   await setToolAssignment(operatorId, targetTool.id, slaveAgentId, false);
   const slaveRevokedRes = await callApi('/api/floor/agent/tools', slaveToken);
   console.log(`Slave Post-Revocation Tools Returned: ${slaveRevokedRes.json?.data?.length}`);
-  if (slaveRevokedRes.status === 200 && slaveRevokedRes.json?.data?.length === 0) {
-    console.log('✅ Immediate tool access revocation verified (0 tools returned).');
+  const revokedTool = slaveRevokedRes.json?.data?.find((t: any) => t.id === targetTool.id);
+  if (slaveRevokedRes.status === 200 && revokedTool && (revokedTool.accessStatus === 'unassigned' || revokedTool.access_status === 'unassigned')) {
+    console.log('✅ Immediate tool access revocation verified (accessStatus reverted to "unassigned").');
   } else {
-    console.error('❌ Revocation failed to hide tool:', slaveRevokedRes.json);
+    console.error('❌ Revocation failed to revert accessStatus:', slaveRevokedRes.json);
     process.exit(1);
   }
 

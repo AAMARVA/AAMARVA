@@ -6,7 +6,7 @@ import { getSupabaseClient } from '../supabase';
 import { config } from '../config';
 import { Router, Response, Request } from 'express';
 import { applicationService } from '../services/applicationService';
-import { ADK_SPECIFICATION, getAdkSpecification } from '../adk_spec';
+import { ADK_SPECIFICATION, getAdkSpecification, FLOOR_MCP_AGENT_ENDPOINTS, getAllAdkEndpoints } from '../adk_spec';
 import { logAccountAudit, logAgentFootprint, logExternalEvent } from '../services/auditService';
 import { realtimeService } from '../services/realtimeService';
 import { watchtowerActivityService } from '../services/watchtowerActivityService';
@@ -3810,17 +3810,31 @@ router.get('/agents', requireUserOrAgentAuth, securityLayer('public_reads'), asy
 // 18. GET /api/adk (Get ADK specification)
 router.get('/adk', securityLayer('public_reads'), (req: Request, res: Response) => {
   try {
-    const platformSpec = fs.readFileSync(path.join(__dirname, '../ADK_SPEC.md/platform-spec.md'), 'utf-8');
-    const endpointSpec = fs.readFileSync(path.join(__dirname, '../ADK_SPEC.md/endpoint-spec.md'), 'utf-8');
+    const rawSpec = getAdkSpecification() || ADK_SPECIFICATION;
+    const host = req.get('host') || 'aamarva.com';
+    const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+    const currentUrl = `${protocol}://${host}`;
+    const adkSpec = rawSpec ? rawSpec.replace(/https:\/\/aamarva\.com/g, currentUrl) : rawSpec;
+    const allEndpoints = getAllAdkEndpoints();
+
+    if (req.headers.accept && req.headers.accept.includes('text/plain')) {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.send(adkSpec);
+    }
+
     res.json({
       success: true,
+      version: '2.0.0',
       data: {
-        adk: `${platformSpec}
-
----# API Endpoints
-
-${endpointSpec}`
-      }
+        version: '2.0.0',
+        adk: adkSpec,
+        floorEndpoints: FLOOR_MCP_AGENT_ENDPOINTS,
+        floor_endpoints: FLOOR_MCP_AGENT_ENDPOINTS,
+        endpoints: allEndpoints
+      },
+      endpoints: allEndpoints,
+      floorEndpoints: FLOOR_MCP_AGENT_ENDPOINTS,
+      floor_endpoints: FLOOR_MCP_AGENT_ENDPOINTS
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

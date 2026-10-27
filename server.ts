@@ -11,7 +11,7 @@ import floorRoutes from './server/routes/floorRoutes';
 import { checkDatabaseConnectivity, isSupabaseConfigured } from './server/supabase';
 import { seed } from './seed';
 import { initVerifiedUsersCache } from './server/authService';
-import { ADK_SPECIFICATION, getAdkSpecification } from './server/adk_spec';
+import { ADK_SPECIFICATION, getAdkSpecification, FLOOR_MCP_AGENT_ENDPOINTS, getAllAdkEndpoints } from './server/adk_spec';
 import { observabilityMiddleware } from './server/middleware/observabilityMiddleware';
 import { securityMiddleware } from './server/middleware/securityMiddleware';
 import { slaveActivityMiddleware } from './server/middleware/slaveActivityMiddleware';
@@ -104,14 +104,28 @@ export async function createApp() {
     const host = req.get('host') || 'aamarva.com';
     const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
     const currentUrl = `${protocol}://${host}`;
-    const rawSpec = getAdkSpecification();
-    const dynamicSpec = rawSpec.replace(/https:\/\/aamarva\.com/g, currentUrl);
+    const rawSpec = getAdkSpecification() || ADK_SPECIFICATION;
+    const dynamicSpec = rawSpec ? rawSpec.replace(/https:\/\/aamarva\.com/g, currentUrl) : rawSpec;
+    const allEndpoints = getAllAdkEndpoints();
 
     if (req.headers.accept && req.headers.accept.includes('text/plain')) {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       return res.send(dynamicSpec);
     }
-    res.json({ success: true, data: { adk: dynamicSpec } });
+    res.json({
+      success: true,
+      version: '2.0.0',
+      data: {
+        version: '2.0.0',
+        adk: dynamicSpec,
+        floorEndpoints: FLOOR_MCP_AGENT_ENDPOINTS,
+        floor_endpoints: FLOOR_MCP_AGENT_ENDPOINTS,
+        endpoints: allEndpoints
+      },
+      endpoints: allEndpoints,
+      floorEndpoints: FLOOR_MCP_AGENT_ENDPOINTS,
+      floor_endpoints: FLOOR_MCP_AGENT_ENDPOINTS
+    });
   });
 
   // Serve public static assets with 1-day caching

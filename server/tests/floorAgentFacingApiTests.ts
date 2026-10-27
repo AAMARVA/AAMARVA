@@ -3,6 +3,7 @@ import http from 'http';
 import cookieParser from 'cookie-parser';
 import crypto from 'crypto';
 import floorRouter from '../routes/floorRoutes.js';
+import aamarvaRouter from '../routes/aamarvaRoutes.js';
 import {
   addMcpServerWithDiscovery,
   removeMcpServer,
@@ -52,6 +53,7 @@ export async function runFloorAgentFacingApiTests(): Promise<Record<string, { st
   });
 
   app.use('/api/floor', floorRouter);
+  app.use('/api', aamarvaRouter);
 
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -98,13 +100,14 @@ export async function runFloorAgentFacingApiTests(): Promise<Record<string, { st
     // =========================================================================
     console.log('--- 1. Discover Tools (GET /api/floor/agent/tools) ---');
 
-    // Initially unassigned: agent sees 0 tools
+    // Initially unassigned: agent sees all available tools with accessStatus 'unassigned'
     testCaller = { id: operatorId, agentId: slaveAgentId, masterId: operatorId, type: 'agent' };
     const initialToolsRes = await fetchApi('/api/floor/agent/tools');
+    const unassignedEcho = initialToolsRes.json?.data?.find((t: any) => t.id === toolEcho.id);
     recordResult(
-      'discover_tools_unassigned_hidden',
-      initialToolsRes.status === 200 && Array.isArray(initialToolsRes.json?.data) && initialToolsRes.json.data.length === 0,
-      'Unassigned agent sees 0 tools (zero-trust)'
+      'discover_tools_unassigned_visible_with_status',
+      initialToolsRes.status === 200 && Array.isArray(initialToolsRes.json?.data) && initialToolsRes.json.data.length > 0 && unassignedEcho?.accessStatus === 'unassigned',
+      'Unassigned agent discovers available tools with accessStatus "unassigned"'
     );
 
     // Grant access to toolEcho
@@ -124,9 +127,12 @@ export async function runFloorAgentFacingApiTests(): Promise<Record<string, { st
       discoveredItem.inputSchema &&
       discoveredItem.access_status === 'granted' &&
       discoveredItem.accessStatus === 'granted' &&
-      discoveredItem.server_id === mcpServer.id;
+      discoveredItem.server_id === mcpServer.id &&
+      discoveredItem.serverUrl === mcpServer.endpoint &&
+      discoveredItem.authType === mcpServer.auth_type &&
+      'authHeaderName' in discoveredItem;
 
-    recordResult('discover_tools_returns_schema_and_status', Boolean(schemaComplete), 'Returns id, name, description, inputSchema, accessStatus');
+    recordResult('discover_tools_returns_schema_and_status', Boolean(schemaComplete), 'Returns id, name, description, inputSchema, accessStatus, authType, authHeaderName, serverUrl');
 
     // Test HITL status reflection
     await setToolHitlPolicy(operatorId, toolEcho.id, true);
@@ -341,11 +347,32 @@ export async function runFloorAgentFacingApiTests(): Promise<Record<string, { st
       method: 'POST',
       body: JSON.stringify({ reason: 'Execute alias credential retrieval' })
     });
+    const executeData = executeAliasRes.json?.data;
     const executeAliasOk =
       executeAliasRes.status === 200 &&
       executeAliasRes.json?.success === true &&
-      typeof executeAliasRes.json?.data?.grantToken === 'string';
-    recordResult('temp_access_execute_alias_retrieval_200', Boolean(executeAliasOk), 'Alias /invocations/:invocationId/execute succeeds with 200');
+      Boolean(executeData?.tool?.name) &&
+      typeof executeData?.serverUrl === 'string' &&
+      executeData?.authConfig !== undefined &&
+      executeData?.verification !== undefined &&
+      typeof executeData?.grantToken === 'string';
+    recordResult('temp_access_execute_alias_retrieval_200', Boolean(executeAliasOk), 'Alias /invocations/:invocationId/execute returns tool details, serverUrl, authConfig, verification info');
+
+    // 3.9 Unassigned agent or agent without granted access rejected on /execute
+    const unassignedInvokeRes = await fetchApi(`/api/floor/tools/${toolCalc.id}/invoke`, {
+      method: 'POST',
+      body: JSON.stringify({ arguments: { query: 'unassigned test' }, reason: 'testing unassigned execute rejection', requestType: 'access' })
+    });
+    const unassignedRequestId = unassignedInvokeRes.json?.data?.requestId;
+    const unassignedExecRes = await fetchApi(`/api/floor/invocations/${unassignedRequestId}/execute`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Unassigned agent attempt' })
+    });
+    const unassignedBlockedOk =
+      unassignedExecRes.status === 403 &&
+      unassignedExecRes.json?.success === false &&
+      typeof (unassignedExecRes.json?.error?.message || unassignedExecRes.json?.message) === 'string';
+    recordResult('get_tool_access_unassigned_rejected_403', Boolean(unassignedBlockedOk), 'Unassigned agent without grant returns success: false with clear access message');
 
     // =========================================================================
     // 4. Check Request Status: GET /api/floor/requests/:requestId
@@ -401,6 +428,64 @@ export async function runFloorAgentFacingApiTests(): Promise<Record<string, { st
       invStatusRes.status === 200 &&
       invStatusRes.json?.data?.status === 'accepted'; // hitlReq1Id was approved earlier
     recordResult('check_status_invocation_request_compatibility', Boolean(invStatusOk), 'Seamlessly checks pending invocation status (accepted)');
+
+    // =========================================================================
+    // 5. ADK Endpoint Integration (/api/adk)
+    // =========================================================================
+    console.log('\n--- 5. ADK Endpoint Integration (GET /api/adk) ---');
+
+    // 5.1 GET /api/adk returns 200 with success: true and spec content
+    const adkRes = await fetchApi('/api/adk');
+    const adkOk =
+      adkRes.status === 200 &&
+      adkRes.json?.success === true &&
+      typeof adkRes.json?.data?.adk === 'string' &&
+      adkRes.json?.data?.adk.length > 0;
+    recordResult('adk_endpoint_returns_success_and_spec', Boolean(adkOk), 'GET /api/adk returns 200 and specification document');
+
+    // 5.2 GET /api/adk includes exactly the four Floor MCP agent endpoints
+    const floorEndpoints: any[] = adkRes.json?.data?.floorEndpoints || [];
+    const expectedPaths = [
+      'GET /api/floor/agent/tools',
+      'POST /api/floor/tools/:toolId/invoke',
+      'GET /api/floor/requests/:requestId',
+      'POST /api/floor/invocations/:invocationId/execute'
+    ];
+    const actualPaths = floorEndpoints.map((e) => `${e.method} ${e.path}`);
+    const allFourPresent = expectedPaths.every((ep) => actualPaths.includes(ep));
+    recordResult(
+      'adk_endpoint_contains_all_four_floor_endpoints',
+      Boolean(allFourPresent && floorEndpoints.length === 4),
+      `ADK endpoint exposes exactly the 4 required Floor MCP endpoints: ${actualPaths.join(', ')}`
+    );
+
+    // 5.3 All four endpoints specify dynamic auth support for MCP server auth types
+    const allSupportDynamicAuth = floorEndpoints.every(
+      (e) =>
+        Array.isArray(e.supportedAuthTypes) &&
+        e.supportedAuthTypes.includes('none') &&
+        e.supportedAuthTypes.includes('bearer') &&
+        e.supportedAuthTypes.includes('api-key') &&
+        e.supportedAuthTypes.includes('custom-header')
+    );
+    recordResult(
+      'adk_endpoint_floor_spec_supports_dynamic_auth',
+      Boolean(allSupportDynamicAuth),
+      'All four Floor endpoints document dynamic MCP server auth support (none, bearer, api-key, custom-header)'
+    );
+
+    // 5.4 Full ADK spec markdown contains descriptions and paths for all 4 endpoints
+    const specMarkdown = adkRes.json?.data?.adk || '';
+    const markdownHasAllFour =
+      specMarkdown.includes('/api/floor/agent/tools') &&
+      specMarkdown.includes('/api/floor/tools/:toolId/invoke') &&
+      specMarkdown.includes('/api/floor/requests/:requestId') &&
+      (specMarkdown.includes('/api/floor/invocations/:invocationId/execute') || specMarkdown.includes('/api/floor/invocations/:invocationId/access'));
+    recordResult(
+      'adk_spec_document_contains_floor_endpoints',
+      Boolean(markdownHasAllFour),
+      'ADK spec markdown document includes complete documentation for the four Floor MCP endpoints'
+    );
 
     // Clean up
     await removeMcpServer(operatorId, mcpServer.id);

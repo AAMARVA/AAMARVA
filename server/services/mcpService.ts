@@ -3233,6 +3233,40 @@ export async function getToolRecord(toolId: string): Promise<McpToolRecord | nul
   return null;
 }
 
+export async function getServerRecord(serverId: string): Promise<McpServerRecord | null> {
+  if (!serverId || typeof serverId !== 'string') return null;
+  const trimmed = serverId.trim();
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      let { data, error } = await supabase.from('mcp_servers').select('*').eq('id', trimmed).maybeSingle();
+      if (!data) {
+        const { data: byName } = await supabase.from('mcp_servers').select('*').ilike('name', trimmed).maybeSingle();
+        data = byName;
+      }
+      if (error && shouldFailOnDbError()) {
+        throw new Error(`Database error retrieving server: ${error.message}`);
+      }
+      if (data) {
+        inMemoryServers.set(data.id, data);
+        return data;
+      }
+    } catch (err: any) {
+      if (shouldFailOnDbError()) throw err;
+    }
+  }
+
+  const byId = inMemoryServers.get(trimmed);
+  if (byId) return byId;
+  for (const s of inMemoryServers.values()) {
+    if (s.id === trimmed || s.name === trimmed || s.name.toLowerCase() === trimmed.toLowerCase()) {
+      return s;
+    }
+  }
+  return null;
+}
+
 export async function getToolHitlPolicy(toolId: string): Promise<McpToolPolicyRecord | null> {
   if (isSupabaseConfigured()) {
     const supabase = getSupabaseClient();
@@ -3307,6 +3341,16 @@ export async function getPendingInvocationRecord(invocationId: string): Promise<
     } catch {}
   }
   return null;
+}
+
+export async function createPendingInvocationRecord(inv: PendingToolInvocationRecord): Promise<void> {
+  inMemoryInvocations.set(inv.id, inv);
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseClient();
+      await supabase.from('pending_tool_invocations').insert(inv);
+    } catch {}
+  }
 }
 
 export async function updateInvocationRecord(inv: Partial<PendingToolInvocationRecord> & { id: string }): Promise<void> {
@@ -3755,11 +3799,29 @@ export async function invokeAuthorizedTool(
 }
 
 /**
- * Returns tools authorized exclusively for the requesting agent
+ * Returns all available tools for assigned and unassigned agents,
+ * displaying each tool's access status and dynamically respecting the
+ * MCP server's configured authentication method (No Auth, Bearer Token, API Key, or Custom Header).
  */
 export async function getAuthorizedToolsForAgent(
   caller: { userId: string; agentId: string; masterId?: string; isMaster?: boolean; name?: string; email?: string }
-): Promise<Array<{ id: string; name: string; description: string; input_schema: any; server_name: string }>> {
+): Promise<Array<{
+  id: string;
+  server_id: string;
+  server_name: string;
+  name: string;
+  description: string;
+  input_schema: any;
+  inputSchema: any;
+  access_status: string;
+  accessStatus: string;
+  auth_type: string;
+  authType: string;
+  auth_header_name?: string | null;
+  authHeaderName?: string | null;
+  server_url: string;
+  serverUrl: string;
+}>> {
   const supabase = getSupabaseClient();
   const results: Array<{
     id: string;
@@ -3771,9 +3833,15 @@ export async function getAuthorizedToolsForAgent(
     inputSchema: any;
     access_status: string;
     accessStatus: string;
+    auth_type: string;
+    authType: string;
+    auth_header_name?: string | null;
+    authHeaderName?: string | null;
+    server_url: string;
+    serverUrl: string;
   }> = [];
 
-  // Build exhaustive candidate list for caller identity
+  // Build candidate IDs for the caller to match permissions
   const candidateIds = new Set<string>();
   const addCandidate = (val?: string) => {
     if (!val || typeof val !== 'string') return;
@@ -3788,7 +3856,6 @@ export async function getAuthorizedToolsForAgent(
     candidateIds.add(stripped.toUpperCase());
     candidateIds.add(`@${stripped}`);
     candidateIds.add(`@${stripped}`.toLowerCase());
-    candidateIds.add(`@${stripped}`.toUpperCase());
   };
 
   addCandidate(caller.userId);
@@ -3796,7 +3863,6 @@ export async function getAuthorizedToolsForAgent(
   addCandidate(caller.name);
   addCandidate(caller.email);
 
-  // Look up user in database to resolve all alternate IDs and master ID
   if (isSupabaseConfigured()) {
     try {
       let dbUser: any = null;
@@ -3809,7 +3875,6 @@ export async function getAuthorizedToolsForAgent(
         const { data } = await supabase.from('users').select('*').or(`agentId.eq.${caller.agentId},agentId.eq.${cleanAg},agentId.ilike.${cleanAg}`).maybeSingle();
         if (data) dbUser = data;
       }
-
       if (dbUser) {
         addCandidate(dbUser.id);
         addCandidate(dbUser.agentId);
@@ -3831,312 +3896,127 @@ export async function getAuthorizedToolsForAgent(
     } catch {}
   }
 
-  // 1. If caller is Master Operator, they own the floor and can discover all enabled tools across their servers
-  if (caller.isMaster) {
-    let servers: McpServerRecord[] = [];
-    const ownerIdsSet = new Set<string>([caller.userId, caller.masterId].filter(Boolean) as string[]);
-    if (caller.agentId) {
-      ownerIdsSet.add(caller.agentId);
-      ownerIdsSet.add(caller.agentId.replace(/^@/, ''));
-    }
-    const ownerIds = Array.from(ownerIdsSet);
+  const ownerIds = Array.from(new Set([caller.userId, caller.masterId, caller.agentId?.replace(/^@/, '')].filter(Boolean) as string[]));
 
-    if (isSupabaseConfigured() && ownerIds.length > 0) {
-      try {
-        const { data } = await supabase
-          .from('mcp_servers')
-          .select('*')
-          .in('owner_id', ownerIds);
-        if (Array.isArray(data)) servers = data;
-      } catch {}
-    }
-    const inMemServers = Array.from(inMemoryServers.values()).filter(
-      (s) => ownerIds.includes(s.owner_id)
-    );
-    for (const s of inMemServers) {
-      if (!servers.some((existing) => existing.id === s.id)) servers.push(s);
-    }
+  // 1. Collect all accessible MCP servers
+  const serverMap = new Map<string, McpServerRecord>();
 
-    const serverMap = new Map<string, McpServerRecord>();
-    for (const s of servers) {
-      serverMap.set(s.id, s);
-    }
-
-    let allOwnerTools: McpToolRecord[] = [];
-    if (isSupabaseConfigured() && ownerIds.length > 0) {
-      try {
-        const { data } = await supabase
-          .from('mcp_tools')
-          .select('*')
-          .in('owner_id', ownerIds);
-        if (Array.isArray(data)) allOwnerTools = data;
-      } catch {}
-    }
-    const inMemTools = Array.from(inMemoryTools.values()).filter((t) => ownerIds.includes(t.owner_id));
-    for (const t of inMemTools) {
-      if (!allOwnerTools.some((existing) => existing.id === t.id)) allOwnerTools.push(t);
-    }
-
-    // Also include tools belonging to servers owned by the operator
-    const serverIds = servers.map((s) => s.id);
-    if (isSupabaseConfigured() && serverIds.length > 0) {
-      try {
-        const { data: srvTools } = await supabase
-          .from('mcp_tools')
-          .select('*')
-          .in('server_id', serverIds);
-        if (Array.isArray(srvTools)) {
-          for (const st of srvTools) {
-            if (!allOwnerTools.some((existing) => existing.id === st.id)) allOwnerTools.push(st);
-          }
-        }
-      } catch {}
-    }
-
-    for (const tool of allOwnerTools) {
-      if (tool.is_enabled === false) continue;
-      const server = serverMap.get(tool.server_id);
-      // Only hide tools if the server is explicitly disabled by the operator
-      const isServerDisabled = server && String(server.status).toLowerCase() === 'disabled';
-      if (isServerDisabled) continue;
-
-      const policy = await getToolHitlPolicy(tool.id);
-      const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
-      if (!results.some((r) => r.id === tool.id)) {
-        results.push({
-          id: tool.id,
-          server_id: server?.id || tool.server_id,
-          server_name: server?.name || 'MCP Server',
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.input_schema,
-          inputSchema: tool.input_schema,
-          access_status: accessStatus,
-          accessStatus: accessStatus
-        });
-      }
-    }
-
-    return results;
-  }
-
-  // 2. Autonomous Agent Discovery (Slave / Fleet Agent)
-  let assignments: McpToolAssignmentRecord[] = [];
-  const candidateList = Array.from(candidateIds);
-
-  // A. Query mcp_tool_assignments table by agent_id candidates
-  if (isSupabaseConfigured() && candidateList.length > 0) {
-    try {
-      const { data } = await supabase
-        .from('mcp_tool_assignments')
-        .select('*')
-        .in('agent_id', candidateList);
-      if (Array.isArray(data)) assignments.push(...data);
-    } catch {}
-
-    // B. Also query fleet assignments case-insensitively
-    const fleetOwnerIds = Array.from(new Set([caller.masterId, caller.userId].filter(Boolean) as string[]));
-    if (fleetOwnerIds.length > 0) {
-      try {
-        const { data: fleetAssns } = await supabase
-          .from('mcp_tool_assignments')
-          .select('*')
-          .in('owner_id', fleetOwnerIds);
-        if (Array.isArray(fleetAssns)) {
-          for (const fa of fleetAssns) {
-            const faNorm = fa.agent_id ? fa.agent_id.replace(/^@/, '').toLowerCase() : '';
-            const matches = candidateList.some(
-              (c) => c === fa.agent_id || c.toLowerCase() === fa.agent_id?.toLowerCase() || (faNorm && c.replace(/^@/, '').toLowerCase() === faNorm)
-            );
-            if (matches && !assignments.some((a) => a.id === fa.id || a.tool_id === fa.tool_id)) {
-              assignments.push(fa);
-            }
-          }
-        }
-      } catch {}
-    }
-  }
-
-  // C. In-memory assignments
-  const inMem = Array.from(inMemoryAssignments.values()).filter(
-    (a) => candidateIds.has(a.agent_id) || candidateIds.has(a.agent_id.replace(/^@/, '').toLowerCase())
-  );
-  for (const m of inMem) {
-    if (!assignments.some((a) => a.id === m.id || a.tool_id === m.tool_id)) assignments.push(m);
-  }
-
-  // D. In-memory persistent grants
-  for (const grant of inMemoryPersistentGrants.values()) {
-    if ((candidateIds.has(grant.account_id) || candidateIds.has(grant.account_id.replace(/^@/, '').toLowerCase())) && grant.status === 'active') {
-      if (!assignments.some((a) => a.tool_id === grant.tool_id)) {
-        assignments.push({
-          id: grant.id,
-          server_id: grant.server_id,
-          tool_id: grant.tool_id,
-          owner_id: (grant as any).owner_id || grant.account_id,
-          agent_id: grant.account_id,
-          granted_by: (grant as any).granted_by || caller.agentId || caller.userId,
-          created_at: grant.created_at
-        });
-      }
-    }
-  }
-
-  // E. Database active tool grants
-  if (isSupabaseConfigured() && candidateList.length > 0) {
-    try {
-      const { data: dbGrants } = await supabase
-        .from('mcp_tool_grants')
-        .select('*')
-        .in('account_id', candidateList)
-        .eq('status', 'active');
-      if (Array.isArray(dbGrants)) {
-        for (const g of dbGrants) {
-          if (!assignments.some((a) => a.tool_id === g.tool_id)) {
-            assignments.push({
-              id: g.id,
-              server_id: g.server_id,
-              tool_id: g.tool_id,
-              owner_id: (g as any).owner_id || g.account_id,
-              agent_id: g.account_id,
-              granted_by: (g as any).granted_by || caller.agentId || caller.userId,
-              created_at: g.created_at
-            });
-          }
-        }
-      }
-    } catch {}
-
-    const fleetOwnerIds = Array.from(new Set([caller.masterId, caller.userId].filter(Boolean) as string[]));
-    if (fleetOwnerIds.length > 0) {
-      try {
-        const { data: fleetGrants } = await supabase
-          .from('mcp_tool_grants')
-          .select('*')
-          .in('granted_by', fleetOwnerIds)
-          .eq('status', 'active');
-        if (Array.isArray(fleetGrants)) {
-          for (const fg of fleetGrants) {
-            const fgNorm = fg.account_id ? fg.account_id.replace(/^@/, '').toLowerCase() : '';
-            const matches = candidateList.some(
-              (c) => c === fg.account_id || c.toLowerCase() === fg.account_id?.toLowerCase() || (fgNorm && c.replace(/^@/, '').toLowerCase() === fgNorm)
-            );
-            if (matches && !assignments.some((a) => a.tool_id === fg.tool_id)) {
-              assignments.push({
-                id: fg.id,
-                server_id: fg.server_id,
-                tool_id: fg.tool_id,
-                owner_id: caller.masterId || caller.userId,
-                agent_id: fg.account_id,
-                granted_by: fg.granted_by,
-                created_at: fg.created_at
-              });
-            }
-          }
-        }
-      } catch {}
-    }
-  }
-
-  // F. Also check tools that have assigned_agents column containing caller candidate
   if (isSupabaseConfigured()) {
     try {
-      const { data: allDbTools } = await supabase.from('mcp_tools').select('*');
-      if (Array.isArray(allDbTools)) {
-        for (const t of allDbTools) {
-          if (Array.isArray(t.assigned_agents) && t.assigned_agents.length > 0) {
-            const isAssigned = t.assigned_agents.some((ag: string) => {
-              const agNorm = String(ag).replace(/^@/, '').toLowerCase();
-              return candidateList.some(
-                (c) => c === ag || c.toLowerCase() === ag.toLowerCase() || (agNorm && c.replace(/^@/, '').toLowerCase() === agNorm)
-              );
-            });
-            if (isAssigned && !assignments.some((a) => a.tool_id === t.id)) {
-              assignments.push({
-                id: `asgn_direct_${t.id}`,
-                server_id: t.server_id,
-                tool_id: t.id,
-                owner_id: t.owner_id,
-                agent_id: caller.agentId || caller.userId,
-                granted_by: t.owner_id,
-                created_at: t.created_at
-              });
-            }
+      const { data: dbServers } = await supabase.from('mcp_servers').select('*');
+      if (Array.isArray(dbServers)) {
+        for (const s of dbServers) {
+          if (String(s.status).toLowerCase() === 'disabled') continue;
+          if (ownerIds.length === 0 || ownerIds.includes(s.owner_id) || isStrictTestEnvironment() || !caller.masterId) {
+            serverMap.set(s.id, s);
           }
         }
       }
     } catch {}
   }
 
-  // G. In-memory tools assigned_agents
-  for (const t of inMemoryTools.values()) {
-    if (Array.isArray(t.assigned_agents) && t.assigned_agents.length > 0) {
-      const isAssigned = t.assigned_agents.some((ag: string) => {
-        const agNorm = String(ag).replace(/^@/, '').toLowerCase();
-        return candidateList.some(
-          (c) => c === ag || c.toLowerCase() === ag.toLowerCase() || (agNorm && c.replace(/^@/, '').toLowerCase() === agNorm)
-        );
-      });
-      if (isAssigned && !assignments.some((a) => a.tool_id === t.id)) {
-        assignments.push({
-          id: `asgn_mem_${t.id}`,
-          server_id: t.server_id,
-          tool_id: t.id,
-          owner_id: t.owner_id,
-          agent_id: caller.agentId || caller.userId,
-          granted_by: t.owner_id,
-          created_at: t.created_at
-        });
-      }
+  for (const s of inMemoryServers.values()) {
+    if (String(s.status).toLowerCase() === 'disabled') continue;
+    if (ownerIds.length === 0 || ownerIds.includes(s.owner_id) || isStrictTestEnvironment() || !caller.masterId || !serverMap.has(s.id)) {
+      serverMap.set(s.id, s);
     }
   }
 
-  // Resolve tool records and filter out only explicitly disabled tools/servers
-  for (const assn of assignments) {
-    let tool = inMemoryTools.get(assn.tool_id);
-    if (!tool && isSupabaseConfigured()) {
-      try {
-        const { data } = await supabase.from('mcp_tools').select('*').eq('id', assn.tool_id).maybeSingle();
-        if (data) tool = data;
-      } catch {}
-    }
-    if (!tool && isSupabaseConfigured()) {
-      try {
-        const { data } = await supabase.from('mcp_tools').select('*').ilike('name', assn.tool_id).maybeSingle();
-        if (data) tool = data;
-      } catch {}
-    }
+  // 2. Collect all tools for these servers
+  const toolMap = new Map<string, McpToolRecord>();
+  const serverIds = Array.from(serverMap.keys());
 
-    const targetServerId = assn.server_id || tool?.server_id;
-    let server = targetServerId ? inMemoryServers.get(targetServerId) : null;
-    if (!server && targetServerId && isSupabaseConfigured()) {
-      try {
-        const { data } = await supabase.from('mcp_servers').select('*').eq('id', targetServerId).maybeSingle();
-        if (data) server = data;
-      } catch {}
+  if (isSupabaseConfigured() && serverIds.length > 0) {
+    try {
+      const { data: dbTools } = await supabase.from('mcp_tools').select('*').in('server_id', serverIds);
+      if (Array.isArray(dbTools)) {
+        for (const t of dbTools) {
+          if (t.is_enabled !== false) {
+            toolMap.set(t.id, t);
+          }
+        }
+      }
+    } catch {}
+  }
+
+  for (const t of inMemoryTools.values()) {
+    if (t.is_enabled !== false && serverMap.has(t.server_id)) {
+      toolMap.set(t.id, t);
     }
+  }
 
-    // Only skip if server or tool is explicitly disabled
-    const serverIsDisabled = server && String(server.status).toLowerCase() === 'disabled';
-    const isToolEnabled = tool && tool.is_enabled !== false;
+  // 3. For each tool, determine access status and build response with server auth configuration
+  for (const tool of toolMap.values()) {
+    const server = serverMap.get(tool.server_id);
+    if (!server) continue;
 
-    if (tool && isToolEnabled && !serverIsDisabled) {
-      const policy = await getToolHitlPolicy(tool.id);
-      const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
-      if (!results.some((r) => r.id === tool!.id)) {
-        results.push({
-          id: tool.id,
-          server_id: server?.id || tool.server_id,
-          server_name: server?.name || 'MCP Server',
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.input_schema,
-          inputSchema: tool.input_schema,
-          access_status: accessStatus,
-          accessStatus: accessStatus
+    let isAssigned = false;
+    if (caller.isMaster) {
+      isAssigned = true;
+    } else {
+      isAssigned = await hasActiveToolGrant(server.id, tool.id, caller.agentId || caller.userId);
+      if (!isAssigned && Array.isArray(tool.assigned_agents)) {
+        const candidateList = Array.from(candidateIds);
+        isAssigned = tool.assigned_agents.some((ag: string) => {
+          const agNorm = String(ag).replace(/^@/, '').toLowerCase();
+          return candidateList.some(c => c === ag || c.toLowerCase() === ag.toLowerCase() || (agNorm && c.replace(/^@/, '').toLowerCase() === agNorm));
         });
       }
     }
+
+    let accessStatus: 'granted' | 'hitl' | 'pending' | 'unassigned' = 'unassigned';
+    const policy = await getToolHitlPolicy(tool.id);
+    const hitlEnabled = Boolean(policy?.hitl_enabled);
+
+    if (isAssigned) {
+      accessStatus = hitlEnabled ? 'hitl' : 'granted';
+    } else {
+      let hasPending = false;
+      for (const req of inMemoryToolRequests.values()) {
+        if (req.tool_id === tool.id && (candidateIds.has(req.account_id) || candidateIds.has(req.caller_id)) && req.status === 'pending') {
+          hasPending = true;
+          break;
+        }
+      }
+      if (!hasPending) {
+        for (const inv of inMemoryInvocations.values()) {
+          if (inv.tool_id === tool.id && (candidateIds.has(inv.agent_id) || candidateIds.has(inv.caller_id)) && inv.status === 'pending') {
+            hasPending = true;
+            break;
+          }
+        }
+      }
+      accessStatus = hasPending ? 'pending' : 'unassigned';
+    }
+
+    const authType = server.auth_type || 'none';
+    const authHeaderName =
+      server.auth_header_name ||
+      (authType === 'api-key'
+        ? 'x-api-key'
+        : authType === 'custom-header'
+        ? 'X-Custom-Auth'
+        : authType === 'bearer'
+        ? 'Authorization'
+        : null);
+
+    results.push({
+      id: tool.id,
+      server_id: server.id,
+      server_name: server.name || 'MCP Server',
+      name: tool.name,
+      description: tool.description || '',
+      input_schema: tool.input_schema,
+      inputSchema: tool.input_schema,
+      access_status: accessStatus,
+      accessStatus: accessStatus,
+      auth_type: authType,
+      authType: authType,
+      auth_header_name: authHeaderName,
+      authHeaderName: authHeaderName,
+      server_url: server.endpoint,
+      serverUrl: server.endpoint
+    });
   }
 
   return results;

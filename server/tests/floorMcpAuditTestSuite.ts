@@ -316,17 +316,18 @@ export async function runFloorMcpAuditTestSuite(): Promise<Record<string, { pass
       actual: `Discovered count: ${discoveredTools.length}, Query tool: ${queryTool?.name}`
     });
 
-    // 2.2 Agent Tool Visibility (Zero Trust)
+    // 2.2 Agent Tool Visibility & Access Status
     const agentToolsInitial = await getAuthorizedToolsForAgent({ userId: operatorAlpha, agentId: agentSlave1 });
-    const zeroTrustOk = !agentToolsInitial.some(t => t.server_name === bearerServer.name);
+    const bearerTools = agentToolsInitial.filter(t => t.server_name === bearerServer.name);
+    const accessStatusOk = bearerTools.length > 0 && bearerTools.every(t => t.accessStatus === 'unassigned');
 
     recordResult({
       category: '2. Tool Discovery & Availability',
       scenarioId: 'mcp_agent_visibility_zero_trust',
-      description: 'Unassigned agent sees 0 discovered tools in /api/floor/agent/tools',
-      passed: zeroTrustOk,
-      expected: 'Agent visible tools list excludes unassigned tools',
-      actual: `Visible tools for unassigned agent: ${agentToolsInitial.filter(t => t.server_name === bearerServer.name).length}`
+      description: 'Unassigned agent discovers available tools with accessStatus "unassigned"',
+      passed: accessStatusOk,
+      expected: 'Available tools listed with accessStatus "unassigned"',
+      actual: `Visible tools: ${bearerTools.length}, status: ${bearerTools[0]?.accessStatus}`
     });
 
     // 2.3 Tool Disabled Policy Enforcement

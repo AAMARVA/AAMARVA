@@ -242,9 +242,13 @@ Retrieve current ADK specification.
 
 ### Floor MCP & Tool Endpoints (Agent-Accessible)
 
+The following four agent-facing endpoints allow autonomous agents to discover MCP tools across registered servers, submit tool requests or initiate HITL approvals, poll request status, and retrieve temporary execution access once granted. All four endpoints dynamically respect the MCP server's configured authentication method (No Auth, Bearer Token, API Key, or Custom Header). Tools are executed directly against the MCP server using the retrieved access configuration—not executed through the coordination endpoints.
+
 ### 1. Discover Tools: GET /api/floor/agent/tools
-Return tools available to the authenticated agent, including each tool's ID, name, description, input schema, and relevant access status.
-- **Request Body**: None
+List all available tools for both assigned and unassigned agents.
+- **Access Status**: Returns access status for each tool (`granted`, `hitl`, `pending`, or `unassigned`).
+- **Server Details**: Dynamically includes the MCP server's configured authentication details (`authType`, `authHeaderName`, `serverUrl`).
+- **Request**: `GET /api/floor/agent/tools` (Authenticated with Agent Bearer Token or API key)
 - **Response (Status 200)**:
 ```json
 {
@@ -255,18 +259,22 @@ Return tools available to the authenticated agent, including each tool's ID, nam
       "server_id": "srv_123",
       "server_name": "Weather Service",
       "name": "weather_lookup",
-      "description": "Fetch weather forecast",
-      "input_schema": { "type": "object", "properties": { "city": { "type": "string" } } },
-      "inputSchema": { "type": "object", "properties": { "city": { "type": "string" } } },
+      "description": "Fetch weather forecast for a city",
+      "input_schema": { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] },
+      "inputSchema": { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] },
       "access_status": "granted",
-      "accessStatus": "granted"
+      "accessStatus": "granted",
+      "authType": "bearer",
+      "authHeaderName": "Authorization",
+      "serverUrl": "https://mcp.weather.internal/sse"
     }
   ]
 }
 ```
 
 ### 2. Send Tool Request: POST /api/floor/tools/:toolId/invoke
-Submit a request to use a specific tool with intended arguments. If additional access or human approval is required, creates/reuses a request and returns status 202 without executing the tool.
+Submit a request to use a specific tool with intended arguments and justification.
+- **Behavior**: If direct execution is permitted, returns 200. If additional access or operator approval is required (unassigned agent or HITL policy enabled), creates or reuses an access request and returns status 202 without executing the tool.
 - **Request Body**:
 ```json
 {
@@ -282,7 +290,7 @@ Submit a request to use a specific tool with intended arguments. If additional a
   "data": { "temperature": 22, "condition": "Sunny" }
 }
 ```
-- **Response (Access or HITL Request Created - Status 202)**:
+- **Response (Access or HITL Request Created - Status 202 Accepted)**:
 ```json
 {
   "success": false,
@@ -295,33 +303,9 @@ Submit a request to use a specific tool with intended arguments. If additional a
 }
 ```
 
-### 3. Get Temporary Access: POST /api/floor/invocations/:invocationId/access (or alias /execute)
-Retrieve temporary credentials or access parameters for an approved invocation. This endpoint does NOT execute the tool.
-- **Request Body**:
-```json
-{
-  "reason": "Retrieve temporary authorization for the approved tool invocation."
-}
-```
-- **Response (Status 200)**:
-```json
-{
-  "success": true,
-  "data": {
-    "invocationId": "inv_987",
-    "toolId": "tool_abc",
-    "tokenType": "Bearer",
-    "grantToken": "grant_...",
-    "accessToken": "grant_...",
-    "scope": "tool:invoke",
-    "expiresAt": "2026-10-26T15:00:00.000Z",
-    "approvedArguments": { "city": "Tokyo" }
-  }
-}
-```
-
-### 4. Check Request Status: GET /api/floor/requests/:requestId
-Check status of a pending or processed tool request or pending invocation belonging to the authenticated agent.
+### 3. Check Request Status: GET /api/floor/requests/:requestId
+Check the current lifecycle status of a tool request or pending invocation belonging to the authenticated agent.
+- **Request**: `GET /api/floor/requests/:requestId`
 - **Response (Status 200)**:
 ```json
 {
@@ -329,6 +313,54 @@ Check status of a pending or processed tool request or pending invocation belong
   "data": {
     "requestId": "req_12345",
     "status": "pending"
+  }
+}
+```
+*(Status values: `pending`, `accepted`, `approved`, `rejected`, `denied`, `expired`)*
+
+### 4. Get Tool Access: POST /api/floor/invocations/:invocationId/execute (or alias /access)
+Retrieve execution credentials and configuration for an approved tool invocation. This endpoint does NOT execute the tool.
+- **For Assigned / Granted Agents**: Returns `success: true` with tool details, server URL, authentication configuration (respecting No Auth, Bearer, API Key, or Custom Header), and verification information. Single-use retrieval enforces anti-replay protection.
+- **For Unassigned / Denied Agents**: Returns `success: false` with HTTP 403 and a clear message explaining that the agent does not have access.
+- **Request Body**:
+```json
+{
+  "reason": "Retrieve authorization credentials for approved tool invocation."
+}
+```
+- **Response (Granted Access - Status 200)**:
+```json
+{
+  "success": true,
+  "data": {
+    "invocationId": "inv_987",
+    "toolId": "tool_abc",
+    "tool": { "id": "tool_abc", "name": "weather_lookup" },
+    "serverUrl": "https://mcp.weather.internal/sse",
+    "authConfig": {
+      "authType": "bearer",
+      "authHeaderName": "Authorization",
+      "headerValue": "Bearer grant_sec_991823..."
+    },
+    "verificationInfo": {
+      "verified": true,
+      "toolId": "tool_abc",
+      "agentId": "AMR-1234"
+    },
+    "grantToken": "grant_sec_991823...",
+    "accessToken": "grant_sec_991823...",
+    "scope": "tool:invoke",
+    "expiresAt": "2026-10-27T16:00:00.000Z",
+    "approvedArguments": { "city": "Tokyo" }
+  }
+}
+```
+- **Response (Unassigned / Access Denied - Status 403)**:
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Access denied. Agent AMR-9999 does not have access to this tool."
   }
 }
 ```
