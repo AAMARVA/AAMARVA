@@ -596,11 +596,17 @@ router.post(
       // 1. Authenticate and validate tool ID
       const tool = await getToolRecord(toolId);
       if (!tool) {
-        return res.status(404).json({ success: false, error: { message: 'Tool not found.' } });
+        return res.status(404).json({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Tool not found.' }
+        });
       }
 
       if (!tool.is_enabled) {
-        return res.status(403).json({ success: false, error: { message: 'Forbidden: Tool is disabled by operator policy.' } });
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Forbidden: Tool is disabled by operator policy.' }
+        });
       }
 
       // 2. Validate arguments
@@ -822,192 +828,219 @@ router.post(
  * Get Temporary Access: Retrieve temporary credentials or access parameters for an approved invocation.
  * This endpoint must NOT execute the tool.
  */
-router.post(
-  ['/invocations/:invocationId/access', '/invocations/:invocationId/execute'],
-  requireUserOrAgentAuth,
-  securityLayer('floor_invoke'),
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const invocationId = req.params.invocationId as string;
-      const { reason } = req.body || {};
+const handleTemporaryAccess = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const invocationId = (req.params.invocationId || req.body?.invocationId) as string;
+    const { reason } = req.body || {};
 
-      if (!reason || typeof reason !== 'string' || !reason.trim()) {
-        return res.status(400).json({
-          success: false,
-          error: { message: 'Field "reason" is required and must explain why temporary access is needed.' }
-        });
-      }
-
-      const invocation = await getPendingInvocationRecord(invocationId);
-      if (!invocation) {
-        return res.status(404).json({ success: false, error: { message: 'Invocation not found.' } });
-      }
-
-      const callerAgentId = req.user!.agentId || req.user!.id;
-      const callerUserId = req.user!.id;
-      const callerMasterId = req.user!.masterId || req.user!.id;
-
-      // Authenticate agent & verify invocation belongs to authenticated agent
-      const matchesAgent = callerAgentId === invocation.agent_id;
-      const matchesOwnerScope = (
-        callerMasterId === invocation.owner_id ||
-        callerUserId === invocation.owner_id ||
-        callerUserId === invocation.caller_id
-      );
-
-      if (!matchesAgent && !matchesOwnerScope) {
-        return res.status(403).json({
-          success: false,
-          error: { message: 'Forbidden: Invocation does not belong to authenticated agent.' }
-        });
-      }
-
-      // Verify that required access or human approval has been granted
-      if (invocation.status !== 'approved') {
-        return res.status(403).json({
-          success: false,
-          error: { message: `Invocation is not approved (current status: '${invocation.status}').` }
-        });
-      }
-
-      // Check expiry
-      if (new Date(invocation.expires_at).getTime() <= Date.now()) {
-        invocation.status = 'expired';
-        await updateInvocationRecord(invocation);
-        return res.status(410).json({
-          success: false,
-          error: { message: 'Approved invocation has expired.' }
-        });
-      }
-
-      // Prevent unauthorized retrieval, token reuse, and replay attacks
-      if ((invocation as any).consumed_at || (invocation as any).retrieved_at) {
-        return res.status(409).json({
-          success: false,
-          error: { message: 'Temporary access credentials have already been retrieved or consumed.' }
-        });
-      }
-
-      const nowIso = new Date().toISOString();
-      (invocation as any).retrieved_at = nowIso;
-      (invocation as any).consumed_at = nowIso;
-      await updateInvocationRecord(invocation);
-
-      // Generate single-use temporary credentials with appropriate scope and expiry
-      const grantToken = `grant_${crypto.randomBytes(24).toString('hex')}`;
-      const expiresAt = invocation.expires_at;
-
-      // Return only temporary credentials / access parameters; DO NOT execute tool
-      return res.status(200).json({
-        success: true,
-        data: {
-          invocationId: invocation.id,
-          toolId: invocation.tool_id,
-          tokenType: 'Bearer',
-          grantToken,
-          accessToken: grantToken,
-          scope: 'tool:invoke',
-          expiresAt,
-          approvedArguments: invocation.args
-        }
+    if (!reason || typeof reason !== 'string' || !reason.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_REQUEST', message: 'Field "reason" is required and must explain why temporary access is needed.' }
       });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: { message: err?.message || 'Failed to retrieve temporary access.' } });
     }
+
+    const invocation = await getPendingInvocationRecord(invocationId);
+    if (!invocation) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Invocation not found.' } });
+    }
+
+    const callerAgentId = req.user!.agentId || req.user!.id;
+    const callerUserId = req.user!.id;
+    const callerMasterId = req.user!.masterId || req.user!.id;
+
+    const normalizeId = (id?: string) => id?.trim().replace(/^@/, '').toLowerCase() || '';
+    const callerNorm = normalizeId(callerAgentId);
+    const invAgentNorm = normalizeId(invocation.agent_id);
+
+    // Authenticate agent & verify invocation belongs to authenticated agent
+    const matchesAgent =
+      callerAgentId === invocation.agent_id ||
+      callerUserId === invocation.agent_id ||
+      (Boolean(invAgentNorm) && callerNorm === invAgentNorm);
+
+    const matchesOwnerScope = (
+      callerMasterId === invocation.owner_id ||
+      callerUserId === invocation.owner_id ||
+      callerUserId === invocation.caller_id
+    );
+
+    if (!matchesAgent && !matchesOwnerScope) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Forbidden: Invocation does not belong to authenticated agent.' }
+      });
+    }
+
+    // Verify that required access or human approval has been granted
+    if (invocation.status !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: `Invocation is not approved (current status: '${invocation.status}').` }
+      });
+    }
+
+    // Check expiry
+    if (new Date(invocation.expires_at).getTime() <= Date.now()) {
+      invocation.status = 'expired';
+      await updateInvocationRecord(invocation);
+      return res.status(410).json({
+        success: false,
+        error: { code: 'EXPIRED', message: 'Approved invocation has expired.' }
+      });
+    }
+
+    // Prevent unauthorized retrieval, token reuse, and replay attacks
+    if ((invocation as any).consumed_at || (invocation as any).retrieved_at) {
+      return res.status(409).json({
+        success: false,
+        error: { code: 'CONFLICT', message: 'Temporary access credentials have already been retrieved or consumed.' }
+      });
+    }
+
+    const nowIso = new Date().toISOString();
+    (invocation as any).retrieved_at = nowIso;
+    (invocation as any).consumed_at = nowIso;
+
+    // Generate single-use temporary credentials with appropriate scope and expiry
+    const grantToken = `grant_${crypto.randomBytes(24).toString('hex')}`;
+    const grantTokenHash = crypto.createHash('sha256').update(grantToken).digest('hex');
+    (invocation as any).grant_token_hash = grantTokenHash;
+    await updateInvocationRecord(invocation);
+
+    // Synchronize grant record so subsequent invocation validation matches
+    await createToolGrantRecord({
+      id: `grant_${crypto.randomBytes(8).toString('hex')}`,
+      invocation_id: invocation.id,
+      grant_token_hash: grantTokenHash,
+      expires_at: invocation.expires_at,
+      created_at: nowIso
+    });
+
+    // Return only temporary credentials / access parameters; DO NOT execute tool
+    return res.status(200).json({
+      success: true,
+      data: {
+        invocationId: invocation.id,
+        toolId: invocation.tool_id,
+        tokenType: 'Bearer',
+        grantToken,
+        accessToken: grantToken,
+        scope: 'tool:invoke',
+        expiresAt: invocation.expires_at,
+        approvedArguments: invocation.args
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to retrieve temporary access.' } });
   }
-);
+};
+
+router.post('/invocations/:invocationId/access', requireUserOrAgentAuth, securityLayer('floor_invoke'), handleTemporaryAccess);
+router.post('/invocations/:invocationId/execute', requireUserOrAgentAuth, securityLayer('floor_invoke'), handleTemporaryAccess);
+router.post('/invocations/access', requireUserOrAgentAuth, securityLayer('floor_invoke'), handleTemporaryAccess);
 
 /**
  * 11b. GET /api/floor/requests/:requestId
  * Check Request Status: Return status for requests belonging to the authenticated agent.
  */
-router.get(
-  '/requests/:requestId',
-  requireUserOrAgentAuth,
-  securityLayer('floor_reads'),
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const requestId = req.params.requestId as string;
-      const callerAgentId = req.user!.agentId || req.user!.id;
-      const callerUserId = req.user!.id;
-      const callerMasterId = req.user!.masterId || req.user!.id;
-
-      // 1. Check in MCP persistent tool requests
-      const accessReq = await getToolAccessRequestRecord(requestId);
-      if (accessReq) {
-        const belongsToAgent =
-          accessReq.account_id === callerAgentId ||
-          accessReq.account_id === callerUserId ||
-          accessReq.caller_id === callerUserId ||
-          ((req.authType === 'human' || !req.user?.agentId) && callerUserId === accessReq.caller_id);
-
-        if (!belongsToAgent) {
-          return res.status(403).json({
-            success: false,
-            error: { message: 'Forbidden: Request does not belong to authenticated agent.' }
-          });
-        }
-
-        let mappedStatus: 'pending' | 'accepted' | 'rejected' = 'pending';
-        if (accessReq.status === 'approved') {
-          mappedStatus = 'accepted';
-        } else if (accessReq.status === 'rejected') {
-          mappedStatus = 'rejected';
-        } else {
-          mappedStatus = 'pending';
-        }
-
-        return res.json({
-          success: true,
-          data: {
-            requestId: accessReq.id,
-            status: mappedStatus
-          }
-        });
-      }
-
-      // 2. Check in pending tool invocations
-      const inv = await getPendingInvocationRecord(requestId);
-      if (inv) {
-        const belongsToAgent =
-          inv.agent_id === callerAgentId ||
-          inv.caller_id === callerUserId ||
-          ((req.authType === 'human' || !req.user?.agentId) && (inv.owner_id === callerMasterId || inv.owner_id === callerUserId));
-
-        if (!belongsToAgent) {
-          return res.status(403).json({
-            success: false,
-            error: { message: 'Forbidden: Request does not belong to authenticated agent.' }
-          });
-        }
-
-        let mappedStatus: 'pending' | 'accepted' | 'rejected' = 'pending';
-        if (['approved', 'executing', 'executed'].includes(inv.status)) {
-          mappedStatus = 'accepted';
-        } else if (['denied', 'expired', 'failed'].includes(inv.status)) {
-          mappedStatus = 'rejected';
-        } else {
-          mappedStatus = 'pending';
-        }
-
-        return res.json({
-          success: true,
-          data: {
-            requestId: inv.id,
-            status: mappedStatus
-          }
-        });
-      }
-
-      return res.status(404).json({
-        success: false,
-        error: { message: 'Request not found.' }
-      });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: { message: err?.message || 'Failed to check request status.' } });
+const handleCheckRequestStatus = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const requestId = (req.params.requestId || req.query.requestId) as string;
+    if (!requestId) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_REQUEST', message: 'Request ID is required.' } });
     }
+
+    const callerAgentId = req.user!.agentId || req.user!.id;
+    const callerUserId = req.user!.id;
+    const callerMasterId = req.user!.masterId || req.user!.id;
+
+    const normalizeId = (id?: string) => id?.trim().replace(/^@/, '').toLowerCase() || '';
+    const callerNorm = normalizeId(callerAgentId);
+
+    // 1. Check in MCP persistent tool requests
+    const accessReq = await getToolAccessRequestRecord(requestId);
+    if (accessReq) {
+      const accNorm = normalizeId(accessReq.account_id);
+      const belongsToAgent =
+        accessReq.account_id === callerAgentId ||
+        accessReq.account_id === callerUserId ||
+        accessReq.caller_id === callerUserId ||
+        (Boolean(accNorm) && callerNorm === accNorm) ||
+        ((req.authType === 'human' || !req.user?.agentId) && callerUserId === accessReq.caller_id);
+
+      if (!belongsToAgent) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Forbidden: Request does not belong to authenticated agent.' }
+        });
+      }
+
+      let mappedStatus: 'pending' | 'accepted' | 'rejected' = 'pending';
+      if (accessReq.status === 'approved') {
+        mappedStatus = 'accepted';
+      } else if (accessReq.status === 'rejected') {
+        mappedStatus = 'rejected';
+      } else {
+        mappedStatus = 'pending';
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          requestId: accessReq.id,
+          status: mappedStatus
+        }
+      });
+    }
+
+    // 2. Check in pending tool invocations
+    const inv = await getPendingInvocationRecord(requestId);
+    if (inv) {
+      const invAgentNorm = normalizeId(inv.agent_id);
+      const belongsToAgent =
+        inv.agent_id === callerAgentId ||
+        inv.agent_id === callerUserId ||
+        inv.caller_id === callerUserId ||
+        (Boolean(invAgentNorm) && callerNorm === invAgentNorm) ||
+        ((req.authType === 'human' || !req.user?.agentId) && (inv.owner_id === callerMasterId || inv.owner_id === callerUserId));
+
+      if (!belongsToAgent) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Forbidden: Request does not belong to authenticated agent.' }
+        });
+      }
+
+      let mappedStatus: 'pending' | 'accepted' | 'rejected' = 'pending';
+      if (['approved', 'executing', 'executed'].includes(inv.status)) {
+        mappedStatus = 'accepted';
+      } else if (['denied', 'expired', 'failed'].includes(inv.status)) {
+        mappedStatus = 'rejected';
+      } else {
+        mappedStatus = 'pending';
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          requestId: inv.id,
+          status: mappedStatus
+        }
+      });
+    }
+
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Request not found.' }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err?.message || 'Failed to check request status.' } });
   }
-);
+};
+
+router.get('/requests/:requestId', requireUserOrAgentAuth, securityLayer('floor_reads'), handleCheckRequestStatus);
+router.get('/requests/status/:requestId', requireUserOrAgentAuth, securityLayer('floor_reads'), handleCheckRequestStatus);
 
 /**
  * 12. GET /api/floor/tools/:toolId/policy

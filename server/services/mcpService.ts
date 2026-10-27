@@ -2378,9 +2378,17 @@ export async function hasActiveToolGrant(
 ): Promise<boolean> {
   if (!serverId || !toolId || !accountId) return false;
 
+  const rawId = accountId.trim();
+  const strippedId = rawId.replace(/^@/, '');
+  const atId = `@${strippedId}`;
+
   // 1. Check in-memory persistent grants first
   for (const grant of inMemoryPersistentGrants.values()) {
-    if (grant.server_id === serverId && grant.tool_id === toolId && grant.account_id === accountId) {
+    if (
+      grant.server_id === serverId &&
+      grant.tool_id === toolId &&
+      (grant.account_id === rawId || grant.account_id === strippedId || grant.account_id === atId || grant.account_id.toLowerCase() === strippedId.toLowerCase())
+    ) {
       if (grant.status === 'revoked') return false;
       if (grant.status === 'active') return true;
     }
@@ -2395,7 +2403,7 @@ export async function hasActiveToolGrant(
         .select('*')
         .eq('server_id', serverId)
         .eq('tool_id', toolId)
-        .eq('account_id', accountId)
+        .or(`account_id.eq.${rawId},account_id.eq.${strippedId},account_id.eq.${atId}`)
         .maybeSingle();
 
       if (error && shouldFailOnDbError()) {
@@ -2415,12 +2423,19 @@ export async function hasActiveToolGrant(
   // 3. Fallback to existing assignments (ensures zero regression for existing assignments)
   const assignments = await listAssignmentsForServer(serverId);
   const isAssigned = assignments.some(
-    (a) => a.tool_id === toolId && a.agent_id === accountId
+    (a) =>
+      a.tool_id === toolId &&
+      (a.agent_id === rawId || a.agent_id === strippedId || a.agent_id === atId || a.agent_id.toLowerCase() === strippedId.toLowerCase())
   );
   if (isAssigned) {
     // Verify it was not explicitly revoked in memory
     for (const grant of inMemoryPersistentGrants.values()) {
-      if (grant.server_id === serverId && grant.tool_id === toolId && grant.account_id === accountId && grant.status === 'revoked') {
+      if (
+        grant.server_id === serverId &&
+        grant.tool_id === toolId &&
+        (grant.account_id === rawId || grant.account_id === strippedId || grant.account_id === atId || grant.account_id.toLowerCase() === strippedId.toLowerCase()) &&
+        grant.status === 'revoked'
+      ) {
         return false;
       }
     }
@@ -3170,19 +3185,19 @@ export async function setToolHitlPolicy(
 }
 
 export async function getPendingInvocationRecord(invocationId: string): Promise<PendingToolInvocationRecord | null> {
+  const inMem = inMemoryInvocations.get(invocationId);
+  if (inMem) return inMem;
   if (isSupabaseConfigured()) {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase.from('pending_tool_invocations').select('*').eq('id', invocationId).maybeSingle();
-    if (error && shouldFailOnDbError()) {
-      throw new Error(`Database error retrieving tool invocation: ${error.message}`);
-    }
-    if (data) {
-      inMemoryInvocations.set(data.id, data);
-      return data;
-    }
-    return null;
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from('pending_tool_invocations').select('*').eq('id', invocationId).maybeSingle();
+      if (!error && data) {
+        inMemoryInvocations.set(data.id, data);
+        return data;
+      }
+    } catch {}
   }
-  return inMemoryInvocations.get(invocationId) || null;
+  return null;
 }
 
 export async function updateInvocationRecord(inv: Partial<PendingToolInvocationRecord> & { id: string }): Promise<void> {
@@ -3634,21 +3649,57 @@ export async function invokeAuthorizedTool(
  * Returns tools authorized exclusively for the requesting agent
  */
 export async function getAuthorizedToolsForAgent(
-  caller: { userId: string; agentId: string }
+  caller: { userId: string; agentId: string; masterId?: string }
 ): Promise<Array<{ id: string; name: string; description: string; input_schema: any; server_name: string }>> {
   const supabase = getSupabaseClient();
   let assignments: McpToolAssignmentRecord[] = [];
 
-  try {
-    const { data } = await supabase
-      .from('mcp_tool_assignments')
-      .select('*')
-      .or(`agent_id.eq.${caller.agentId},agent_id.eq.${caller.userId}`);
-    if (Array.isArray(data)) assignments = data;
-  } catch {}
+  const candidateIds = new Set<string>();
+  if (caller.userId) candidateIds.add(caller.userId.trim());
+  if (caller.agentId) {
+    const raw = caller.agentId.trim();
+    const stripped = raw.replace(/^@/, '');
+    candidateIds.add(raw);
+    candidateIds.add(stripped);
+    candidateIds.add(`@${stripped}`);
+  }
+
+  // Also query users table to resolve alternate agentId/UUID if Supabase is configured
+  if (isSupabaseConfigured()) {
+    try {
+      const { data: dbUser } = await supabase
+        .from('users')
+        .select('id, agentId')
+        .or(`id.eq.${caller.userId},agentId.eq.${caller.agentId || caller.userId}`)
+        .maybeSingle();
+      if (dbUser) {
+        if (dbUser.id) candidateIds.add(dbUser.id);
+        if (dbUser.agentId) {
+          const uRaw = dbUser.agentId.trim();
+          const uStripped = uRaw.replace(/^@/, '');
+          candidateIds.add(uRaw);
+          candidateIds.add(uStripped);
+          candidateIds.add(`@${uStripped}`);
+        }
+      }
+    } catch {}
+  }
+
+  const candidateList = Array.from(candidateIds);
+
+  if (isSupabaseConfigured() && candidateList.length > 0) {
+    try {
+      const orFilter = candidateList.map((id) => `agent_id.eq.${id}`).join(',');
+      const { data } = await supabase
+        .from('mcp_tool_assignments')
+        .select('*')
+        .or(orFilter);
+      if (Array.isArray(data)) assignments = data;
+    } catch {}
+  }
 
   const inMem = Array.from(inMemoryAssignments.values()).filter(
-    (a) => a.agent_id === caller.agentId || a.agent_id === caller.userId
+    (a) => candidateIds.has(a.agent_id) || candidateIds.has(a.agent_id.replace(/^@/, ''))
   );
   for (const m of inMem) {
     if (!assignments.some((a) => a.id === m.id)) assignments.push(m);
@@ -3656,7 +3707,7 @@ export async function getAuthorizedToolsForAgent(
 
   // Also include any tools with active grants for this agent/user
   for (const grant of inMemoryPersistentGrants.values()) {
-    if ((grant.account_id === caller.agentId || grant.account_id === caller.userId) && grant.status === 'active') {
+    if ((candidateIds.has(grant.account_id) || candidateIds.has(grant.account_id.replace(/^@/, ''))) && grant.status === 'active') {
       if (!assignments.some((a) => a.tool_id === grant.tool_id)) {
         assignments.push({
           id: grant.id,
@@ -3671,12 +3722,13 @@ export async function getAuthorizedToolsForAgent(
     }
   }
 
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && candidateList.length > 0) {
     try {
+      const orFilter = candidateList.map((id) => `account_id.eq.${id}`).join(',');
       const { data: dbGrants } = await supabase
         .from('mcp_tool_grants')
         .select('*')
-        .or(`account_id.eq.${caller.agentId},account_id.eq.${caller.userId}`)
+        .or(orFilter)
         .eq('status', 'active');
       if (Array.isArray(dbGrants)) {
         for (const g of dbGrants) {
@@ -3723,7 +3775,9 @@ export async function getAuthorizedToolsForAgent(
         if (data) server = data;
       } catch {}
     }
-    if (tool && tool.is_enabled && server && server.status === 'connected') {
+    const isServerConnected = server && (server.status === 'connected' || String(server.status).toLowerCase() === 'connected');
+    const isToolEnabled = tool && tool.is_enabled !== false;
+    if (tool && isToolEnabled && server && isServerConnected) {
       const policy = await getToolHitlPolicy(tool.id);
       const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
       results.push({

@@ -143,12 +143,16 @@ export async function runFloorAgentFacingApiTests(): Promise<Record<string, { st
     // =========================================================================
     console.log('\n--- 2. Send Tool Request (POST /api/floor/tools/:toolId/invoke) ---');
 
-    // 2.1 Non-existent tool returns 404
+    // 2.1 Non-existent tool returns 404 with consistent error structure
     const notFoundToolRes = await fetchApi('/api/floor/tools/non_existent_tool_id_999/invoke', {
       method: 'POST',
       body: JSON.stringify({ arguments: { query: 'hello' }, reason: 'test non existent', requestType: 'access' })
     });
-    recordResult('tool_invoke_non_existent_404', notFoundToolRes.status === 404, 'Returns 404 when tool does not exist');
+    recordResult(
+      'tool_invoke_non_existent_404',
+      notFoundToolRes.status === 404 && notFoundToolRes.json?.success === false && Boolean(notFoundToolRes.json?.error?.message),
+      'Returns 404 with consistent error structure when tool does not exist'
+    );
 
     // 2.2 Missing arguments returns 400
     const missingArgsRes = await fetchApi(`/api/floor/tools/${toolEcho.id}/invoke`, {
@@ -325,6 +329,23 @@ export async function runFloorAgentFacingApiTests(): Promise<Record<string, { st
       body: JSON.stringify({ reason: 'Attempt expired retrieval' })
     });
     recordResult('temp_access_expired_returns_410', expiredRes.status === 410, 'Returns 410 when invocation is expired');
+
+    // 3.8 Execute alias compatibility: /invocations/:invocationId/execute retrieves credentials
+    const aliasInvRes = await fetchApi(`/api/floor/tools/${toolEcho.id}/invoke`, {
+      method: 'POST',
+      body: JSON.stringify({ arguments: { query: 'alias_test' }, reason: 'alias test', requestType: 'hitl' })
+    });
+    const aliasInvId = aliasInvRes.json?.data?.requestId;
+    await approvePendingInvocation(operatorId, aliasInvId);
+    const executeAliasRes = await fetchApi(`/api/floor/invocations/${aliasInvId}/execute`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Execute alias credential retrieval' })
+    });
+    const executeAliasOk =
+      executeAliasRes.status === 200 &&
+      executeAliasRes.json?.success === true &&
+      typeof executeAliasRes.json?.data?.grantToken === 'string';
+    recordResult('temp_access_execute_alias_retrieval_200', Boolean(executeAliasOk), 'Alias /invocations/:invocationId/execute succeeds with 200');
 
     // =========================================================================
     // 4. Check Request Status: GET /api/floor/requests/:requestId
