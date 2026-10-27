@@ -3667,7 +3667,7 @@ export async function invokeAuthorizedTool(
  * Returns tools authorized exclusively for the requesting agent
  */
 export async function getAuthorizedToolsForAgent(
-  caller: { userId: string; agentId: string; masterId?: string; isMaster?: boolean }
+  caller: { userId: string; agentId: string; masterId?: string; isMaster?: boolean; name?: string; email?: string }
 ): Promise<Array<{ id: string; name: string; description: string; input_schema: any; server_name: string }>> {
   const supabase = getSupabaseClient();
   const results: Array<{
@@ -3702,42 +3702,62 @@ export async function getAuthorizedToolsForAgent(
       if (!servers.some((existing) => existing.id === s.id)) servers.push(s);
     }
 
-    for (const server of servers) {
-      const isServerConnected =
-        !server.status ||
-        ['connected', 'active', 'ready', 'online'].includes(String(server.status).toLowerCase()) ||
-        (!['error', 'disconnected', 'disabled'].includes(String(server.status).toLowerCase()));
-      if (!isServerConnected) continue;
+    const serverMap = new Map<string, McpServerRecord>();
+    for (const s of servers) {
+      serverMap.set(s.id, s);
+    }
 
-      let toolsForServer: McpToolRecord[] = [];
-      if (isSupabaseConfigured()) {
-        try {
-          const { data } = await supabase.from('mcp_tools').select('*').eq('server_id', server.id);
-          if (Array.isArray(data)) toolsForServer = data;
-        } catch {}
-      }
-      const inMemTools = Array.from(inMemoryTools.values()).filter((t) => t.server_id === server.id);
-      for (const t of inMemTools) {
-        if (!toolsForServer.some((existing) => existing.id === t.id)) toolsForServer.push(t);
-      }
+    let allOwnerTools: McpToolRecord[] = [];
+    if (isSupabaseConfigured() && ownerIds.length > 0) {
+      try {
+        const { data } = await supabase
+          .from('mcp_tools')
+          .select('*')
+          .in('owner_id', ownerIds);
+        if (Array.isArray(data)) allOwnerTools = data;
+      } catch {}
+    }
+    const inMemTools = Array.from(inMemoryTools.values()).filter((t) => ownerIds.includes(t.owner_id));
+    for (const t of inMemTools) {
+      if (!allOwnerTools.some((existing) => existing.id === t.id)) allOwnerTools.push(t);
+    }
 
-      for (const tool of toolsForServer) {
-        if (tool.is_enabled === false) continue;
-        const policy = await getToolHitlPolicy(tool.id);
-        const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
-        if (!results.some((r) => r.id === tool.id)) {
-          results.push({
-            id: tool.id,
-            server_id: server.id,
-            server_name: server.name,
-            name: tool.name,
-            description: tool.description,
-            input_schema: tool.input_schema,
-            inputSchema: tool.input_schema,
-            access_status: accessStatus,
-            accessStatus: accessStatus
-          });
+    // Also include tools belonging to servers owned by the operator
+    const serverIds = servers.map((s) => s.id);
+    if (isSupabaseConfigured() && serverIds.length > 0) {
+      try {
+        const { data: srvTools } = await supabase
+          .from('mcp_tools')
+          .select('*')
+          .in('server_id', serverIds);
+        if (Array.isArray(srvTools)) {
+          for (const st of srvTools) {
+            if (!allOwnerTools.some((existing) => existing.id === st.id)) allOwnerTools.push(st);
+          }
         }
+      } catch {}
+    }
+
+    for (const tool of allOwnerTools) {
+      if (tool.is_enabled === false) continue;
+      const server = serverMap.get(tool.server_id);
+      const isServerDisabled = server && ['disabled', 'disconnected', 'error'].includes(String(server.status).toLowerCase());
+      if (isServerDisabled) continue;
+
+      const policy = await getToolHitlPolicy(tool.id);
+      const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
+      if (!results.some((r) => r.id === tool.id)) {
+        results.push({
+          id: tool.id,
+          server_id: server?.id || tool.server_id,
+          server_name: server?.name || 'MCP Server',
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.input_schema,
+          inputSchema: tool.input_schema,
+          access_status: accessStatus,
+          accessStatus: accessStatus
+        });
       }
     }
 
@@ -3755,14 +3775,19 @@ export async function getAuthorizedToolsForAgent(
     const stripped = raw.replace(/^@/, '');
     candidateIds.add(raw);
     candidateIds.add(raw.toLowerCase());
+    candidateIds.add(raw.toUpperCase());
     candidateIds.add(stripped);
     candidateIds.add(stripped.toLowerCase());
+    candidateIds.add(stripped.toUpperCase());
     candidateIds.add(`@${stripped}`);
     candidateIds.add(`@${stripped}`.toLowerCase());
+    candidateIds.add(`@${stripped}`.toUpperCase());
   };
 
   addCandidate(caller.userId);
   addCandidate(caller.agentId);
+  addCandidate(caller.name);
+  addCandidate(caller.email);
 
   // Also query users table to resolve alternate agentId, name, email, and master_id
   if (isSupabaseConfigured()) {
@@ -3786,8 +3811,8 @@ export async function getAuthorizedToolsForAgent(
         addCandidate(dbUser.agentId);
         addCandidate(dbUser.name);
         addCandidate(dbUser.email);
-        if (dbUser.master_id && !caller.masterId) {
-          caller.masterId = dbUser.master_id;
+        if ((dbUser.master_id || dbUser.masterUserId) && !caller.masterId) {
+          caller.masterId = dbUser.master_id || dbUser.masterUserId;
         }
       }
     } catch {}
@@ -3873,6 +3898,36 @@ export async function getAuthorizedToolsForAgent(
         }
       }
     } catch {}
+
+    // Also check fleet grants under caller.masterId
+    if (caller.masterId) {
+      try {
+        const { data: fleetGrants } = await supabase
+          .from('mcp_tool_grants')
+          .select('*')
+          .eq('granted_by', caller.masterId)
+          .eq('status', 'active');
+        if (Array.isArray(fleetGrants)) {
+          for (const fg of fleetGrants) {
+            const fgNorm = fg.account_id ? fg.account_id.replace(/^@/, '').toLowerCase() : '';
+            const matches = candidateList.some(
+              (c) => c === fg.account_id || c.toLowerCase() === fg.account_id?.toLowerCase() || (fgNorm && c.replace(/^@/, '').toLowerCase() === fgNorm)
+            );
+            if (matches && !assignments.some((a) => a.tool_id === fg.tool_id)) {
+              assignments.push({
+                id: fg.id,
+                server_id: fg.server_id,
+                tool_id: fg.tool_id,
+                owner_id: caller.masterId,
+                agent_id: fg.account_id,
+                granted_by: fg.granted_by,
+                created_at: fg.created_at
+              });
+            }
+          }
+        }
+      } catch {}
+    }
   }
 
   for (const assn of assignments) {
@@ -3897,19 +3952,16 @@ export async function getAuthorizedToolsForAgent(
         if (data) server = data;
       } catch {}
     }
-    const isServerConnected =
-      !server?.status ||
-      ['connected', 'active', 'ready', 'online'].includes(String(server.status).toLowerCase()) ||
-      (!['error', 'disconnected', 'disabled'].includes(String(server?.status).toLowerCase()));
+    const serverIsDisabled = server && ['disabled', 'disconnected', 'error'].includes(String(server.status).toLowerCase());
     const isToolEnabled = tool && tool.is_enabled !== false;
-    if (tool && isToolEnabled && server && isServerConnected) {
+    if (tool && isToolEnabled && !serverIsDisabled) {
       const policy = await getToolHitlPolicy(tool.id);
       const accessStatus = policy?.hitl_enabled ? 'hitl' : 'granted';
       if (!results.some((r) => r.id === tool!.id)) {
         results.push({
           id: tool.id,
-          server_id: server.id,
-          server_name: server.name,
+          server_id: server?.id || tool.server_id,
+          server_name: server?.name || 'MCP Server',
           name: tool.name,
           description: tool.description,
           input_schema: tool.input_schema,

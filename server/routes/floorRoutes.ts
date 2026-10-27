@@ -1096,19 +1096,22 @@ router.get(
   securityLayer('floor_reads'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const isAgent = Boolean(req.user?.agentId || req.authType === 'agent');
-      const isMaster = !isAgent && Boolean(
-        req.authType === 'human' ||
-        req.user?.role === 'master' ||
-        req.user?.account_type === 'master' ||
-        req.user?.is_master_primary === true ||
-        req.user?.isMasterUser === true ||
-        (!req.user?.master_id && !req.user?.masterId)
+      const isSlave = Boolean(
+        req.user?.is_slave === true ||
+        req.user?.isSlave === true ||
+        req.user?.account_type === 'slave' ||
+        req.user?.role === 'slave' ||
+        (req.user?.agentId && req.user?.agentId.toLowerCase().includes('slave')) ||
+        (req.user?.master_id && req.user?.master_id !== req.user?.id) ||
+        (req.user?.masterId && req.user?.masterId !== req.user?.id)
       );
+      const isMaster = !isSlave;
 
       const caller = {
         userId: req.user!.id,
         agentId: req.user!.agentId || req.user!.id,
+        name: req.user!.name,
+        email: req.user!.email,
         masterId: req.user!.masterId || req.user!.master_id,
         isMaster
       };
