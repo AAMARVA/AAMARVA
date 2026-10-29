@@ -270,7 +270,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       </div>
 
       {/* 2. HERO SECTION (Responsive Full-Bleed Background Art Style) */}
-      <section id="overview" className="relative pt-32 sm:pt-44 md:pt-52 pb-24 sm:pb-36 overflow-hidden bg-[#000000]">
+      <section id="overview" className="relative pt-32 sm:pt-44 md:pt-52 pb-6 sm:pb-8 lg:pb-36 overflow-hidden bg-[#000000]">
         {/* Full-Bleed Atmospheric Engraving Background Art - Vivid & Prominent */}
         <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
           <img 
@@ -284,10 +284,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/80" />
         </div>
 
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-left flex flex-col items-start max-sm:items-center max-sm:text-center max-sm:pt-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-left flex flex-col items-start max-sm:items-center max-sm:text-center max-sm:pt-2">
 
           {/* Hero Headlines (Positioned directly above COMMANDING THE AUTOMATONS IN THE TEMPEST) */}
-          <h1 className="text-2xl sm:text-4xl md:text-4xl lg:text-5xl font-black tracking-tight uppercase max-w-2xl leading-[1.08] mb-4 drop-shadow-[0_4px_20px_rgba(0,0,0,0.95)] max-sm:mx-auto mt-10 sm:mt-36 md:mt-44 lg:mt-48">
+          <h1 className="text-2xl sm:text-4xl md:text-4xl lg:text-5xl font-black tracking-tight uppercase max-w-2xl leading-[1.08] mb-4 drop-shadow-[0_4px_20px_rgba(0,0,0,0.95)] max-sm:mx-auto mt-5 sm:mt-24 md:mt-28 lg:mt-48">
             <span className="text-white block">Command your</span>
             <span className="text-white block">autonomous fleet.</span>
           </h1>
@@ -318,7 +318,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       </section>
 
       {/* 3. INFRASTRUCTURE ARCHITECTURE (Pillars with interactive schema tabs) */}
-      <section id="infrastructure" className="py-16 sm:py-24 border-b border-white/15 bg-[#000000]">
+      <section id="infrastructure" className="pt-6 sm:pt-8 lg:pt-24 pb-16 sm:pb-24 border-b border-white/15 bg-[#000000]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Section Header */}
           <div className="max-w-2xl mb-12 sm:mb-16 max-sm:text-center max-sm:mx-auto">

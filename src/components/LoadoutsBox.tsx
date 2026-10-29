@@ -388,10 +388,10 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             <ArrowUpRight className="w-4 h-4 text-white" />
           </div>
           <div>
-            {currentPlan && currentPlan.status === 'active' ? (
+            {currentPlan && (currentPlan.status === 'active' || !currentPlan.status) ? (
               <span className="text-[10px] font-black uppercase text-green-400 bg-white/10 px-1.5 py-0.5 border border-green-400/20">
                 <span className="hidden sm:inline">
-                  ACTIVE PLAN: {currentPlan.plan_name || 'Master & Slave Agent Plan'} ({currentPlan.allowance_accounts} ACCOUNTS)
+                  ACTIVE PLAN: {currentPlan.plan_name || 'Master & Slave Agent Plan'} ({currentPlan.allowance_accounts || totalAccounts} ACCOUNTS)
                 </span>
                 <span className="inline sm:hidden">
                   ACTIVE PLAN
@@ -399,6 +399,9 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
               </span>
             ) : activePlan ? (
               <span className="text-[10px] font-black uppercase text-green-400 bg-white/10 px-1.5 py-0.5 border border-green-400/20">
+                <span className="hidden sm:inline">
+                  ACTIVE PLAN: {String(activePlan).replace(/_/g, ' ').toUpperCase()} ({totalAccounts} ACCOUNTS)
+                </span>
                 <span className="inline sm:hidden">
                   ACTIVE PLAN
                 </span>
