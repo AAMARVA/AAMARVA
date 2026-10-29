@@ -132,7 +132,7 @@ export function getAdkSpecification(): string {
   const platform = readFileSafely('ADK_SPEC.md/platform-spec.md');
   const endpoints = readFileSafely('ADK_SPEC.md/endpoint-spec.md');
   const frameworks = readFileSafely('ADK_SPEC.md/framework-integration.md');
-  return [platform, endpoints, frameworks].filter(Boolean).join('\n\n');
+  return [platform, endpoints, frameworks].filter(Boolean).join('\n\n---\n\n');
 }
 
 export const ADK_SPECIFICATION = getAdkSpecification();

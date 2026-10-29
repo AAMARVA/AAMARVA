@@ -14,7 +14,11 @@ import {
   Zap,
   CheckCircle2,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Copy,
+  Check,
+  Menu,
+  X
 } from 'lucide-react';
 
 interface LandingPageViewProps {
@@ -110,6 +114,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   // Code sample tab
   const [activeCodeTab, setActiveCodeTab] = useState<'typescript' | 'python' | 'curl'>('typescript');
 
+  // Mobile navigation drawer state
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [copied, setCopied] = useState<boolean>(false);
+
   const selectedNode = FLEET_NODES.find(n => n.id === selectedNodeId) || FLEET_NODES[0];
 
   const handleSelectNode = (nodeId: string) => {
@@ -121,109 +129,179 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     setIsOperatorSelected(true);
   };
 
+  const handleCopySnippet = (codeText: string) => {
+    navigator.clipboard.writeText(codeText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="w-full min-h-screen bg-[#000000] text-[#FFFFFF] font-sans antialiased selection:bg-white selection:text-black">
       {/* 1. FLOATING GLASS NAVIGATION (LangChain style floating pill) */}
       <div className="fixed top-0 inset-x-0 z-50 px-4 sm:px-6 pt-3 pointer-events-none">
-        <header className="max-w-5xl mx-auto h-14 sm:h-16 px-4 sm:px-6 rounded-2xl bg-black/80 backdrop-blur-xl border border-white/15 shadow-[0_8px_32px_rgba(0,0,0,0.8)] flex items-center justify-between gap-4 pointer-events-auto transition-all">
-          {/* Brand Zone */}
-          <button 
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="flex items-center gap-2.5 group text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-white"
-            aria-label="AAMARVA Home"
-          >
-            <img 
-              src="/f.png" 
-              alt="AAMARVA" 
-              className="w-7 h-7 sm:w-8 sm:h-8 bg-black border border-white/40 object-contain rounded-md shadow-sm transition-transform group-hover:scale-105" 
-            />
-            <span className="font-mono text-base sm:text-lg font-black tracking-tight uppercase text-white">
-              AAMARVA
-            </span>
-          </button>
-
-          {/* Navigation Links Zone */}
-          <nav className="hidden md:flex items-center gap-6 text-xs font-mono font-medium text-zinc-300">
-            <a href="#overview" className="hover:text-white transition-colors py-1">
-              Product
-            </a>
-            <a href="#infrastructure" className="hover:text-white transition-colors py-1">
-              Infrastructure
-            </a>
-            <a href="#security" className="hover:text-white transition-colors py-1">
-              Security
-            </a>
+        <header className="max-w-5xl mx-auto px-4 sm:px-6 rounded-2xl bg-black/90 backdrop-blur-xl border border-white/15 shadow-[0_8px_32px_rgba(0,0,0,0.8)] flex flex-col pointer-events-auto transition-all">
+          <div className="h-14 sm:h-16 flex items-center justify-between gap-4">
+            {/* Brand Zone */}
             <button 
-              onClick={() => onAccessApp('adk')} 
-              className="hover:text-white transition-colors py-1 cursor-pointer"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="flex items-center gap-2.5 group text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-white"
+              aria-label="AAMARVA Home"
             >
-              Docs
+              <img 
+                src="/f.png" 
+                alt="AAMARVA" 
+                className="w-7 h-7 sm:w-8 sm:h-8 bg-black border border-white/40 object-contain rounded-md shadow-sm transition-transform group-hover:scale-105" 
+              />
+              <span className="font-mono text-base sm:text-lg font-black tracking-tight uppercase text-white">
+                AAMARVA
+              </span>
             </button>
-          </nav>
 
-          {/* Action Buttons Zone */}
-          <div className="flex items-center gap-2 sm:gap-3 font-mono">
-            {!isAuthenticated ? (
-              <>
+            {/* Navigation Links Zone */}
+            <nav className="hidden md:flex items-center gap-6 text-xs font-mono font-medium text-zinc-300">
+              <a href="#overview" className="hover:text-white transition-colors py-1">
+                Product
+              </a>
+              <a href="#infrastructure" className="hover:text-white transition-colors py-1">
+                Infrastructure
+              </a>
+              <a href="#security" className="hover:text-white transition-colors py-1">
+                Security
+              </a>
+              <button 
+                onClick={() => onAccessApp('adk')} 
+                className="hover:text-white transition-colors py-1 cursor-pointer"
+              >
+                Docs
+              </button>
+            </nav>
+
+            {/* Action Buttons Zone */}
+            <div className="flex items-center gap-2 sm:gap-3 font-mono">
+              {!isAuthenticated ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onAccessApp('login')}
+                    className="hidden sm:inline-block px-3 py-1.5 text-xs font-medium text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                  >
+                    Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onAccessApp('register')}
+                    className="px-4 py-2 text-xs font-black uppercase tracking-wider bg-white text-black rounded-lg hover:bg-zinc-200 shadow-sm transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
+                  >
+                    <span>Access AAMARVA</span>
+                    <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => onAccessApp('login')}
-                  className="px-3 py-1.5 text-xs font-medium text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                  onClick={() => onAccessApp()}
+                  className="px-4 py-2 text-xs font-black uppercase tracking-wider bg-white text-black rounded-lg hover:bg-zinc-200 transition-all cursor-pointer flex items-center gap-1.5"
                 >
-                  Login
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onAccessApp('register')}
-                  className="px-4 py-2 sm:px-5 sm:py-2 text-xs font-black uppercase tracking-wider bg-white text-black rounded-lg hover:bg-zinc-200 shadow-sm transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
-                >
-                  <span>Access AAMARVA</span>
+                  <span>Console</span>
                   <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                 </button>
-              </>
-            ) : (
+              )}
+
+              {/* Mobile Menu Toggle Button */}
               <button
                 type="button"
-                onClick={() => onAccessApp()}
-                className="px-4 py-2 sm:px-5 sm:py-2 text-xs font-black uppercase tracking-wider bg-white text-black rounded-lg hover:bg-zinc-200 transition-all cursor-pointer flex items-center gap-1.5"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 text-zinc-300 hover:text-white rounded-lg border border-white/10 hover:border-white/25 transition-colors cursor-pointer"
+                aria-label="Toggle navigation menu"
               >
-                <span>Console</span>
-                <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
               </button>
-            )}
+            </div>
           </div>
+
+          {/* Mobile Expanded Menu Drawer */}
+          {mobileMenuOpen && (
+            <div className="md:hidden py-4 border-t border-white/10 flex flex-col gap-3 font-mono text-xs text-zinc-300">
+              <a 
+                href="#overview" 
+                onClick={() => setMobileMenuOpen(false)}
+                className="hover:text-white py-1 px-2 rounded hover:bg-white/5 transition-colors"
+              >
+                Product
+              </a>
+              <a 
+                href="#infrastructure" 
+                onClick={() => setMobileMenuOpen(false)}
+                className="hover:text-white py-1 px-2 rounded hover:bg-white/5 transition-colors"
+              >
+                Infrastructure
+              </a>
+              <a 
+                href="#security" 
+                onClick={() => setMobileMenuOpen(false)}
+                className="hover:text-white py-1 px-2 rounded hover:bg-white/5 transition-colors"
+              >
+                Security
+              </a>
+              <button 
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onAccessApp('adk');
+                }} 
+                className="hover:text-white py-1 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                Docs
+              </button>
+              {!isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onAccessApp('login');
+                  }}
+                  className="hover:text-white py-1.5 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer font-bold text-white border-t border-white/10 mt-1"
+                >
+                  Login to Console
+                </button>
+              )}
+            </div>
+          )}
         </header>
       </div>
 
-      {/* 2. HERO SECTION WITH LANGCHAIN-INSPIRED ENGRAVING ART */}
-      <section id="overview" className="relative pt-24 sm:pt-28 md:pt-32 pb-16 sm:pb-24 overflow-hidden bg-[#000000]">
-        {/* Subtle geometric background grid */}
-        <div className="absolute inset-0 pointer-events-none opacity-[0.05] bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] bg-[size:32px_32px]" />
+      {/* 2. HERO SECTION (Responsive Full-Bleed Background Art Style) */}
+      <section id="overview" className="relative pt-32 sm:pt-44 md:pt-52 pb-24 sm:pb-36 overflow-hidden bg-[#000000]">
+        {/* Full-Bleed Atmospheric Engraving Background Art - Vivid & Prominent */}
+        <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
+          <img 
+            src="/src/assets/images/hero_fleet_command_1793126247266.jpg" 
+            alt="AAMARVA Fleet Command Background Art"
+            className="w-full h-full object-contain lg:object-cover max-sm:object-[center_20%] sm:max-lg:object-[center_35%] lg:object-center opacity-100 filter brightness-105 contrast-115"
+            referrerPolicy="no-referrer"
+          />
+          {/* Light gradient overlay for maximum image brightness & clarity while maintaining text legibility */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/80" />
+        </div>
 
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center flex flex-col items-center">
-          {/* Subtle Announcement Pill */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 mb-6 rounded-full bg-white/5 border border-white/15 text-xs font-mono text-zinc-300">
-            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-            <span>Autonomous Agent Command Protocol v2.0</span>
-            <span aria-hidden="true" className="text-zinc-600">·</span>
-            <span className="text-zinc-400">Zero Ambient Authority</span>
-          </div>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-left flex flex-col items-start max-sm:items-center max-sm:text-center max-sm:pt-8">
 
-          {/* Hero Headlines */}
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-tight text-white uppercase max-w-4xl leading-[1.05] mb-6">
-            Command your autonomous fleet.
+          {/* Hero Headlines (Positioned directly above COMMANDING THE AUTOMATONS IN THE TEMPEST) */}
+          <h1 className="text-2xl sm:text-4xl md:text-4xl lg:text-5xl font-black tracking-tight uppercase max-w-2xl leading-[1.08] mb-4 drop-shadow-[0_4px_20px_rgba(0,0,0,0.95)] max-sm:mx-auto mt-10 sm:mt-36 md:mt-44 lg:mt-48">
+            <span className="text-white block">Command your</span>
+            <span className="text-white block">autonomous fleet.</span>
           </h1>
 
-          <p className="text-base sm:text-lg md:text-xl text-zinc-300 max-w-2xl leading-relaxed mb-8 font-normal">
+          <p className="hidden sm:block text-xs sm:text-base text-zinc-200 max-w-lg leading-relaxed mb-8 font-normal drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">
             Infrastructure for connecting, coordinating, and controlling autonomous agents—with permissions that keep humans in control.
           </p>
 
-          {/* Hero CTA Button Pair */}
-          <div className="flex flex-wrap items-center justify-center gap-4 font-mono mb-12">
+          {/* Hero CTA Button Pair (Symmetrical full-width on mobile) */}
+          <div className="flex flex-col sm:flex-row items-center gap-3.5 sm:gap-4 font-mono w-full sm:w-auto max-sm:px-2 max-sm:mt-6">
             <button
               type="button"
               onClick={() => onAccessApp('register')}
-              className="px-6 py-3.5 bg-white text-black font-black text-xs sm:text-sm uppercase tracking-wider rounded-lg hover:bg-zinc-200 transition-all cursor-pointer flex items-center gap-2 shadow-[0_0_24px_rgba(255,255,255,0.2)]"
+              className="w-full sm:w-auto px-7 py-4 bg-white text-black font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl hover:bg-zinc-200 transition-all cursor-pointer flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(255,255,255,0.3)]"
             >
               <span>Access AAMARVA</span>
               <ArrowRight className="w-4 h-4 shrink-0" />
@@ -231,348 +309,19 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
             <a
               href="#infrastructure"
-              className="px-6 py-3.5 bg-black/60 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-lg border border-white/20 hover:border-white/50 hover:bg-white/5 transition-all cursor-pointer"
+              className="w-full sm:w-auto px-7 py-4 bg-black/80 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl border border-white/30 hover:border-white hover:bg-white/10 transition-all cursor-pointer backdrop-blur-md shadow-lg text-center justify-center flex items-center"
             >
               Explore the infrastructure
             </a>
           </div>
-
-          {/* HERO VISUAL ARTWORK: "Commanding the Automatons in the Tempest" */}
-          <div className="w-full max-w-5xl relative mt-2 rounded-2xl overflow-hidden border border-white/20 shadow-[0_20px_80px_rgba(0,0,0,0.9)] group">
-            {/* Measured Gradient Scrim for Contrast & Integration */}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-transparent to-transparent z-10 pointer-events-none" />
-            
-            <img 
-              src="/src/assets/images/hero_fleet_command_1793126247266.jpg" 
-              alt="AAMARVA: Commanding the Autonomous Fleet in the Tempest"
-              className="w-full h-auto object-cover max-h-[580px] brightness-[0.92] contrast-[1.1] transition-transform duration-700 group-hover:scale-[1.01]"
-              referrerPolicy="no-referrer"
-            />
-
-            {/* Archival Badge overlay on bottom */}
-            <div className="absolute bottom-4 left-6 right-6 z-20 flex flex-col sm:flex-row items-center justify-between gap-2 text-left font-mono text-[11px] text-zinc-300 bg-black/80 backdrop-blur-md p-3 sm:px-4 rounded-xl border border-white/15">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-white shrink-0" />
-                <span className="font-bold text-white uppercase">ARCHITECTURAL INVARIANT:</span>
-                <span className="text-zinc-300">Human Operator holds the cryptographic command harness at all times.</span>
-              </div>
-              <a 
-                href="#topology" 
-                className="text-xs font-bold text-white underline underline-offset-4 hover:text-zinc-300 whitespace-nowrap"
-              >
-                Inspect Live Fleet Topology ↓
-              </a>
-            </div>
-          </div>
         </div>
       </section>
 
-      {/* 3. INTEGRATION ROSTER TICKER (LangChain style strip) */}
-      <section className="py-6 border-y border-white/15 bg-[#050505] font-mono text-xs text-zinc-400 overflow-hidden">
-        <div className="max-w-6xl mx-auto px-4 flex flex-wrap items-center justify-between gap-y-4 gap-x-6 text-[11px] uppercase tracking-wider">
-          <div className="flex items-center gap-2 text-white font-bold">
-            <Activity className="w-3.5 h-3.5 text-white" />
-            <span>SUPPORTED PROTOCOL INTERFACES:</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-zinc-300 font-semibold">
-            <span>Model Context Protocol (MCP)</span>
-            <span className="text-zinc-600">+</span>
-            <span>LangChain Integration</span>
-            <span className="text-zinc-600">+</span>
-            <span>FIDO2 / WebAuthn</span>
-            <span className="text-zinc-600">+</span>
-            <span>ECDSA End-to-End Transport</span>
-            <span className="text-zinc-600">+</span>
-            <span>Domain Cluster Isolation</span>
-          </div>
-        </div>
-      </section>
-
-      {/* 4. INTERACTIVE FLEET TOPOLOGY VISUALIZATION */}
-      <section id="topology" className="py-16 sm:py-24 border-b border-white/15 bg-[#000000]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
-            <div>
-              <span className="font-mono text-xs font-bold text-zinc-400 uppercase tracking-widest block mb-2">
-                Live Interactive System Visualization
-              </span>
-              <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-white uppercase leading-tight">
-                Cryptographic Fleet Topology
-              </h2>
-              <p className="mt-2 text-sm sm:text-base text-zinc-300 max-w-2xl">
-                Hover over nodes to inspect states, or click any node to update the technical permission boundary inspector.
-              </p>
-            </div>
-
-            {/* Filter mode segmented controls */}
-            <div className="flex items-center gap-1 p-1 bg-[#121214] rounded-xl border border-white/20 self-start md:self-auto font-mono">
-              <button
-                type="button"
-                onClick={() => setFilterMode('all')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
-                  filterMode === 'all' ? 'bg-white text-black shadow-sm' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                All Fleet
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterMode('cluster')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
-                  filterMode === 'cluster' ? 'bg-white text-black shadow-sm' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Clusters
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterMode('mcp')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
-                  filterMode === 'mcp' ? 'bg-white text-black shadow-sm' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                FLOOR / MCP
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterMode('permissions')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg uppercase tracking-wider transition-all cursor-pointer ${
-                  filterMode === 'permissions' ? 'bg-white text-black shadow-sm' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Permissions
-              </button>
-            </div>
-          </div>
-
-          {/* Interactive Topology Container */}
-          <div className="bg-[#09090b] rounded-2xl border border-white/20 p-4 sm:p-6 lg:p-8 shadow-[0_12px_40px_rgba(0,0,0,0.8)]">
-            {/* Interactive Canvas Canvas Area */}
-            <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] max-h-[460px] bg-[#050505] rounded-xl border border-white/20 overflow-hidden select-none">
-              {/* Subtle background grid coordinates */}
-              <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]" />
-
-              {/* SVG CONNECTION MESH */}
-              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                {FLEET_NODES.map((node) => {
-                  const isConnectedToSelected = !isOperatorSelected && (selectedNode.connections.includes(node.id) || selectedNode.id === node.id);
-                  const isHighlighted = isOperatorSelected || isConnectedToSelected || hoveredNodeId === node.id;
-                  
-                  let isModeVisible = true;
-                  if (filterMode === 'cluster' && node.id === 'node-gamma') isModeVisible = false;
-                  if (filterMode === 'mcp' && node.id !== 'node-gamma' && node.id !== 'node-alpha') isModeVisible = false;
-                  if (filterMode === 'permissions' && node.id === 'node-epsilon') isModeVisible = false;
-
-                  return (
-                    <g key={`conn-${node.id}`}>
-                      <line
-                        x1="50"
-                        y1="48"
-                        x2={node.x}
-                        y2={node.y}
-                        stroke="#FFFFFF"
-                        strokeWidth={isHighlighted ? "0.6" : "0.3"}
-                        strokeOpacity={isModeVisible ? (isHighlighted ? "0.95" : "0.3") : "0.08"}
-                        strokeDasharray={isHighlighted ? "1 0.8" : "none"}
-                      />
-                    </g>
-                  );
-                })}
-
-                {/* Inter-Agent Coordination Lines */}
-                <line
-                  x1={FLEET_NODES[0].x}
-                  y1={FLEET_NODES[0].y}
-                  x2={FLEET_NODES[1].x}
-                  y2={FLEET_NODES[1].y}
-                  stroke="#FFFFFF"
-                  strokeWidth="0.3"
-                  strokeOpacity={filterMode === 'mcp' ? "0.05" : (selectedNodeId === 'node-alpha' || selectedNodeId === 'node-beta' ? "0.85" : "0.25")}
-                  strokeDasharray="0.8 0.8"
-                />
-                <line
-                  x1={FLEET_NODES[0].x}
-                  y1={FLEET_NODES[0].y}
-                  x2={FLEET_NODES[2].x}
-                  y2={FLEET_NODES[2].y}
-                  stroke="#FFFFFF"
-                  strokeWidth="0.3"
-                  strokeOpacity={filterMode === 'cluster' ? "0.05" : (selectedNodeId === 'node-alpha' || selectedNodeId === 'node-gamma' ? "0.85" : "0.25")}
-                  strokeDasharray="0.8 0.8"
-                />
-                <line
-                  x1={FLEET_NODES[1].x}
-                  y1={FLEET_NODES[1].y}
-                  x2={FLEET_NODES[3].x}
-                  y2={FLEET_NODES[3].y}
-                  stroke="#FFFFFF"
-                  strokeWidth="0.3"
-                  strokeOpacity={selectedNodeId === 'node-beta' || selectedNodeId === 'node-delta' ? "0.85" : "0.25"}
-                  strokeDasharray="0.8 0.8"
-                />
-                <line
-                  x1={FLEET_NODES[3].x}
-                  y1={FLEET_NODES[3].y}
-                  x2={FLEET_NODES[4].x}
-                  y2={FLEET_NODES[4].y}
-                  stroke="#FFFFFF"
-                  strokeWidth="0.3"
-                  strokeOpacity={selectedNodeId === 'node-delta' || selectedNodeId === 'node-epsilon' ? "0.85" : "0.25"}
-                  strokeDasharray="0.8 0.8"
-                />
-              </svg>
-
-              {/* 1. CENTRAL HUMAN CONTROL OPERATOR NODE */}
-              <div 
-                className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer z-20 group"
-                style={{ left: '50%', top: '48%' }}
-                onClick={handleSelectOperator}
-                onMouseEnter={() => setHoveredNodeId('operator-root')}
-                onMouseLeave={() => setHoveredNodeId(null)}
-                role="button"
-                tabIndex={0}
-                aria-label="Human Control Operator Root Node"
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectOperator(); }}
-              >
-                <div className={`p-2.5 sm:p-3 bg-white text-black rounded-xl border-2 border-white transition-all ${
-                  isOperatorSelected 
-                    ? 'ring-4 ring-white/30 shadow-[0_0_24px_rgba(255,255,255,0.5)] scale-105' 
-                    : 'shadow-[0_4px_16px_rgba(255,255,255,0.25)] hover:scale-105'
-                }`}>
-                  <div className="flex items-center gap-2">
-                    <Fingerprint className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
-                    <div className="hidden sm:flex flex-col text-left">
-                      <span className="font-mono text-[9px] font-black uppercase tracking-wider text-zinc-600">AUTHORITY ROOT</span>
-                      <span className="font-mono text-[10px] font-black uppercase text-black">HUMAN OPERATOR</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="sm:hidden absolute top-full left-1/2 -translate-x-1/2 mt-1 whitespace-nowrap bg-white text-black text-[8px] font-mono px-1 rounded font-bold">
-                  OPERATOR
-                </div>
-              </div>
-
-              {/* 2. FLEET AGENT NODES */}
-              {FLEET_NODES.map((node) => {
-                const isSelected = !isOperatorSelected && selectedNodeId === node.id;
-                const isHovered = hoveredNodeId === node.id;
-
-                return (
-                  <div
-                    key={node.id}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer z-10 group"
-                    style={{ left: `${node.x}%`, top: `${node.y}%` }}
-                    onClick={() => handleSelectNode(node.id)}
-                    onMouseEnter={() => setHoveredNodeId(node.id)}
-                    onMouseLeave={() => setHoveredNodeId(null)}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Agent Node ${node.name}`}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectNode(node.id); }}
-                  >
-                    <div className={`p-2 sm:p-2.5 rounded-lg border transition-all ${
-                      isSelected
-                        ? 'bg-white text-black border-white ring-4 ring-white/30 shadow-[0_0_18px_rgba(255,255,255,0.4)] scale-110'
-                        : isHovered
-                          ? 'bg-[#1e1e24] text-white border-white shadow-[0_4px_12px_rgba(255,255,255,0.15)] scale-105'
-                          : 'bg-[#121214] text-white border-white/30'
-                    }`}>
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        {node.id === 'node-gamma' ? (
-                          <Layers className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isSelected ? 'text-black' : 'text-white'}`} />
-                        ) : node.id === 'node-beta' ? (
-                          <Share2 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isSelected ? 'text-black' : 'text-white'}`} />
-                        ) : (
-                          <Cpu className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isSelected ? 'text-black' : 'text-white'}`} />
-                        )}
-                        <span className="font-mono text-[9px] sm:text-[10px] font-black uppercase whitespace-nowrap">
-                          {node.name.split(' ')[0]} {node.name.split(' ')[2]}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* INSPECTION PANEL FOR SELECTED TOPOLOGY NODE */}
-            <div className="mt-4 p-4 sm:p-5 bg-[#050505] rounded-xl border border-white/15 font-mono text-white">
-              {isOperatorSelected ? (
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-white/10 gap-2">
-                    <div className="flex items-center gap-2">
-                      <Fingerprint className="w-4 h-4 text-white" />
-                      <span className="text-xs font-black uppercase text-white">Central Human Control Authority</span>
-                      <span className="text-[10px] bg-white text-black px-1.5 py-0.5 rounded font-bold uppercase">Master Grantor</span>
-                    </div>
-                    <span className="text-[10px] text-zinc-400 font-bold">FIDO2 / WebAuthn Hardware Bound</span>
-                  </div>
-                  <p className="text-xs text-zinc-300 leading-relaxed font-sans">
-                    The Human Operator is the authoritative cryptographic root. No autonomous agent within your fleet can communicate, allocate cluster resources, or invoke external tools without affirmative permission grants explicitly anchored to your master operator keys.
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-[11px]">
-                    <div className="p-2.5 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase block">Credential Revocation</span>
-                      <span className="font-bold text-white mt-0.5 block">Instant Single-Click Kill-Switch</span>
-                    </div>
-                    <div className="p-2.5 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase block">Perimeter Defense</span>
-                      <span className="font-bold text-white mt-0.5 block">CIDR IP Whitelist Enforced</span>
-                    </div>
-                    <div className="p-2.5 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase block">Session Protocol</span>
-                      <span className="font-bold text-white mt-0.5 block">Zero Ambient Token Authority</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-white/10 gap-2">
-                    <div className="flex items-center gap-2">
-                      <Cpu className="w-4 h-4 text-white" />
-                      <span className="text-xs font-black uppercase text-white">{selectedNode.name}</span>
-                      <span className="text-[10px] border border-white/30 px-1.5 py-0.5 rounded font-bold uppercase text-zinc-300">
-                        {selectedNode.status}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-zinc-400">Role: {selectedNode.role}</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <span className="text-[10px] text-zinc-400 font-bold uppercase block mb-1">
-                        Active Permission Boundary
-                      </span>
-                      <div className="p-2 bg-[#121214] rounded-lg border border-white/15 font-bold text-white text-[11px]">
-                        {selectedNode.permissions}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] text-zinc-400 font-bold uppercase block mb-1">
-                        Cryptographic Capabilities
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedNode.capabilities.map((cap, i) => (
-                          <span key={i} className="text-[10px] bg-[#18181b] text-zinc-200 px-2 py-0.5 rounded border border-white/20 font-bold">
-                            {cap}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 5. INFRASTRUCTURE ARCHITECTURE (Pillars with interactive schema tabs) */}
+      {/* 3. INFRASTRUCTURE ARCHITECTURE (Pillars with interactive schema tabs) */}
       <section id="infrastructure" className="py-16 sm:py-24 border-b border-white/15 bg-[#000000]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Section Header */}
-          <div className="max-w-2xl mb-12 sm:mb-16">
+          <div className="max-w-2xl mb-12 sm:mb-16 max-sm:text-center max-sm:mx-auto">
             <span className="font-mono text-xs font-bold text-zinc-400 uppercase tracking-widest block mb-2">
               Protocol Architecture
             </span>
@@ -914,7 +663,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       {/* 6. CODE & ADK SPECIFICATION SECTION */}
       <section className="py-16 sm:py-24 border-b border-white/15 bg-[#050505]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mb-8">
+          <div className="max-w-3xl mb-8 max-sm:text-center max-sm:mx-auto">
             <span className="font-mono text-xs font-bold text-zinc-400 uppercase tracking-widest block mb-2">
               Agent Development Kit (ADK)
             </span>
@@ -928,7 +677,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
           <div className="bg-[#09090b] rounded-2xl border border-white/20 overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.8)] font-mono text-xs">
             {/* Terminal Header */}
-            <div className="px-5 py-3.5 bg-[#121214] border-b border-white/15 flex items-center justify-between">
+            <div className="px-5 py-3.5 bg-[#121214] border-b border-white/15 flex items-center justify-between max-sm:flex-wrap max-sm:gap-2">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-white/20" />
                 <div className="w-3 h-3 rounded-full bg-white/20" />
@@ -963,6 +712,33 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   }`}
                 >
                   cURL
+                </button>
+
+                <div className="h-3 w-px bg-white/20 mx-1" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const snippets = {
+                      typescript: `import { AamarvaAgentClient } from '@aamarva/adk';\n\nconst agent = new AamarvaAgentClient({\n  agentId: process.env.AAMARVA_AGENT_ID,\n  apiKey: process.env.AAMARVA_API_KEY,\n  endpoint: 'https://aamarva.com/api'\n});\n\nconst tools = await agent.floor.discoverTools();\nawait agent.clusters.send({ clusterId: 'research-squad-01', payload: { task: 'summarize' } });`,
+                      python: `from aamarva import AamarvaClient\n\nclient = AamarvaClient(agent_id="agent_alpha_01", api_key="amr_sec_9941...")\ntools = client.floor.list_tools()\nticket = client.connections.post_ticket(content="Task verification complete.", cluster_id="verification-squad")`,
+                      curl: `curl -X GET "https://aamarva.com/api/floor/agent/tools" \\\n  -H "Authorization: Bearer amr_sec_key_..." \\\n  -H "Content-Type: application/json"`
+                    };
+                    handleCopySnippet(snippets[activeCodeTab]);
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-mono text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 rounded border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer ml-1"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span className="text-emerald-400 font-bold">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -1035,7 +811,7 @@ curl -X GET "https://aamarva.com/api/floor/agent/tools" \\
       {/* 7. CONTROL AND PERMISSIONS SECTION */}
       <section id="security" className="py-16 sm:py-24 border-b border-white/15 bg-[#000000]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mb-12">
+          <div className="max-w-3xl mb-12 max-sm:text-center max-sm:mx-auto">
             <span className="font-mono text-xs font-bold text-zinc-400 uppercase tracking-widest block mb-2">
               Security Philosophy
             </span>
@@ -1141,44 +917,6 @@ curl -X GET "https://aamarva.com/api/floor/agent/tools" \\
         </div>
       </section>
 
-      {/* 9. FOOTER */}
-      <footer className="py-12 bg-[#000000] border-t border-white/15 font-mono text-xs">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-white/10">
-            <div className="flex items-center gap-3">
-              <img 
-                src="/f.png" 
-                alt="AAMARVA" 
-                className="w-6 h-6 bg-black border border-white/40 object-contain rounded" 
-              />
-              <span className="font-black uppercase tracking-wider text-white text-sm">
-                AAMARVA
-              </span>
-              <span className="text-zinc-600">·</span>
-              <span className="text-[11px] text-zinc-400">Autonomous Agent Command Protocol & Infrastructure</span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-6 text-[11px] font-bold text-zinc-400">
-              <a href="#overview" className="hover:text-white transition-colors">Overview</a>
-              <a href="#infrastructure" className="hover:text-white transition-colors">Infrastructure</a>
-              <a href="#security" className="hover:text-white transition-colors">Security</a>
-              <button onClick={() => onAccessApp('adk')} className="hover:text-white transition-colors cursor-pointer">ADK Docs</button>
-              {onOpenTerms && (
-                <button onClick={onOpenTerms} className="hover:text-white transition-colors cursor-pointer">Terms & Conditions</button>
-              )}
-            </div>
-          </div>
-
-          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-[10px] text-zinc-500">
-            <span>
-              © {new Date().getFullYear()} AAMARVA Core Contributors. All rights reserved.
-            </span>
-            <span>
-              Explicit Permissions · Strict Cryptographic Boundary
-            </span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };
