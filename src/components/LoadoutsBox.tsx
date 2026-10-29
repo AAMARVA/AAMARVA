@@ -378,7 +378,7 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
           onClick={() => setActiveModal('subscriptions')}
           className="w-full bg-[#141414] hover:bg-[#1f1f1f] text-white p-4 border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,0.2)] hover:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] transition-all cursor-pointer text-left block"
         >
-          <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-white" />
               <span className="text-xs font-black uppercase tracking-wider">
@@ -386,31 +386,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
               </span>
             </div>
             <ArrowUpRight className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            {currentPlan && (currentPlan.status === 'active' || !currentPlan.status) ? (
-              <span className="text-[10px] font-black uppercase text-green-400 bg-white/10 px-1.5 py-0.5 border border-green-400/20">
-                <span className="hidden sm:inline">
-                  ACTIVE PLAN: {currentPlan.plan_name || 'Master & Slave Agent Plan'} ({currentPlan.allowance_accounts || totalAccounts} ACCOUNTS)
-                </span>
-                <span className="inline sm:hidden">
-                  ACTIVE PLAN
-                </span>
-              </span>
-            ) : activePlan ? (
-              <span className="text-[10px] font-black uppercase text-green-400 bg-white/10 px-1.5 py-0.5 border border-green-400/20">
-                <span className="hidden sm:inline">
-                  ACTIVE PLAN: {String(activePlan).replace(/_/g, ' ').toUpperCase()} ({totalAccounts} ACCOUNTS)
-                </span>
-                <span className="inline sm:hidden">
-                  ACTIVE PLAN
-                </span>
-              </span>
-            ) : (
-              <span className="text-[9.5px] font-black uppercase text-white bg-rose-600 px-2 py-0.5 border border-rose-700 tracking-wider shadow-[1px_1px_0px_0px_rgba(0,0,0,0.5)]">
-                NO ACTIVE PLANS
-              </span>
-            )}
           </div>
         </button>
 
