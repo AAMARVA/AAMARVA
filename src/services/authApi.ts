@@ -65,18 +65,30 @@ let memoryRefreshToken: string | null = null;
 
 export function setAccessToken(token: string | null) {
   memoryAccessToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) localStorage.setItem('aamarva_access_token', token);
+    else localStorage.removeItem('aamarva_access_token');
+  }
 }
 
 export function getAccessToken(): string | null {
-  return memoryAccessToken;
+  if (memoryAccessToken) return memoryAccessToken;
+  if (typeof window !== 'undefined') return localStorage.getItem('aamarva_access_token');
+  return null;
 }
 
 export function setRefreshToken(token: string | null) {
   memoryRefreshToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) localStorage.setItem('aamarva_refresh_token', token);
+    else localStorage.removeItem('aamarva_refresh_token');
+  }
 }
 
 export function getRefreshToken(): string | null {
-  return memoryRefreshToken;
+  if (memoryRefreshToken) return memoryRefreshToken;
+  if (typeof window !== 'undefined') return localStorage.getItem('aamarva_refresh_token');
+  return null;
 }
 
 export type AuthType = 'human' | 'agent' | 'none';
