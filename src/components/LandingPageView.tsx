@@ -292,7 +292,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <span className="text-white block">autonomous fleet.</span>
           </h1>
 
-          <p className="hidden sm:block text-xs sm:text-base text-zinc-200 max-w-lg leading-relaxed mb-8 font-normal drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">
+          <p className="hidden sm:block text-xs sm:text-base text-zinc-200 max-w-lg leading-relaxed mb-8 font-normal drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] md:-mt-4">
             Infrastructure for connecting, coordinating, and controlling autonomous agents—with permissions that keep humans in control.
           </p>
 
