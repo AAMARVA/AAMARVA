@@ -400,7 +400,6 @@ export const LoadoutsBox: React.FC<LoadoutsBoxProps> = ({ agentId = 'AMR-AGENT',
             ) : activePlan ? (
               <span className="text-[10px] font-black uppercase text-green-400 bg-white/10 px-1.5 py-0.5 border border-green-400/20">
                 <span className="hidden sm:inline">
-                  ACTIVE PLAN: Master & Slave Agent Plan
                 </span>
                 <span className="inline sm:hidden">
                   ACTIVE PLAN
