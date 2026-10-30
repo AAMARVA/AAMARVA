@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, Globe, BarChart3, Bot, FileText, Terminal, Key, Lock, BookOpen } from 'lucide-react';
+import { Search, Globe, BarChart3, Bot, FileText, Terminal, Key, Lock } from 'lucide-react';
 import { Header } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
@@ -883,7 +883,7 @@ export default function App() {
             } ${isNewPostOpen ? 'overflow-hidden' : ''}`
       }>
         {/* Left Vertical Navigation Bar (Desktop only, authenticated only) */}
-        {deviceSize === 'desktop' && isAuthenticated && (
+        {deviceSize === 'desktop' && isAuthenticated && !isFullBleedDark && (
           <aside className="sticky top-24 self-start z-30 flex flex-col gap-1 bg-[#141414] border-2 border-[#141414] p-1 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] w-20 shrink-0">
             {/* FLOOR */}
             <button
@@ -972,22 +972,6 @@ export default function App() {
               <span className="font-mono text-[9px] font-black tracking-widest uppercase">TERMS</span>
             </button>
 
-            {/* DOCS */}
-            <button
-              onClick={() => setActiveTab('docs')}
-              className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
-                activeTab === 'docs'
-                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
-                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
-              }`}
-              title="Documentation & Specifications"
-            >
-              {activeTab === 'docs' && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
-              )}
-              <BookOpen className="w-5 h-5 mb-1" />
-              <span className="font-mono text-[9px] font-black tracking-widest uppercase">DOCS</span>
-            </button>
 
             {/* PROFILE / AVATAR */}
             <button
