@@ -142,7 +142,15 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({
         onClose();
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to connect and discover tools from MCP server.');
+      const rawMsg = err?.message || 'Failed to connect and discover tools from MCP server.';
+      if (rawMsg.includes('<!DOCTYPE') || rawMsg.includes('<html')) {
+        const preMatch = rawMsg.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+        const titleMatch = rawMsg.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        const extracted = preMatch ? preMatch[1].trim() : titleMatch ? titleMatch[1].trim() : 'HTML Response';
+        setError(`Server returned HTTP response: ${extracted}`);
+      } else {
+        setError(rawMsg);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -228,6 +236,11 @@ export const AddIntegrationModal: React.FC<AddIntegrationModalProps> = ({
                 onChange={(e) => setEndpoint(e.target.value)}
                 className="w-full bg-white border-2 border-[#141414] p-2 text-xs font-mono font-bold focus:outline-hidden shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
               />
+              {/\/(health|healthz|ping)(\/|\?|$)/i.test(endpoint.trim()) && (
+                <p className="text-[10px] text-amber-800 font-bold mt-1 bg-amber-50 p-1.5 border border-amber-300">
+                  Notice: Endpoints ending in /health are uptime checks. The platform will auto-discover your /mcp route if available.
+                </p>
+              )}
             </div>
           </div>
 

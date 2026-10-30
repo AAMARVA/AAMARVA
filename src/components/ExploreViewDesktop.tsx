@@ -528,7 +528,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
                 }}
                 className="px-3.5 py-2 bg-white text-black font-mono font-black text-xs uppercase tracking-wider hover:bg-[#E4E3E0] transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
               >
-                <span>Open Documentation</span>
+                <span>Open</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>

@@ -937,7 +937,7 @@ export function parseMcpResponseBody(rawBody: any, contentType?: string): any {
  * Dispatches an outbound JSON-RPC request to an MCP server using connection-layer SSRF defense
  * and robust streamable HTTP / SSE handling.
  */
-async function sendMcpRpcRequest(
+export async function sendMcpRpcRequest(
   endpoint: string,
   payload: Record<string, any>,
   headers: Record<string, string>,
@@ -972,6 +972,54 @@ async function sendMcpRpcRequest(
   };
 }
 
+export function formatMcpErrorResponseBody(status: number, data: any, endpointUrl?: string): string {
+  if (data === null || data === undefined) {
+    return `HTTP ${status}`;
+  }
+
+  let text = '';
+  if (typeof data === 'string') {
+    text = data;
+  } else if (typeof data === 'object') {
+    if (data.error) {
+      if (typeof data.error === 'string') return data.error;
+      if (data.error.message) return data.error.message;
+    }
+    if (data.message) return data.message;
+    text = JSON.stringify(data);
+  } else {
+    text = String(data);
+  }
+
+  const trimmed = text.trim();
+  const trimmedLower = trimmed.toLowerCase();
+
+  // Parse HTML response body cleanly (e.g. Express 404 "<!DOCTYPE html>...<pre>Cannot POST /health</pre>")
+  if (trimmedLower.startsWith('<') || trimmedLower.includes('<!doctype html>') || trimmedLower.includes('<html')) {
+    const preMatch = text.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+    const titleMatch = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const bodyText = preMatch ? preMatch[1].trim() : titleMatch ? titleMatch[1].trim() : `HTTP ${status}`;
+
+    if (status === 404) {
+      if (endpointUrl && (/\/(health|healthz|ping)(\/|\?|$)/i.test(endpointUrl) || bodyText.toLowerCase().includes('/health'))) {
+        return `MCP handshake failed (HTTP 404: ${bodyText}). '${endpointUrl}' is a health check route rather than an MCP JSON-RPC endpoint. Please enter the main MCP server endpoint (e.g. https://${endpointUrl.replace(/^https?:\/\//i, '').replace(/\/(health|healthz|ping)\/?$/i, '')}/mcp).`;
+      }
+      return `MCP handshake failed (HTTP 404: ${bodyText}). Please verify the server endpoint URL and ensure it accepts POST requests for MCP JSON-RPC protocol.`;
+    }
+
+    return `MCP handshake failed (HTTP ${status}: ${bodyText})`;
+  }
+
+  if (status === 404) {
+    if (endpointUrl && /\/(health|healthz|ping)(\/|\?|$)/i.test(endpointUrl)) {
+      return `MCP handshake failed (HTTP 404). '${endpointUrl}' is a health check route rather than an MCP JSON-RPC endpoint. Please enter the main MCP server endpoint (e.g. ending in '/mcp').`;
+    }
+    return `MCP handshake failed (HTTP 404 Not Found). Please verify your server URL (e.g. https://.../mcp).`;
+  }
+
+  return text.length > 250 ? text.slice(0, 250) + '...' : text;
+}
+
 /**
  * Performs live MCP Protocol handshake and tool discovery using @modelcontextprotocol/sdk where compatible
  */
@@ -987,6 +1035,7 @@ export async function testMcpConnectionAndDiscover(
   serverInfo: Record<string, any>;
   tools: Array<{ name: string; description?: string; inputSchema?: Record<string, any> }>;
   sessionId?: string;
+  resolvedEndpoint?: string;
   error?: string;
 }> {
   // Validate supported transports strictly
@@ -1000,258 +1049,263 @@ export async function testMcpConnectionAndDiscover(
     };
   }
 
-  // Validate SSRF boundary and plaintext credential protections
-  const ssrfCheck = await validateEndpointUrl(endpoint, authType, Boolean(credential));
-  if (!ssrfCheck.valid) {
-    return {
-      success: false,
-      status: 'error',
-      serverInfo: {},
-      tools: [],
-      error: ssrfCheck.error
-    };
+  // Generate candidate endpoints (if user provided a /health route, test /mcp and root as fallback candidates)
+  const cleanEndpoint = endpoint.trim();
+  const candidateEndpoints = [cleanEndpoint];
+  if (/\/(health|healthz|ping)\/?$/i.test(cleanEndpoint)) {
+    const mcpCandidate = cleanEndpoint.replace(/\/(health|healthz|ping)\/?$/i, '/mcp');
+    const rootCandidate = cleanEndpoint.replace(/\/(health|healthz|ping)\/?$/i, '');
+    if (!candidateEndpoints.includes(mcpCandidate)) candidateEndpoints.push(mcpCandidate);
+    if (!candidateEndpoints.includes(rootCandidate)) candidateEndpoints.push(rootCandidate);
   }
 
-  // Handle mock endpoints strictly for automated test suites
-  if (endpoint.startsWith('mock://') || endpoint.includes('mock-mcp.internal')) {
-    if (!isStrictTestEnvironment() || process.env.NODE_ENV === 'production') {
-      return {
-        success: false,
-        status: 'error',
-        serverInfo: {},
-        tools: [],
-        error: 'Restricted target: Mock endpoints are restricted to automated testing environments.'
-      };
+  let lastError = '';
+
+  for (const currentEndpoint of candidateEndpoints) {
+    // Validate SSRF boundary and plaintext credential protections for current candidate
+    const ssrfCheck = await validateEndpointUrl(currentEndpoint, authType, Boolean(credential));
+    if (!ssrfCheck.valid) {
+      lastError = ssrfCheck.error || 'Invalid or forbidden endpoint URL.';
+      continue;
     }
-    if (endpoint.includes('fail') || endpoint.includes('unreachable')) {
-      return {
-        success: false,
-        status: 'error',
-        serverInfo: {},
-        tools: [],
-        error: 'Connection refused: Remote MCP server is unreachable.'
-      };
-    }
-    return {
-      success: true,
-      status: 'connected',
-      serverInfo: { name: 'mock-mcp-server', version: '1.2.0', protocolVersion: '2024-11-05' },
-      tools: [
-        {
-          name: 'query_vector_index',
-          description: 'Search embedded vector index for matching semantic concepts',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              query: { type: 'string', description: 'Semantic search query' },
-              limit: { type: 'number', description: 'Maximum items to retrieve' }
-            },
-            required: ['query'],
-            additionalProperties: false
-          }
-        },
-        {
-          name: 'execute_sql_query',
-          description: 'Executes read-only SQL query against sanitized analytics store',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              query: { type: 'string', description: 'Read-only SQL query' }
-            },
-            required: ['query'],
-            additionalProperties: false
-          }
-        }
-      ],
-      sessionId: 'sess_mock_test_123'
-    };
-  }
 
-  // Decrypt credential if passed as encrypted string
-  let rawCredential = credential;
-  if (credential && credential.startsWith('enc:v1:')) {
-    try {
-      rawCredential = decryptMcpCredential(credential);
-    } catch {
-      return {
-        success: false,
-        status: 'error',
-        serverInfo: {},
-        tools: [],
-        error: 'Failed to decrypt stored credential.'
-      };
-    }
-  }
-
-  const headers = buildAuthHeaders(authType, rawCredential, headerName);
-
-  try {
-    // Attempt live protocol handshake and discovery using official @modelcontextprotocol/sdk
-    let client: Client | null = null;
-    try {
-      const url = new URL(endpoint);
-      const sdkTransport = transport === 'http-sse'
-        ? new SSEClientTransport(url, {
-            requestInit: { headers },
-            fetch: ssrfSafeFetch,
-          })
-        : new StreamableHTTPClientTransport(url, {
-            requestInit: { headers },
-            fetch: ssrfSafeFetch,
-          });
-
-      client = new Client(
-        { name: 'aamarva-floor', version: '1.0.0' },
-        { capabilities: { roots: { listChanged: true } } }
-      );
-
-      await client.connect(sdkTransport);
-      const sdkToolsRes = await client.listTools();
-      const serverVersion = client.getServerVersion() || { name: 'mcp-server', version: '1.0.0' };
-      const cleanServerInfo = sanitizeServerInfo(serverVersion);
-      const activeSessionId = (sdkTransport as any).sessionId || undefined;
-
-      const sanitizedTools = Array.isArray(sdkToolsRes?.tools)
-        ? sdkToolsRes.tools.map((t: any) => ({
-            name: String(t.name || 'unnamed_tool'),
-            description: String(t.description || ''),
-            inputSchema: t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : { type: 'object' }
-          }))
-        : [];
-
-      return {
-        success: true,
-        status: 'connected',
-        serverInfo: cleanServerInfo,
-        tools: sanitizedTools,
-        sessionId: activeSessionId
-      };
-    } finally {
-      if (client) {
-        await client.close().catch(() => {});
-      }
-    }
-  } catch (sdkErr: any) {
-    try {
-      // Fall back to robust Streamable HTTP / SSE JSON-RPC protocol dispatches
-      const initPayload = {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2024-11-05',
-          capabilities: {
-            tools: { listChanged: true }
-          },
-          clientInfo: {
-            name: 'aamarva-floor',
-            version: '1.0.0'
-          }
-        }
-      };
-
-      const initRes = await sendMcpRpcRequest(endpoint, initPayload, headers, 25000);
-
-      if (initRes.status >= 400) {
-        const errorMsg = initRes.status === 401
-          ? `Authentication failed (HTTP 401): ${typeof initRes.data === 'object' && initRes.data?.error ? (initRes.data.error.message || JSON.stringify(initRes.data.error)) : 'Invalid or rejected credentials.'}`
-          : initRes.status === 403
-          ? `Authentication forbidden (HTTP 403): ${typeof initRes.data === 'object' && initRes.data?.error ? (initRes.data.error.message || JSON.stringify(initRes.data.error)) : 'Access denied by remote MCP server.'}`
-          : `MCP handshake failed with HTTP ${initRes.status}: ${JSON.stringify(initRes.data?.error || initRes.data)}`;
-
+    // Handle mock endpoints strictly for automated test suites
+    if (currentEndpoint.startsWith('mock://') || currentEndpoint.includes('mock-mcp.internal')) {
+      if (!isStrictTestEnvironment() || process.env.NODE_ENV === 'production') {
         return {
           success: false,
           status: 'error',
           serverInfo: {},
           tools: [],
-          error: errorMsg
+          error: 'Restricted target: Mock endpoints are restricted to automated testing environments.'
         };
       }
-
-      const rawServerInfo = initRes.data?.result?.serverInfo || { protocolVersion: '2024-11-05' };
-      const cleanServerInfo = sanitizeServerInfo(rawServerInfo);
-
-      let activeSessionId = initRes.sessionId;
-      if (activeSessionId) {
-        headers['Mcp-Session-Id'] = activeSessionId;
-      }
-
-      // 2. Initialized Notification
-      try {
-        await sendMcpRpcRequest(
-          endpoint,
-          { jsonrpc: '2.0', method: 'notifications/initialized' },
-          headers,
-          8000
-        );
-      } catch {}
-
-      // 3. Discover Tools (JSON-RPC 2.0 tools/list)
-      const listPayload = {
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'tools/list',
-        params: {}
-      };
-
-      const listRes = await sendMcpRpcRequest(endpoint, listPayload, headers, 25000);
-
-      if (listRes.status >= 400 || listRes.data?.error) {
-        const errorMsg = listRes.status === 401
-          ? 'Authentication failed (HTTP 401) during tool discovery.'
-          : listRes.status === 403
-          ? 'Authentication forbidden (HTTP 403) during tool discovery.'
-          : `Tool discovery failed: ${listRes.data?.error?.message || `HTTP ${listRes.status}`}`;
-
+      if (currentEndpoint.includes('fail') || currentEndpoint.includes('unreachable')) {
         return {
           success: false,
           status: 'error',
-          serverInfo: cleanServerInfo,
+          serverInfo: {},
           tools: [],
-          error: errorMsg
+          error: 'Connection refused: Remote MCP server is unreachable.'
         };
       }
-
-      const rawTools = listRes.data?.result?.tools || [];
-      const sanitizedTools = Array.isArray(rawTools)
-        ? rawTools.map((t: any) => ({
-            name: String(t.name || 'unnamed_tool'),
-            description: String(t.description || ''),
-            inputSchema: t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : { type: 'object' }
-          }))
-        : [];
-
       return {
         success: true,
         status: 'connected',
-        serverInfo: cleanServerInfo,
-        tools: sanitizedTools,
-        sessionId: activeSessionId
-      };
-    } catch (fallbackErr: any) {
-      const status = fallbackErr.response?.status;
-      const data = fallbackErr.response?.data;
-      let message = '';
-      if (status === 401) {
-        message = `Authentication failed (HTTP 401): ${typeof data === 'object' && data?.error ? (data.error.message || JSON.stringify(data.error)) : 'Remote MCP server rejected credentials.'}`;
-      } else if (status === 403) {
-        message = `Authentication forbidden (HTTP 403): ${typeof data === 'object' && data?.error ? (data.error.message || JSON.stringify(data.error)) : 'Access denied by remote MCP server.'}`;
-      } else {
-        message = fallbackErr.response?.data?.error?.message || fallbackErr.message || sdkErr.message || 'Unknown network error';
-      }
-      let finalError = message.startsWith('Authentication') ? message : `Connection error: ${message}`;
-      if (/timeout/i.test(message)) {
-        finalError += ' (Remote instance took too long to respond. If hosted on a free tier like Render, it may be waking up from sleep; wait a few seconds and click Re-Sync)';
-      }
-      return {
-        success: false,
-        status: 'error',
-        serverInfo: {},
-        tools: [],
-        error: finalError
+        serverInfo: { name: 'mock-mcp-server', version: '1.2.0', protocolVersion: '2024-11-05' },
+        tools: [
+          {
+            name: 'query_vector_index',
+            description: 'Search embedded vector index for matching semantic concepts',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'Semantic search query' },
+                limit: { type: 'number', description: 'Maximum items to retrieve' }
+              },
+              required: ['query'],
+              additionalProperties: false
+            }
+          },
+          {
+            name: 'execute_sql_query',
+            description: 'Executes read-only SQL query against sanitized analytics store',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'Read-only SQL query' }
+              },
+              required: ['query'],
+              additionalProperties: false
+            }
+          }
+        ],
+        sessionId: 'sess_mock_test_123',
+        resolvedEndpoint: currentEndpoint
       };
     }
+
+    // Decrypt credential if passed as encrypted string
+    let rawCredential = credential;
+    if (credential && credential.startsWith('enc:v1:')) {
+      try {
+        rawCredential = decryptMcpCredential(credential);
+      } catch {
+        return {
+          success: false,
+          status: 'error',
+          serverInfo: {},
+          tools: [],
+          error: 'Failed to decrypt stored credential.'
+        };
+      }
+    }
+
+    const headers = buildAuthHeaders(authType, rawCredential, headerName);
+
+    try {
+      // Attempt live protocol handshake and discovery using official @modelcontextprotocol/sdk
+      let client: Client | null = null;
+      try {
+        const url = new URL(currentEndpoint);
+        const sdkTransport = transport === 'http-sse'
+          ? new SSEClientTransport(url, {
+              requestInit: { headers },
+              fetch: ssrfSafeFetch,
+            })
+          : new StreamableHTTPClientTransport(url, {
+              requestInit: { headers },
+              fetch: ssrfSafeFetch,
+            });
+
+        client = new Client(
+          { name: 'aamarva-floor', version: '1.0.0' },
+          { capabilities: { roots: { listChanged: true } } }
+        );
+
+        await client.connect(sdkTransport);
+        const sdkToolsRes = await client.listTools();
+        const serverVersion = client.getServerVersion() || { name: 'mcp-server', version: '1.0.0' };
+        const cleanServerInfo = sanitizeServerInfo(serverVersion);
+        const activeSessionId = (sdkTransport as any).sessionId || undefined;
+
+        const sanitizedTools = Array.isArray(sdkToolsRes?.tools)
+          ? sdkToolsRes.tools.map((t: any) => ({
+              name: String(t.name || 'unnamed_tool'),
+              description: String(t.description || ''),
+              inputSchema: t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : { type: 'object' }
+            }))
+          : [];
+
+        return {
+          success: true,
+          status: 'connected',
+          serverInfo: cleanServerInfo,
+          tools: sanitizedTools,
+          sessionId: activeSessionId,
+          resolvedEndpoint: currentEndpoint
+        };
+      } finally {
+        if (client) {
+          await client.close().catch(() => {});
+        }
+      }
+    } catch (sdkErr: any) {
+      try {
+        // Fall back to robust Streamable HTTP / SSE JSON-RPC protocol dispatches
+        const initPayload = {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2024-11-05',
+            capabilities: {
+              tools: { listChanged: true }
+            },
+            clientInfo: {
+              name: 'aamarva-floor',
+              version: '1.0.0'
+            }
+          }
+        };
+
+        const initRes = await sendMcpRpcRequest(currentEndpoint, initPayload, headers, 25000);
+
+        if (initRes.status >= 400) {
+          const formattedErr = formatMcpErrorResponseBody(initRes.status, initRes.data, currentEndpoint);
+          const errorMsg = initRes.status === 401
+            ? `Authentication failed (HTTP 401): ${formattedErr}`
+            : initRes.status === 403
+            ? `Authentication forbidden (HTTP 403): ${formattedErr}`
+            : formattedErr;
+
+          lastError = errorMsg;
+          continue;
+        }
+
+        const rawServerInfo = initRes.data?.result?.serverInfo || { protocolVersion: '2024-11-05' };
+        const cleanServerInfo = sanitizeServerInfo(rawServerInfo);
+
+        let activeSessionId = initRes.sessionId;
+        if (activeSessionId) {
+          headers['Mcp-Session-Id'] = activeSessionId;
+        }
+
+        // 2. Initialized Notification
+        try {
+          await sendMcpRpcRequest(
+            currentEndpoint,
+            { jsonrpc: '2.0', method: 'notifications/initialized' },
+            headers,
+            8000
+          );
+        } catch {}
+
+        // 3. Discover Tools (JSON-RPC 2.0 tools/list)
+        const listPayload = {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/list',
+          params: {}
+        };
+
+        const listRes = await sendMcpRpcRequest(currentEndpoint, listPayload, headers, 25000);
+
+        if (listRes.status >= 400 || listRes.data?.error) {
+          const errorMsg = listRes.status === 401
+            ? 'Authentication failed (HTTP 401) during tool discovery.'
+            : listRes.status === 403
+            ? 'Authentication forbidden (HTTP 403) during tool discovery.'
+            : `Tool discovery failed: ${listRes.data?.error?.message || formatMcpErrorResponseBody(listRes.status, listRes.data, currentEndpoint)}`;
+
+          lastError = errorMsg;
+          continue;
+        }
+
+        const rawTools = listRes.data?.result?.tools || [];
+        const sanitizedTools = Array.isArray(rawTools)
+          ? rawTools.map((t: any) => ({
+              name: String(t.name || 'unnamed_tool'),
+              description: String(t.description || ''),
+              inputSchema: t.inputSchema && typeof t.inputSchema === 'object' ? t.inputSchema : { type: 'object' }
+            }))
+          : [];
+
+        return {
+          success: true,
+          status: 'connected',
+          serverInfo: cleanServerInfo,
+          tools: sanitizedTools,
+          sessionId: activeSessionId,
+          resolvedEndpoint: currentEndpoint
+        };
+      } catch (fallbackErr: any) {
+        const status = fallbackErr.response?.status;
+        const data = fallbackErr.response?.data;
+        let message = '';
+        if (status === 401) {
+          message = `Authentication failed (HTTP 401): ${formatMcpErrorResponseBody(401, data, currentEndpoint)}`;
+        } else if (status === 403) {
+          message = `Authentication forbidden (HTTP 403): ${formatMcpErrorResponseBody(403, data, currentEndpoint)}`;
+        } else {
+          message = formatMcpErrorResponseBody(status || 500, data || fallbackErr.message || sdkErr.message, currentEndpoint);
+        }
+        let finalError = message.startsWith('Authentication') || message.startsWith('MCP handshake') ? message : `Connection error: ${message}`;
+        if (/timeout/i.test(message)) {
+          finalError += ' (Remote instance took too long to respond. If hosted on a free tier like Render, it may be waking up from sleep; wait a few seconds and click Re-Sync)';
+        }
+        lastError = finalError;
+      }
+    }
   }
+
+  return {
+    success: false,
+    status: 'error',
+    serverInfo: {},
+    tools: [],
+    error: lastError || 'Failed to authenticate and connect to MCP server.'
+  };
 }
 
 /**
@@ -1624,7 +1678,7 @@ export async function addMcpServerWithDiscovery(
     name,
     description: params.description?.trim() || '',
     transport,
-    endpoint,
+    endpoint: discovery.resolvedEndpoint || endpoint,
     auth_type: authType,
     auth_header_name: normalizedHeaderName,
     auth_credential_encrypted: encryptedCredential,
