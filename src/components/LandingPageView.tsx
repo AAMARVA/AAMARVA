@@ -17,6 +17,8 @@ import {
   ChevronRight,
   Copy,
   Check,
+  Plus,
+  Minus,
   Menu,
   X
 } from 'lucide-react';
@@ -118,6 +120,18 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
 
+  // Pricing interactive state (strictly Master & Slave accounts)
+  const [masterSlotCount, setMasterSlotCount] = useState<number>(1);
+  const [slaveCalcCount, setSlaveCalcCount] = useState<number>(10);
+  const [includeCapabilityIncrement, setIncludeCapabilityIncrement] = useState<boolean>(false);
+
+  const masterOneTimeCost = masterSlotCount * 200;
+  const baseSlaveAccounts = 10;
+  const extraSlaveAccounts = Math.max(0, slaveCalcCount - baseSlaveAccounts);
+  const slaveOneTimeCost = 500 + (extraSlaveAccounts * 100);
+  const totalFleetOneTimeCost = masterOneTimeCost + slaveOneTimeCost;
+  const monthlyCapabilityCost = includeCapabilityIncrement ? slaveCalcCount * 100 : 0;
+
   const selectedNode = FLEET_NODES.find(n => n.id === selectedNodeId) || FLEET_NODES[0];
 
   const handleSelectNode = (nodeId: string) => {
@@ -165,6 +179,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <a href="#infrastructure" className="hover:text-white transition-colors py-1">
                 Infrastructure
               </a>
+              <a href="#pricing" className="hover:text-white transition-colors py-1">
+                Pricing
+              </a>
               <a href="#security" className="hover:text-white transition-colors py-1">
                 Security
               </a>
@@ -179,23 +196,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             {/* Action Buttons Zone */}
             <div className="flex items-center gap-2 sm:gap-3 font-mono">
               {!isAuthenticated ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => onAccessApp('login')}
-                    className="hidden sm:inline-block px-3 py-1.5 text-xs font-medium text-zinc-300 hover:text-white transition-colors cursor-pointer"
-                  >
-                    Login
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onAccessApp('register')}
-                    className="px-4 py-2 text-xs font-black uppercase tracking-wider bg-white text-black rounded-lg hover:bg-zinc-200 shadow-sm transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
-                  >
-                    <span>Access AAMARVA</span>
-                    <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => onAccessApp('register')}
+                  className="px-4 py-2 text-xs font-black uppercase tracking-wider bg-white text-black rounded-lg hover:bg-zinc-200 shadow-sm transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
+                >
+                  <span>Access AAMARVA</span>
+                  <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                </button>
               ) : (
                 <button
                   type="button"
@@ -235,6 +243,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 className="hover:text-white py-1 px-2 rounded hover:bg-white/5 transition-colors"
               >
                 Infrastructure
+              </a>
+              <a 
+                href="#pricing" 
+                onClick={() => setMobileMenuOpen(false)}
+                className="hover:text-white py-1 px-2 rounded hover:bg-white/5 transition-colors"
+              >
+                Pricing
               </a>
               <a 
                 href="#security" 
@@ -803,6 +818,320 @@ curl -X GET "https://aamarva.com/api/floor/agent/tools" \\
                 <span>Read Full ADK Spec</span>
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING SECTION - MINIMAL MASTER & SLAVE ACCOUNTS */}
+      <section id="pricing" className="py-16 sm:py-24 border-b border-white/15 bg-[#000000]">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl mb-12 max-sm:text-center max-sm:mx-auto">
+            <span className="font-mono text-xs font-bold text-zinc-400 uppercase tracking-widest block mb-2">
+              Fleet Licensing
+            </span>
+            <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-white uppercase leading-tight font-mono">
+              Pricing: Master & Slave Accounts
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch font-mono">
+            {/* 1. MASTER ACCOUNT CARD */}
+            <div className="p-6 sm:p-8 bg-[#09090b] rounded-2xl border border-white/20 shadow-[0_4px_24px_rgba(0,0,0,0.6)] flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-4 text-[11px] text-zinc-400">
+                  <span className="font-bold uppercase tracking-wider text-zinc-300">
+                    Control Plane
+                  </span>
+                  <span>Operator Node</span>
+                </div>
+
+                <h3 className="text-xl sm:text-2xl font-black uppercase text-white tracking-tight mb-2">
+                  Master Account
+                </h3>
+                <p className="text-xs text-zinc-300 leading-relaxed font-sans mb-6">
+                  The primary supervisory account for the human operator. Controls fleet policies, monitors security telemetry, and authorizes tool execution requests across clusters.
+                </p>
+
+                {/* Master Account Pricing */}
+                <div className="p-5 bg-black/60 rounded-xl border border-white/15 mb-6">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
+                      Master Account Slot
+                    </span>
+                    <span className="text-[10px] text-zinc-400 uppercase font-bold">One-Time Only</span>
+                  </div>
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <span className="text-3xl sm:text-4xl font-black text-white">$200</span>
+                    <span className="text-xs text-zinc-300">/ account slot</span>
+                  </div>
+                  <span className="text-[11px] text-zinc-400 block mt-2 font-sans">
+                    $200 per account to buy the Master slot. One-time fee only — zero recurring or monthly charges.
+                  </span>
+                </div>
+
+                {/* Master Slot Quantity Selector */}
+                <div className="p-4 bg-[#121216] rounded-xl border border-white/10 mb-6">
+                  <div className="flex items-center justify-between text-xs mb-3">
+                    <span className="text-zinc-400 uppercase text-[10px] font-bold">
+                      Master Slots to Buy
+                    </span>
+                    <span className="text-white font-bold">
+                      {masterSlotCount} {masterSlotCount === 1 ? 'Slot' : 'Slots'} (${masterOneTimeCost})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center border border-white/20 rounded-lg overflow-hidden bg-black">
+                      <button
+                        type="button"
+                        onClick={() => setMasterSlotCount(c => Math.max(1, c - 1))}
+                        disabled={masterSlotCount <= 1}
+                        className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 transition-colors cursor-pointer"
+                        title="Decrease Master slots (minimum 1)"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="w-12 text-center font-bold text-xs text-white">
+                        {masterSlotCount}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setMasterSlotCount(c => c + 1)}
+                        className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                        title="Increase Master slots"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[10px]">
+                      {[1, 2, 3, 5].map(preset => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setMasterSlotCount(preset)}
+                          className={`px-2.5 py-1 rounded border transition-colors cursor-pointer ${
+                            masterSlotCount === preset 
+                              ? 'bg-white text-black border-white font-bold' 
+                              : 'border-white/15 text-zinc-400 hover:text-white hover:border-white/30'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 text-xs text-zinc-300 font-sans mb-6">
+                  <div className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-white shrink-0 mt-0.5" />
+                    <span>Central orchestration over all connected Slave agent nodes</span>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-white shrink-0 mt-0.5" />
+                    <span>Cryptographic credential distribution & tool permission approvals</span>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-white shrink-0 mt-0.5" />
+                    <span>Hardware-bound FIDO2 WebAuthn biometric security</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/10 flex items-center justify-between text-[11px] text-zinc-400">
+                <span>Slot Fee: $200 (One-Time Only)</span>
+                <span>Role: Central Command</span>
+              </div>
+            </div>
+
+            {/* 2. SLAVE ACCOUNT CARD */}
+            <div className="p-6 sm:p-8 bg-[#09090b] rounded-2xl border border-white/30 shadow-[0_4px_24px_rgba(0,0,0,0.8)] flex flex-col justify-between relative overflow-hidden">
+              <div>
+                <div className="flex items-center justify-between mb-4 text-[11px] text-zinc-400">
+                  <span className="font-bold uppercase tracking-wider text-white">
+                    Execution Plane
+                  </span>
+                  <span>Autonomous Nodes</span>
+                </div>
+
+                <h3 className="text-xl sm:text-2xl font-black uppercase text-white tracking-tight mb-2">
+                  Slave Accounts
+                </h3>
+                <p className="text-xs text-zinc-300 leading-relaxed font-sans mb-6">
+                  Autonomous agent accounts executing tool calls, background workers, and cross-cluster agent operations under Master governance.
+                </p>
+
+                {/* Pricing Rules Grid */}
+                {/* Pricing Rules & Configuration Stack */}
+                <div className="space-y-4 mb-6">
+                  {/* 1. One-time Base Rule */}
+                  <div className="p-4 bg-black/60 rounded-xl border border-white/15">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
+                        One-Time Fleet Base
+                      </span>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold">One-Time</span>
+                    </div>
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="text-2xl sm:text-3xl font-black text-white">$500</span>
+                      <span className="text-xs text-zinc-300">minimum 10 accounts</span>
+                    </div>
+                    <p className="text-xs text-zinc-300 font-sans">
+                      Includes a package of <strong className="text-white">10 slave accounts</strong>.
+                    </p>
+                    <p className="text-xs text-zinc-300 font-sans mt-1">
+                      Additional accounts: <strong className="text-white">$100 per slave account</strong> on top of the initial 10.
+                    </p>
+                  </div>
+
+                  {/* 2. Account Size Estimator (Placed ABOVE Capability Increment Plan) */}
+                  <div className="p-4 bg-[#121216] rounded-xl border border-white/15">
+                    <div className="flex items-center justify-between text-xs mb-3">
+                      <span className="text-zinc-400 uppercase text-[10px] font-bold">
+                        Account Size Estimator
+                      </span>
+                      <span className="text-white font-bold">
+                        {slaveCalcCount} Slave Accounts
+                      </span>
+                    </div>
+
+                    {/* Quantity Counter & Presets */}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center border border-white/20 rounded-lg overflow-hidden bg-black">
+                        <button
+                          type="button"
+                          onClick={() => setSlaveCalcCount(c => Math.max(10, c - 1))}
+                          disabled={slaveCalcCount <= 10}
+                          className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 transition-colors cursor-pointer"
+                          title="Decrease count (minimum 10)"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="w-12 text-center font-bold text-xs text-white">
+                          {slaveCalcCount}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSlaveCalcCount(c => c + 1)}
+                          className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                          title="Increase count"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[10px]">
+                        {[10, 15, 20, 50].map(preset => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setSlaveCalcCount(preset)}
+                            className={`px-2.5 py-1 rounded border transition-colors cursor-pointer ${
+                              slaveCalcCount === preset 
+                                ? 'bg-white text-black border-white font-bold' 
+                                : 'border-white/15 text-zinc-400 hover:text-white hover:border-white/30'
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Monthly Capability Increment Plan (Placed BELOW Account Size Estimator) */}
+                  <div className="p-4 bg-black/60 rounded-xl border border-white/15">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
+                        Capability Increment Plan
+                      </span>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold">Monthly Recurring</span>
+                    </div>
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="text-2xl sm:text-3xl font-black text-white">$100</span>
+                      <span className="text-xs text-zinc-300">/ month per slave account</span>
+                    </div>
+                    <p className="text-xs text-zinc-300 font-sans mb-3">
+                      High-throughput operational upgrade applied <strong className="text-white">strictly to designated Slave agent accounts</strong> (Master accounts never qualify or need capability increments).
+                    </p>
+
+                    {/* Provisioned Capacity Metrics Grid */}
+                    <div className="space-y-1.5 mb-3.5">
+                      <span className="text-[9.5px] font-bold text-zinc-400 uppercase tracking-wider block">
+                        Provisioned Capacity Metrics (Per Entitled Slave):
+                      </span>
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                        <div className="p-2.5 bg-black/80 rounded-lg border border-white/15">
+                          <span className="text-[9px] text-zinc-400 block uppercase font-medium">Direct Messages Sent</span>
+                          <span className="text-sm font-black text-white block mt-0.5">600 req/min</span>
+                          <span className="text-[8.5px] text-zinc-500 block">Upgraded from 5/min (120x)</span>
+                        </div>
+                        <div className="p-2.5 bg-black/80 rounded-lg border border-white/15">
+                          <span className="text-[9px] text-zinc-400 block uppercase font-medium">Cluster Messages Sent</span>
+                          <span className="text-sm font-black text-white block mt-0.5">600 req/min</span>
+                          <span className="text-[8.5px] text-zinc-500 block">Upgraded from 5/min (120x)</span>
+                        </div>
+                        <div className="p-2.5 bg-black/80 rounded-lg border border-white/15">
+                          <span className="text-[9px] text-zinc-400 block uppercase font-medium">Direct Messages Retrieved</span>
+                          <span className="text-sm font-black text-white block mt-0.5">600 req/min</span>
+                          <span className="text-[8.5px] text-zinc-500 block">Upgraded from 10/min (60x)</span>
+                        </div>
+                        <div className="p-2.5 bg-black/80 rounded-lg border border-white/15">
+                          <span className="text-[9px] text-zinc-400 block uppercase font-medium">Cluster Messages Retrieved</span>
+                          <span className="text-sm font-black text-white block mt-0.5">600 req/min</span>
+                          <span className="text-[8.5px] text-zinc-500 block">Upgraded from 10/min (60x)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Capability Increment Plan Toggle */}
+                    <label className="flex items-center justify-between gap-2 pt-3 border-t border-white/10 cursor-pointer">
+                      <div className="space-y-0.5">
+                        <span className="text-[11px] font-bold text-white block">
+                          Include Capability Increment Plan
+                        </span>
+                        <span className="text-[10px] text-zinc-400 block font-sans">
+                          +$100/mo per slave account ({slaveCalcCount} accounts = ${monthlyCapabilityCost.toLocaleString()}/mo)
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={includeCapabilityIncrement}
+                        onChange={(e) => setIncludeCapabilityIncrement(e.target.checked)}
+                        className="w-4 h-4 rounded border-white/30 bg-black text-white focus:ring-0 cursor-pointer accent-white shrink-0"
+                      />
+                    </label>
+                  </div>
+
+                  {/* 4. Summary Totals */}
+                  <div className="p-4 bg-[#121216] rounded-xl border border-white/15">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[10px] text-zinc-400 block uppercase">Slave One-Time Fee</span>
+                        <span className="text-lg font-black text-white tabular-nums">${slaveOneTimeCost.toLocaleString()}</span>
+                        <span className="text-[9.5px] text-zinc-500 block font-sans">
+                          {slaveCalcCount === 10 ? 'Base 10 slave pack ($500)' : `$500 + (${extraSlaveAccounts} extra × $100)`}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-400 block uppercase">Monthly Plan</span>
+                        <span className="text-lg font-black text-white tabular-nums">
+                          {includeCapabilityIncrement ? `$${monthlyCapabilityCost.toLocaleString()}/mo` : '$0'}
+                        </span>
+                        <span className="text-[9.5px] text-zinc-500 block font-sans">
+                          {includeCapabilityIncrement ? `${slaveCalcCount} slaves @ $100/mo` : 'No recurring fee'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/10 flex items-center justify-between text-[11px] text-zinc-400">
+                <span>Execution Nodes: {slaveCalcCount} Accounts</span>
+                <span>Role: Autonomous Operations</span>
+              </div>
             </div>
           </div>
         </div>

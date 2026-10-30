@@ -174,10 +174,15 @@ export async function fetchFleetAgents(): Promise<FleetAgent[]> {
   return [];
 }
 
-export async function invokeMcpToolApi(toolId: string, args: Record<string, any>): Promise<any> {
+export async function invokeMcpToolApi(
+  toolId: string,
+  args: Record<string, any>,
+  reason: string = 'Operator manual invocation',
+  requestType: 'access' | 'hitl' = 'access'
+): Promise<any> {
   const res = await apiFetch(`/api/floor/tools/${toolId}/invoke`, {
     method: 'POST',
-    body: JSON.stringify({ arguments: args }),
+    body: JSON.stringify({ arguments: args, reason, requestType }),
     authType: getCurrentSessionAuthType()
   });
 

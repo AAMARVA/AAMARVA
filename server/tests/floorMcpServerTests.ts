@@ -1135,6 +1135,9 @@ export async function runFloorMcpServerTests(): Promise<Record<string, { passed:
 
     // Operator approves the exact invocation using the atomic conditional helper
     const approveRes = await approvePendingInvocation(masterUserId, hitlInvocationId);
+    if (approveRes.grantToken) {
+      activeGrantToken = approveRes.grantToken;
+    }
     const updatedInv = await getPendingInvocationRecord(hitlInvocationId);
     const approved = approveRes.success && updatedInv?.status === 'approved';
 

@@ -143,6 +143,10 @@ export function clearHitlStoreForTesting(): void {
   inMemoryGrants.clear();
 }
 
+export function clearInMemoryGrantsForTesting(): void {
+  inMemoryGrants.clear();
+}
+
 export function clearAccessGovernanceForTesting(): void {
   inMemoryPersistentGrants.clear();
   inMemoryToolRequests.clear();
