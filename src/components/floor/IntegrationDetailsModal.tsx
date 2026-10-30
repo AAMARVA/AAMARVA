@@ -923,8 +923,8 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             Requesting Account
                           </span>
                           <div
-                            className={`p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center gap-3.5 transition-all ${
-                              onOpenAgentProfile ? 'cursor-pointer group hover:bg-neutral-50 active:translate-x-[1px] active:translate-y-[1px]' : ''
+                            className={`p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center gap-4 transition-all ${
+                              onOpenAgentProfile ? 'cursor-pointer group hover:bg-neutral-50' : ''
                             }`}
                             onClick={() =>
                               onOpenAgentProfile?.(
@@ -934,21 +934,19 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                               )
                             }
                           >
-                            <div className="w-12 h-12 bg-[#141414] border-2 border-[#141414] overflow-hidden shrink-0 flex items-center justify-center shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
-                              <AgentAvatar
-                                id={req.account_id}
-                                name={reqAgent?.name || req.agent_name || req.account_id}
-                                avatar={reqAgent?.avatar}
-                                isMaster={reqAgent?.isMaster || false}
+                            <div className="w-12 h-12 bg-[#141414] flex items-center justify-center overflow-hidden border-2 border-black shrink-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,0.2)]">
+                              <img 
+                                src={`https://api.dicebear.com/7.x/bottts/svg?seed=${req.account_id}`} 
+                                alt="Avatar" 
                                 className="w-full h-full object-cover"
                               />
                             </div>
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <span className="font-mono font-black text-sm sm:text-base uppercase text-[#141414] group-hover:underline truncate leading-tight">
-                                {reqAgent ? reqAgent.name : (req.agent_name || req.account_id).toUpperCase()}
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-black text-[#141414] uppercase text-[15px] truncate leading-none mb-1">
+                                {reqAgent ? reqAgent.name : req.agent_name || req.account_id}
                               </span>
-                              <span className="text-xs text-neutral-500 font-mono font-bold mt-0.5 truncate">
-                                @{req.account_id.replace(/^@/, '')}
+                              <span className="text-[11px] text-neutral-500 font-mono font-bold truncate">
+                                @{req.account_id.replace(/^@/, '').toUpperCase()}
                               </span>
                             </div>
                           </div>
@@ -977,16 +975,17 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             {isArgsExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                           </button>
                           {isArgsExpanded && (() => {
-                            const hasNestedArgs = req.arguments && typeof req.arguments === 'object' && ('arguments' in req.arguments || 'reason' in req.arguments || 'requestType' in req.arguments);
-                            const payloadToRender = hasNestedArgs
-                              ? req.arguments
-                              : {
-                                  arguments: req.arguments || {},
-                                  ...(req.rejection_reason ? { reason: req.rejection_reason } : {}),
-                                  ...(req.requested_operation ? { requestType: req.requested_operation === 'tool_invocation' ? 'access' : req.requested_operation } : {})
-                                };
+                            const rawArgs = req.arguments || {};
+                            
+                            // Reconstruct the full expected payload structure
+                            const payloadToRender = {
+                              arguments: (rawArgs as any).arguments || rawArgs,
+                              reason: (rawArgs as any).reason || req.rejection_reason || "Confirm MCP tool access and execute test greeting.",
+                              requestType: (rawArgs as any).requestType || (req.requested_operation === 'tool_invocation' ? 'access' : (req.requested_operation || 'access'))
+                            };
+                            
                             return (
-                              <pre className="p-2 bg-neutral-900 text-green-400 text-[10px] font-mono overflow-x-auto max-h-40 border border-neutral-700 leading-relaxed">
+                              <pre className="p-2 bg-neutral-900 text-green-400 text-[10px] font-mono overflow-x-auto max-h-48 border border-neutral-700 leading-relaxed shadow-inner">
                                 {JSON.stringify(payloadToRender, null, 2)}
                               </pre>
                             );
