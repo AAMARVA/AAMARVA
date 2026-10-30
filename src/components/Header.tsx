@@ -108,17 +108,35 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => setActiveTab('product')}
+                className={`px-2 sm:px-2.5 py-1 sm:py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] ${
+                  activeTab === 'product' ? 'bg-[#141414] text-white' : 'bg-[#FAF9F5] text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <span>PRODUCT</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('docs')}
+                className={`px-2 sm:px-2.5 py-1 sm:py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] ${
+                  activeTab === 'docs' ? 'bg-[#141414] text-white' : 'bg-[#FAF9F5] text-[#141414] hover:bg-[#E4E3E0]'
+                }`}
+              >
+                <span>DOCS</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab('landing')}
-                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] ${
+                className={`hidden sm:block px-2 sm:px-2.5 py-1 sm:py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] ${
                   activeTab === 'landing' ? 'bg-[#141414] text-white' : 'bg-[#FAF9F5] text-[#141414] hover:bg-[#E4E3E0]'
                 }`}
               >
-                <span>OVERVIEW</span>
+                <span>HOME</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('hub')}
-                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1.5 ${
+                className={`px-2 sm:px-2.5 py-1 sm:py-1.5 border-2 border-[#141414] font-mono text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] flex items-center gap-1.5 ${
                   activeTab === 'hub' ? 'bg-[#141414] text-white' : 'bg-[#FAF9F5] text-[#141414] hover:bg-[#E4E3E0]'
                 }`}
               >

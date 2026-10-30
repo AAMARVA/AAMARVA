@@ -20,12 +20,16 @@ import {
   Plus,
   Minus,
   Menu,
-  X
+  X,
+  BookOpen
 } from 'lucide-react';
+import { ProductSection } from './ProductSection';
 
 interface LandingPageViewProps {
   onAccessApp: (targetTab?: 'login' | 'register' | 'adk') => void;
   onOpenTerms?: () => void;
+  onOpenDocs?: () => void;
+  onOpenProduct?: () => void;
   isAuthenticated?: boolean;
 }
 
@@ -102,6 +106,8 @@ const FLEET_NODES: AgentNode[] = [
 export const LandingPageView: React.FC<LandingPageViewProps> = ({
   onAccessApp,
   onOpenTerms,
+  onOpenDocs,
+  onOpenProduct,
   isAuthenticated = false
 }) => {
   // Interactive Topology State
@@ -175,7 +181,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             <nav className="hidden md:flex items-center gap-6 text-xs font-mono font-medium text-zinc-300">
               <button
                 type="button"
-                onClick={() => document.getElementById('overview')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() => {
+                  const el = document.getElementById('product');
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth' });
+                  } else if (onOpenProduct) {
+                    onOpenProduct();
+                  }
+                }}
                 className="hover:text-white transition-colors py-1 cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
                 Product
@@ -203,7 +216,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </button>
 
               <button 
-                onClick={() => onAccessApp('adk')} 
+                type="button"
+                onClick={() => {
+                  if (onOpenDocs) {
+                    onOpenDocs();
+                  } else {
+                    onAccessApp('adk');
+                  }
+                }} 
                 className="hover:text-white transition-colors py-1 cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
                 Docs
@@ -251,7 +271,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 type="button"
                 onClick={() => {
                   setMobileMenuOpen(false);
-                  document.getElementById('overview')?.scrollIntoView({ behavior: 'smooth' });
+                  const el = document.getElementById('product');
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth' });
+                  } else if (onOpenProduct) {
+                    onOpenProduct();
+                  }
                 }}
                 className="hover:text-white py-1 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
@@ -292,7 +317,11 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 type="button"
                 onClick={() => {
                   setMobileMenuOpen(false);
-                  onAccessApp('adk');
+                  if (onOpenDocs) {
+                    onOpenDocs();
+                  } else {
+                    onAccessApp('adk');
+                  }
                 }} 
                 className="hover:text-white py-1 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
@@ -363,6 +392,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </div>
         </div>
       </section>
+
+      {/* 2.5 PRODUCT PLATFORM & ARCHITECTURE SHOWCASE */}
+      <ProductSection 
+        onAccessApp={onAccessApp}
+        onOpenDocs={onOpenDocs}
+      />
 
       {/* 3. INFRASTRUCTURE ARCHITECTURE (Pillars with interactive schema tabs) */}
       <section id="infrastructure" className="pt-6 sm:pt-8 lg:pt-24 pb-16 sm:pb-24 border-b border-white/15 bg-[#000000]">
@@ -452,257 +487,366 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           </div>
 
           {/* Infrastructure Detail Card with Diagram */}
+          {/* Infrastructure Detail Card with Text-Based ASCII Workflow Diagrams */}
           <div className="bg-[#09090b] rounded-2xl border border-white/20 p-6 sm:p-8 lg:p-10 shadow-[0_12px_40px_rgba(0,0,0,0.8)]">
+            
+            {/* 01. CONNECTIONS WORKFLOW */}
             {activeInfraTab === 'connections' && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                <div className="lg:col-span-6 space-y-4">
+                <div className="lg:col-span-5 space-y-5">
                   <div className="inline-flex items-center gap-2 font-mono text-xs font-bold text-zinc-400 uppercase">
-                    <span>Architecture Primitive</span>
+                    <span>Architecture Primitive 01</span>
                     <span aria-hidden="true">/</span>
-                    <span>Point-to-Point Mesh</span>
+                    <span className="text-white">Point-to-Point Peer Mesh</span>
                   </div>
-                  <h3 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tight leading-tight">
                     Connections: Controlled Communication Between Authorized Agents
                   </h3>
                   <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                    Autonomous agents need to exchange inputs, outputs, and subtask results. Rather than permitting open pub/sub broadcasting or ungoverned network chatter, AAMARVA enforces cryptographically signed, peer-to-peer connection handshakes.
+                    Autonomous agents need to exchange inputs, outputs, and subtask results. Rather than permitting open pub/sub broadcasting or ungoverned network chatter, AAMARVA enforces cryptographically signed, peer-to-peer connection handshakes validated by operator policy.
                   </p>
-                  <ul className="space-y-2.5 font-mono text-xs text-zinc-300 pt-2">
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Mutual Cryptographic Identity Verification (ECDSA / Ed25519)</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>End-to-End Encrypted Transport Channels</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Zero Message Forwarding Without Affirmative Authorization</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Immediate Operator Connection Severing & Key Rotation</span>
-                    </li>
-                  </ul>
+                  
+                  <div className="space-y-3 font-mono text-xs border-t border-white/10 pt-4">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-white block">
+                      Execution Workflow Lifecycle:
+                    </span>
+                    <div className="space-y-2 text-zinc-300 text-[11px]">
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 1: Signed Peer Request</span>
+                        <span>Agent A generates an ephemeral ticket signed with its private key and submits a request to peer with Agent B.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 2: Policy & Whitelist Evaluation</span>
+                        <span>Gateway verifies that both identities are active on the Whitelist and that operator permissions grant mutual connection.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 3: Ephemeral Key Agreement (ECDH)</span>
+                        <span>A temporary shared secret is derived. The platform acts as a blind relay, storing ciphertext only.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 4: Deterministic Quotas & Instant Revocation</span>
+                        <span>Message rates are monitored against loadout profiles. The Master operator can sever the link in &lt;50ms.</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Architectural Diagram Box */}
-                <div className="lg:col-span-6 bg-[#050505] rounded-xl border border-white/20 p-5 font-mono text-xs">
+                {/* Text-Based ASCII Workflow Diagram Box */}
+                <div className="lg:col-span-7 bg-[#050505] rounded-xl border border-white/20 p-5 font-mono text-xs shadow-2xl">
                   <div className="pb-3 border-b border-white/10 flex items-center justify-between">
-                    <span className="font-bold uppercase tracking-wider text-[11px] text-white">CONNECTION HANDSHAKE FLOW</span>
-                    <span className="text-[10px] text-zinc-400">RFC-AMR-01</span>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="font-bold uppercase tracking-wider text-[11px] text-white">PEER CONNECTION WORKFLOW DIAGRAM</span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400">RFC-AMR-01 // SPEC-POINT-TO-POINT</span>
                   </div>
-                  <div className="py-4 space-y-3">
-                    <div className="p-3 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-[10px] text-zinc-400 uppercase block">Step 01. Peer Request</span>
-                      <span className="font-bold text-white">Agent_A presents signed ephemeral token to Agent_B</span>
-                    </div>
-                    <div className="p-3 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-[10px] text-zinc-400 uppercase block">Step 02. Permission Verification</span>
-                      <span className="font-bold text-white">Cryptographic validation against Human Operator Grant</span>
-                    </div>
-                    <div className="p-3 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-[10px] text-zinc-400 uppercase block">Step 03. Secure Channel Bind</span>
-                      <span className="font-bold text-white">E2EE Tunnel established with explicit message quota</span>
-                    </div>
-                  </div>
-                  <div className="pt-2 text-[10px] text-zinc-500 text-right">
-                    Zero unauthenticated traffic permitted
+
+                  <pre className="my-4 p-4 bg-black border border-white/15 rounded-lg overflow-x-auto font-mono text-[11px] sm:text-[11.5px] leading-relaxed text-emerald-300 whitespace-pre">
+{`+-----------------------+                         +-----------------------+
+|   Agent Node A        |                         |   Agent Node B        |
+|   (Initiator / Client)|                         |   (Target Peer)       |
++-----------+-----------+                         +-----------+-----------+
+            |                                                 |
+            |--- 1. POST /api/connections/requests ---------->|
+            |    [Signed Ephemeral Token + Target Agent ID]   |
+            |                                                 |
+            v                                                 v
+   +-----------------------------------------------------------------+
+   |                    AAMARVA SECURITY GATEWAY                     |
+   |                                                                 |
+   |   * 2. Validate Origin & Target Identity in Fleet Whitelist     |
+   |   * 3. Evaluate Operator Governance Policy & Scope Bounds       |
+   |   * 4. Perform Key Exchange (ECDH / X25519)                     |
+   +--------------------------------+--------------------------------+
+                                    |
+            |<--- 5. Mutually Bound E2EE Session Established -------->|
+            |                                                         |
+            |============== 6. Encrypted Peer Tunnel ================>|
+            |   [Blind Relay Transport · Zero Plaintext Storage]      |
+            |                                                         |
+            +----------------- 7. Instant Severing -------------------+
+                (Master Operator can terminate session at any time)`}
+                  </pre>
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 pt-2 border-t border-white/10">
+                    <div><span className="text-white font-bold">CIPHER:</span> X25519-ChaCha20-Poly1305</div>
+                    <div><span className="text-white font-bold">RELAY MODE:</span> Zero-Knowledge Blind Transit</div>
+                    <div><span className="text-white font-bold">KEY LIFETIME:</span> Ephemeral / Auto-Expiring</div>
+                    <div><span className="text-white font-bold">TELEMETRY:</span> Non-Repudiation Footprint Logged</div>
                   </div>
                 </div>
               </div>
             )}
 
+            {/* 02. CLUSTERS WORKFLOW */}
             {activeInfraTab === 'clusters' && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                <div className="lg:col-span-6 space-y-4">
+                <div className="lg:col-span-5 space-y-5">
                   <div className="inline-flex items-center gap-2 font-mono text-xs font-bold text-zinc-400 uppercase">
-                    <span>Architecture Primitive</span>
+                    <span>Architecture Primitive 02</span>
                     <span aria-hidden="true">/</span>
-                    <span>Domain Isolation</span>
+                    <span className="text-white">Domain Isolation Enclave</span>
                   </div>
-                  <h3 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tight leading-tight">
                     Clusters: Coordinated Agent Groups with Scoped Access Rules
                   </h3>
                   <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                    Complex fleet workflows require specialized agent collectives—such as a research group, an execution squad, or a verification unit. Clusters group authorized agents into bounded domains where messages are restricted strictly to registered participants.
+                    Complex fleet workflows require specialized agent collectives—such as research squads, execution units, or verification nodes. Clusters partition agents into isolated cryptographic enclaves where messages are strictly restricted to registered recipients.
                   </p>
-                  <ul className="space-y-2.5 font-mono text-xs text-zinc-300 pt-2">
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Enforced Recipient Whitelists per Cluster Domain</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Zero Cross-Cluster Data Leakage by Default</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Cluster Dissolution & Instant Capability Revocation</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Cluster Coordinator Consensus Protocols</span>
-                    </li>
-                  </ul>
+                  
+                  <div className="space-y-3 font-mono text-xs border-t border-white/10 pt-4">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-white block">
+                      Strict Recipient-Only Visibility Invariants:
+                    </span>
+                    <div className="space-y-2 text-zinc-300 text-[11px]">
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">Invariant 1: Master Account Guaranteed Inclusion</span>
+                        <span>The cluster owner (Master Account) is always appended to the recipient list, preventing rogue off-grid agent communication.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">Invariant 2: Sender Account Auto-Inclusion</span>
+                        <span>The sender agent itself is always included in the recipient set to maintain round-trip history without duplicate recipient IDs.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">Invariant 3: Server-Side Read Enforcement</span>
+                        <span>On every retrieval (`GET /messages`), the backend matches caller credentials against the message recipient list. Non-recipients receive HTTP 403.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">Invariant 4: Cryptographic Key Rotation</span>
+                        <span>When cluster membership changes, shared group keys are rotated to enforce forward secrecy.</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="lg:col-span-6 bg-[#050505] rounded-xl border border-white/20 p-5 font-mono text-xs">
+                {/* Text-Based ASCII Workflow Diagram Box */}
+                <div className="lg:col-span-7 bg-[#050505] rounded-xl border border-white/20 p-5 font-mono text-xs shadow-2xl">
                   <div className="pb-3 border-b border-white/10 flex items-center justify-between">
-                    <span className="font-bold uppercase tracking-wider text-[11px] text-white">CLUSTER ISOLATION BOUNDARY</span>
-                    <span className="text-[10px] text-zinc-400">RFC-AMR-02</span>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="font-bold uppercase tracking-wider text-[11px] text-white">CLUSTER ISOLATION & RECIPIENT WORKFLOW</span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400">RFC-AMR-02 // STRICT-RECIPIENT-MESH</span>
                   </div>
-                  <div className="py-4 space-y-3">
-                    <div className="p-3 border border-dashed border-white/30 bg-[#121214] rounded-lg">
-                      <div className="flex justify-between text-[10px] font-bold text-white mb-1">
-                        <span>CLUSTER: FINANCIAL RESEARCH SQUAD</span>
-                        <span className="text-zinc-300">ISOLATED</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-[10px] pt-1">
-                        <div className="p-2 bg-[#18181b] rounded border border-white/15 text-zinc-200">Agent: Ingestion_01</div>
-                        <div className="p-2 bg-[#18181b] rounded border border-white/15 text-zinc-200">Agent: Synthesis_02</div>
-                      </div>
-                    </div>
-                    <div className="p-2.5 bg-white text-black text-[10px] text-center font-bold rounded-lg">
-                      CROSS-BOUNDARY BARRIER: REQUIRES OPERATOR SIGNED ROUTE
-                    </div>
-                    <div className="p-3 border border-dashed border-white/30 bg-[#121214] rounded-lg">
-                      <div className="flex justify-between text-[10px] font-bold text-white mb-1">
-                        <span>CLUSTER: CODE EXECUTION WORKERS</span>
-                        <span className="text-zinc-300">ISOLATED</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-[10px] pt-1">
-                        <div className="p-2 bg-[#18181b] rounded border border-white/15 text-zinc-200">Agent: Sandbox_01</div>
-                        <div className="p-2 bg-[#18181b] rounded border border-white/15 text-zinc-200">Agent: Tester_02</div>
-                      </div>
-                    </div>
+
+                  <pre className="my-4 p-4 bg-black border border-white/15 rounded-lg overflow-x-auto font-mono text-[11px] sm:text-[11.5px] leading-relaxed text-emerald-300 whitespace-pre">
+{`+-------------------------------------------------------------------------+
+|                         AAMARVA CLUSTER ENCLAVE                         |
+|                                                                         |
+|    +-----------------------------+                                      |
+|    |  MASTER ACCOUNT (OPERATOR)  | <===== MANDATORY RECIPIENT INVARIANT |
+|    +--------------+--------------+        (Always Included, Audited)    |
+|                   ^                                                     |
+|                   | (Group-Key Rotation & Audit Relay)                  |
+|                   v                                                     |
+|    +--------------+--------------+        +-----------------------------+
+|    | SENDER AGENT (Slave Node A) | =====> | TARGET PEER (Slave Node B)  |
+|    | (Auto-Included Invariant)   |        | (Explicit Recipient)        |
+|    +-----------------------------+        +-----------------------------+
++-----------------------------------|-------------------------------------+
+                                    |
+                    [SERVER-SIDE RECIPIENT AUTHORIZATION]
+                                    |
+          +-------------------------+-------------------------+
+          |                                                   |
+   Authorized Recipient Query:                         Unauthorized Member:
+   Caller in Message Recipient Set                     Caller NOT in Recipient Set
+   [Master, Sender, Slave B]                           [Slave C (Restricted)]
+          |                                                   |
+   HTTP 200 OK                                         HTTP 403 Forbidden
+   AES-256-GCM Ciphertext Relayed                      ZERO Payload / No Decryption`}
+                  </pre>
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 pt-2 border-t border-white/10">
+                    <div><span className="text-white font-bold">GROUP CIPHER:</span> AES-256-GCM Authenticated</div>
+                    <div><span className="text-white font-bold">BLIND STORAGE:</span> Server Never Sees Plaintext</div>
+                    <div><span className="text-white font-bold">AUTHORIZATION:</span> Zero Implicit Member Access</div>
+                    <div><span className="text-white font-bold">DEDUPLICATION:</span> Set-Enforced Recipient Integrity</div>
                   </div>
                 </div>
               </div>
             )}
 
+            {/* 03. FLOOR & MCP WORKFLOW */}
             {activeInfraTab === 'floor' && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                <div className="lg:col-span-6 space-y-4">
+                <div className="lg:col-span-5 space-y-5">
                   <div className="inline-flex items-center gap-2 font-mono text-xs font-bold text-zinc-400 uppercase">
-                    <span>Architecture Primitive</span>
+                    <span>Architecture Primitive 03</span>
                     <span aria-hidden="true">/</span>
-                    <span>Tool Integration Layer</span>
+                    <span className="text-white">Deterministic Tool Gateway</span>
                   </div>
-                  <h3 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tight leading-tight">
                     FLOOR: MCP & External Tool Bridges
                   </h3>
                   <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                    Agents cannot impact production environments without tools. The FLOOR integration layer standardizes external API and system tool access using the Model Context Protocol (MCP), guaranteeing that every external invocation passes through deterministic verification.
+                    Autonomous agents cannot impact production environments without tools. The FLOOR integration layer standardizes external API and system tool access using the Model Context Protocol (MCP), guaranteeing that every external invocation passes through deterministic verification.
                   </p>
-                  <ul className="space-y-2.5 font-mono text-xs text-zinc-300 pt-2">
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Native Model Context Protocol (MCP) Server Compatibility</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Per-Agent Tool Whitelists & Argument Validation</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Rate Limits and Anomaly Circuit Breakers</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Immutable Tool Invocation Audit Logs</span>
-                    </li>
-                  </ul>
+                  
+                  <div className="space-y-3 font-mono text-xs border-t border-white/10 pt-4">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-white block">
+                      The 4-Step Tool Access Lifecycle:
+                    </span>
+                    <div className="space-y-2 text-zinc-300 text-[11px]">
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">1. Discover Tools (`GET /api/floor/tools`)</span>
+                        <span>Agent queries assigned tool schemas and access requirements without receiving host API keys.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">2. Request Invocation (`POST /tools/:id/invoke`)</span>
+                        <span>Agent submits call arguments. Arguments are verified against JSON Schema. Returns 202 Pending if HITL required.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">3. Human / Passkey Clearance (`GET /requests/:id`)</span>
+                        <span>Operator verifies request reason in console or approves via hardware FIDO2 biometrics. Status transitions to Accepted.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">4. Claim Ephemeral Token (`POST /access`)</span>
+                        <span>Agent retrieves short-lived token (60s TTL). Invariant `consumed_at` timestamp committed to schema cache.</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="lg:col-span-6 bg-[#050505] rounded-xl border border-white/20 p-5 font-mono text-xs">
+                {/* Text-Based ASCII Workflow Diagram Box */}
+                <div className="lg:col-span-7 bg-[#050505] rounded-xl border border-white/20 p-5 font-mono text-xs shadow-2xl">
                   <div className="pb-3 border-b border-white/10 flex items-center justify-between">
-                    <span className="font-bold uppercase tracking-wider text-[11px] text-white">FLOOR MCP PIPELINE</span>
-                    <span className="text-[10px] text-zinc-400">SPEC MCP-1.0</span>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="font-bold uppercase tracking-wider text-[11px] text-white">FLOOR & MCP EXECUTION PIPELINE</span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400">RFC-AMR-03 // SPEC-FLOOR-MCP</span>
                   </div>
-                  <div className="py-4 space-y-3">
-                    <div className="flex items-center justify-between p-2.5 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-zinc-200">1. Agent Tool Call Request</span>
-                      <span className="text-[10px] bg-white text-black px-1.5 font-bold rounded">mcp://exec</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-zinc-200">2. FLOOR Policy Verification</span>
-                      <span className="text-[10px] text-white font-bold">Schema Validated</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-zinc-200">3. Outbound Execution</span>
-                      <span className="text-[10px] text-zinc-400 font-bold">Sandboxed Host</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5 bg-[#121214] rounded-lg border border-white/15">
-                      <span className="text-zinc-200">4. Signed Output Injection</span>
-                      <span className="text-[10px] bg-white text-black px-1.5 font-bold rounded">Encrypted Result</span>
-                    </div>
+
+                  <pre className="my-4 p-4 bg-black border border-white/15 rounded-lg overflow-x-auto font-mono text-[11px] sm:text-[11.5px] leading-relaxed text-emerald-300 whitespace-pre">
+{`[Autonomous Agent]          [FLOOR Gateway]          [Operator / Passkey]      [MCP Tool Server]
+        |                           |                          |                       |
+        |--- 1. Discover Tools ---->|                          |                       |
+        |    GET /api/floor/tools   |                          |                       |
+        |<-- Registered Schemas ----|                          |                       |
+        |                           |                          |                       |
+        |--- 2. Request Invocation ->                          |                       |
+        |    POST /tools/:id/invoke |                          |                       |
+        |    (Args Schema Check)    |--- 3. Policy & HITL ---->|                       |
+        |<-- 202 Status: Pending ---|    (Biometric Challenge) |                       |
+        |                           |<-- 4. WebAuthn Signed ---|                       |
+        |                           |                          |                       |
+        |--- 5. Poll Request Status >                          |                       |
+        |    GET /requests/:id      |                          |                       |
+        |<-- Status: Accepted ------|                          |                       |
+        |                           |                          |                       |
+        |--- 6. Claim Access Token ->                          |                       |
+        |    POST /access ({reason})|                          |                       |
+        |<-- Ephemeral Token -------|                          |                       |
+        |    (TTL: 60s / consumed)  |                          |                       |
+        |                           |                          |                       |
+        |--- 7. Execute Sandboxed Proxy ---------------------------------------------->|
+        |                           |<-- Validated Output (Zero Secrets Leaked) -------|
+        |<-- Structured Response ---|                          |                       |
+        |                           |-- 8. Commit Footprint -> [Watchtower Audit Log]  |`}
+                  </pre>
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 pt-2 border-t border-white/10">
+                    <div><span className="text-white font-bold">TOOL PROTOCOL:</span> Model Context Protocol (MCP)</div>
+                    <div><span className="text-white font-bold">CREDENTIAL PROXY:</span> Secrets Hidden from LLM</div>
+                    <div><span className="text-white font-bold">TOKEN VALIDITY:</span> 60s Single-Use Ephemeral</div>
+                    <div><span className="text-white font-bold">SCHEMA CACHE:</span> Invariant consumed_at Tracking</div>
                   </div>
                 </div>
               </div>
             )}
 
+            {/* 04. HUMAN CONTROL WORKFLOW */}
             {activeInfraTab === 'human' && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                <div className="lg:col-span-6 space-y-4">
+                <div className="lg:col-span-5 space-y-5">
                   <div className="inline-flex items-center gap-2 font-mono text-xs font-bold text-zinc-400 uppercase">
-                    <span>Architecture Primitive</span>
+                    <span>Architecture Primitive 04</span>
                     <span aria-hidden="true">/</span>
-                    <span>Operator Command</span>
+                    <span className="text-white">Authoritative Human Control</span>
                   </div>
-                  <h3 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tight leading-tight">
                     Human Control: Central Fleet Orchestration Console
                   </h3>
                   <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                    AAMARVA rejects the premise of completely ungoverned agent sprawl. The central operator console gives human supervisors total situational awareness, live telemetry inspection, and the architectural leverage to modify fleet behavior instantly.
+                    AAMARVA rejects the premise of completely ungoverned agent sprawl. The central operator console gives human supervisors total situational awareness, live telemetry inspection, and the cryptographic leverage to modify fleet behavior instantly.
                   </p>
-                  <ul className="space-y-2.5 font-mono text-xs text-zinc-300 pt-2">
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Master Account vs. Delegated Agent Roster Hierarchy</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Hardware Passkey Verification for State-Changing Directives</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Real-Time Fleet Telemetry & Activity Auditing</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="font-bold text-white">·</span>
-                      <span>Global Logout & Network Perimeter Invariant Enforcement</span>
-                    </li>
-                  </ul>
+                  
+                  <div className="space-y-3 font-mono text-xs border-t border-white/10 pt-4">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-white block">
+                      Operator Governance Primitives:
+                    </span>
+                    <div className="space-y-2 text-zinc-300 text-[11px]">
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">1. Hardware Passkey Root (FIDO2 / WebAuthn)</span>
+                        <span>State mutations (key rotations, privilege elevation) require physical presence verified via device Secure Enclave.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">2. Hierarchical Authority (Master vs. Slave)</span>
+                        <span>Master accounts govern subordinate child nodes with dedicated capability loadouts and rate ceilings.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">3. Instant Emergency Killswitch (&lt;50ms)</span>
+                        <span>Immediate revocation of agent API keys, active tokens, and network leases to halt malfunctioning processes.</span>
+                      </div>
+                      <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
+                        <span className="text-emerald-400 font-bold block mb-0.5">4. Watchtower Non-Repudiation Footprints</span>
+                        <span>Every directive, message relay, and tool execution is recorded in an immutable, signed audit ledger.</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="lg:col-span-6 bg-[#050505] rounded-xl border border-white/20 p-5 font-mono text-xs">
+                {/* Text-Based ASCII Workflow Diagram Box */}
+                <div className="lg:col-span-7 bg-[#050505] rounded-xl border border-white/20 p-5 font-mono text-xs shadow-2xl">
                   <div className="pb-3 border-b border-white/10 flex items-center justify-between">
-                    <span className="font-bold uppercase tracking-wider text-[11px] text-white">OPERATOR AUTHORITY SPECS</span>
-                    <span className="text-[10px] text-zinc-400">ARCH-CORE</span>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="font-bold uppercase tracking-wider text-[11px] text-white">HUMAN CONTROL & WEBAUTHN AUTHORITY WORKFLOW</span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400">RFC-AMR-04 // SPEC-OPERATOR-SOVEREIGNTY</span>
                   </div>
-                  <div className="py-4 space-y-2.5">
-                    <div className="p-2.5 bg-[#121214] rounded-lg border border-white/15 flex justify-between">
-                      <span className="text-zinc-400">Access Mode</span>
-                      <span className="font-bold text-white">Operator Authenticated</span>
-                    </div>
-                    <div className="p-2.5 bg-[#121214] rounded-lg border border-white/15 flex justify-between">
-                      <span className="text-zinc-400">Delegated Keys</span>
-                      <span className="font-bold text-white">Rotatable & Scoped</span>
-                    </div>
-                    <div className="p-2.5 bg-[#121214] rounded-lg border border-white/15 flex justify-between">
-                      <span className="text-zinc-400">Perimeter Control</span>
-                      <span className="font-bold text-white">IP / CIDR Whitelisting</span>
-                    </div>
-                    <div className="p-2.5 bg-[#121214] rounded-lg border border-white/15 flex justify-between">
-                      <span className="text-zinc-400">Emergency Override</span>
-                      <span className="font-bold text-white">Deterministic Revocation</span>
-                    </div>
+
+                  <pre className="my-4 p-4 bg-black border border-white/15 rounded-lg overflow-x-auto font-mono text-[11px] sm:text-[11.5px] leading-relaxed text-emerald-300 whitespace-pre">
+{`+-------------------------------------------------------------------------+
+|                        HUMAN OPERATOR CONSOLE                           |
+|                                                                         |
+|   [HUMAN OPERATOR] <=========> [FIDO2 Hardware Key / TouchID Enclave]   |
++----------+--------------------------------------------------------------+
+           |
+           | (W3C WebAuthn Hardware-Signed Authenticator Assertion)
+           v
++-------------------------------------------------------------------------+
+|                     AAMARVA SECURITY GATEWAY ENGINE                     |
+|                                                                         |
+|   1. Verify Biometric Signature against Registered Master Credential    |
+|   2. Elevate Active Session to ROOT_MASTER_OPERATOR                     |
+|   3. Execute Authoritative Control Directives:                          |
+|                                                                         |
+|        +---> [EMERGENCY KILLSWITCH]: Instantly revoke fleet API keys    |
+|        +---> [SPAWN SLAVE ROSTER]: Provision task-isolated identities   |
+|        +---> [ROTATION MANAGER]: Seamless zero-downtime key rotation    |
+|        +---> [NETWORK QUARANTINE]: Sever rogue or errant agents         |
+|                                                                         |
++----------------------------------+--------------------------------------+
+                                   |
+                                   v
++-------------------------------------------------------------------------+
+|                WATCHTOWER IMMUTABLE AUDIT STREAM (SSE)                  |
+|   * Cryptographic Non-Repudiation Footprints * Real-Time Event Bus      |
++-------------------------------------------------------------------------+`}
+                  </pre>
+
+                  <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 pt-2 border-t border-white/10">
+                    <div><span className="text-white font-bold">HARDWARE ATTESTATION:</span> FIDO2 / WebAuthn Level 3</div>
+                    <div><span className="text-white font-bold">SUPERVISOR PRIVILEGE:</span> Root Master Sovereignty</div>
+                    <div><span className="text-white font-bold">KILLSWITCH LATENCY:</span> &lt;50ms Globally Propagated</div>
+                    <div><span className="text-white font-bold">AUDIT INTEGRITY:</span> Cryptographically Signed Log</div>
                   </div>
                 </div>
               </div>
             )}
+
           </div>
         </div>
       </section>
@@ -844,10 +988,17 @@ curl -X GET "https://aamarva.com/api/floor/agent/tools" \\
             <div className="px-6 py-3 bg-[#0d0d10] border-t border-white/10 flex items-center justify-between text-[11px] text-zinc-400">
               <span>Standard RFC-AMR compliant transport</span>
               <button 
-                onClick={() => onAccessApp('adk')} 
+                type="button"
+                onClick={() => {
+                  if (onOpenDocs) {
+                    onOpenDocs();
+                  } else {
+                    onAccessApp('adk');
+                  }
+                }} 
                 className="text-white hover:underline flex items-center gap-1 cursor-pointer"
               >
-                <span>Read Full ADK Spec</span>
+                <span>Read Full Documentation</span>
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -1269,10 +1420,16 @@ curl -X GET "https://aamarva.com/api/floor/agent/tools" \\
 
             <button
               type="button"
-              onClick={() => onAccessApp('adk')}
+              onClick={() => {
+                if (onOpenDocs) {
+                  onOpenDocs();
+                } else {
+                  onAccessApp('adk');
+                }
+              }}
               className="w-full sm:w-auto px-8 py-4 bg-transparent text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-lg border border-white/30 hover:border-white hover:bg-white/10 transition-all cursor-pointer"
             >
-              Review ADK Specifications
+              Interactive Documentation
             </button>
           </div>
         </div>

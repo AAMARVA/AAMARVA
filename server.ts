@@ -145,6 +145,22 @@ export async function createApp() {
         appType: 'spa',
       });
       app.use(vite.middlewares);
+
+      // SPA client routing fallback in development mode
+      app.use('*', async (req, res, next) => {
+        if (req.originalUrl.startsWith('/api') || req.originalUrl === '/adk') {
+          return next();
+        }
+        try {
+          const indexHtmlPath = path.resolve(process.cwd(), 'index.html');
+          const fs = await import('fs/promises');
+          let template = await fs.readFile(indexHtmlPath, 'utf-8');
+          template = await vite.transformIndexHtml(req.originalUrl, template);
+          res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+        } catch (e: any) {
+          next(e);
+        }
+      });
     } catch (viteErr) {
       console.warn('Vite dev server middleware not initialized:', viteErr);
     }
@@ -166,6 +182,15 @@ export async function createApp() {
   return app;
 }
 
+// Global process error handlers to prevent unexpected process death
+process.on('uncaughtException', (err: any) => {
+  console.error('[Aamarva Backend MVP] Uncaught exception:', err?.message || err);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  console.warn('[Aamarva Backend MVP] Unhandled promise rejection:', reason?.message || reason);
+});
+
 const isDirectEntry = 
   (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) ||
   (process.argv[1] && (process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.cjs') || process.argv[1].endsWith('server.js')));
@@ -184,13 +209,22 @@ if (isDirectEntry) {
       }
       const app = await createApp();
       const PORT = config.port;
-      app.listen(Number(PORT), '0.0.0.0', () => {
+      const HOST = '0.0.0.0';
+      const server = app.listen(Number(PORT), HOST, () => {
         console.log(`[Aamarva Backend MVP] Server running on port ${PORT}`);
+      });
+
+      server.on('error', (err: any) => {
+        if (err.code === 'EADDRINUSE') {
+          console.error(`[Aamarva Backend MVP] Port ${PORT} already in use. Retrying or waiting...`);
+        } else {
+          console.error('[Aamarva Backend MVP] Server runtime error:', err?.message || err);
+        }
       });
     }
     startServer().catch((err) => {
-      console.error('Failed to start production server:', err);
-      process.exit(1);
+      console.error('Failed to start server:', err);
     });
 }
+
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, AlertCircle, X, LogOut } from 'lucide-react';
+import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, AlertCircle, X, LogOut, BookOpen, ArrowRight } from 'lucide-react';
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +22,7 @@ interface ExploreViewProps {
   onOpenChat?: (chat: any) => void;
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
   initialTab?: 'login' | 'register' | 'adk' | 'dashboard';
+  onOpenDocs?: () => void;
 }
 
 export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
@@ -34,6 +35,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
   onOpenChat,
   onOpenClusterChat,
   initialTab,
+  onOpenDocs,
 }) => {
   const { login, register, isAuthenticated, user, logout, refreshProfile } = useAuth();
   const accountKey = getAccountKey(user?.id);
@@ -496,6 +498,31 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
 
         {hubTab === 'adk' && (
           <div className="space-y-4">
+            {/* Documentation Center Mobile Button */}
+            <div className="p-3 bg-[#141414] text-white border border-[#141414] flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-white shrink-0" />
+                <span className="font-mono font-black text-[10px] uppercase text-white">Full Docs Center</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenDocs) {
+                    onOpenDocs();
+                  } else if (typeof window !== 'undefined') {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('tab', 'docs');
+                    window.history.pushState({}, '', url.toString());
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }
+                }}
+                className="px-2.5 py-1.5 bg-white text-black font-mono font-black text-[10px] uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+              >
+                <span>Open</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+
             <div className="grid grid-cols-3 gap-1 border-b border-[#141414]/20 pb-2">
               <button
                 onClick={() => handleSetAdkSubTab('endpoints')}

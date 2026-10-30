@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, Globe, BarChart3, Bot, FileText, Terminal, Key, Lock } from 'lucide-react';
+import { Search, Globe, BarChart3, Bot, FileText, Terminal, Key, Lock, BookOpen } from 'lucide-react';
 import { Header } from './components/Header';
 import { SearchDropdown } from './components/SearchDropdown';
 import { PostCard } from './components/PostCard';
@@ -36,6 +36,8 @@ const TermsViewTablet = React.lazy(() => import('./components/TermsViewTablet').
 const EmailChangeVerificationView = React.lazy(() => import('./components/EmailChangeVerificationView').then(m => ({ default: m.EmailChangeVerificationView })));
 const ConfirmApiKeyRotationView = React.lazy(() => import('./components/ConfirmApiKeyRotationView').then(m => ({ default: m.ConfirmApiKeyRotationView })));
 const LandingPageView = React.lazy(() => import('./components/LandingPageView').then(m => ({ default: m.LandingPageView })));
+const DocsView = React.lazy(() => import('./components/DocsView').then(m => ({ default: m.DocsView })));
+const ProductView = React.lazy(() => import('./components/ProductView').then(m => ({ default: m.ProductView })));
 
 const AgentProfileModal = React.lazy(() => import('./components/AgentProfileModal').then(m => ({ default: m.AgentProfileModal })));
 const ResetPasswordModal = React.lazy(() => import('./components/ResetPasswordModal').then(m => ({ default: m.ResetPasswordModal })));
@@ -126,8 +128,7 @@ export default function App() {
     return false;
   })();
   const [hubInitialTab, setHubInitialTab] = useState<'login' | 'register' | 'adk' | 'dashboard'>('login');
-  const [activeTab, setActiveTab] = useState<'landing' | 'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit'>(() => {
-    if (isAuthenticated) return 'floor';
+  const [activeTab, setActiveTab] = useState<'landing' | 'floor' | 'telemetry' | 'hub' | 'live' | 'explore' | 'dashboard' | 'terms' | 'command-pit' | 'docs' | 'product'>(() => {
     if (typeof window !== 'undefined') {
       const href = window.location.href || '';
       const url = new URL(href);
@@ -136,6 +137,13 @@ export default function App() {
       const tabParam = url.searchParams.get('tab');
       const viewParam = url.searchParams.get('view');
       const hasToken = url.searchParams.get('token') || url.searchParams.get('resetToken');
+
+      if (tabParam === 'docs' || viewParam === 'docs' || window.location.pathname.startsWith('/docs')) {
+        return 'docs';
+      }
+      if (tabParam === 'product' || viewParam === 'product' || window.location.pathname.startsWith('/product')) {
+        return 'product';
+      }
 
       if (
         actionParam === 'register' || 
@@ -151,7 +159,7 @@ export default function App() {
         return 'hub';
       }
     }
-    return 'landing';
+    return isAuthenticated ? 'floor' : 'landing';
   });
   const [visitedTabs, setVisitedTabs] = useState<{
     landing?: boolean;
@@ -161,6 +169,8 @@ export default function App() {
     hub?: boolean;
     dashboard?: boolean;
     terms?: boolean;
+    docs?: boolean;
+    product?: boolean;
   }>(() => {
     return isAuthenticated ? { floor: true } : { landing: true };
   });
@@ -182,7 +192,7 @@ export default function App() {
 
   // Strict Gateway Guard: Never allow unauthenticated users into private platform tabs
   useEffect(() => {
-    if (!isAuthenticated && activeTab !== 'hub' && activeTab !== 'landing' && activeTab !== 'terms') {
+    if (!isAuthenticated && activeTab !== 'hub' && activeTab !== 'landing' && activeTab !== 'terms' && activeTab !== 'docs' && activeTab !== 'product') {
       setActiveTab('landing');
     }
   }, [isAuthenticated, activeTab]);
@@ -837,10 +847,12 @@ export default function App() {
     );
   }
 
+  const isFullBleedDark = (!isAuthenticated && activeTab === 'landing') || activeTab === 'docs' || activeTab === 'product';
+
   return (
-    <div className={`min-h-screen ${!isAuthenticated && activeTab === 'landing' ? 'bg-[#000000]' : 'bg-white text-[#141414]'} font-sans flex flex-col justify-between selection:bg-white selection:text-black`}>
+    <div className={`min-h-screen ${isFullBleedDark ? 'bg-[#000000]' : 'bg-white text-[#141414]'} font-sans flex flex-col justify-between selection:bg-white selection:text-black`}>
       {/* Top Navigation Bar */}
-      {(!isAuthenticated && activeTab === 'landing') ? null : (
+      {isFullBleedDark ? null : (
         <Header
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -860,7 +872,7 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className={
-        !isAuthenticated && activeTab === 'landing'
+        isFullBleedDark
           ? 'w-full min-h-screen p-0 m-0 flex-1'
           : `flex-1 max-w-6xl w-full mx-auto ${
               deviceSize === 'desktop'
@@ -960,6 +972,23 @@ export default function App() {
               <span className="font-mono text-[9px] font-black tracking-widest uppercase">TERMS</span>
             </button>
 
+            {/* DOCS */}
+            <button
+              onClick={() => setActiveTab('docs')}
+              className={`flex flex-col items-center justify-center p-3 border-2 border-[#141414] transition-all cursor-pointer relative ${
+                activeTab === 'docs'
+                  ? 'bg-[#141414] text-white shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]'
+                  : 'bg-white text-[#141414] hover:bg-[#E4E3E0]'
+              }`}
+              title="Documentation & Specifications"
+            >
+              {activeTab === 'docs' && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-white animate-pulse"></span>
+              )}
+              <BookOpen className="w-5 h-5 mb-1" />
+              <span className="font-mono text-[9px] font-black tracking-widest uppercase">DOCS</span>
+            </button>
+
             {/* PROFILE / AVATAR */}
             <button
               onClick={() => setActiveTab('dashboard')}
@@ -1021,7 +1050,49 @@ export default function App() {
                 setActiveTab('terms');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
+              onOpenDocs={() => {
+                setActiveTab('docs');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onOpenProduct={() => {
+                setActiveTab('product');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
             />
+          ) : activeTab === 'docs' ? (
+            <div className="w-full min-h-screen">
+              <DocsView
+                onBack={() => {
+                  setActiveTab('landing');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onAccessApp={(target) => {
+                  setHubInitialTab(target || 'login');
+                  setActiveTab('hub');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                isAuthenticated={isAuthenticated}
+              />
+            </div>
+          ) : activeTab === 'product' ? (
+            <div className="w-full min-h-screen">
+              <ProductView
+                onBack={() => {
+                  setActiveTab('landing');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onOpenDocs={() => {
+                  setActiveTab('docs');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onAccessApp={(target) => {
+                  setHubInitialTab(target || 'login');
+                  setActiveTab('hub');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                isAuthenticated={isAuthenticated}
+              />
+            </div>
           ) : activeTab === 'terms' ? (
             <div className="flex-1 min-w-0 w-full flex flex-col items-center">
               {deviceSize === 'tablet' ? <TermsViewTablet /> : <TermsView />}
@@ -1040,6 +1111,10 @@ export default function App() {
                   onOpenChat={handleOpenChat}
                   onOpenClusterChat={handleOpenClusterChat}
                   initialTab={hubInitialTab}
+                  onOpenDocs={() => {
+                    setActiveTab('docs');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                 />
               ) : deviceSize === 'tablet' ? (
                 <ExploreViewTablet
@@ -1052,6 +1127,10 @@ export default function App() {
                   onOpenChat={handleOpenChat}
                   onOpenClusterChat={handleOpenClusterChat}
                   initialTab={hubInitialTab}
+                  onOpenDocs={() => {
+                    setActiveTab('docs');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                 />
               ) : (
                 <ExploreViewMobile
@@ -1063,6 +1142,10 @@ export default function App() {
                   onOpenChat={handleOpenChat}
                   onOpenClusterChat={handleOpenClusterChat}
                   initialTab={hubInitialTab}
+                  onOpenDocs={() => {
+                    setActiveTab('docs');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                 />
               )}
             </div>
@@ -1286,6 +1369,10 @@ export default function App() {
                         onOpenClusterMembers={handleOpenClusterMembers}
                         onOpenChat={handleOpenChat}
                         onOpenClusterChat={handleOpenClusterChat}
+                        onOpenDocs={() => {
+                          setActiveTab('docs');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
                       />
                     ) : deviceSize === 'tablet' ? (
                       <ExploreViewTablet
@@ -1297,6 +1384,10 @@ export default function App() {
                         onOpenClusterMembers={handleOpenClusterMembers}
                         onOpenChat={handleOpenChat}
                         onOpenClusterChat={handleOpenClusterChat}
+                        onOpenDocs={() => {
+                          setActiveTab('docs');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
                       />
                     ) : (
                       <ExploreViewMobile
@@ -1307,6 +1398,10 @@ export default function App() {
                         onOpenAgentProfile={handleOpenAgentProfile}
                         onOpenChat={handleOpenChat}
                         onOpenClusterChat={handleOpenClusterChat}
+                        onOpenDocs={() => {
+                          setActiveTab('docs');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
                       />
                     )}
                   </>
@@ -1356,6 +1451,38 @@ export default function App() {
                   ) : (
                     <TermsView />
                   )
+                )}
+              </div>
+
+              {/* Docs */}
+              <div className={activeTab === 'docs' ? '' : 'hidden'}>
+                {(visitedTabs.docs || activeTab === 'docs') && (
+                  <DocsView
+                    onBack={() => {
+                      setActiveTab('floor');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    onAccessApp={() => setActiveTab('floor')}
+                    isAuthenticated={isAuthenticated}
+                  />
+                )}
+              </div>
+
+              {/* Product */}
+              <div className={activeTab === 'product' ? '' : 'hidden'}>
+                {(visitedTabs.product || activeTab === 'product') && (
+                  <ProductView
+                    onBack={() => {
+                      setActiveTab('floor');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    onOpenDocs={() => {
+                      setActiveTab('docs');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    onAccessApp={() => setActiveTab('floor')}
+                    isAuthenticated={isAuthenticated}
+                  />
                 )}
               </div>
             </div>

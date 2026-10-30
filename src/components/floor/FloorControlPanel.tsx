@@ -34,6 +34,7 @@ import { BrutalistLoader } from '../BrutalistLoader';
 import { AgentAvatar } from '../AgentAvatar';
 import { AddIntegrationModal } from './AddIntegrationModal';
 import { IntegrationDetailsModal } from './IntegrationDetailsModal';
+import { useAuth } from '../../context/AuthContext';
 
 interface FloorControlPanelProps {
   isSlaveAccount?: boolean;
@@ -44,6 +45,7 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
   isSlaveAccount = false,
   onOpenAgentProfile
 }) => {
+  const { isAuthenticated } = useAuth();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [fleetAgents, setFleetAgents] = useState<FleetAgent[]>([]);
   const [allTools, setAllTools] = useState<McpTool[]>([]);
@@ -63,6 +65,10 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
   const [reconnectingServerId, setReconnectingServerId] = useState<string | null>(null);
 
   const loadData = async () => {
+    if (!isAuthenticated) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setErrorMsg(null);
     try {
@@ -98,15 +104,19 @@ export const FloorControlPanel: React.FC<FloorControlPanelProps> = ({
   };
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(async () => {
-      try {
-        const pendingData = await fetchPendingInvocations();
-        setPendingInvocations(pendingData);
-      } catch {}
-    }, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    if (isAuthenticated) {
+      loadData();
+      const interval = setInterval(async () => {
+        try {
+          const pendingData = await fetchPendingInvocations();
+          setPendingInvocations(pendingData);
+        } catch {}
+      }, 10000);
+      return () => clearInterval(interval);
+    } else {
+      setIsLoading(false);
+    }
+  }, [isAuthenticated]);
 
   const handleResolveInvocation = async (invocationId: string, approved: boolean) => {
     setProcessingInvocationId(invocationId);

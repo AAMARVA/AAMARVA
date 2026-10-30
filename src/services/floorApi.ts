@@ -47,11 +47,15 @@ export interface FleetAgent {
 }
 
 export async function fetchMcpServers(): Promise<McpServer[]> {
-  const res = await apiFetch('/api/floor/servers', { authType: getCurrentSessionAuthType() });
-  if (res?.success && Array.isArray(res.data)) {
-    return res.data;
+  try {
+    const res = await apiFetch('/api/floor/servers', { authType: getCurrentSessionAuthType() });
+    if (res?.success && Array.isArray(res.data)) {
+      return res.data;
+    }
+    return [];
+  } catch {
+    return [];
   }
-  return [];
 }
 
 export async function addMcpServerApi(payload: {
@@ -146,11 +150,15 @@ export async function deleteMcpServerApi(serverId: string): Promise<void> {
 }
 
 export async function fetchServerTools(serverId: string): Promise<McpTool[]> {
-  const res = await apiFetch(`/api/floor/servers/${serverId}/tools`, { authType: getCurrentSessionAuthType() });
-  if (res?.success && Array.isArray(res.data)) {
-    return res.data;
+  try {
+    const res = await apiFetch(`/api/floor/servers/${serverId}/tools`, { authType: getCurrentSessionAuthType() });
+    if (res?.success && Array.isArray(res.data)) {
+      return res.data;
+    }
+    return [];
+  } catch {
+    return [];
   }
-  return [];
 }
 
 export async function setToolAssignmentApi(toolId: string, agentId: string, granted: boolean): Promise<boolean> {
@@ -167,11 +175,15 @@ export async function setToolAssignmentApi(toolId: string, agentId: string, gran
 }
 
 export async function fetchFleetAgents(): Promise<FleetAgent[]> {
-  const res = await apiFetch('/api/floor/fleet-agents', { authType: getCurrentSessionAuthType() });
-  if (res?.success && Array.isArray(res.data)) {
-    return res.data;
+  try {
+    const res = await apiFetch('/api/floor/fleet-agents', { authType: getCurrentSessionAuthType() });
+    if (res?.success && Array.isArray(res.data)) {
+      return res.data;
+    }
+    return [];
+  } catch {
+    return [];
   }
-  return [];
 }
 
 export async function invokeMcpToolApi(
@@ -262,11 +274,15 @@ export interface McpToolRequest {
 }
 
 export async function fetchServerGrantsApi(serverId: string): Promise<McpToolGrant[]> {
-  const res = await apiFetch(`/api/floor/servers/${serverId}/grants`, { authType: getCurrentSessionAuthType() });
-  if (res?.success && Array.isArray(res.data)) {
-    return res.data;
+  try {
+    const res = await apiFetch(`/api/floor/servers/${serverId}/grants`, { authType: getCurrentSessionAuthType() });
+    if (res?.success && Array.isArray(res.data)) {
+      return res.data;
+    }
+    return [];
+  } catch {
+    return [];
   }
-  return [];
 }
 
 export async function setToolGrantApi(
@@ -290,16 +306,20 @@ export async function fetchToolRequestsApi(
   serverId?: string,
   status?: string
 ): Promise<McpToolRequest[]> {
-  const params = new URLSearchParams();
-  if (serverId) params.set('serverId', serverId);
-  if (status && status !== 'all') params.set('status', status);
-  const queryStr = params.toString() ? `?${params.toString()}` : '';
+  try {
+    const params = new URLSearchParams();
+    if (serverId) params.set('serverId', serverId);
+    if (status && status !== 'all') params.set('status', status);
+    const queryStr = params.toString() ? `?${params.toString()}` : '';
 
-  const res = await apiFetch(`/api/floor/requests${queryStr}`, { authType: 'human' });
-  if (res?.success && Array.isArray(res.data)) {
-    return res.data;
+    const res = await apiFetch(`/api/floor/requests${queryStr}`, { authType: 'human' });
+    if (res?.success && Array.isArray(res.data)) {
+      return res.data;
+    }
+    return [];
+  } catch {
+    return [];
   }
-  return [];
 }
 
 export async function approveToolRequestApi(

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, Blocks, AlertCircle, X, LogOut } from 'lucide-react';
+import { Key, UserPlus, Terminal, CheckCircle, Copy, Server, ShieldCheck, Eye, EyeOff, Search, Code, Cpu, Blocks, AlertCircle, X, LogOut, BookOpen, ArrowRight } from 'lucide-react';
 import { ApiKeyDisplayModal } from './ApiKeyDisplayModal';
 import { SignOutModal } from './SignOutModal';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +22,7 @@ interface ExploreViewProps {
   onOpenChat?: (chat: any) => void;
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
   initialTab?: 'login' | 'register' | 'adk' | 'dashboard';
+  onOpenDocs?: () => void;
 }
 
 export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
@@ -34,6 +35,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
   onOpenChat,
   onOpenClusterChat,
   initialTab,
+  onOpenDocs,
 }) => {
   const { login, register, isAuthenticated, user, logout, refreshProfile } = useAuth();
   const accountKey = getAccountKey(user?.id);
@@ -501,6 +503,36 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
 
         {hubTab === 'adk' && (
           <div className="space-y-5">
+            {/* Interactive Documentation Center Banner */}
+            <div className="p-4 bg-[#141414] text-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded bg-white text-black flex items-center justify-center shrink-0">
+                  <BookOpen className="w-4 h-4 text-black" />
+                </div>
+                <div>
+                  <h3 className="font-mono font-black text-xs uppercase tracking-wider text-white">Full Interactive Documentation Center</h3>
+                  <p className="text-[11px] text-zinc-300 font-sans mt-0.5">Explore guides, REST endpoints, FLOOR MCP lifecycle, and code examples.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenDocs) {
+                    onOpenDocs();
+                  } else if (typeof window !== 'undefined') {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('tab', 'docs');
+                    window.history.pushState({}, '', url.toString());
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }
+                }}
+                className="px-3.5 py-2 bg-white text-black font-mono font-black text-xs uppercase tracking-wider hover:bg-[#E4E3E0] transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]"
+              >
+                <span>Open Documentation</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b-2 border-[#141414]/20 pb-3">
               <button
                 onClick={() => handleSetAdkSubTab('endpoints')}

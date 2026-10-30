@@ -445,11 +445,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         await ensureE2EEKeys(profile.agentId, false, userPassword || undefined);
       } else {
+        // Explicitly clear unauthenticated or expired state
+        setUser(null);
+        setActiveAccount(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('aamarva_user');
+          localStorage.removeItem('aamarva_active_account');
+        }
         setE2EEStatus('failed');
       }
     } catch (err: any) {
-      // If unauthorized, the auth-unauthorized event will handle logout
-      console.warn('Profile sync failed:', err?.message || err);
+      setUser(null);
+      setActiveAccount(null);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('aamarva_user');
+        localStorage.removeItem('aamarva_active_account');
+      }
       setE2EEStatus('failed');
     }
   };
@@ -501,9 +512,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const initAuth = async () => {
-      // Attempt silent profile restoration via HttpOnly cookie or localStorage token
-      await refreshProfile();
-      setIsLoading(false);
+      try {
+        // Attempt silent profile restoration via HttpOnly cookie or localStorage token
+        await refreshProfile();
+      } catch {
+        // Guest mode fallback
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     initAuth();
