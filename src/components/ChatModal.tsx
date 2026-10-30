@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   decryptMessage, 
   getLocalKeyPair, 
+  getAllLocalEpochKeys,
   resolveSenderPublicKey,
   normalizeAgentId,
   formatDecryptionErrorStatus,
@@ -318,42 +319,40 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       const targetPeerId = resolvedPeerAgentId || peerAgentId;
       const peerQuery = targetPeerId ? `?receiverAgentId=${encodeURIComponent(targetPeerId)}` : '';
 
-      if (!currentPeerKey || !currentPeerId || Object.keys(currentPeerEpochKeys).length === 0) {
-        try {
-          const cachedData = await fetchConnectionPeerKey(connectionId, {
-            receiverAgentId: targetPeerId,
-            authType: effectiveAuthType
-          });
-          if (cachedData) {
-            if (cachedData.peerPublicKey) {
-              currentPeerKey = cachedData.peerPublicKey;
-              if (isMountedRef.current) setPeerKey(currentPeerKey);
-            }
-            if (cachedData.peerKeyEpoch && isMountedRef.current) {
-              setPeerKeyEpoch(cachedData.peerKeyEpoch);
-            }
-            if (cachedData.peerEpochKeys) {
-              currentPeerEpochKeys = cachedData.peerEpochKeys;
-              if (isMountedRef.current) setPeerEpochKeys(currentPeerEpochKeys);
-            }
-            if (cachedData.peerAgentId) {
-              currentPeerId = cachedData.peerAgentId;
-              if (isMountedRef.current) setResolvedPeerAgentId(currentPeerId);
-            }
+      try {
+        const cachedData = await fetchConnectionPeerKey(connectionId, {
+          receiverAgentId: targetPeerId,
+          authType: effectiveAuthType
+        });
+        if (cachedData) {
+          if (cachedData.peerPublicKey) {
+            currentPeerKey = cachedData.peerPublicKey;
+            if (isMountedRef.current) setPeerKey(currentPeerKey);
           }
-        } catch (keyErr: any) {
-          const errMsg = String(keyErr?.message || '').toLowerCase();
-          if (errMsg.includes('connection not found') || errMsg.includes('404')) {
-            throw keyErr;
+          if (cachedData.peerKeyEpoch && isMountedRef.current) {
+            setPeerKeyEpoch(cachedData.peerKeyEpoch);
           }
-          try {
-            const legRes = await apiFetch(`/api/connections/${connectionId}/e2ee-key${peerQuery}`, { authType: effectiveAuthType });
-            if (legRes?.data?.peerE2eePublicKey) {
-              currentPeerKey = legRes.data.peerE2eePublicKey;
-              if (isMountedRef.current) setPeerKey(currentPeerKey);
-            }
-          } catch {}
+          if (cachedData.peerEpochKeys) {
+            currentPeerEpochKeys = { ...currentPeerEpochKeys, ...cachedData.peerEpochKeys };
+            if (isMountedRef.current) setPeerEpochKeys(currentPeerEpochKeys);
+          }
+          if (cachedData.peerAgentId) {
+            currentPeerId = cachedData.peerAgentId;
+            if (isMountedRef.current) setResolvedPeerAgentId(currentPeerId);
+          }
         }
+      } catch (keyErr: any) {
+        const errMsg = String(keyErr?.message || '').toLowerCase();
+        if (errMsg.includes('connection not found') || errMsg.includes('404')) {
+          throw keyErr;
+        }
+        try {
+          const legRes = await apiFetch(`/api/connections/${connectionId}/e2ee-key${peerQuery}`, { authType: effectiveAuthType });
+          if (legRes?.data?.peerE2eePublicKey) {
+            currentPeerKey = legRes.data.peerE2eePublicKey;
+            if (isMountedRef.current) setPeerKey(currentPeerKey);
+          }
+        } catch {}
       }
 
       // 4. Fetch raw messages from server using real session auth type
@@ -417,16 +416,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 }
               } else {
                 try {
-                  let decKey = currentLocalKeys.privateKey;
-                  if (currentLocalKeys.keyEpoch !== msgEpoch) {
-                    const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, userPassword || undefined);
-                    if (historicalEntry?.privateKey) {
-                      decKey = historicalEntry.privateKey;
-                    } else {
-                      decryptionErrorReason = 'KEY_EPOCH_NOT_FOUND';
-                      if (process.env.NODE_ENV !== 'production') {
-                        console.debug(`[E2EE Decrypt Diagnostic] Warning [KEY_EPOCH_NOT_FOUND] for epoch ${msgEpoch}`);
-                      }
+                  const allLocalEpochs = user?.agentId ? await getAllLocalEpochKeys(user.agentId) : [];
+                  const candidateLocalKeys: StoredAgentKeyEntry[] = [];
+                  if (currentLocalKeys?.privateKey) candidateLocalKeys.push(currentLocalKeys);
+                  for (const epKey of allLocalEpochs) {
+                    if (epKey?.privateKey && !candidateLocalKeys.some(k => k.publicKey === epKey.publicKey)) {
+                      candidateLocalKeys.push(epKey);
                     }
                   }
 
@@ -465,56 +460,70 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     }
                   }
 
-                  // Robust candidate peer keys list: senderPubKey first, then peerKey, initialPeerKey, cachedPeer
+                  // Robust candidate peer keys list: senderPubKey first, then peerKey, initialPeerKey, cachedPeer, user e2ee key
                   const candidatePeerKeys: any[] = [];
                   if (senderPubKey) candidatePeerKeys.push(senderPubKey);
                   if (currentPeerKey && !candidatePeerKeys.includes(currentPeerKey)) candidatePeerKeys.push(currentPeerKey);
                   if (initialPeerKey && !candidatePeerKeys.includes(initialPeerKey)) candidatePeerKeys.push(initialPeerKey);
                   if (cachedPeer?.peerPublicKey && !candidatePeerKeys.includes(cachedPeer.peerPublicKey)) candidatePeerKeys.push(cachedPeer.peerPublicKey);
+                  if (user?.e2eePublicKey && !candidatePeerKeys.includes(user.e2eePublicKey)) candidatePeerKeys.push(user.e2eePublicKey);
 
                   if (candidatePeerKeys.length === 0) {
                     decryptionErrorReason = 'MISSING_SENDER_PUBLIC_KEY';
                     if (process.env.NODE_ENV !== 'production') {
                       console.debug(`[E2EE Decrypt Diagnostic] Failure [MISSING_SENDER_PUBLIC_KEY] on msg ${m.id} for peer ${targetPeer}`);
                     }
-                  } else if (!decKey) {
-                    decryptionErrorReason = (currentLocalKeys.keyEpoch !== msgEpoch) ? 'KEY_EPOCH_NOT_FOUND' : 'MISSING_RECIPIENT_PRIVATE_KEY';
+                  } else if (candidateLocalKeys.length === 0) {
+                    decryptionErrorReason = 'MISSING_RECIPIENT_PRIVATE_KEY';
                     if (process.env.NODE_ENV !== 'production') {
                       console.debug(`[E2EE Decrypt Diagnostic] Failure [${decryptionErrorReason}] on msg ${m.id}`);
                     }
                   } else {
-                    // Try candidate connection IDs: canonical m.connectionId, connectionId prop, peerAgentId, senderAgentId
+                    // Try candidate connection IDs: canonical m.connectionId, connectionId prop, peerAgentId, senderAgentId and case variants
                     const rawConnCandidates = [
                       m.connectionId,
                       connectionId,
                       m.senderAgentId,
                       m.senderAgentId?.replace(/^@/, ''),
+                      m.senderAgentId?.toLowerCase(),
+                      m.senderAgentId?.toLowerCase().replace(/^@/, ''),
                       user?.agentId,
                       user?.agentId?.replace(/^@/, ''),
+                      user?.agentId?.toLowerCase(),
+                      user?.agentId?.toLowerCase().replace(/^@/, ''),
                       peerAgentId,
                       peerAgentId?.replace(/^@/, ''),
+                      peerAgentId?.toLowerCase(),
+                      peerAgentId?.toLowerCase().replace(/^@/, ''),
                       resolvedPeerAgentId,
                       resolvedPeerAgentId?.replace(/^@/, ''),
+                      resolvedPeerAgentId?.toLowerCase(),
+                      resolvedPeerAgentId?.toLowerCase().replace(/^@/, ''),
                       targetPeer,
                       targetPeer?.replace(/^@/, ''),
+                      targetPeer?.toLowerCase(),
+                      targetPeer?.toLowerCase().replace(/^@/, ''),
                     ].filter(Boolean) as string[];
 
                     const candidateConnIds = Array.from(new Set(rawConnCandidates));
 
-                    for (const keyCandidate of candidatePeerKeys) {
+                    for (const locKeyEntry of candidateLocalKeys) {
                       if (resolvedPlaintext) break;
-                      for (const cid of candidateConnIds) {
-                        try {
-                          resolvedPlaintext = await decryptMessage(
-                            { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
-                            decKey,
-                            keyCandidate,
-                            cid,
-                            m.senderAgentId || 'AGENT'
-                          );
-                          if (resolvedPlaintext) break;
-                        } catch (decErr: any) {
-                          decryptionErrorReason = decErr?.code || 'AUTHENTICATION_TAG_FAILED';
+                      for (const keyCandidate of candidatePeerKeys) {
+                        if (resolvedPlaintext) break;
+                        for (const cid of candidateConnIds) {
+                          try {
+                            resolvedPlaintext = await decryptMessage(
+                              { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
+                              locKeyEntry.privateKey,
+                              keyCandidate,
+                              cid,
+                              m.senderAgentId || 'AGENT'
+                            );
+                            if (resolvedPlaintext) break;
+                          } catch (decErr: any) {
+                            decryptionErrorReason = decErr?.code || 'AUTHENTICATION_TAG_FAILED';
+                          }
                         }
                       }
                     }
