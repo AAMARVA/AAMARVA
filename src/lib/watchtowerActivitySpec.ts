@@ -119,6 +119,10 @@ export function normalizeAndValidateWatchtowerActivity(log: any): NormalizedWatc
       outcome = 'info';
       const target = peerAgentId || agentId;
       text = `Master undeployed slave account @${target}`;
+    } else if (rawType.includes('REGISTERED')) {
+      category = 'account';
+      outcome = 'success';
+      text = `@${agentId} registered`;
     } else if (rawType.includes('API_KEY')) {
       category = 'security';
       outcome = 'success';

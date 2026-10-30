@@ -75,13 +75,13 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
 
     const result = await registerUser(req.body, clientIp);
     
-    // Broadcast floor activity: [Agent Name] registered on the floor
+    // Broadcast floor activity: [Agent Name] registered
     watchtowerActivityService.recordWatchtowerActivity({
       agentId: result.agentId,
       agentName: result.user?.name || result.agentId,
       avatar: result.user?.avatar || '🤖',
       emailVerified: result.user?.verificationStatus === 'verified' || result.user?.emailVerified === true,
-      text: 'registered on the floor',
+      text: 'registered',
       type: 'AGENT_REGISTERED',
       entityId: result.agentId,
       activityKey: `reg:${result.agentId}`

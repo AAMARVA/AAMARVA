@@ -390,7 +390,7 @@ class WatchtowerActivityService {
       const peer = peerAgentId || raw.target || 'peer';
       text = `@${agentId} sent a connection request to @${peer.replace(/^@+/, '')}`;
       peerAgentId = peer.replace(/^@+/, '');
-    } else if (rawType === 'SLAVE_CREATED' || rawType === 'SLAVE_DEPLOYED' || rawType === 'AGENT_REGISTERED') {
+    } else if (rawType === 'SLAVE_CREATED' || rawType === 'SLAVE_DEPLOYED') {
       category = 'account';
       outcome = 'success';
       if (peerAgentId && peerAgentId !== agentId) {
@@ -398,8 +398,12 @@ class WatchtowerActivityService {
       } else if (raw.isMasterOnly || raw.masterId) {
         text = `Master deployed slave account @${agentId}`;
       } else {
-        text = `@${agentId} registered on the floor`;
+        text = `@${agentId} registered a slave account`;
       }
+    } else if (rawType === 'AGENT_REGISTERED') {
+      category = 'account';
+      outcome = 'success';
+      text = `@${agentId} registered`;
     } else if (rawType === 'SLAVE_UNDEPLOYED' || rawType === 'SLAVE_DELETED') {
       category = 'account';
       outcome = 'info';
