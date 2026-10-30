@@ -15,11 +15,8 @@ import { CapabilityInfoModal } from './CapabilityInfoModal';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { CappedBadge } from './CappedBadge';
 import {
-  buildClusterMessageCacheKey,
-  getScopedClusterDecryptedMessage,
-  cacheScopedClusterDecryptedMessage,
-  reconcileClusterMessages,
-  purgeStaleClusterCacheEntries,
+  getCachedDecryptedMessage,
+  cacheDecryptedMessage,
   isDecryptionErrorPlaceholder
 } from '../lib/decryptedMessageStore';
 
@@ -434,13 +431,11 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
   const accountId = user?.id || user?.agentId || activeAccount?.id || activeAccount?.agentId || 'anonymous';
   const decryptedCacheRef = useRef<Map<string, string>>(new Map());
-  const pendingOptimisticToServerIdRef = useRef<Map<string, string>>(new Map());
   const prevClusterIdRef = useRef(clusterId);
   const prevAccountIdRef = useRef(accountId);
 
   if (prevClusterIdRef.current !== clusterId || prevAccountIdRef.current !== accountId) {
     decryptedCacheRef.current.clear();
-    pendingOptimisticToServerIdRef.current.clear();
     prevClusterIdRef.current = clusterId;
     prevAccountIdRef.current = accountId;
   }
@@ -635,20 +630,22 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
           const decryptedList: DecryptedClusterMessage[] = await Promise.all(
             rawList.map(async (m: any) => {
-              const msgId = String(m.id || m.messageId || '').trim();
-              const scopedCacheKey = buildClusterMessageCacheKey(accountId, clusterId, msgId);
-              const cacheCtx = {
-                accountId,
-                clusterId,
-                messageId: msgId,
-                senderAgentId: m.senderAgentId,
-                ciphertext: m.ciphertext,
-                nonce: m.nonce
-              };
+              const msgId = m.id || m.messageId;
+              const cacheKey = `${accountId}:${clusterId}:${msgId}`;
               const memberMeta = currentMembers.find((mem: any) => mem.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
 
-              // 1. Check strictly scoped decrypted cache FIRST (bound to accountId, clusterId, messageId, sender, ciphertext, nonce)
-              const cachedPlaintext = getScopedClusterDecryptedMessage(cacheCtx);
+              // 1. Check persistent decrypted cache FIRST: Once decrypted, never go back to encrypted
+              const cachedPlaintext = decryptedCacheRef.current.get(cacheKey) || getCachedDecryptedMessage([
+                cacheKey,
+                msgId,
+                m.id,
+                m.messageId,
+                m.nonce,
+                m.ciphertext,
+                `${clusterId}_${msgId}`,
+                `${clusterId}_${m.nonce}`,
+                `${clusterId}_${m.ciphertext}`
+              ]);
 
               const isSenderMe = currentUser && (currentUser.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
               const isSenderMaster = Boolean((isSenderMe && !isSlaveAccount(currentUser)) || (memberMeta && !memberMeta.isSlave));
@@ -661,9 +658,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               const resolvedRecipients = resolveRecipientsListRef.current(m.recipients || [], currentMembers);
 
               if (cachedPlaintext && !isDecryptionErrorPlaceholder(cachedPlaintext)) {
-                if (scopedCacheKey) {
-                  decryptedCacheRef.current.set(scopedCacheKey, cachedPlaintext);
-                }
+                decryptedCacheRef.current.set(cacheKey, cachedPlaintext);
                 return {
                   id: msgId,
                   clusterId: m.clusterId || clusterId,
@@ -696,10 +691,18 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               );
 
               if (result.isDecrypted && result.text && !isDecryptionErrorPlaceholder(result.text)) {
-                if (scopedCacheKey) {
-                  decryptedCacheRef.current.set(scopedCacheKey, result.text);
-                }
-                cacheScopedClusterDecryptedMessage(cacheCtx, result.text);
+                decryptedCacheRef.current.set(cacheKey, result.text);
+                cacheDecryptedMessage(result.text, [
+                  cacheKey,
+                  msgId,
+                  m.id,
+                  m.messageId,
+                  m.nonce,
+                  m.ciphertext,
+                  `${clusterId}_${msgId}`,
+                  `${clusterId}_${m.nonce}`,
+                  `${clusterId}_${m.ciphertext}`
+                ]);
               }
 
               return {
@@ -720,14 +723,45 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             })
           );
 
-          // Reconcile strictly by immutable message ID (never by sequence number)
-          setMessages((prev) =>
-            reconcileClusterMessages(prev, decryptedList, {
-              accountId,
-              clusterId,
-              pendingOptimisticToServerId: pendingOptimisticToServerIdRef.current
-            })
-          );
+          // "once decrypted for the ui we never wanna go back to the encrypted phase"
+          setMessages((prev) => {
+            const prevDecryptedMap = new Map<string, DecryptedClusterMessage>();
+            for (const p of prev) {
+              if (p.isDecrypted && p.content && !isDecryptionErrorPlaceholder(p.content)) {
+                prevDecryptedMap.set(p.id, p);
+                if (p.sequence !== undefined) {
+                  prevDecryptedMap.set(`seq_${p.sequence}`, p);
+                }
+              }
+            }
+
+            const merged = decryptedList.map((newMsg) => {
+              if (!newMsg.isDecrypted) {
+                const prevMsg = prevDecryptedMap.get(newMsg.id) || (newMsg.sequence !== undefined ? prevDecryptedMap.get(`seq_${newMsg.sequence}`) : undefined);
+                if (prevMsg && prevMsg.isDecrypted && !isDecryptionErrorPlaceholder(prevMsg.content)) {
+                  cacheDecryptedMessage(prevMsg.content, [
+                    newMsg.id,
+                    `${clusterId}_${newMsg.id}`,
+                    newMsg.nonce,
+                    newMsg.ciphertext
+                  ]);
+                  return {
+                    ...newMsg,
+                    content: prevMsg.content,
+                    isDecrypted: true,
+                    decryptionStatus: undefined
+                  };
+                }
+              }
+              return newMsg;
+            });
+
+            // Reconcile optimistic in-flight messages
+            const inFlightOptimistic = prev.filter(
+              (p) => p.id.startsWith('temp_cluster_') && !merged.some((m) => m.content === p.content && m.senderAgentId === p.senderAgentId)
+            );
+            return [...merged, ...inFlightOptimistic];
+          });
         }
 
       } catch {}
@@ -737,8 +771,6 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   }, [clusterId, accountId]);
 
   useEffect(() => {
-    purgeStaleClusterCacheEntries();
-    setMessages([]);
     fetchDetails();
     const interval = setInterval(() => fetchDetails(true), 4000);
     return () => clearInterval(interval);
@@ -926,6 +958,12 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 createdAt: new Date().toISOString(),
                 recipients: explicitRecipients ? resolveRecipientsList(explicitRecipients.map((id) => ({ agentId: id })), members) : []
               };
+              decryptedCacheRef.current.set(`${accountId}:${clusterId}:${tempId}`, messageToSend);
+              cacheDecryptedMessage(messageToSend, [
+                tempId,
+                `${clusterId}_${tempId}`,
+                `${accountId}:${clusterId}:${tempId}`
+              ]);
               setMessages((prev) => [...prev, optimisticMsg]);
               setNewMessage('');
 
@@ -941,51 +979,15 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                     selectedRecipientAgentIds: explicitRecipients
                   }
                 );
-                if (res?.success || res?.id || res?.messageId || res?.data?.id || res?.data?.messageId) {
-                  const returnedId = String(res?.id || res?.messageId || res?.data?.id || res?.data?.messageId || '').trim();
-                  const returnedCiphertext = res?.ciphertext || res?.data?.ciphertext;
-                  const returnedNonce = res?.nonce || res?.data?.nonce;
-                  const returnedSequence = typeof (res?.sequence ?? res?.data?.sequence) === 'number' ? (res?.sequence ?? res?.data?.sequence) : undefined;
+                if (res?.success || res?.id || res?.messageId) {
+                  const returnedId = res?.id || res?.messageId;
                   if (returnedId) {
-                    pendingOptimisticToServerIdRef.current.set(tempId, returnedId);
-                    const scopedKey = buildClusterMessageCacheKey(accountId, clusterId, returnedId);
-                    if (scopedKey) {
-                      decryptedCacheRef.current.set(scopedKey, messageToSend);
-                    }
-                    cacheScopedClusterDecryptedMessage(
-                      {
-                        accountId,
-                        clusterId,
-                        messageId: returnedId,
-                        senderAgentId: user.agentId,
-                        ciphertext: returnedCiphertext,
-                        nonce: returnedNonce
-                      },
-                      messageToSend
-                    );
-                    setMessages((prev) => {
-                      const alreadyHasServerId = prev.some((m) => m.id === returnedId);
-                      if (alreadyHasServerId) {
-                        return prev
-                          .filter((m) => m.id !== tempId)
-                          .map((m) =>
-                            m.id === returnedId
-                              ? { ...m, content: messageToSend, isDecrypted: true, decryptionStatus: undefined }
-                              : m
-                          );
-                      }
-                      return prev.map((m) =>
-                        m.id === tempId
-                          ? {
-                              ...m,
-                              id: returnedId,
-                              ciphertext: returnedCiphertext ?? m.ciphertext,
-                              nonce: returnedNonce ?? m.nonce,
-                              sequence: returnedSequence ?? m.sequence
-                            }
-                          : m
-                      );
-                    });
+                    decryptedCacheRef.current.set(`${accountId}:${clusterId}:${returnedId}`, messageToSend);
+                    cacheDecryptedMessage(messageToSend, [
+                      returnedId,
+                      `${clusterId}_${returnedId}`,
+                      `${accountId}:${clusterId}:${returnedId}`
+                    ]);
                   }
                   fetchDetails(true);
                 } else {
