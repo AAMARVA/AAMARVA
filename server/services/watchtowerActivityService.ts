@@ -634,6 +634,8 @@ class WatchtowerActivityService {
     const fleetAgentIds = viewer.agentId ? [viewer.agentId] : [];
     const agentProfileMap: Record<string, { name: string; avatar?: string; agentId?: string; emailVerified?: boolean; role?: 'master' | 'slave' }> = {};
 
+    let viewerUser: any = null;
+
     try {
       if (isMaster) {
         const { data: slaves } = await supabase
@@ -660,11 +662,12 @@ class WatchtowerActivityService {
       }
 
       // Viewer user profile
-      const { data: viewerUser } = await supabase
+      const { data } = await supabase
         .from('users')
-        .select('id, agentId, name, avatar, emailVerified, account_type, is_master_primary')
+        .select('id, agentId, name, avatar, emailVerified, account_type, is_master_primary, created_at')
         .eq('id', vUserId)
         .maybeSingle();
+      viewerUser = data;
 
       if (viewerUser) {
         agentProfileMap[viewerUser.id] = {
@@ -715,6 +718,29 @@ class WatchtowerActivityService {
           if (formatted) {
             historicalRecords.push(formatted);
           }
+        }
+      }
+
+      // Ensure registration activity is present for viewer if no footprint was recorded
+      if (viewerUser && !historicalRecords.some(r => r.type === 'AGENT_REGISTERED' && (r.actorUserId === viewerUser.id || (viewerUser.agentId && r.agentId.toLowerCase() === viewerUser.agentId.toLowerCase())))) {
+        const synth = this.formatStructuredRecord(
+          {
+            id: `fp_reg_${viewerUser.id}`,
+            actorUserId: viewerUser.id,
+            agentId: viewerUser.agentId || viewerUser.name,
+            agentName: viewerUser.name || viewerUser.agentId,
+            avatar: viewerUser.avatar || '🤖',
+            emailVerified: Boolean(viewerUser.emailVerified),
+            masterId: vMasterId,
+            type: 'AGENT_REGISTERED',
+            text: `@${viewerUser.agentId || viewerUser.name} registered`,
+            createdAt: (viewerUser as any).created_at || new Date().toISOString()
+          },
+          agentProfileMap,
+          'footprint'
+        );
+        if (synth) {
+          historicalRecords.push(synth);
         }
       }
     } catch (e) {}

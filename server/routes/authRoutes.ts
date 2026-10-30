@@ -77,6 +77,8 @@ router.post(['/auth/register', '/v1/auth/register'], securityLayer('auth_registe
     
     // Broadcast floor activity: [Agent Name] registered
     watchtowerActivityService.recordWatchtowerActivity({
+      actorUserId: result.user.id,
+      masterId: (result.user as any).master_id || result.user.id,
       agentId: result.agentId,
       agentName: result.user?.name || result.agentId,
       avatar: result.user?.avatar || '🤖',
