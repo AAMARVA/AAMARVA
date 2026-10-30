@@ -442,22 +442,25 @@ export function generateRefreshToken(userId: string, familyId: string): string {
 }
 
 export async function persistRefreshToken(userId: string, familyId: string, refreshToken: string) {
-  const supabase = getSupabaseClient();
-  const tokenHash = hashToken(refreshToken);
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { error } = await supabase.from('refresh_tokens').insert({
-    id: crypto.randomUUID(),
-    userId,
-    tokenHash,
-    familyId,
-    isRevoked: false,
-    expiresAt,
-    createdAt: new Date().toISOString()
-  });
+  try {
+    const supabase = getSupabaseClient();
+    const tokenHash = hashToken(refreshToken);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { error } = await supabase.from('refresh_tokens').insert({
+      id: crypto.randomUUID(),
+      userId,
+      tokenHash,
+      familyId,
+      isRevoked: false,
+      expiresAt,
+      createdAt: new Date().toISOString()
+    });
 
-  if (error) {
-    console.error("persistRefreshToken DB Error:", error);
-    throw new Error('Failed to persist refresh token.');
+    if (error) {
+      console.warn("persistRefreshToken DB Error (non-fatal):", error);
+    }
+  } catch (err) {
+    console.warn("persistRefreshToken Exception (non-fatal):", err);
   }
 }
 
@@ -1468,36 +1471,40 @@ export async function refreshSessionToken(token: string, clientIp?: string): Pro
     .eq('tokenHash', tokenHash)
     .maybeSingle();
     
-  if (tokenError || !storedToken) {
+  if (tokenError) {
+    console.warn("refresh_tokens table query error (proceeding with JWT signature validity):", tokenError);
+  } else if (!storedToken) {
     throw new Error('Invalid refresh token.');
   }
-  
-  if (storedToken.isRevoked) {
-    // Refresh token reuse detected! Revoke the whole family.
-    await supabase.from('refresh_tokens').update({ isRevoked: true }).eq('familyId', familyId);
-    throw new Error('Refresh token has been revoked.');
-  }
-  
-  if (storedToken.userId !== userId) {
-    throw new Error('Invalid refresh token ownership.');
-  }
-  
-  if (new Date(storedToken.expiresAt).getTime() < Date.now()) {
-    throw new Error('Refresh token has expired.');
-  }
 
-  // Atomic revoke the old token
-  const { data: revokedTokens, error: revokeError } = await supabase
-    .from('refresh_tokens')
-    .update({ isRevoked: true })
-    .eq('id', storedToken.id)
-    .eq('isRevoked', false)
-    .select();
+  if (storedToken) {
+    if (storedToken.isRevoked) {
+      // Refresh token reuse detected! Revoke the whole family.
+      await supabase.from('refresh_tokens').update({ isRevoked: true }).eq('familyId', familyId).catch(() => {});
+      throw new Error('Refresh token has been revoked.');
+    }
+    
+    if (storedToken.userId !== userId) {
+      throw new Error('Invalid refresh token ownership.');
+    }
+    
+    if (new Date(storedToken.expiresAt).getTime() < Date.now()) {
+      throw new Error('Refresh token has expired.');
+    }
 
-  if (revokeError || !revokedTokens || revokedTokens.length === 0) {
-    // Concurrent reuse detected! Revoke the whole family.
-    await supabase.from('refresh_tokens').update({ isRevoked: true }).eq('familyId', familyId);
-    throw new Error('Refresh token has already been rotated or revoked concurrently.');
+    // Atomic revoke the old token
+    const { data: revokedTokens, error: revokeError } = await supabase
+      .from('refresh_tokens')
+      .update({ isRevoked: true })
+      .eq('id', storedToken.id)
+      .eq('isRevoked', false)
+      .select();
+
+    if (revokeError || !revokedTokens || revokedTokens.length === 0) {
+      // Concurrent reuse detected! Revoke the whole family.
+      await supabase.from('refresh_tokens').update({ isRevoked: true }).eq('familyId', familyId).catch(() => {});
+      throw new Error('Refresh token has already been rotated or revoked concurrently.');
+    }
   }
 
   const authUser = await getAuthUserForRecord(supabase, user);

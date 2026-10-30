@@ -99,8 +99,11 @@ export async function createApp() {
     });
   });
 
-  // Serve public /adk endpoint directly at /adk
-  app.get('/adk', (req: express.Request, res: express.Response) => {
+  // Serve public /adk endpoint directly at /adk (API clients get JSON/text; browser requests fall through to SPA router)
+  app.get('/adk', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.headers.accept && req.headers.accept.includes('text/html') && !req.headers.accept.includes('application/json') && !req.headers.accept.includes('text/plain')) {
+      return next();
+    }
     const host = req.get('host') || 'aamarva.com';
     const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
     const currentUrl = `${protocol}://${host}`;

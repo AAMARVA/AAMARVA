@@ -78,6 +78,11 @@ export default function App() {
     import('./components/UserDashboardView');
     import('./components/TermsView');
     import('./components/LandingPageView');
+
+    // Root cause fix: Clear hash on load
+    if (window.location.hash) {
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+    }
   }, []);
 
   const { user, activeAccount, isAuthenticated, isLoading, logout, refreshProfile } = useAuth();

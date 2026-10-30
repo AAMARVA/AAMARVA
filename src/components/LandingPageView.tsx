@@ -173,21 +173,38 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
             {/* Navigation Links Zone */}
             <nav className="hidden md:flex items-center gap-6 text-xs font-mono font-medium text-zinc-300">
-              <a href="#overview" className="hover:text-white transition-colors py-1">
+              <button
+                type="button"
+                onClick={() => document.getElementById('overview')?.scrollIntoView({ behavior: 'smooth' })}
+                className="hover:text-white transition-colors py-1 cursor-pointer bg-transparent border-none text-inherit font-inherit"
+              >
                 Product
-              </a>
-              <a href="#infrastructure" className="hover:text-white transition-colors py-1">
+              </button>
+              <button
+                type="button"
+                onClick={() => document.getElementById('infrastructure')?.scrollIntoView({ behavior: 'smooth' })}
+                className="hover:text-white transition-colors py-1 cursor-pointer bg-transparent border-none text-inherit font-inherit"
+              >
                 Infrastructure
-              </a>
-              <a href="#pricing" className="hover:text-white transition-colors py-1">
+              </button>
+              <button
+                type="button"
+                onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })}
+                className="hover:text-white transition-colors py-1 cursor-pointer bg-transparent border-none text-inherit font-inherit"
+              >
                 Pricing
-              </a>
-              <a href="#security" className="hover:text-white transition-colors py-1">
+              </button>
+              <button
+                type="button"
+                onClick={() => document.getElementById('security')?.scrollIntoView({ behavior: 'smooth' })}
+                className="hover:text-white transition-colors py-1 cursor-pointer bg-transparent border-none text-inherit font-inherit"
+              >
                 Security
-              </a>
+              </button>
+
               <button 
                 onClick={() => onAccessApp('adk')} 
-                className="hover:text-white transition-colors py-1 cursor-pointer"
+                className="hover:text-white transition-colors py-1 cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
                 Docs
               </button>
@@ -230,40 +247,54 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           {/* Mobile Expanded Menu Drawer */}
           {mobileMenuOpen && (
             <div className="md:hidden py-4 border-t border-white/10 flex flex-col gap-3 font-mono text-xs text-zinc-300">
-              <a 
-                href="#overview" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="hover:text-white py-1 px-2 rounded hover:bg-white/5 transition-colors"
+              <button 
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  document.getElementById('overview')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="hover:text-white py-1 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
                 Product
-              </a>
-              <a 
-                href="#infrastructure" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="hover:text-white py-1 px-2 rounded hover:bg-white/5 transition-colors"
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  document.getElementById('infrastructure')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="hover:text-white py-1 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
                 Infrastructure
-              </a>
-              <a 
-                href="#pricing" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="hover:text-white py-1 px-2 rounded hover:bg-white/5 transition-colors"
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="hover:text-white py-1 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
                 Pricing
-              </a>
-              <a 
-                href="#security" 
-                onClick={() => setMobileMenuOpen(false)}
-                className="hover:text-white py-1 px-2 rounded hover:bg-white/5 transition-colors"
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  document.getElementById('security')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="hover:text-white py-1 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
                 Security
-              </a>
+              </button>
+
               <button 
+                type="button"
                 onClick={() => {
                   setMobileMenuOpen(false);
                   onAccessApp('adk');
                 }} 
-                className="hover:text-white py-1 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer"
+                className="hover:text-white py-1 px-2 text-left rounded hover:bg-white/5 transition-colors cursor-pointer bg-transparent border-none text-inherit font-inherit"
               >
                 Docs
               </button>
@@ -322,12 +353,13 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               <ArrowRight className="w-4 h-4 shrink-0" />
             </button>
 
-            <a
-              href="#infrastructure"
+            <button
+              type="button"
+              onClick={() => document.getElementById('infrastructure')?.scrollIntoView({ behavior: 'smooth' })}
               className="w-full sm:w-auto px-7 py-4 bg-black/80 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl border border-white/30 hover:border-white hover:bg-white/10 transition-all cursor-pointer backdrop-blur-md shadow-lg text-center justify-center flex items-center"
             >
               Explore the infrastructure
-            </a>
+            </button>
           </div>
         </div>
       </section>
