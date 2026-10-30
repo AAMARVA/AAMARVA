@@ -28,7 +28,21 @@ export function isDecryptionErrorPlaceholder(text?: string | null): boolean {
  * Clean a key for storage lookup
  */
 function normalizeKey(key: string): string {
-  return key.trim();
+  const trimmed = key.trim();
+  if (
+    !trimmed ||
+    trimmed === 'null' ||
+    trimmed === 'undefined' ||
+    trimmed === 'seq_null' ||
+    trimmed === 'seq_undefined' ||
+    trimmed.endsWith('_null') ||
+    trimmed.endsWith('_undefined') ||
+    trimmed.endsWith(':null') ||
+    trimmed.endsWith(':undefined')
+  ) {
+    return '';
+  }
+  return trimmed;
 }
 
 /**

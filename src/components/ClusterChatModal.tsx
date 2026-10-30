@@ -640,11 +640,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 msgId,
                 m.id,
                 m.messageId,
-                m.nonce,
-                m.ciphertext,
-                `${clusterId}_${msgId}`,
-                `${clusterId}_${m.nonce}`,
-                `${clusterId}_${m.ciphertext}`
+                `${clusterId}_${msgId}`
               ]);
 
               const isSenderMe = currentUser && (currentUser.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
@@ -697,11 +693,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                   msgId,
                   m.id,
                   m.messageId,
-                  m.nonce,
-                  m.ciphertext,
-                  `${clusterId}_${msgId}`,
-                  `${clusterId}_${m.nonce}`,
-                  `${clusterId}_${m.ciphertext}`
+                  `${clusterId}_${msgId}`
                 ]);
               }
 
@@ -729,21 +721,23 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             for (const p of prev) {
               if (p.isDecrypted && p.content && !isDecryptionErrorPlaceholder(p.content)) {
                 prevDecryptedMap.set(p.id, p);
-                if (p.sequence !== undefined) {
-                  prevDecryptedMap.set(`seq_${p.sequence}`, p);
+                if (typeof p.sequence === 'number' && Number.isFinite(p.sequence) && p.sequence >= 0 && p.senderAgentId) {
+                  prevDecryptedMap.set(`${p.senderAgentId}_seq_${p.sequence}`, p);
                 }
               }
             }
 
             const merged = decryptedList.map((newMsg) => {
               if (!newMsg.isDecrypted) {
-                const prevMsg = prevDecryptedMap.get(newMsg.id) || (newMsg.sequence !== undefined ? prevDecryptedMap.get(`seq_${newMsg.sequence}`) : undefined);
-                if (prevMsg && prevMsg.isDecrypted && !isDecryptionErrorPlaceholder(prevMsg.content)) {
+                const prevMsg = prevDecryptedMap.get(newMsg.id) || 
+                  (typeof newMsg.sequence === 'number' && Number.isFinite(newMsg.sequence) && newMsg.sequence >= 0 && newMsg.senderAgentId
+                    ? prevDecryptedMap.get(`${newMsg.senderAgentId}_seq_${newMsg.sequence}`)
+                    : undefined);
+
+                if (prevMsg && prevMsg.isDecrypted && !isDecryptionErrorPlaceholder(prevMsg.content) && prevMsg.senderAgentId === newMsg.senderAgentId) {
                   cacheDecryptedMessage(prevMsg.content, [
                     newMsg.id,
-                    `${clusterId}_${newMsg.id}`,
-                    newMsg.nonce,
-                    newMsg.ciphertext
+                    `${clusterId}_${newMsg.id}`
                   ]);
                   return {
                     ...newMsg,
@@ -769,6 +763,22 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
       if (!isSilent) setIsLoading(false);
     }
   }, [clusterId, accountId]);
+
+  useEffect(() => {
+    // Purge any legacy poisoned cache entries where keys were seq_null or collision keys
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.includes('seq_null') || k.endsWith('_null') || k.endsWith('_undefined') || k.includes('PLACEHOLDER') || k.startsWith('aamarva_dec_temp_cluster_'))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     fetchDetails();
