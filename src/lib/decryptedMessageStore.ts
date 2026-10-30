@@ -27,6 +27,15 @@ export function isDecryptionErrorPlaceholder(text?: string | null): boolean {
 /**
  * Clean a key for storage lookup
  */
+function isValidKey(key: any): boolean {
+  if (!key || typeof key !== 'string') return false;
+  const trimmed = key.trim();
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false;
+  if (trimmed.endsWith('_undefined') || trimmed.endsWith('_null') || trimmed.includes(':undefined') || trimmed.includes(':null')) return false;
+  if (trimmed.startsWith('seq_null') || trimmed.startsWith('seq_undefined')) return false;
+  return true;
+}
+
 function normalizeKey(key: string): string {
   return key.trim();
 }
@@ -36,9 +45,8 @@ function normalizeKey(key: string): string {
  */
 export function getCachedDecryptedMessage(keys: (string | undefined | null)[]): string | null {
   for (const rawKey of keys) {
-    if (!rawKey || typeof rawKey !== 'string') continue;
-    const k = normalizeKey(rawKey);
-    if (!k) continue;
+    if (!isValidKey(rawKey)) continue;
+    const k = normalizeKey(rawKey as string);
 
     // 1. Check in-memory map
     const inMem = memoryStore.get(k);
@@ -84,9 +92,8 @@ export function cacheDecryptedMessage(
   }
 
   for (const rawKey of keys) {
-    if (!rawKey || typeof rawKey !== 'string') continue;
-    const k = normalizeKey(rawKey);
-    if (!k) continue;
+    if (!isValidKey(rawKey)) continue;
+    const k = normalizeKey(rawKey as string);
 
     memoryStore.set(k, plaintext);
 

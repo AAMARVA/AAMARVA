@@ -634,18 +634,17 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               const cacheKey = `${accountId}:${clusterId}:${msgId}`;
               const memberMeta = currentMembers.find((mem: any) => mem.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
 
-              // 1. Check persistent decrypted cache FIRST: Once decrypted, never go back to encrypted
-              const cachedPlaintext = decryptedCacheRef.current.get(cacheKey) || getCachedDecryptedMessage([
+              // 1. Check persistent decrypted cache FIRST: Only use distinct, valid message keys
+              const keyCandidates = [
                 cacheKey,
+                msgId ? `${clusterId}_${msgId}` : null,
                 msgId,
-                m.id,
-                m.messageId,
+                m.nonce ? `${clusterId}_${m.nonce}` : null,
+                m.ciphertext ? `${clusterId}_${m.ciphertext}` : null,
                 m.nonce,
-                m.ciphertext,
-                `${clusterId}_${msgId}`,
-                `${clusterId}_${m.nonce}`,
-                `${clusterId}_${m.ciphertext}`
-              ]);
+                m.ciphertext
+              ].filter(Boolean);
+              const cachedPlaintext = decryptedCacheRef.current.get(cacheKey) || getCachedDecryptedMessage(keyCandidates);
 
               const isSenderMe = currentUser && (currentUser.agentId?.toLowerCase() === m.senderAgentId?.toLowerCase());
               const isSenderMaster = Boolean((isSenderMe && !isSlaveAccount(currentUser)) || (memberMeta && !memberMeta.isSlave));
@@ -692,17 +691,16 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
               if (result.isDecrypted && result.text && !isDecryptionErrorPlaceholder(result.text)) {
                 decryptedCacheRef.current.set(cacheKey, result.text);
-                cacheDecryptedMessage(result.text, [
+                const keysToCache = [
                   cacheKey,
+                  msgId ? `${clusterId}_${msgId}` : null,
                   msgId,
-                  m.id,
-                  m.messageId,
+                  m.nonce ? `${clusterId}_${m.nonce}` : null,
+                  m.ciphertext ? `${clusterId}_${m.ciphertext}` : null,
                   m.nonce,
-                  m.ciphertext,
-                  `${clusterId}_${msgId}`,
-                  `${clusterId}_${m.nonce}`,
-                  `${clusterId}_${m.ciphertext}`
-                ]);
+                  m.ciphertext
+                ].filter(Boolean);
+                cacheDecryptedMessage(result.text, keysToCache);
               }
 
               return {
@@ -728,8 +726,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             const prevDecryptedMap = new Map<string, DecryptedClusterMessage>();
             for (const p of prev) {
               if (p.isDecrypted && p.content && !isDecryptionErrorPlaceholder(p.content)) {
-                prevDecryptedMap.set(p.id, p);
-                if (p.sequence !== undefined) {
+                if (p.id) prevDecryptedMap.set(p.id, p);
+                if (typeof p.sequence === 'number' && Number.isFinite(p.sequence)) {
                   prevDecryptedMap.set(`seq_${p.sequence}`, p);
                 }
               }
@@ -737,14 +735,17 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
             const merged = decryptedList.map((newMsg) => {
               if (!newMsg.isDecrypted) {
-                const prevMsg = prevDecryptedMap.get(newMsg.id) || (newMsg.sequence !== undefined ? prevDecryptedMap.get(`seq_${newMsg.sequence}`) : undefined);
+                const prevMsg = prevDecryptedMap.get(newMsg.id) || 
+                  (typeof newMsg.sequence === 'number' && Number.isFinite(newMsg.sequence) 
+                    ? prevDecryptedMap.get(`seq_${newMsg.sequence}`) 
+                    : undefined);
                 if (prevMsg && prevMsg.isDecrypted && !isDecryptionErrorPlaceholder(prevMsg.content)) {
                   cacheDecryptedMessage(prevMsg.content, [
                     newMsg.id,
-                    `${clusterId}_${newMsg.id}`,
+                    newMsg.id ? `${clusterId}_${newMsg.id}` : null,
                     newMsg.nonce,
                     newMsg.ciphertext
-                  ]);
+                  ].filter(Boolean));
                   return {
                     ...newMsg,
                     content: prevMsg.content,
@@ -771,6 +772,18 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   }, [clusterId, accountId]);
 
   useEffect(() => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('aamarva_dec_') && (k.includes('_null') || k.includes('_undefined') || k.includes('seq_null') || k.includes('seq_undefined'))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      }
+    } catch {}
     fetchDetails();
     const interval = setInterval(() => fetchDetails(true), 4000);
     return () => clearInterval(interval);
