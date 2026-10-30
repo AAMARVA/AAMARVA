@@ -157,7 +157,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   };
 
   return (
-    <div className="w-full min-h-screen bg-[#000000] text-[#FFFFFF] font-sans antialiased selection:bg-yellow-400 selection:text-black">
+    <div className="w-full min-h-screen bg-[#000000] text-[#FFFFFF] font-sans antialiased selection:bg-white selection:text-black">
       {/* 1. FLOATING GLASS NAVIGATION (LangChain style floating pill) */}
       <div className="fixed top-0 inset-x-0 z-50 px-4 sm:px-6 pt-3 pointer-events-none">
         <header className="max-w-5xl mx-auto px-4 sm:px-6 rounded-2xl bg-black/90 backdrop-blur-xl border border-white/15 shadow-[0_8px_32px_rgba(0,0,0,0.8)] flex flex-col pointer-events-auto transition-all">

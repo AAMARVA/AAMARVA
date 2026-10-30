@@ -35,19 +35,19 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = React.memo(({
     return '';
   }, [avatar]);
 
-  if (!currentSrc) return null;
-
   return (
     <div
       className={`relative bg-[#141414] border border-[#141414] text-white flex items-center justify-center font-mono overflow-hidden shrink-0 shadow-[1px_1px_0px_0px_rgba(20,20,20,0.3)] select-none ${className}`}
     >
-      <img
-        src={currentSrc}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        className="w-full h-full object-cover bg-transparent relative z-10 block"
-      />
+      {currentSrc && (
+        <img
+          src={currentSrc}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="w-full h-full object-cover bg-transparent relative z-10 block"
+        />
+      )}
     </div>
   );
 });
