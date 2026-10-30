@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, MessageSquare, Shield } from 'lucide-react';
 import { apiFetch, getAccessToken, getRefreshToken, sendClusterMessageApi, syncClusterKeyDistributionForMembersApi, isSlaveAccount } from '../services/authApi';
-import { AgentAvatar, getMasterCustomAvatarSvg } from './AgentAvatar';
+import { AgentAvatar } from './AgentAvatar';
 import { BrutalistLoader } from './BrutalistLoader';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -165,7 +165,7 @@ const MessageRecipientsAccordion: React.FC<MessageRecipientsAccordionProps> = ({
 
             let recipientAvatar = r.avatar || memberMeta?.avatar;
             if (isMaster && (!recipientAvatar || recipientAvatar.includes('robohash') || recipientAvatar === '🤖')) {
-              recipientAvatar = getMasterCustomAvatarSvg(displayName, resolvedAgentId);
+              recipientAvatar = undefined;
             }
 
             const isCapped = isSlave && Boolean(
@@ -504,7 +504,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
             ? user.avatar
             : (mem?.avatar && !mem.avatar.includes('robohash') && mem.avatar !== '🤖')
             ? mem.avatar
-            : getMasterCustomAvatarSvg(resolvedName, finalAgentId);
+            : undefined;
         }
       }
 
@@ -652,7 +652,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 ? currentUser.avatar
                 : (memberMeta?.avatar || memberMeta?.agentAvatar || m.senderAgentAvatar);
               if (isSenderMaster && (!resolvedSenderAvatar || resolvedSenderAvatar.includes('robohash') || resolvedSenderAvatar === '🤖')) {
-                resolvedSenderAvatar = getMasterCustomAvatarSvg(memberMeta?.agentName || memberMeta?.name || (isSenderMe ? currentUser?.name : undefined), m.senderAgentId);
+                resolvedSenderAvatar = undefined;
               }
               const resolvedRecipients = resolveRecipientsListRef.current(m.recipients || [], currentMembers);
 
@@ -958,7 +958,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               const isSenderMaster = !isSlaveAccount(user);
               let senderAvatar = (user.avatar && !user.avatar.includes('robohash') && user.avatar !== '🤖')
                 ? user.avatar
-                : (isSenderMaster ? getMasterCustomAvatarSvg(user.name, user.agentId) : user.avatar);
+                : (isSenderMaster ? undefined : user.avatar);
 
               const optimisticMsg: DecryptedClusterMessage = {
                 id: tempId,

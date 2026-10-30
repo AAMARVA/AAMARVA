@@ -472,12 +472,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
             }`}
           >
             <Inbox className="w-3.5 h-3.5" />
-            <span>Requests</span>
-            {pendingRequestsCount > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 bg-amber-500 text-black text-[9px] font-black border border-amber-600">
-                {pendingRequestsCount}
-              </span>
-            )}
+            <span>Requests ({pendingRequestsCount})</span>
           </button>
 
 
