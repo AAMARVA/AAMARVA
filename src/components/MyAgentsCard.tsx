@@ -20,7 +20,8 @@ import {
   Radio, 
   Cpu,
   Trash2,
-  Boxes
+  Boxes,
+  Download
 } from 'lucide-react';
 import { apiFetch } from '../services/authApi';
 import { CapabilityInfoModal } from './CapabilityInfoModal';
@@ -46,6 +47,8 @@ export function MyAgentsCard() {
   const [isBulkDeployOpen, setIsBulkDeployOpen] = useState(false);
   const [bulkCount, setBulkCount] = useState<number | string>(1);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkDeployedResults, setBulkDeployedResults] = useState<Array<{ agentId: string; apiKey: string; name: string; avatar?: string }> | null>(null);
+  const [bulkCopiedField, setBulkCopiedField] = useState<string | null>(null);
   
   // Newly created agent display modal
   const [newlyCreated, setNewlyCreated] = useState<any>(null);
@@ -299,6 +302,28 @@ export function MyAgentsCard() {
         await fetchAccounts();
         await refreshProfile();
         window.dispatchEvent(new CustomEvent('aamarva-agents-updated'));
+
+        // Extract credentials for all newly deployed slave agents
+        const deployedList: Array<{ agentId: string; apiKey: string; name: string; avatar?: string }> = 
+          Array.isArray(res.data?.agents) 
+            ? res.data.agents.map((a: any) => ({
+                agentId: a.agentId,
+                apiKey: a.apiKey,
+                name: a.user?.name || a.agentId,
+                avatar: a.user?.avatar
+              }))
+            : res.data?.agentId 
+              ? [{
+                  agentId: res.data.agentId,
+                  apiKey: res.data.apiKey,
+                  name: res.data.user?.name || res.data.agentId,
+                  avatar: res.data.user?.avatar
+                }]
+              : [];
+
+        if (deployedList.length > 0) {
+          setBulkDeployedResults(deployedList);
+        }
       } else {
         setErrorMsg(res?.error?.message || 'Failed to deploy slave accounts in bulk.');
       }
@@ -307,6 +332,42 @@ export function MyAgentsCard() {
     } finally {
       setBulkLoading(false);
     }
+  };
+
+  const handleDownloadCsv = () => {
+    if (!bulkDeployedResults || bulkDeployedResults.length === 0) return;
+    const header = "Account Name,Agent ID,API Key\n";
+    const rows = bulkDeployedResults
+      .map(a => `"${(a.name || '').replace(/"/g, '""')}","${a.agentId}","${a.apiKey}"`)
+      .join("\n");
+    const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `aamarva_bulk_slave_credentials_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setBulkCopiedField('all_csv');
+    setTimeout(() => setBulkCopiedField(null), 2500);
+  };
+
+  const handleCopyAllJson = () => {
+    if (!bulkDeployedResults || bulkDeployedResults.length === 0) return;
+    const jsonStr = JSON.stringify(bulkDeployedResults, null, 2);
+    navigator.clipboard.writeText(jsonStr);
+    setBulkCopiedField('all_json');
+    setTimeout(() => setBulkCopiedField(null), 2500);
+  };
+
+  const handleCopyAllEnv = () => {
+    if (!bulkDeployedResults || bulkDeployedResults.length === 0) return;
+    const envText = bulkDeployedResults
+      .map((a, i) => `# Slave Node ${i + 1}: ${a.name}\nAAMARVA_AGENT_ID_${i + 1}=${a.agentId}\nAAMARVA_API_KEY_${i + 1}=${a.apiKey}`)
+      .join('\n\n');
+    navigator.clipboard.writeText(envText);
+    setBulkCopiedField('all_env');
+    setTimeout(() => setBulkCopiedField(null), 2500);
   };
 
   return (
@@ -1019,6 +1080,169 @@ export function MyAgentsCard() {
                     Deploy {bulkCount ? `${bulkCount} ` : ''}Slave Account{Number(bulkCount) === 1 ? '' : 's'}
                   </span>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Deployed Accounts Credentials Modal Overlay */}
+      {bulkDeployedResults && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
+          <div className="relative w-full max-w-2xl bg-[#F8F7F4] border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] max-h-[92vh] flex flex-col font-mono">
+            {/* Header */}
+            <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none shrink-0">
+              <div className="flex items-center gap-2">
+                <Boxes className="w-4 h-4 text-white" />
+                <span className="font-mono text-xs font-black uppercase tracking-widest">
+                  BULK DEPLOY: {bulkDeployedResults.length} SLAVE CREDENTIALS ISSUED
+                </span>
+              </div>
+              <button
+                onClick={() => setBulkDeployedResults(null)}
+                className="p-1 bg-white text-[#141414] border-2 border-white hover:bg-black hover:text-white transition-colors cursor-pointer"
+                title="Close modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body Container (Scrollable) */}
+            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
+              {/* Warning banner */}
+              <div className="p-3.5 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] text-[10px] text-neutral-800 font-bold leading-relaxed space-y-1">
+                <p className="uppercase text-[#141414] font-black flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                  CRITICAL: COPY AND STORE THESE KEYS NOW
+                </p>
+                <p>
+                  The Agent IDs and API Keys below were just generated and cryptographically bound to your Master Account. API keys are hashed at rest and will <strong>never</strong> be displayed again in plain text.
+                </p>
+              </div>
+
+              {/* Bulk Action Controls */}
+              <div className="flex items-center justify-between flex-wrap gap-2 border-b-2 border-[#141414] pb-3">
+                <div className="text-[10px] font-black uppercase text-[#141414]">
+                  Quick Export All {bulkDeployedResults.length} Accounts:
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleCopyAllJson}
+                    className="px-2.5 py-1.5 bg-white hover:bg-[#141414] hover:text-white border-2 border-[#141414] text-[9.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer"
+                  >
+                    {bulkCopiedField === 'all_json' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    <span>{bulkCopiedField === 'all_json' ? 'JSON Copied!' : 'Copy JSON'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyAllEnv}
+                    className="px-2.5 py-1.5 bg-white hover:bg-[#141414] hover:text-white border-2 border-[#141414] text-[9.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer"
+                  >
+                    {bulkCopiedField === 'all_env' ? <Check className="w-3 h-3 text-emerald-600" /> : <Terminal className="w-3 h-3" />}
+                    <span>{bulkCopiedField === 'all_env' ? '.ENV Copied!' : 'Copy .ENV'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadCsv}
+                    className="px-2.5 py-1.5 bg-[#141414] text-white hover:bg-black border-2 border-[#141414] text-[9.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] cursor-pointer"
+                  >
+                    <Download className="w-3 h-3 text-white" />
+                    <span>Download CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Account Credentials List */}
+              <div className="space-y-3">
+                {bulkDeployedResults.map((agent, idx) => {
+                  const isIdCopied = bulkCopiedField === `id_${agent.agentId}`;
+                  const isKeyCopied = bulkCopiedField === `key_${agent.agentId}`;
+
+                  return (
+                    <div 
+                      key={agent.agentId || idx}
+                      className="bg-white border-2 border-[#141414] p-3 shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] space-y-2.5"
+                    >
+                      {/* Account row header */}
+                      <div className="flex items-center justify-between border-b border-[#141414]/15 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-1.5 py-0.5 bg-[#141414] text-white text-[9px] font-black">
+                            #{idx + 1}
+                          </span>
+                          <span className="text-xs font-black uppercase text-[#141414]">
+                            {agent.name}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-zinc-500 font-mono font-bold">
+                          SLAVE NODE
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">
+                        {/* Agent ID */}
+                        <div className="space-y-1">
+                          <label className="block text-[8.5px] font-black uppercase text-zinc-600">
+                            Agent ID (Machine ID)
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <div className="flex-1 bg-[#F8F7F4] border border-[#141414] px-2 py-1.5 text-[10px] font-bold select-all truncate text-[#141414]">
+                              {agent.agentId}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(agent.agentId);
+                                setBulkCopiedField(`id_${agent.agentId}`);
+                                setTimeout(() => setBulkCopiedField(null), 2000);
+                              }}
+                              className="p-1.5 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer shrink-0"
+                              title="Copy Agent ID"
+                            >
+                              {isIdCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* API Key */}
+                        <div className="space-y-1">
+                          <label className="block text-[8.5px] font-black uppercase text-zinc-600">
+                            API Key (Secret)
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <div className="flex-1 bg-[#F8F7F4] border border-[#141414] px-2 py-1.5 text-[10px] font-bold select-all truncate text-[#141414]">
+                              {agent.apiKey}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(agent.apiKey);
+                                setBulkCopiedField(`key_${agent.agentId}`);
+                                setTimeout(() => setBulkCopiedField(null), 2000);
+                              }}
+                              className="p-1.5 border border-[#141414] bg-white hover:bg-[#141414] hover:text-white transition-all cursor-pointer shrink-0"
+                              title="Copy API Key"
+                            >
+                              {isKeyCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 bg-white border-t-2 border-[#141414] shrink-0">
+              <button
+                type="button"
+                onClick={() => setBulkDeployedResults(null)}
+                className="w-full py-3 bg-[#141414] text-white hover:bg-black font-mono text-xs font-black uppercase tracking-wider border-2 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span>I Have Saved These Credentials (Close)</span>
               </button>
             </div>
           </div>
