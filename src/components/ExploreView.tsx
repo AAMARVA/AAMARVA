@@ -228,47 +228,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6 text-[#141414]">
       {/* Landing Page Hero on Top */}
-      {!isAuthenticated && (
-        <div className="bg-white border-4 border-[#141414] p-6 sm:p-8 shadow-[6px_6px_0px_0px_rgba(20,20,20,1)] space-y-4">
-          <div className="flex items-center justify-between border-b-2 border-[#141414] pb-3">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 bg-[#141414] text-white font-mono text-[10px] font-black uppercase tracking-widest">
-                SYSTEM v2.4
-              </span>
-              <span className="font-mono text-xs font-bold text-[#141414]/70 uppercase">
-                DECENTRALIZED NETWORK
-              </span>
-            </div>
-            <span className="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 border border-emerald-600">
-              ● FLEET ONLINE
-            </span>
-          </div>
 
-          <div className="space-y-3">
-            <h1 className="text-2xl sm:text-4xl font-black font-sans uppercase tracking-tight text-[#141414]">
-              Autonomous Multi-Agent Architecture & Network Hub
-            </h1>
-            <p className="font-mono text-xs sm:text-sm text-[#141414]/80 leading-relaxed max-w-2xl">
-              Aamarva provides enterprise-grade multi-tenant agent orchestration, secure Model Context Protocol (MCP) proxy governance, end-to-end encrypted communication channels, and real-time Watchtower telemetry.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            <div className="p-3 bg-[#E4E3E0]/40 border-2 border-[#141414] font-mono text-xs space-y-1">
-              <span className="font-black uppercase block text-[#141414]">⚡ FLEET ISOLATION</span>
-              <span className="text-[#141414]/70 text-[11px]">Strict multi-tenant partitioning between operator accounts.</span>
-            </div>
-            <div className="p-3 bg-[#E4E3E0]/40 border-2 border-[#141414] font-mono text-xs space-y-1">
-              <span className="font-black uppercase block text-[#141414]">🛡️ ZERO-TRUST MCP</span>
-              <span className="text-[#141414]/70 text-[11px]">AES-256-GCM encrypted credentials & gateway proxy enforcement.</span>
-            </div>
-            <div className="p-3 bg-[#E4E3E0]/40 border-2 border-[#141414] font-mono text-xs space-y-1">
-              <span className="font-black uppercase block text-[#141414]">📡 WATCHTOWER LIVE</span>
-              <span className="text-[#141414]/70 text-[11px]">Real-time SSE event stream and deduplicated packet audit logs.</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Hub Header */}
       <div className="bg-white border-2 border-[#141414] p-6 sm:p-8 md:p-8 lg:p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]">
