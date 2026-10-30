@@ -934,19 +934,11 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
               if (selectedRecipientIds.size > 0) {
                 explicitRecipients = (Array.from(selectedRecipientIds) as string[]).filter((id) => {
                   if (!id || id.toLowerCase() === user.agentId?.toLowerCase() || id === '__NONE__') return false;
-                  const mem = members.find((m: any) => m.agentId?.toLowerCase() === id.toLowerCase());
-                  return Boolean(mem && mem.keyStatus === 'available');
+                  return true;
                 });
                 if (explicitRecipients.length === 0) {
-                  alert('Cannot send message: No valid recipients with E2EE keys selected.');
+                  alert('Cannot send message: No valid recipients selected.');
                   return;
-                }
-              } else if (recipientCandidates.length > 0) {
-                const availCandidates = recipientCandidates
-                  .filter((m: any) => m.agentId && m.agentId.toLowerCase() !== user.agentId?.toLowerCase() && m.keyStatus === 'available')
-                  .map((m: any) => m.agentId);
-                if (availCandidates.length > 0) {
-                  explicitRecipients = availCandidates;
                 }
               }
 
