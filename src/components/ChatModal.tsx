@@ -7,7 +7,6 @@ import { useAuth } from '../context/AuthContext';
 import { 
   decryptMessage, 
   getLocalKeyPair, 
-  getAllLocalEpochKeys,
   resolveSenderPublicKey,
   normalizeAgentId,
   formatDecryptionErrorStatus,
@@ -246,6 +245,16 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (sentRes?.messageId) {
         keysToCache.push(sentRes.messageId, `${connectionId}_${sentRes.messageId}`);
       }
+      if (sentRes?.nonce) {
+        sentPlaintextsRef.current.set(sentRes.nonce, text);
+        try { sessionStorage.setItem(`aamarva_plain_${connectionId}_${sentRes.nonce}`, text); } catch {}
+        keysToCache.push(sentRes.nonce, `${connectionId}_${sentRes.nonce}`);
+      }
+      if (sentRes?.ciphertext) {
+        sentPlaintextsRef.current.set(sentRes.ciphertext, text);
+        try { sessionStorage.setItem(`aamarva_plain_${connectionId}_${sentRes.ciphertext}`, text); } catch {}
+        keysToCache.push(sentRes.ciphertext, `${connectionId}_${sentRes.ciphertext}`);
+      }
       if (keysToCache.length > 0) {
         cacheDecryptedMessage(text, keysToCache);
       }
@@ -319,40 +328,42 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       const targetPeerId = resolvedPeerAgentId || peerAgentId;
       const peerQuery = targetPeerId ? `?receiverAgentId=${encodeURIComponent(targetPeerId)}` : '';
 
-      try {
-        const cachedData = await fetchConnectionPeerKey(connectionId, {
-          receiverAgentId: targetPeerId,
-          authType: effectiveAuthType
-        });
-        if (cachedData) {
-          if (cachedData.peerPublicKey) {
-            currentPeerKey = cachedData.peerPublicKey;
-            if (isMountedRef.current) setPeerKey(currentPeerKey);
-          }
-          if (cachedData.peerKeyEpoch && isMountedRef.current) {
-            setPeerKeyEpoch(cachedData.peerKeyEpoch);
-          }
-          if (cachedData.peerEpochKeys) {
-            currentPeerEpochKeys = { ...currentPeerEpochKeys, ...cachedData.peerEpochKeys };
-            if (isMountedRef.current) setPeerEpochKeys(currentPeerEpochKeys);
-          }
-          if (cachedData.peerAgentId) {
-            currentPeerId = cachedData.peerAgentId;
-            if (isMountedRef.current) setResolvedPeerAgentId(currentPeerId);
-          }
-        }
-      } catch (keyErr: any) {
-        const errMsg = String(keyErr?.message || '').toLowerCase();
-        if (errMsg.includes('connection not found') || errMsg.includes('404')) {
-          throw keyErr;
-        }
+      if (!currentPeerKey || !currentPeerId || Object.keys(currentPeerEpochKeys).length === 0) {
         try {
-          const legRes = await apiFetch(`/api/connections/${connectionId}/e2ee-key${peerQuery}`, { authType: effectiveAuthType });
-          if (legRes?.data?.peerE2eePublicKey) {
-            currentPeerKey = legRes.data.peerE2eePublicKey;
-            if (isMountedRef.current) setPeerKey(currentPeerKey);
+          const cachedData = await fetchConnectionPeerKey(connectionId, {
+            receiverAgentId: targetPeerId,
+            authType: effectiveAuthType
+          });
+          if (cachedData) {
+            if (cachedData.peerPublicKey) {
+              currentPeerKey = cachedData.peerPublicKey;
+              if (isMountedRef.current) setPeerKey(currentPeerKey);
+            }
+            if (cachedData.peerKeyEpoch && isMountedRef.current) {
+              setPeerKeyEpoch(cachedData.peerKeyEpoch);
+            }
+            if (cachedData.peerEpochKeys) {
+              currentPeerEpochKeys = cachedData.peerEpochKeys;
+              if (isMountedRef.current) setPeerEpochKeys(currentPeerEpochKeys);
+            }
+            if (cachedData.peerAgentId) {
+              currentPeerId = cachedData.peerAgentId;
+              if (isMountedRef.current) setResolvedPeerAgentId(currentPeerId);
+            }
           }
-        } catch {}
+        } catch (keyErr: any) {
+          const errMsg = String(keyErr?.message || '').toLowerCase();
+          if (errMsg.includes('connection not found') || errMsg.includes('404')) {
+            throw keyErr;
+          }
+          try {
+            const legRes = await apiFetch(`/api/connections/${connectionId}/e2ee-key${peerQuery}`, { authType: effectiveAuthType });
+            if (legRes?.data?.peerE2eePublicKey) {
+              currentPeerKey = legRes.data.peerE2eePublicKey;
+              if (isMountedRef.current) setPeerKey(currentPeerKey);
+            }
+          } catch {}
+        }
       }
 
       // 4. Fetch raw messages from server using real session auth type
@@ -388,7 +399,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             const cachedPlain = getCachedDecryptedMessage([
               m.id,
               m.messageId,
+              m.nonce,
+              m.ciphertext,
               `${connectionId}_${m.id}`,
+              `${connectionId}_${m.nonce}`,
+              `${connectionId}_${m.ciphertext}`,
+              `aamarva_plain_${connectionId}_${m.id}`,
+              `aamarva_plain_${connectionId}_${m.nonce}`,
+              `aamarva_plain_${connectionId}_${m.ciphertext}`,
             ]);
 
             if (cachedPlain && !isDecryptionErrorPlaceholder(cachedPlain)) {
@@ -416,12 +434,16 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 }
               } else {
                 try {
-                  const allLocalEpochs = user?.agentId ? await getAllLocalEpochKeys(user.agentId) : [];
-                  const candidateLocalKeys: StoredAgentKeyEntry[] = [];
-                  if (currentLocalKeys?.privateKey) candidateLocalKeys.push(currentLocalKeys);
-                  for (const epKey of allLocalEpochs) {
-                    if (epKey?.privateKey && !candidateLocalKeys.some(k => k.publicKey === epKey.publicKey)) {
-                      candidateLocalKeys.push(epKey);
+                  let decKey = currentLocalKeys.privateKey;
+                  if (currentLocalKeys.keyEpoch !== msgEpoch) {
+                    const historicalEntry = await getLocalKeyPair(user.agentId, msgEpoch, userPassword || undefined);
+                    if (historicalEntry?.privateKey) {
+                      decKey = historicalEntry.privateKey;
+                    } else {
+                      decryptionErrorReason = 'KEY_EPOCH_NOT_FOUND';
+                      if (process.env.NODE_ENV !== 'production') {
+                        console.debug(`[E2EE Decrypt Diagnostic] Warning [KEY_EPOCH_NOT_FOUND] for epoch ${msgEpoch}`);
+                      }
                     }
                   }
 
@@ -460,70 +482,40 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     }
                   }
 
-                  // Robust candidate peer keys list: senderPubKey first, then peerKey, initialPeerKey, cachedPeer, user e2ee key
+                  // Robust candidate peer keys list: senderPubKey first, then peerKey, initialPeerKey, cachedPeer
                   const candidatePeerKeys: any[] = [];
                   if (senderPubKey) candidatePeerKeys.push(senderPubKey);
                   if (currentPeerKey && !candidatePeerKeys.includes(currentPeerKey)) candidatePeerKeys.push(currentPeerKey);
                   if (initialPeerKey && !candidatePeerKeys.includes(initialPeerKey)) candidatePeerKeys.push(initialPeerKey);
                   if (cachedPeer?.peerPublicKey && !candidatePeerKeys.includes(cachedPeer.peerPublicKey)) candidatePeerKeys.push(cachedPeer.peerPublicKey);
-                  if (user?.e2eePublicKey && !candidatePeerKeys.includes(user.e2eePublicKey)) candidatePeerKeys.push(user.e2eePublicKey);
 
                   if (candidatePeerKeys.length === 0) {
                     decryptionErrorReason = 'MISSING_SENDER_PUBLIC_KEY';
                     if (process.env.NODE_ENV !== 'production') {
                       console.debug(`[E2EE Decrypt Diagnostic] Failure [MISSING_SENDER_PUBLIC_KEY] on msg ${m.id} for peer ${targetPeer}`);
                     }
-                  } else if (candidateLocalKeys.length === 0) {
-                    decryptionErrorReason = 'MISSING_RECIPIENT_PRIVATE_KEY';
+                  } else if (!decKey) {
+                    decryptionErrorReason = (currentLocalKeys.keyEpoch !== msgEpoch) ? 'KEY_EPOCH_NOT_FOUND' : 'MISSING_RECIPIENT_PRIVATE_KEY';
                     if (process.env.NODE_ENV !== 'production') {
                       console.debug(`[E2EE Decrypt Diagnostic] Failure [${decryptionErrorReason}] on msg ${m.id}`);
                     }
                   } else {
-                    // Try candidate connection IDs: canonical m.connectionId, connectionId prop, peerAgentId, senderAgentId and case variants
-                    const rawConnCandidates = [
-                      m.connectionId,
-                      connectionId,
-                      m.senderAgentId,
-                      m.senderAgentId?.replace(/^@/, ''),
-                      m.senderAgentId?.toLowerCase(),
-                      m.senderAgentId?.toLowerCase().replace(/^@/, ''),
-                      user?.agentId,
-                      user?.agentId?.replace(/^@/, ''),
-                      user?.agentId?.toLowerCase(),
-                      user?.agentId?.toLowerCase().replace(/^@/, ''),
-                      peerAgentId,
-                      peerAgentId?.replace(/^@/, ''),
-                      peerAgentId?.toLowerCase(),
-                      peerAgentId?.toLowerCase().replace(/^@/, ''),
-                      resolvedPeerAgentId,
-                      resolvedPeerAgentId?.replace(/^@/, ''),
-                      resolvedPeerAgentId?.toLowerCase(),
-                      resolvedPeerAgentId?.toLowerCase().replace(/^@/, ''),
-                      targetPeer,
-                      targetPeer?.replace(/^@/, ''),
-                      targetPeer?.toLowerCase(),
-                      targetPeer?.toLowerCase().replace(/^@/, ''),
-                    ].filter(Boolean) as string[];
-
-                    const candidateConnIds = Array.from(new Set(rawConnCandidates));
-
-                    for (const locKeyEntry of candidateLocalKeys) {
+                    // Try candidate connection IDs: canonical m.connectionId first, then connectionId prop
+                    const candidateConnIds = Array.from(new Set([m.connectionId, connectionId].filter(Boolean)));
+                    for (const keyCandidate of candidatePeerKeys) {
                       if (resolvedPlaintext) break;
-                      for (const keyCandidate of candidatePeerKeys) {
-                        if (resolvedPlaintext) break;
-                        for (const cid of candidateConnIds) {
-                          try {
-                            resolvedPlaintext = await decryptMessage(
-                              { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
-                              locKeyEntry.privateKey,
-                              keyCandidate,
-                              cid,
-                              m.senderAgentId || 'AGENT'
-                            );
-                            if (resolvedPlaintext) break;
-                          } catch (decErr: any) {
-                            decryptionErrorReason = decErr?.code || 'AUTHENTICATION_TAG_FAILED';
-                          }
+                      for (const cid of candidateConnIds) {
+                        try {
+                          resolvedPlaintext = await decryptMessage(
+                            { ciphertext, nonce, version: m.version || 1, keyEpoch: msgEpoch },
+                            decKey,
+                            keyCandidate,
+                            cid,
+                            m.senderAgentId || 'AGENT'
+                          );
+                          if (resolvedPlaintext) break;
+                        } catch (decErr: any) {
+                          decryptionErrorReason = decErr?.code || 'AUTHENTICATION_TAG_FAILED';
                         }
                       }
                     }
@@ -542,8 +534,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             // Fallback for our own sent messages if plaintext was preserved in session or sessionStorage or localStorage
             if (!resolvedPlaintext && normalizeAgentId(m.senderAgentId) === normalizeAgentId(user.agentId)) {
               const localCached = (m.id && sentPlaintextsRef.current.get(m.id)) ||
+                                  (m.nonce && sentPlaintextsRef.current.get(m.nonce)) ||
+                                  (m.ciphertext && sentPlaintextsRef.current.get(m.ciphertext)) ||
                                   (m.id && sessionStorage.getItem(`aamarva_plain_${connectionId}_${m.id}`)) ||
-                                  getCachedDecryptedMessage([m.id, `${connectionId}_${m.id}`]);
+                                  (m.nonce && sessionStorage.getItem(`aamarva_plain_${connectionId}_${m.nonce}`)) ||
+                                  (m.ciphertext && sessionStorage.getItem(`aamarva_plain_${connectionId}_${m.ciphertext}`)) ||
+                                  getCachedDecryptedMessage([m.id, m.nonce, m.ciphertext, `${connectionId}_${m.id}`]);
               if (localCached && !isDecryptionErrorPlaceholder(localCached)) {
                 resolvedPlaintext = localCached;
               } else if (!resolvedPlaintext) {
@@ -559,7 +555,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               cacheDecryptedMessage(safePlaintext, [
                 m.id,
                 m.messageId,
+                m.nonce,
+                m.ciphertext,
                 `${connectionId}_${m.id}`,
+                `${connectionId}_${m.nonce}`,
+                `${connectionId}_${m.ciphertext}`,
               ]);
 
               return {
@@ -598,23 +598,21 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             for (const p of prev) {
               if (p.isDecrypted && p.content && !isDecryptionErrorPlaceholder(p.content)) {
                 prevDecryptedMap.set(p.id, p);
-                if (typeof p.sequence === 'number' && Number.isFinite(p.sequence) && p.sequence >= 0 && p.senderAgentId) {
-                  prevDecryptedMap.set(`${p.senderAgentId}_seq_${p.sequence}`, p);
+                if (p.sequence !== undefined) {
+                  prevDecryptedMap.set(`seq_${p.sequence}`, p);
                 }
               }
             }
 
             const merged = processed.map((newMsg) => {
               if (!newMsg.isDecrypted) {
-                const prevMsg = prevDecryptedMap.get(newMsg.id) ||
-                  (typeof newMsg.sequence === 'number' && Number.isFinite(newMsg.sequence) && newMsg.sequence >= 0 && newMsg.senderAgentId
-                    ? prevDecryptedMap.get(`${newMsg.senderAgentId}_seq_${newMsg.sequence}`)
-                    : undefined);
-
-                if (prevMsg && prevMsg.isDecrypted && !isDecryptionErrorPlaceholder(prevMsg.content) && prevMsg.senderAgentId === newMsg.senderAgentId) {
+                const prevMsg = prevDecryptedMap.get(newMsg.id) || (newMsg.sequence !== undefined ? prevDecryptedMap.get(`seq_${newMsg.sequence}`) : undefined);
+                if (prevMsg && prevMsg.isDecrypted && !isDecryptionErrorPlaceholder(prevMsg.content)) {
                   cacheDecryptedMessage(prevMsg.content, [
                     newMsg.id,
                     `${connectionId}_${newMsg.id}`,
+                    (newMsg as any).nonce,
+                    (newMsg as any).ciphertext
                   ]);
                   return {
                     ...newMsg,
@@ -664,22 +662,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       }
     }
   }, [connectionId, user?.agentId, userPassword, e2eeStatus, ensureE2EEKeys, localKeys, peerKey, initialPeerKey, peerEpochKeys, resolvedPeerAgentId, peerAgentId, activeContextCredentials, effectiveAuthType, peerKeyEpoch]);
-
-  useEffect(() => {
-    // Purge legacy poisoned cache keys (e.g. seq_null, _null, PLACEHOLDER, or temporary IDs)
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && (k.includes('seq_null') || k.endsWith('_null') || k.endsWith('_undefined') || k.includes('PLACEHOLDER') || k.startsWith('aamarva_dec_temp_'))) {
-            keysToRemove.push(k);
-          }
-        }
-        keysToRemove.forEach((k) => localStorage.removeItem(k));
-      }
-    } catch {}
-  }, []);
 
   useEffect(() => {
     fetchAndDecryptMessages();

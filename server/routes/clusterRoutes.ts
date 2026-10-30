@@ -1740,27 +1740,11 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
 
       const recipientSet = new Set<string>();
       const rawRecips = body.recipientAgentIds || body.recipients || [];
-      if (Array.isArray(rawRecips) && rawRecips.length > 0) {
+      if (Array.isArray(rawRecips)) {
         rawRecips.forEach((r: any) => {
           if (r) recipientSet.add(String(r).trim());
         });
       }
-
-      // Query active cluster members to validate recipients and default broadcast
-      const { data: activeMembers } = await supabase
-        .from(tables.members)
-        .select('agentId')
-        .eq('clusterId', clusterId)
-        .eq('status', 'active');
-      const activeMemberIds = new Set(activeMembers?.map(m => normalizeAgentId(m.agentId)) || []);
-
-      // If no explicit recipient list was supplied (or array is empty), broadcast to ALL active cluster members
-      if (!Array.isArray(rawRecips) || rawRecips.length === 0) {
-        (activeMembers || []).forEach(m => {
-          if (m.agentId) recipientSet.add(String(m.agentId).trim());
-        });
-      }
-
       if (cluster?.ownerAgentId) {
         recipientSet.add(String(cluster.ownerAgentId).trim());
       }
@@ -1770,6 +1754,14 @@ router.post('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMess
       const recipientIds = Array.from(recipientSet);
 
       if (recipientIds.length > 0) {
+        // Validate recipients are active members
+        const { data: activeMembers } = await supabase
+          .from(tables.members)
+          .select('agentId')
+          .eq('clusterId', clusterId)
+          .eq('status', 'active');
+        const activeMemberIds = new Set(activeMembers?.map(m => normalizeAgentId(m.agentId)) || []);
+        
         for (const rId of recipientIds) {
           const normR = normalizeAgentId(rId);
           const isOwner = cluster?.ownerAgentId && normR === normalizeAgentId(cluster.ownerAgentId);
@@ -1956,38 +1948,12 @@ router.get('/clusters/:clusterId/messages', requireUserOrAgentAuth, clusterMessa
     }
 
     // Filter messages for strict recipient-only authorization:
-    // A message is visible if and only if one of the caller's agent/user identities is explicitly included in the message's recipient list.
-    const callerAgentIds = new Set<string>();
-    if (req.user?.agentId) callerAgentIds.add(normalizeAgentId(req.user.agentId));
-    if (req.user?.id) callerAgentIds.add(normalizeAgentId(req.user.id));
-
-    const activeAccountId = (req.user as any)?.activeAccountId;
-    if (activeAccountId && activeAccountId !== req.user?.id) {
-      try {
-        const { data: actUser } = await supabase
-          .from('users')
-          .select('agentId, id')
-          .eq('id', activeAccountId)
-          .maybeSingle();
-        if (actUser?.agentId) callerAgentIds.add(normalizeAgentId(actUser.agentId));
-        if (actUser?.id) callerAgentIds.add(normalizeAgentId(actUser.id));
-      } catch {}
-    }
-
-    try {
-      const { data: userMemRows } = await supabase
-        .from(tables.members)
-        .select('agentId')
-        .eq('clusterId', clusterId)
-        .or(`userId.eq.${userId}${activeAccountId ? `,userId.eq.${activeAccountId}` : ''}`);
-      (userMemRows || []).forEach((m: any) => {
-        if (m.agentId) callerAgentIds.add(normalizeAgentId(m.agentId));
-      });
-    } catch {}
-
+    // A message is visible if and only if the caller's agentId is explicitly included in the message's recipient list.
+    // Being a cluster member, master account, administrator, or message sender does NOT grant implicit access.
+    const callerAgentId = normalizeAgentId(req.user!.agentId);
     const authorizedMessages = messages.filter((m: any) => {
       const recips = recipientsMap.get(m.id) || [];
-      return recips.some(r => callerAgentIds.has(normalizeAgentId(r.agentId)));
+      return recips.some(r => normalizeAgentId(r.agentId) === callerAgentId);
     });
 
     // Resolve recipient user profiles so UI has accurate name, avatar, and slave/master status
