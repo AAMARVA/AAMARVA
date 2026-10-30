@@ -24,6 +24,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { ProductSection } from './ProductSection';
+import heroFleetBg from '../assets/images/hero_fleet_command_1793126247266.jpg';
 
 interface LandingPageViewProps {
   onAccessApp: (targetTab?: 'login' | 'register' | 'adk') => void;
@@ -349,7 +350,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         {/* Full-Bleed Atmospheric Engraving Background Art - Vivid & Prominent */}
         <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
           <img 
-            src="/assets/hero_fleet_command_1793126247266.jpg" 
+            src={heroFleetBg} 
             alt="AAMARVA Fleet Command Background Art"
             className="w-full h-full object-contain lg:object-cover max-sm:object-[center_20%] sm:max-lg:object-[center_35%] lg:object-center opacity-100 filter brightness-105 contrast-115"
             referrerPolicy="no-referrer"
