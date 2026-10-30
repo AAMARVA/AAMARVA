@@ -935,10 +935,12 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             }
                           >
                             <div className="w-12 h-12 bg-[#141414] flex items-center justify-center overflow-hidden border-2 border-black shrink-0 shadow-[2px_2px_0px_0px_rgba(20,20,20,0.2)]">
-                              <img 
-                                src={`https://api.dicebear.com/7.x/bottts/svg?seed=${req.account_id}`} 
-                                alt="Avatar" 
-                                className="w-full h-full object-cover"
+                              <AgentAvatar
+                                id={req.account_id}
+                                name={reqAgent?.name || req.agent_name || req.account_id}
+                                avatar={reqAgent?.avatar}
+                                isMaster={reqAgent?.isMaster || false}
+                                className="w-full h-full border-none shadow-none"
                               />
                             </div>
                             <div className="flex flex-col min-w-0">
