@@ -14,6 +14,7 @@ import { runCapabilityMessagingRateLimitTests } from './capabilityMessagingRateL
 import { runAgentNameValidationTests } from './agentNameValidationTests.ts';
 import { runQwenLangchainIntegrationTests } from './qwenLangchainIntegrationTests.ts';
 import { runFloorAgentFacingApiTests } from './floorAgentFacingApiTests.ts';
+import { runClusterMessageIdentityTests } from './clusterMessageIdentityTests.ts';
 
 async function runAll() {
   const suites = [
@@ -22,6 +23,7 @@ async function runAll() {
     { name: 'e2eeRegistrationTests', fn: runE2EERegistrationTests },
     { name: 'e2eeHardeningTests', fn: runE2EEHardeningTests },
     { name: 'clusterMessagingSecurityTests', fn: runClusterMessagingSecurityTests },
+    { name: 'clusterMessageIdentityTests', fn: runClusterMessageIdentityTests },
     { name: 'clusterHumanOnlyTests', fn: runClusterHumanOnlyTests },
     { name: 'clusterMemberEditTests', fn: runClusterMemberEditTests },
     { name: 'obsoleteEndpointRegressionTests', fn: runObsoleteEndpointRegressionTests },
