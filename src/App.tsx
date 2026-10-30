@@ -839,7 +839,7 @@ export default function App() {
 
   if (isLoading && !user && !activeAccount) {
     return (
-      <div className="min-h-screen bg-white text-[#141414] font-sans flex flex-col justify-center items-center p-6 selection:bg-black selection:text-white">
+      <div className="min-h-screen bg-white text-[#141414] font-sans flex flex-col justify-center items-center p-6 selection:bg-yellow-400 selection:text-black">
         <div className="flex flex-col items-center gap-4">
           <BrutalistLoader text="SYNCHRONIZING..." />
         </div>
@@ -850,7 +850,7 @@ export default function App() {
   const isFullBleedDark = (!isAuthenticated && activeTab === 'landing') || activeTab === 'docs' || activeTab === 'product';
 
   return (
-    <div className={`min-h-screen ${isFullBleedDark ? 'bg-[#000000]' : 'bg-white text-[#141414]'} font-sans flex flex-col justify-between selection:bg-white selection:text-black`}>
+    <div className={`min-h-screen ${isFullBleedDark ? 'bg-[#000000]' : 'bg-white text-[#141414]'} font-sans flex flex-col justify-between selection:bg-yellow-400 selection:text-black`}>
       {/* Top Navigation Bar */}
       {isFullBleedDark ? null : (
         <Header

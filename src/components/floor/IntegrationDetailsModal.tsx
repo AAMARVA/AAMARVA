@@ -327,7 +327,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
       <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
         <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-4xl max-h-[92vh] flex flex-col font-mono text-[#141414] my-auto overflow-hidden">
         {/* Modal Header */}
-        <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-2 border-[#141414] select-none shrink-0">
+        <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-2 border-[#141414] shrink-0">
           <div className="flex items-center gap-3">
             <Server className="w-4 h-4 text-white" />
             <div className="flex items-center gap-2">
@@ -1058,7 +1058,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
       {isSpogModalOpen && (
         <div className="fixed inset-0 z-70 overflow-y-auto bg-black/80 backdrop-blur-xs p-3 sm:p-6 flex items-center justify-center animate-in fade-in duration-200">
           <div className="relative w-full max-w-4xl bg-white border-4 border-[#141414] shadow-[12px_12px_0px_0px_rgba(20,20,20,1)] text-[#141414] max-h-[90vh] flex flex-col font-mono">
-            <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] select-none shrink-0">
+            <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-4 border-[#141414] shrink-0">
               <div className="flex items-center gap-2">
                 <span className="bg-white text-[#141414] px-1.5 py-0.5 text-[9px] font-black tracking-widest">
                   SPOG

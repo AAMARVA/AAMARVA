@@ -1373,7 +1373,7 @@ export const UserDashboardViewTablet: React.FC<UserDashboardViewProps> = ({
                       <div className="flex flex-col gap-1.5">
                         <span className="font-mono text-[10px] uppercase font-bold text-[#141414]/60">New Plaintext API Key</span>
                         <div className="bg-white border-2 border-[#141414] p-3 flex justify-between items-center group">
-                          <code className="font-mono text-xs break-all selection:bg-black selection:text-white pr-2">{newApiKey}</code>
+                          <code className="font-mono text-xs break-all selection:bg-yellow-400 selection:text-black pr-2">{newApiKey}</code>
                           <button
                             onClick={() => {
                               navigator.clipboard.writeText(newApiKey);

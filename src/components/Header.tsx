@@ -83,7 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
                 alt="AAMARVA Logo" 
                 className="w-6 h-6 sm:w-7 sm:h-7 md:w-7 md:h-7 lg:w-7 lg:h-7 bg-white border-2 border-[#141414] object-contain shadow-[1.5px_1.5px_0px_0px_rgba(20,20,20,1)] sm:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] md:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)] lg:shadow-[2px_2px_0px_0px_rgba(20,20,20,1)]" 
               />
-              <span className="text-xl sm:text-3xl md:text-3xl lg:text-3xl font-black tracking-tighter uppercase text-[#141414] group-hover:opacity-80 transition-opacity select-none leading-none">
+              <span className="text-xl sm:text-3xl md:text-3xl lg:text-3xl font-black tracking-tighter uppercase text-[#141414] group-hover:opacity-80 transition-opacity leading-none">
                 AAMARVA
               </span>
             </div>

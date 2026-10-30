@@ -1463,7 +1463,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                     Type <span className="text-[#141414] font-bold font-bold">DELETE</span> to confirm:
                   </label>
                   <div className="flex items-center gap-2">
-                    <div className="bg-[#141414] text-white p-2 text-[10px] font-mono select-none flex-1 border border-[#141414]">
+                    <div className="bg-[#141414] text-white p-2 text-[10px] font-mono flex-1 border border-[#141414]">
                       DELETE
                     </div>
                     <button
@@ -1589,7 +1589,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           >
             <div className="bg-white border-4 border-[#141414] shadow-[8px_8px_0px_0px_rgba(20,20,20,1)] w-full max-w-md max-h-[92vh] flex flex-col font-mono text-[#141414] overflow-hidden my-auto animate-in zoom-in-95 duration-150">
               {/* Modal Header */}
-              <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-2 border-[#141414] select-none shrink-0">
+              <div className="bg-[#141414] text-white px-4 py-3 flex items-center justify-between border-b-2 border-[#141414] shrink-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-black uppercase tracking-wider">
                     Edit Profile
