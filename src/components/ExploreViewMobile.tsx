@@ -502,7 +502,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
             <div className="p-3 bg-[#141414] text-white border border-[#141414] flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-white shrink-0" />
-                <span className="font-mono font-black text-[10px] uppercase text-white">Full Docs Center</span>
+                <span className="font-mono font-black text-[10px] uppercase text-white">Documentation</span>
               </div>
               <button
                 type="button"

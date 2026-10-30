@@ -507,7 +507,7 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
                   <BookOpen className="w-4 h-4 text-black" />
                 </div>
                 <div>
-                  <h3 className="font-mono font-black text-xs uppercase tracking-wider text-white">Full Interactive Documentation Center</h3>
+                  <h3 className="font-mono font-black text-xs uppercase tracking-wider text-white">Documentation</h3>
                   <p className="text-[11px] text-zinc-300 font-sans mt-0.5">Explore guides, REST endpoints, FLOOR MCP lifecycle, and code examples.</p>
                 </div>
               </div>
