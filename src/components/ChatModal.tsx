@@ -245,16 +245,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       if (sentRes?.messageId) {
         keysToCache.push(sentRes.messageId, `${connectionId}_${sentRes.messageId}`);
       }
-      if (sentRes?.nonce) {
-        sentPlaintextsRef.current.set(sentRes.nonce, text);
-        try { sessionStorage.setItem(`aamarva_plain_${connectionId}_${sentRes.nonce}`, text); } catch {}
-        keysToCache.push(sentRes.nonce, `${connectionId}_${sentRes.nonce}`);
-      }
-      if (sentRes?.ciphertext) {
-        sentPlaintextsRef.current.set(sentRes.ciphertext, text);
-        try { sessionStorage.setItem(`aamarva_plain_${connectionId}_${sentRes.ciphertext}`, text); } catch {}
-        keysToCache.push(sentRes.ciphertext, `${connectionId}_${sentRes.ciphertext}`);
-      }
       if (keysToCache.length > 0) {
         cacheDecryptedMessage(text, keysToCache);
       }
@@ -399,14 +389,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             const cachedPlain = getCachedDecryptedMessage([
               m.id,
               m.messageId,
-              m.nonce,
-              m.ciphertext,
               `${connectionId}_${m.id}`,
-              `${connectionId}_${m.nonce}`,
-              `${connectionId}_${m.ciphertext}`,
-              `aamarva_plain_${connectionId}_${m.id}`,
-              `aamarva_plain_${connectionId}_${m.nonce}`,
-              `aamarva_plain_${connectionId}_${m.ciphertext}`,
             ]);
 
             if (cachedPlain && !isDecryptionErrorPlaceholder(cachedPlain)) {
@@ -500,8 +483,24 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                       console.debug(`[E2EE Decrypt Diagnostic] Failure [${decryptionErrorReason}] on msg ${m.id}`);
                     }
                   } else {
-                    // Try candidate connection IDs: canonical m.connectionId first, then connectionId prop
-                    const candidateConnIds = Array.from(new Set([m.connectionId, connectionId].filter(Boolean)));
+                    // Try candidate connection IDs: canonical m.connectionId, connectionId prop, peerAgentId, senderAgentId
+                    const rawConnCandidates = [
+                      m.connectionId,
+                      connectionId,
+                      m.senderAgentId,
+                      m.senderAgentId?.replace(/^@/, ''),
+                      user?.agentId,
+                      user?.agentId?.replace(/^@/, ''),
+                      peerAgentId,
+                      peerAgentId?.replace(/^@/, ''),
+                      resolvedPeerAgentId,
+                      resolvedPeerAgentId?.replace(/^@/, ''),
+                      targetPeer,
+                      targetPeer?.replace(/^@/, ''),
+                    ].filter(Boolean) as string[];
+
+                    const candidateConnIds = Array.from(new Set(rawConnCandidates));
+
                     for (const keyCandidate of candidatePeerKeys) {
                       if (resolvedPlaintext) break;
                       for (const cid of candidateConnIds) {
@@ -534,12 +533,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             // Fallback for our own sent messages if plaintext was preserved in session or sessionStorage or localStorage
             if (!resolvedPlaintext && normalizeAgentId(m.senderAgentId) === normalizeAgentId(user.agentId)) {
               const localCached = (m.id && sentPlaintextsRef.current.get(m.id)) ||
-                                  (m.nonce && sentPlaintextsRef.current.get(m.nonce)) ||
-                                  (m.ciphertext && sentPlaintextsRef.current.get(m.ciphertext)) ||
                                   (m.id && sessionStorage.getItem(`aamarva_plain_${connectionId}_${m.id}`)) ||
-                                  (m.nonce && sessionStorage.getItem(`aamarva_plain_${connectionId}_${m.nonce}`)) ||
-                                  (m.ciphertext && sessionStorage.getItem(`aamarva_plain_${connectionId}_${m.ciphertext}`)) ||
-                                  getCachedDecryptedMessage([m.id, m.nonce, m.ciphertext, `${connectionId}_${m.id}`]);
+                                  getCachedDecryptedMessage([m.id, `${connectionId}_${m.id}`]);
               if (localCached && !isDecryptionErrorPlaceholder(localCached)) {
                 resolvedPlaintext = localCached;
               } else if (!resolvedPlaintext) {
@@ -555,11 +550,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               cacheDecryptedMessage(safePlaintext, [
                 m.id,
                 m.messageId,
-                m.nonce,
-                m.ciphertext,
                 `${connectionId}_${m.id}`,
-                `${connectionId}_${m.nonce}`,
-                `${connectionId}_${m.ciphertext}`,
               ]);
 
               return {
@@ -598,21 +589,23 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             for (const p of prev) {
               if (p.isDecrypted && p.content && !isDecryptionErrorPlaceholder(p.content)) {
                 prevDecryptedMap.set(p.id, p);
-                if (p.sequence !== undefined) {
-                  prevDecryptedMap.set(`seq_${p.sequence}`, p);
+                if (typeof p.sequence === 'number' && Number.isFinite(p.sequence) && p.sequence >= 0 && p.senderAgentId) {
+                  prevDecryptedMap.set(`${p.senderAgentId}_seq_${p.sequence}`, p);
                 }
               }
             }
 
             const merged = processed.map((newMsg) => {
               if (!newMsg.isDecrypted) {
-                const prevMsg = prevDecryptedMap.get(newMsg.id) || (newMsg.sequence !== undefined ? prevDecryptedMap.get(`seq_${newMsg.sequence}`) : undefined);
-                if (prevMsg && prevMsg.isDecrypted && !isDecryptionErrorPlaceholder(prevMsg.content)) {
+                const prevMsg = prevDecryptedMap.get(newMsg.id) ||
+                  (typeof newMsg.sequence === 'number' && Number.isFinite(newMsg.sequence) && newMsg.sequence >= 0 && newMsg.senderAgentId
+                    ? prevDecryptedMap.get(`${newMsg.senderAgentId}_seq_${newMsg.sequence}`)
+                    : undefined);
+
+                if (prevMsg && prevMsg.isDecrypted && !isDecryptionErrorPlaceholder(prevMsg.content) && prevMsg.senderAgentId === newMsg.senderAgentId) {
                   cacheDecryptedMessage(prevMsg.content, [
                     newMsg.id,
                     `${connectionId}_${newMsg.id}`,
-                    (newMsg as any).nonce,
-                    (newMsg as any).ciphertext
                   ]);
                   return {
                     ...newMsg,
@@ -662,6 +655,22 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       }
     }
   }, [connectionId, user?.agentId, userPassword, e2eeStatus, ensureE2EEKeys, localKeys, peerKey, initialPeerKey, peerEpochKeys, resolvedPeerAgentId, peerAgentId, activeContextCredentials, effectiveAuthType, peerKeyEpoch]);
+
+  useEffect(() => {
+    // Purge legacy poisoned cache keys (e.g. seq_null, _null, PLACEHOLDER, or temporary IDs)
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.includes('seq_null') || k.endsWith('_null') || k.endsWith('_undefined') || k.includes('PLACEHOLDER') || k.startsWith('aamarva_dec_temp_'))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     fetchAndDecryptMessages();
