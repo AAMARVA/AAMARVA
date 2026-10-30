@@ -375,7 +375,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   onOpenAgentProfile,
   onOpenClusterMembers,
 }) => {
-  const { user, activeAccount, userPassword } = useAuth();
+  const { user, activeAccount, userPassword, sessionAuthType } = useAuth();
   const isSlave = isSlaveAccount(activeAccount);
   const [messages, setMessages] = useState<DecryptedClusterMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -450,8 +450,8 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
   }, [userPassword, user?.apiKey]);
 
   const visibleMessages = React.useMemo(() => {
-    return messages.filter((m) => Boolean((m.isDecrypted && m.content && m.content.trim().length > 0) || !m.senderAgentId));
-  }, [messages]);
+    return messages.filter((m) => !hiddenMessageIds.has(m.id) || showHiddenMessages);
+  }, [messages, hiddenMessageIds, showHiddenMessages]);
 
 
 
@@ -623,7 +623,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
 
       // 3. Fetch messages safely
       try {
-        const msgsRes = await apiFetch(`/api/clusters/${clusterId}/messages`, { authType: 'human' });
+        const msgsRes = await apiFetch(`/api/clusters/${clusterId}/messages`, { authType: sessionAuthType || 'human' });
         if (msgsRes?.success && Array.isArray(msgsRes.data)) {
           const rawList = msgsRes.data;
           const currentLocalKeys = currentUser?.agentId ? await getLocalKeyPair(currentUser.agentId, undefined, currentPassword || undefined) : null;
@@ -709,7 +709,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                 senderAgentId: m.senderAgentId,
                 senderAgentName: memberMeta?.agentName || memberMeta?.name || m.senderAgentName || m.senderAgentId,
                 senderAgentAvatar: resolvedSenderAvatar,
-                content: result.text,
+                content: result.text || m.content || result.decryptionStatus?.title || '🔒 [E2EE Encrypted Payload]',
                 ciphertext: m.ciphertext,
                 nonce: m.nonce,
                 sequence: m.sequence,
