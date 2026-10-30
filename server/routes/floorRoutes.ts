@@ -691,6 +691,12 @@ router.post(
 
       // Case A: Access approval required (explicitly requested or not granted)
       if (requestType === 'access' || !hasGrant) {
+        const fullRequestPayload = {
+          arguments: toolArgs,
+          ...(req.body?.reason ? { reason: req.body.reason } : {}),
+          ...(req.body?.requestType ? { requestType: req.body.requestType } : { requestType: 'access' })
+        };
+
         const accessReq = await recordOrReuseAccessRequest({
           serverId: tool.server_id,
           toolId: tool.id,
@@ -700,7 +706,7 @@ router.post(
           callerId: caller.userId,
           agentName: caller.agentId,
           requestedOperation: 'tool_invocation',
-          arguments: toolArgs
+          arguments: fullRequestPayload
         });
 
         return res.status(202).json({

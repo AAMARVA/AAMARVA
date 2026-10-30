@@ -729,16 +729,18 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                           onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
                                           title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
                                         >
-                                          <AgentAvatar
-                                            id={agent.agentId || agent.id}
-                                            name={agent.name}
-                                            avatar={agent.avatar}
-                                            isMaster={false}
-                                            className="w-7 h-7 rounded-full border border-[#141414] shrink-0"
-                                          />
+                                          <div className="w-9 h-9 bg-[#141414] border-2 border-[#141414] overflow-hidden shrink-0 flex items-center justify-center">
+                                            <AgentAvatar
+                                              id={agent.agentId || agent.id}
+                                              name={agent.name}
+                                              avatar={agent.avatar}
+                                              isMaster={false}
+                                              className="w-full h-full object-cover"
+                                            />
+                                          </div>
                                           <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-1.5">
-                                              <span className="text-xs font-bold text-[#141414] truncate group-hover:underline">
+                                              <span className="text-xs font-mono font-black uppercase text-[#141414] truncate group-hover:underline">
                                                 {agent.name}
                                               </span>
                                               {Boolean(agent.expires_at && !isNaN(new Date(agent.expires_at).getTime())) && (
@@ -750,7 +752,7 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                                                 />
                                               )}
                                             </div>
-                                            <span className="text-[9px] text-[#141414]/60 font-mono block truncate">
+                                            <span className="text-[10px] text-neutral-500 font-mono font-bold block truncate">
                                               @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
                                             </span>
                                           </div>
@@ -916,31 +918,39 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
 
                       {/* Request Details Grid */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
-                        <div>
-                          <span className="text-[9px] font-bold text-neutral-500 uppercase block">
-                            Requesting Account:
+                        <div className="sm:col-span-2">
+                          <span className="text-[10px] font-black uppercase text-neutral-500 tracking-wider block mb-1">
+                            Requesting Account
                           </span>
                           <div
-                            className={`flex items-center gap-2 mt-0.5 ${
-                              onOpenAgentProfile && reqAgent ? 'cursor-pointer group' : ''
+                            className={`p-3 bg-white border-2 border-[#141414] shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] flex items-center gap-3.5 transition-all ${
+                              onOpenAgentProfile ? 'cursor-pointer group hover:bg-neutral-50 active:translate-x-[1px] active:translate-y-[1px]' : ''
                             }`}
                             onClick={() =>
-                              reqAgent && onOpenAgentProfile?.(reqAgent.name, reqAgent.avatar, reqAgent.agentId)
+                              onOpenAgentProfile?.(
+                                reqAgent?.name || req.agent_name || req.account_id,
+                                reqAgent?.avatar,
+                                reqAgent?.agentId || req.account_id
+                              )
                             }
                           >
-                            <AgentAvatar
-                              id={req.account_id}
-                              name={reqAgent?.name || req.agent_name || req.account_id}
-                              avatar={reqAgent?.avatar}
-                              isMaster={reqAgent?.isMaster || false}
-                              className="w-5 h-5 rounded-full border border-[#141414] shrink-0"
-                            />
-                            <span className="font-bold text-[#141414] group-hover:underline truncate">
-                              {reqAgent ? reqAgent.name : req.agent_name || req.account_id}
-                            </span>
-                            <span className="text-[9px] text-neutral-500 font-mono">
-                              (@{req.account_id.replace(/^@/, '')})
-                            </span>
+                            <div className="w-12 h-12 bg-[#141414] border-2 border-[#141414] overflow-hidden shrink-0 flex items-center justify-center shadow-[1px_1px_0px_0px_rgba(20,20,20,1)]">
+                              <AgentAvatar
+                                id={req.account_id}
+                                name={reqAgent?.name || req.agent_name || req.account_id}
+                                avatar={reqAgent?.avatar}
+                                isMaster={reqAgent?.isMaster || false}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className="font-mono font-black text-sm sm:text-base uppercase text-[#141414] group-hover:underline truncate leading-tight">
+                                {reqAgent ? reqAgent.name : (req.agent_name || req.account_id).toUpperCase()}
+                              </span>
+                              <span className="text-xs text-neutral-500 font-mono font-bold mt-0.5 truncate">
+                                @{req.account_id.replace(/^@/, '')}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
@@ -966,11 +976,21 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             <span>{isArgsExpanded ? 'Hide Payload Arguments' : 'View Payload Arguments'}</span>
                             {isArgsExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                           </button>
-                          {isArgsExpanded && (
-                            <pre className="p-2 bg-neutral-900 text-green-400 text-[10px] font-mono overflow-x-auto max-h-32 border border-neutral-700">
-                              {JSON.stringify(req.arguments, null, 2)}
-                            </pre>
-                          )}
+                          {isArgsExpanded && (() => {
+                            const hasNestedArgs = req.arguments && typeof req.arguments === 'object' && ('arguments' in req.arguments || 'reason' in req.arguments || 'requestType' in req.arguments);
+                            const payloadToRender = hasNestedArgs
+                              ? req.arguments
+                              : {
+                                  arguments: req.arguments || {},
+                                  ...(req.rejection_reason ? { reason: req.rejection_reason } : {}),
+                                  ...(req.requested_operation ? { requestType: req.requested_operation === 'tool_invocation' ? 'access' : req.requested_operation } : {})
+                                };
+                            return (
+                              <pre className="p-2 bg-neutral-900 text-green-400 text-[10px] font-mono overflow-x-auto max-h-40 border border-neutral-700 leading-relaxed">
+                                {JSON.stringify(payloadToRender, null, 2)}
+                              </pre>
+                            );
+                          })()}
                         </div>
                       )}
 
@@ -1136,18 +1156,20 @@ export const IntegrationDetailsModal: React.FC<IntegrationDetailsModalProps> = (
                             onClick={() => onOpenAgentProfile?.(agent.name, agent.avatar, agent.agentId)}
                             title={onOpenAgentProfile ? `View profile for ${agent.name}` : undefined}
                           >
-                            <AgentAvatar
-                              name={agent.name}
-                              avatar={agent.avatar}
-                              id={agent.agentId || agent.id}
-                              isMaster={false}
-                              className="w-8 h-8 border border-[#141414] shrink-0"
-                            />
+                            <div className="w-10 h-10 bg-[#141414] border-2 border-[#141414] overflow-hidden shrink-0 flex items-center justify-center">
+                              <AgentAvatar
+                                name={agent.name}
+                                avatar={agent.avatar}
+                                id={agent.agentId || agent.id}
+                                isMaster={false}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
                             <div className="flex flex-col min-w-0 flex-1">
-                              <span className="font-bold text-xs uppercase truncate text-[#141414] group-hover:underline">
+                              <span className="font-mono font-black text-xs uppercase text-[#141414] group-hover:underline truncate">
                                 {agent.name}
                               </span>
-                              <span className="text-[10px] text-[#141414]/60 truncate font-mono">
+                              <span className="text-[10px] text-neutral-500 font-mono font-bold truncate">
                                 @{agent.agentId ? agent.agentId.replace(/^@/, '') : agent.id}
                               </span>
                             </div>

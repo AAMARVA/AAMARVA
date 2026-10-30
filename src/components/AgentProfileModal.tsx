@@ -439,7 +439,9 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
           <div className="px-3 sm:px-6 md:px-6 lg:px-6 pb-4 border-b-2 border-[#141414] bg-white relative">
             {/* Overlapping Profile Picture */}
             <div className="flex items-center justify-between -mt-8 sm:-mt-10 md:-mt-10 lg:-mt-10 mb-2 sm:mb-3 md:mb-3 lg:mb-3">
-              <AgentAvatar name={displayName} avatar={currentAvatar} id={inferredAgentId} className="w-16 h-16 sm:w-20 sm:h-20 md:w-20 md:h-20 lg:w-20 lg:h-20 border-4 border-white text-3xl sm:text-4xl md:text-4xl lg:text-4xl shadow-[3px_3px_0px_0px_rgba(20,20,20,1)] sm:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] md:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] lg:shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]" />
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[#141414] border-4 border-[#141414] shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] overflow-hidden shrink-0 flex items-center justify-center">
+                <AgentAvatar name={displayName} avatar={currentAvatar} id={inferredAgentId} className="w-full h-full object-cover" />
+              </div>
               <div className="flex flex-col items-end">
                 {joinedDateFormatted && (
                   <div className="font-mono text-[9px] sm:text-[11px] md:text-[11px] lg:text-[11px] font-bold uppercase border border-[#141414] px-2 py-0.5 sm:px-2.5 sm:py-1 md:px-2.5 md:py-1 lg:px-2.5 lg:py-1 bg-[#E4E3E0] flex items-center gap-1 sm:gap-1.5 md:gap-1.5 lg:gap-1.5 text-[#141414]">
@@ -510,13 +512,13 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
             {/* Names */}
             <div className="pt-0.5 flex flex-col">
-              <h2 className="font-black uppercase text-base sm:text-xl md:text-xl lg:text-xl tracking-wider text-[#141414] flex items-center gap-2">
-                {displayName}
+              <h2 className="font-mono font-black uppercase text-lg sm:text-2xl tracking-wider text-[#141414] flex items-center gap-2">
+                {displayName.toUpperCase()}
                 {(agentProfileData?.account_type === 'master' || agentProfileData?.is_master_primary === true) && (
-                  <span className="font-mono text-[9px] font-black uppercase bg-white text-[#141414] px-1.5 py-0.5 border border-[#141414]">MASTER</span>
+                  <span className="font-mono text-[9px] font-black uppercase bg-[#141414] text-white px-1.5 py-0.5 border border-[#141414]">MASTER</span>
                 )}
                 {(agentProfileData?.account_type === 'slave' || agentProfileData?.is_slave === true || agentProfileData?.role === 'slave') && (
-                  <span className="font-mono text-[9px] font-black uppercase bg-white text-[#141414] px-1.5 py-0.5 border border-[#141414]">SLAVE</span>
+                  <span className="font-mono text-[9px] font-black uppercase bg-[#141414] text-white px-1.5 py-0.5 border border-[#141414]">SLAVE</span>
                 )}
                 {Boolean(agentProfileData?.hasCapabilityIncrement || agentProfileData?.plan === 'slave_capability' || agentProfileData?.isCapped) && !agentProfileData?.isMasterUser && !agentProfileData?.is_master_primary && agentProfileData?.account_type !== 'master' && (
                   <CappedBadge 
@@ -532,10 +534,9 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                 )}
               </h2>
               {inferredAgentId && (
-                <span className="relative inline-flex items-center gap-1 font-mono text-[8px] sm:text-[10px] md:text-[10px] lg:text-[10px] font-bold text-[#141414] bg-[#E4E3E0] px-1.5 py-0.5 mt-0.5 normal-case tracking-wider border border-[#141414] shadow-[1px_1px_0px_0px_rgba(20,20,20,1)] self-start overflow-x-auto no-scrollbar whitespace-nowrap">
-                  <span>@{inferredAgentId}</span>
-                  {agentProfileData?.emailVerified && <VerifiedBadge size="xs" />}
-                  <div className="absolute bottom-0 right-0 w-1.5 h-1.5 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_100%)]" />
+                <span className="font-mono text-xs sm:text-sm font-bold text-neutral-500 mt-0.5 block">
+                  @{inferredAgentId.replace(/^@/, '')}
+                  {agentProfileData?.emailVerified && <VerifiedBadge size="xs" className="inline-block ml-1" />}
                 </span>
               )}
 
