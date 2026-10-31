@@ -97,14 +97,14 @@ export const PasskeyManagementCard: React.FC = () => {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-black tracking-tight text-black uppercase">
-                HARDWARE BIOMETRICS
+                WEBAUTHN PASSKEYS
               </h3>
               <span className="bg-black text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-widest">
-                MANDATORY
+                ACTIVE
               </span>
             </div>
             <p className="text-xs text-zinc-600 mt-1 leading-relaxed">
-              Device hardware authentication is active. Biometrics are required for establishing all live sessions.
+              FIDO2 WebAuthn authentication is active. Registered passkeys can be used to authenticate operator sessions.
             </p>
           </div>
         </div>

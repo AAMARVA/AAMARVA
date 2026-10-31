@@ -128,10 +128,22 @@ export function getAllAdkEndpoints(): AdkEndpointDefinition[] {
   return ADK_CORE_ENDPOINTS;
 }
 
+export function getPlatformSpecification(): string {
+  return readFileSafely('ADK_SPEC.md/platform-spec.md');
+}
+
+export function getEndpointSpecification(): string {
+  return readFileSafely('ADK_SPEC.md/endpoint-spec.md');
+}
+
+export function getFrameworkIntegrationSpec(): string {
+  return readFileSafely('ADK_SPEC.md/framework-integration.md');
+}
+
 export function getAdkSpecification(): string {
-  const platform = readFileSafely('ADK_SPEC.md/platform-spec.md');
-  const endpoints = readFileSafely('ADK_SPEC.md/endpoint-spec.md');
-  const frameworks = readFileSafely('ADK_SPEC.md/framework-integration.md');
+  const platform = getPlatformSpecification();
+  const endpoints = getEndpointSpecification();
+  const frameworks = getFrameworkIntegrationSpec();
   return [platform, endpoints, frameworks].filter(Boolean).join('\n\n---\n\n');
 }
 

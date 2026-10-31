@@ -53,7 +53,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
             </span>
             <span className="text-zinc-600 font-mono text-xs">/</span>
             <span className="font-mono text-xs text-white uppercase tracking-wider font-semibold">
-              The Sovereign Fleet OS
+              AAMARVA — Autonomous Agent Command Protocol & Infrastructure
             </span>
           </div>
           <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-white uppercase leading-[1.08] mb-4">
@@ -138,7 +138,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
             </div>
             <div>
               <span className="text-xs font-black uppercase tracking-tight block">Passkey Vault</span>
-              <span className="text-[10px] opacity-75 mt-0.5 block truncate">FIDO2 Biometrics</span>
+              <span className="text-[10px] opacity-75 mt-0.5 block truncate">FIDO2 Passkeys</span>
             </div>
           </button>
 
@@ -157,7 +157,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
             </div>
             <div>
               <span className="text-xs font-black uppercase tracking-tight block">Watchtower</span>
-              <span className="text-[10px] opacity-75 mt-0.5 block truncate">Immutable Footprints</span>
+              <span className="text-[10px] opacity-75 mt-0.5 block truncate">Structured Footprints</span>
             </div>
           </button>
         </div>
@@ -174,10 +174,10 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                   <span>Master-Controlled Runtime</span>
                 </div>
                 <h3 className="text-2xl sm:text-3xl font-black uppercase text-white tracking-tight leading-tight">
-                  Centralized Fleet Supervision & Instant Killswitches
+                  Centralized Fleet Supervision & Revocation Controls
                 </h3>
                 <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                  The Command Pit gives master operators authoritative visibility over every active agent process. Spawn dedicated slave accounts, configure task loadouts, monitor operational heartbeats, and instantly isolate malfunctioning agents from the network before errant actions escalate.
+                  The Command Pit gives master operators authoritative visibility over fleet accounts and processes. Provision dedicated slave accounts, inspect operational status, and manage access permissions before errant actions escalate.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 font-mono text-xs">
@@ -200,9 +200,9 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
-                    <span className="font-bold text-white block mb-1">Sub-Second Status Polling</span>
+                    <span className="font-bold text-white block mb-1">Operational Status Monitoring</span>
                     <span className="text-zinc-400 text-[11px] leading-relaxed block">
-                      Real-time heartbeat indicators detecting hanging or severed agent processes.
+                      Status indicators tracking active, disconnected, or isolated agent accounts.
                     </span>
                   </div>
                 </div>
@@ -264,10 +264,10 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                   <span>Model Context Protocol Gateway</span>
                 </div>
                 <h3 className="text-2xl sm:text-3xl font-black uppercase text-white tracking-tight leading-tight">
-                  Deterministic Tool Execution with Zero Direct Access
+                  Governed Tool Discovery & Access Requests
                 </h3>
                 <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                  Agents should never possess raw production API keys or direct database credentials. The FLOOR intercepts all external tool requests, validates argument schemas via MCP, requires human authorization for high-risk actions, and issues single-use ephemeral tokens that expire automatically.
+                  Agents should never possess unmonitored production API keys or direct database credentials. The FLOOR intercepts external tool requests, validates argument schemas via MCP, requires human authorization for high-risk actions, and issues temporary access parameters once approved.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 font-mono text-xs">
@@ -280,13 +280,13 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
                     <span className="font-bold text-white block mb-1">4-Phase Access Lifecycle</span>
                     <span className="text-zinc-400 text-[11px] leading-relaxed block">
-                      Invoke, Status Check, Access Token Grant, Monitored Execution.
+                      Discover Tools, Request Access, Policy Verification, Temporary Credential Grant.
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
-                    <span className="font-bold text-white block mb-1">Zero-Trust Credential Proxy</span>
+                    <span className="font-bold text-white block mb-1">Governed Access Delegation</span>
                     <span className="text-zinc-400 text-[11px] leading-relaxed block">
-                      Backend proxies requests; secrets remain completely hidden from LLM context.
+                      Backend evaluates authorization requests and manages access parameters according to governance policies.
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
@@ -317,8 +317,8 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                   <div className="text-emerald-400 font-bold font-mono pl-3">POST /api/floor/invocations/:id/access</div>
                 </div>
                 <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-zinc-400">
-                  <span>EPHEMERAL VALIDITY: 60s</span>
-                  <span className="text-emerald-400 font-bold">TAMPER-PROOF</span>
+                  <span>TEMPORARY SESSION ACCESS</span>
+                  <span className="text-emerald-400 font-bold">GOVERNED</span>
                 </div>
               </div>
             </div>
@@ -354,9 +354,9 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
-                    <span className="font-bold text-white block mb-1">Shared Group Key Rotation</span>
+                    <span className="font-bold text-white block mb-1">Authorized Key Management</span>
                     <span className="text-zinc-400 text-[11px] leading-relaxed block">
-                      Automatic key derivation ensuring forward secrecy when cluster membership changes.
+                      Versioned key derivation maintaining authorized encrypted access across members.
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
@@ -412,22 +412,22 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
               <div className="lg:col-span-7 space-y-5">
                 <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
                   <Key className="w-4 h-4 text-white" />
-                  <span className="uppercase font-bold tracking-wider text-white">Hardware Passkey Vault</span>
+                  <span className="uppercase font-bold tracking-wider text-white">Passkey Vault</span>
                   <span className="text-zinc-600">·</span>
-                  <span>FIDO2 / WebAuthn Biometrics</span>
+                  <span>FIDO2 / WebAuthn Passkeys</span>
                 </div>
                 <h3 className="text-2xl sm:text-3xl font-black uppercase text-white tracking-tight leading-tight">
-                  Physical Biometric Human Authority
+                  FIDO2 Passkey Human Authority
                 </h3>
                 <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                  Critical fleet actions require physical presence. With WebAuthn and FIDO2 passkeys, operators use Touch ID, Face ID, or YubiKeys to sign high-risk tool authorizations, key rotations, and cluster policies. Malicious scripts cannot impersonate the master operator.
+                  High-risk fleet actions require human presence. With WebAuthn and FIDO2 passkeys, operators verify critical administrative actions, credential updates, and cluster policies. Automated scripts cannot impersonate the master operator.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 font-mono text-xs">
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
-                    <span className="font-bold text-white block mb-1">Hardware Bound</span>
+                    <span className="font-bold text-white block mb-1">Passkey Bound</span>
                     <span className="text-zinc-400 text-[11px] leading-relaxed block">
-                      Cryptographic credentials stored in device Secure Enclave / TPM.
+                      Cryptographic credentials managed via standard WebAuthn authenticators.
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
@@ -437,15 +437,15 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
-                    <span className="font-bold text-white block mb-1">Seamless API Key Rotation</span>
+                    <span className="font-bold text-white block mb-1">Credential Management</span>
                     <span className="text-zinc-400 text-[11px] leading-relaxed block">
-                      Rotate fleet credentials with zero downtime or interrupted runs.
+                      Configure and rotate credentials under master operator authorization.
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
-                    <span className="font-bold text-white block mb-1">Biometric Elevation</span>
+                    <span className="font-bold text-white block mb-1">Passkey Verification</span>
                     <span className="text-zinc-400 text-[11px] leading-relaxed block">
-                      Elevate access level dynamically for destructive actions.
+                      Challenge-response verification for high-risk fleet operations.
                     </span>
                   </div>
                 </div>
@@ -487,13 +487,13 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                   <Activity className="w-4 h-4 text-white" />
                   <span className="uppercase font-bold tracking-wider text-white">Watchtower Telemetry</span>
                   <span className="text-zinc-600">·</span>
-                  <span>Immutable Action Audit</span>
+                  <span>Structured Activity Stream</span>
                 </div>
                 <h3 className="text-2xl sm:text-3xl font-black uppercase text-white tracking-tight leading-tight">
-                  Complete Observability & Non-Repudiation Footprints
+                  Complete Observability & Structured Footprints
                 </h3>
                 <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                  Every tool request, message relay, key rotation, and capability change is timestamped and cryptographically committed to Watchtower. Maintain an audit-ready trail of exactly which agent executed which operation and who authorized it.
+                  Fleet activity, message events, and tool requests are delivered via authorized Server-Sent Events (SSE) and persisted as structured footprint records for comprehensive operational tracking across your fleet.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 font-mono text-xs">
@@ -504,9 +504,9 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
-                    <span className="font-bold text-white block mb-1">Non-Repudiation Footprints</span>
+                    <span className="font-bold text-white block mb-1">Structured Footprints</span>
                     <span className="text-zinc-400 text-[11px] leading-relaxed block">
-                      Signed transaction hashes identifying originating agent and payload.
+                      Structured audit records identifying originating agent, timestamp, and action.
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
@@ -516,9 +516,9 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                     </span>
                   </div>
                   <div className="p-3.5 bg-black/60 rounded-xl border border-white/10">
-                    <span className="font-bold text-white block mb-1">Deterministic Replay</span>
+                    <span className="font-bold text-white block mb-1">Activity Tracking</span>
                     <span className="text-zinc-400 text-[11px] leading-relaxed block">
-                      Reconstruct agent decision graphs and tool invocation parameters.
+                      Inspect historical agent operations and tool request lifecycle parameters.
                     </span>
                   </div>
                 </div>
@@ -550,14 +550,14 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                   <div className="p-2 bg-white/5 rounded border border-white/5 flex items-start gap-2">
                     <span className="text-zinc-500 text-[10px]">14:18:12</span>
                     <div>
-                      <div className="text-white font-bold">FIDO2_VERIFY: master_elevation</div>
-                      <div className="text-zinc-400 text-[10px]">Operator: kjk · TouchID Signature OK</div>
+                      <div className="text-white font-bold">PASSKEY_VERIFY: operator_session</div>
+                      <div className="text-zinc-400 text-[10px]">Operator: kjk · Passkey Signature OK</div>
                     </div>
                   </div>
                 </div>
                 <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-zinc-400">
-                  <span>AUDIT STATUS: IMMUTABLE</span>
-                  <span className="text-emerald-400">0 INTEGRITY ERRORS</span>
+                  <span>AUDIT STATUS: RECORDED</span>
+                  <span className="text-emerald-400">PERSISTED FOOTPRINTS</span>
                 </div>
               </div>
             </div>
@@ -569,13 +569,13 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-white/10">
             <div>
               <span className="text-xs font-mono font-bold text-zinc-400 uppercase tracking-widest block mb-1">
-                Interactive Demonstration
+                Local Simulation
               </span>
               <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white">
-                Experience the 4-Phase FLOOR Tool Gateway
+                Simulated 4-Phase FLOOR Tool Gateway
               </h3>
               <p className="text-xs sm:text-sm text-zinc-400 mt-1">
-                Test how an autonomous agent securely requests and executes external actions through AAMARVA.
+                Demonstration illustrating how an autonomous agent requests tool access parameters through AAMARVA (local example).
               </p>
             </div>
 
@@ -644,15 +644,15 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                 <span className="text-[10px] font-bold">STAGE 04</span>
                 {simStep >= 5 ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <span className="w-2 h-2 rounded-full bg-white/60"></span>}
               </div>
-              <span className="font-bold block text-xs">MCP Proxy & Log</span>
-              <span className="text-[10px] text-zinc-400 block mt-1">Watchtower Footprint Logged</span>
+              <span className="font-bold block text-xs">Access Parameters & Log</span>
+              <span className="text-[10px] text-zinc-400 block mt-1">Watchtower Footprint Recorded</span>
             </div>
           </div>
 
           {/* Interactive Console Terminal Output */}
           <div className="bg-black border border-white/20 rounded-xl p-4 font-mono text-xs">
             <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3 text-zinc-500 text-[10px]">
-              <span className="text-zinc-300 font-bold">GATEWAY_SESSION_LOG // SIMULATOR</span>
+              <span className="text-zinc-300 font-bold">GATEWAY_SESSION_LOG // LOCAL SIMULATOR</span>
               <span>STATE: {simStep === 5 ? 'COMPLETED' : simRunning ? 'PROCESSING' : 'READY'}</span>
             </div>
 
@@ -667,29 +667,29 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
 
               {simStep >= 2 && (
                 <p className="text-amber-300">
-                  [0.45s] Policy Engine: Tool flagged as HIGH_RISK. Status: <span className="font-bold text-white">PENDING_OPERATOR_APPROVAL</span>. FIDO2 challenge triggered.
+                  [0.45s] Policy Engine: Tool flagged as HIGH_RISK. Status: <span className="font-bold text-white">PENDING_OPERATOR_APPROVAL</span>. Operator review required.
                 </p>
               )}
 
               {simStep >= 3 && (
                 <p className="text-emerald-300">
-                  [0.91s] Operator WebAuthn biometrics confirmed. Status transitioned to <span className="font-bold text-white">ACCEPTED</span>.
+                  [0.91s] Operator passkey approval confirmed. Status transitioned to <span className="font-bold text-white">ACCEPTED</span>.
                 </p>
               )}
 
               {simStep >= 4 && (
                 <p className="text-emerald-400">
-                  [1.34s] Ephemeral token minted via <span className="font-mono text-white">/access</span>. Expiry: 60s. Schema cache synced (<span className="text-zinc-400">consumed_at: now()</span>).
+                  [1.34s] Ephemeral access details granted via <span className="font-mono text-white">/access</span>. Single retrieval committed.
                 </p>
               )}
 
               {simStep >= 5 && (
                 <div className="pt-2 text-zinc-200 border-t border-white/10 mt-2 space-y-1">
                   <p className="text-emerald-400 font-bold">
-                    [1.78s] MCP Server execution success. Output received, zero secrets leaked.
+                    [1.78s] Access details received for MCP connection.
                   </p>
                   <p className="text-zinc-400 text-[10px]">
-                    Watchtower Footprint ID: <span className="text-white font-mono">fp_89df2c449a0e1</span> · Recipient-only message relayed to Master and Sender.
+                    Watchtower Footprint ID: <span className="text-white font-mono">fp_89df2c449a0e1</span> · Structured event logged for Master and Sender.
                   </p>
                 </div>
               )}
@@ -728,7 +728,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                 <tr>
                   <td className="p-4 sm:p-5 font-bold text-white">Tool Execution Gateway</td>
                   <td className="p-4 sm:p-5 bg-white/5 border-x border-white/15 text-white font-semibold">
-                    <span className="text-emerald-400 font-black">FLOOR MCP:</span> Ephemeral tokens, zero credentials exposed to LLM context
+                    <span className="text-emerald-400 font-black">FLOOR MCP:</span> Governed tool access and temporary credential parameters
                   </td>
                   <td className="p-4 sm:p-5 text-zinc-400">
                     Raw API keys hardcoded into environment variables or prompt strings
@@ -746,7 +746,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                 <tr>
                   <td className="p-4 sm:p-5 font-bold text-white">Human Authority & Elevation</td>
                   <td className="p-4 sm:p-5 bg-white/5 border-x border-white/15 text-white font-semibold">
-                    <span className="text-emerald-400 font-black">FIDO2 / WebAuthn:</span> Hardware-bound biometric approvals for high-risk tools
+                    <span className="text-emerald-400 font-black">FIDO2 / WebAuthn:</span> Passkey authentication for critical operator actions
                   </td>
                   <td className="p-4 sm:p-5 text-zinc-400">
                     Command line `input()` prompts or unauthenticated webhook endpoints
@@ -764,7 +764,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({ onAccessApp, onO
                 <tr>
                   <td className="p-4 sm:p-5 font-bold text-white">Observability & Audit</td>
                   <td className="p-4 sm:p-5 bg-white/5 border-x border-white/15 text-white font-semibold">
-                    <span className="text-emerald-400 font-black">Watchtower Telemetry:</span> Immutable non-repudiation event stream
+                    <span className="text-emerald-400 font-black">Watchtower Telemetry:</span> Authorized SSE stream and structured footprint records
                   </td>
                   <td className="p-4 sm:p-5 text-zinc-400">
                     Ephemeral console stdout logs that disappear on restart

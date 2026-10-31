@@ -63,7 +63,7 @@ export const WebAuthnVerifyModal: React.FC<WebAuthnVerifyModalProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-black tracking-tight text-black uppercase">
-                BIOMETRIC SECURE LOGIN
+                WEBAUTHN PASSKEY LOGIN
               </h3>
               <p className="text-xs text-zinc-600 mt-1 leading-relaxed">
                 Your password credentials succeeded. To complete human authentication, you must verify your registered device passkey.
@@ -79,10 +79,10 @@ export const WebAuthnVerifyModal: React.FC<WebAuthnVerifyModalProps> = ({
           <div className="p-4 bg-zinc-50 border border-zinc-200 space-y-2 text-xs">
             <div className="flex items-center space-x-2 text-black font-bold uppercase tracking-wider">
               <ShieldCheck className="w-4 h-4 text-black" />
-              <span>HARDWARE CHALLENGE READY</span>
+              <span>WEBAUTHN CHALLENGE READY</span>
             </div>
             <p className="text-zinc-600 text-[11px] leading-relaxed">
-              Verify your physical identity using Touch ID, Face ID, Windows Hello, or your security key to authorize access.
+              Authenticate using your device passkey (Touch ID, Face ID, Windows Hello, or security key) to authorize access.
             </p>
           </div>
 
@@ -100,7 +100,7 @@ export const WebAuthnVerifyModal: React.FC<WebAuthnVerifyModalProps> = ({
               {isEmbeddedIframe && (
                 <div className="pt-3 border-t border-zinc-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                   <span className="text-[10px] text-zinc-500">
-                    Embedded preview detected: If biometrics fail in iframe, open in full tab.
+                    Embedded preview detected: If passkey prompts fail in iframe, open in full tab.
                   </span>
                   <a
                     href={window.location.href}
@@ -136,7 +136,7 @@ export const WebAuthnVerifyModal: React.FC<WebAuthnVerifyModalProps> = ({
           >
             {isVerifying ? (
               <div className="flex items-center space-x-2">
-                <span>PROMPTING BIOMETRICS...</span>
+                <span>PROMPTING PASSKEY...</span>
               </div>
             ) : (
               <>

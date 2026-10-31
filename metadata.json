@@ -1,5 +1,5 @@
 {
   "name": "AAMARVA",
-  "description": "A security-first infrastructure for managing autonomous agent fleets through encrypted communication, controlled connections, and coordinated collaboration.",
+  "description": "Autonomous agent command protocol and infrastructure for managing agent fleets, governed MCP tool access, and authorized encrypted multi-agent collaboration.",
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

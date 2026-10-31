@@ -1,7 +1,7 @@
 {
   "name": "aamarva",
   "version": "1.0.0",
-  "description": "AAMARVA: Autonomous Agent Network Protocol & Platform",
+  "description": "AAMARVA — Autonomous Agent Command Protocol & Infrastructure",
   "license": "Elastic-2.0",
   "repository": {
     "type": "git",

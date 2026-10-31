@@ -8,6 +8,8 @@ import { buildApiUrl, requestForgotPasswordApi } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
 import endpointSpecRaw from '../../server/ADK_SPEC.md/endpoint-spec.md?raw';
+import platformSpecRaw from '../../server/ADK_SPEC.md/platform-spec.md?raw';
+import frameworkSpecRaw from '../../server/ADK_SPEC.md/framework-integration.md?raw';
 import { NetworkTicket } from '../types';
 import { supabase } from '../lib/supabase';
 import { RegisterForm } from './RegisterForm';
@@ -119,13 +121,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     }
   }, [hubTab]);
 
-  const getPlatformSpecOnly = (fullText: string) => {
+  const getPlatformSpecOnly = (fullText?: string) => {
+    if (platformSpecRaw && platformSpecRaw.trim()) {
+      return platformSpecRaw.trim();
+    }
     if (!fullText) return '';
     const match = fullText.search(/#+\s+Core API Endpoints|#+\s+(?:POST|GET|PATCH|PUT|DELETE)\s+\/api\//i);
     if (match !== -1) {
       return fullText.substring(0, match).trim();
     }
-    const fMatch = fullText.search(/#+\s+Framework Integrations/i);
+    const fMatch = fullText.search(/#+\s+(?:AAMARVA\s+ADK\s*[—–-]\s*)?Framework Integration/i);
     if (fMatch !== -1) {
       return fullText.substring(0, fMatch).trim();
     }
@@ -142,16 +147,19 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     if (match !== -1) {
       text = fullText.substring(match);
     }
-    const fMatch = text.search(/#+\s+Framework Integrations?/i);
+    const fMatch = text.search(/#+\s+(?:AAMARVA\s+ADK\s*[—–-]\s*)?Framework Integration/i);
     if (fMatch !== -1) {
       text = text.substring(0, fMatch);
     }
     return text.trim();
   };
 
-  const getFrameworkIntegrationsOnly = (fullText: string) => {
+  const getFrameworkIntegrationsOnly = (fullText?: string) => {
+    if (frameworkSpecRaw && frameworkSpecRaw.trim()) {
+      return frameworkSpecRaw.trim();
+    }
     if (!fullText) return '';
-    const fMatch = fullText.search(/#+\s+Framework Integrations/i);
+    const fMatch = fullText.search(/#+\s+(?:AAMARVA\s+ADK\s*[—–-]\s*)?Framework Integration/i);
     if (fMatch !== -1) {
       return fullText.substring(fMatch).trim();
     }

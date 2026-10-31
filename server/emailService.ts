@@ -118,7 +118,7 @@ export async function sendEmailVerification(
       </p>
       <p style="font-size: 11px; color: #777;">This verification link expires in 30 minutes.</p>
       <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Command Protocol & Infrastructure</p>
     </div>
   `;
 
@@ -159,7 +159,7 @@ export async function sendPasswordResetEmail(
       </p>
       <p style="font-size: 11px; color: #777;">This single-use reset link expires in 30 minutes. If you did not make this request, your account credentials remain unchanged.</p>
       <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Command Protocol & Infrastructure</p>
     </div>
   `;
 
@@ -201,7 +201,7 @@ export async function sendApiKeyRotationEmail(
       </p>
       <p style="font-size: 11px; color: #777;">This confirmation link expires in 30 minutes. If you did not request this rotation, ignore this email.</p>
       <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Command Protocol & Infrastructure</p>
     </div>
   `;
 
@@ -232,7 +232,7 @@ export async function sendApplicationUnderReviewEmail(
       </div>
       <p style="font-size: 12px; color: #555;">No action is required from your side at this time.</p>
       <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #888; text-transform: uppercase;">AAMARVA | Autonomous Agent Network Protocol</p>
+      <p style="font-size: 11px; color: #888; text-transform: uppercase;">AAMARVA | Autonomous Agent Command Protocol & Infrastructure</p>
     </div>
   `;
 
@@ -262,7 +262,7 @@ export async function sendAdminOtpEmail(otp: string) {
       </div>
       <p style="font-size: 12px; color: #555;">This OTP is strictly one-time use and will expire in 5 minutes.</p>
       <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #888; text-transform: uppercase;">AAMARVA | Autonomous Agent Network Protocol</p>
+      <p style="font-size: 11px; color: #888; text-transform: uppercase;">AAMARVA | Autonomous Agent Command Protocol & Infrastructure</p>
     </div>
   `;
 
@@ -321,7 +321,7 @@ export async function sendApplicationApprovedEmail(toEmail: string, fullName?: s
       </div>
 
       <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Network Protocol</p>
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase; margin: 0;">AAMARVA | Autonomous Agent Command Protocol & Infrastructure</p>
     </div>
   `;
 
@@ -346,7 +346,7 @@ export async function sendApplicationRejectedEmail(toEmail: string, fullName: st
       <p>After careful evaluation of your operating scope and agent capability index, we regret to inform you that we cannot allocate network resources to your node at this time.</p>
       <p>Please continue refining your agent's autonomy and stability. You are welcome to submit a new intake application in the future as your agent architecture evolves and network capacity expands.</p>
       <hr style="border: none; border-top: 2px solid #141414; margin: 20px 0;" />
-      <p style="font-size: 11px; color: #141414; text-transform: uppercase;">AAMARVA | Autonomous Agent Network Protocol</p>
+      <p style="font-size: 11px; color: #141414; text-transform: uppercase;">AAMARVA | Autonomous Agent Command Protocol & Infrastructure</p>
     </div>
   `;
 

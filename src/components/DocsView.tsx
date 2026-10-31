@@ -122,11 +122,11 @@ print(f"Available agent tools: {tools}")`
   {
     id: 'floor-mcp',
     category: 'FLOOR Protocol & MCP',
-    title: 'FLOOR Protocol & Tool Execution',
-    description: 'Deterministic tool invocation via the Model Context Protocol (MCP) with zero credentials exposed to LLM context.',
+    title: 'FLOOR Protocol & Tool Governance',
+    description: 'Governed tool discovery and access request routing via the Model Context Protocol (MCP) with policy enforcement.',
     badge: 'CORE INVARIANT',
     content: {
-      overview: 'The FLOOR gateway isolates external systems from unmonitored agent access. Autonomous agents discover tools, request invocations with argument schema validation, and receive single-use ephemeral tokens once human or policy criteria are satisfied.',
+      overview: 'The FLOOR gateway isolates external systems from unmonitored agent access. Autonomous agents discover assigned tools, submit access requests with argument schema validation, and receive temporary access parameters once human or policy criteria are satisfied.',
       sections: [
         {
           heading: 'Step 1: Discover Tools Available to Agent',
@@ -195,8 +195,8 @@ console.log('Available MCP tools:', tools);`
 }`
         },
         {
-          heading: 'Step 4: Claim Ephemeral Access Token',
-          body: 'Once accepted, obtain temporary execution credentials. The token is minted with a 60-second time-to-live and logged immediately in the schema cache with consumed_at tracking:',
+          heading: 'Step 4: Retrieve Temporary Access Parameters',
+          body: 'Once approved or permitted, retrieve temporary credentials and server configuration parameters:',
           codeSnippet: {
             curl: `curl -X POST https://aamarva.com/api/floor/invocations/inv_cc317ea09432cc4e/access \\
   -H "Authorization: Bearer <AGENT_TOKEN>" \\
@@ -322,51 +322,45 @@ await client.clusters.sendMessage({
     description: 'High-level client libraries for embedding AAMARVA into LangChain, AutoGen, CrewAI, or standalone agents.',
     badge: 'LIBRARIES',
     content: {
-      overview: 'The Agent Development Kit (ADK) wraps AAMARVA REST and WebSocket protocols into idiomatic TypeScript and Python libraries.',
+      overview: 'The Agent Development Kit (ADK) wraps AAMARVA REST, MCP, and SSE protocols into idiomatic TypeScript and Python libraries.',
       sections: [
         {
           heading: 'TypeScript SDK Installation & Initialization',
           body: 'Install via npm or yarn:',
           codeSnippet: {
-            typescript: `import { AamarvaAgentClient } from '@aamarva/adk';
+            typescript: `import { Aamarva } from '@aamarva/adk';
 
-const agent = new AamarvaAgentClient({
+const client = new Aamarva({
   agentId: process.env.AAMARVA_AGENT_ID,
   apiKey: process.env.AAMARVA_API_KEY,
   endpoint: 'https://aamarva.com/api'
 });
 
 // Discover assigned FLOOR tools
-const tools = await agent.floor.discoverTools();
+const tools = await client.getFloorTools();
 
-// Send an encrypted cluster message
-await agent.clusters.send({
-  clusterId: 'research-squad-01',
-  payload: { action: 'summarize', source: 'arxiv' }
-});`
+// Retrieve authorized clusters
+const clusters = await client.getClusters();`
           }
         },
         {
           heading: 'Python SDK Installation & Initialization',
           body: 'Install via pip:',
           codeSnippet: {
-            python: `from aamarva import AamarvaAgentClient
+            python: `from aamarva import Aamarva
 import os
 
-agent = AamarvaAgentClient(
+client = Aamarva(
     agent_id=os.environ.get("AAMARVA_AGENT_ID"),
     api_key=os.environ.get("AAMARVA_API_KEY"),
     endpoint="https://aamarva.com/api"
 )
 
 # Discover assigned FLOOR tools
-tools = agent.floor.discover_tools()
+tools = client.get_floor_tools()
 
-# Send cluster dispatch
-agent.clusters.send(
-    cluster_id="research-squad-01",
-    payload={"action": "summarize", "source": "arxiv"}
-)`
+# Retrieve authorized clusters
+clusters = client.get_clusters()`
           }
         }
       ]

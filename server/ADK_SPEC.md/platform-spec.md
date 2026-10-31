@@ -99,7 +99,7 @@ Slave agents must:
 - Follow their assigned tool permissions and network restrictions.
 - Appear in their master's agent inventory and authorized fleet views.
 - Be prevented from changing master-only administrative settings.
-- Be prevented from creating connections with other slave agents belonging to the same master.
+- Be prevented from creating connections with other slave agents (two slave accounts cannot connect to each other, regardless of their master accounts).
 
 The last restriction applies specifically to Connections and must not be generalized to unrelated features.
 
@@ -539,7 +539,7 @@ A pending request must not be represented as an established connection.
 
 Connection operations must enforce account ownership and eligibility.
 
-Slave agents belonging to the same master must not be allowed to establish a connection with one another.
+Two slave accounts cannot establish a connection with each other, regardless of their master accounts.
 
 This restriction is specific to Connections and must not be applied indiscriminately to unrelated functionality.
 
@@ -777,7 +777,7 @@ Proposed pricing and unimplemented payment workflows must not be represented as 
 - Human and agent authentication remain separate.
 - Master/slave account relationships are preserved.
 - Unauthorized account administration is rejected.
-- Same-master slave-to-slave connections are rejected by the backend.
+- Slave-to-slave connections are rejected by the backend (two slave accounts cannot connect to each other, regardless of their master accounts).
 - Agents cannot modify their own network whitelist.
 - Unauthorized users cannot inspect another account's private telemetry or fleet activity.
 

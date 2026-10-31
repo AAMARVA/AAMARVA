@@ -64,7 +64,7 @@ export const WebAuthnEnableModal: React.FC<WebAuthnEnableModalProps> = ({
                 ENABLE WEBAUTHN SECURITY
               </h3>
               <p className="text-xs text-zinc-600 mt-1 leading-relaxed">
-                Password authentication succeeded. To establish a human session and access AAMARVA controls, you must enable WebAuthn hardware biometrics.
+                Password authentication succeeded. To establish a human session and access AAMARVA controls, you must register a WebAuthn passkey.
               </p>
             </div>
           </div>
@@ -77,7 +77,7 @@ export const WebAuthnEnableModal: React.FC<WebAuthnEnableModalProps> = ({
           <div className="p-4 bg-zinc-50 border border-zinc-200 space-y-2 text-xs">
             <div className="flex items-center space-x-2 text-black font-bold uppercase tracking-wider">
               <ShieldCheck className="w-4 h-4 text-black" />
-              <span>HARDWARE BIOMETRIC POLICY ACTIVE</span>
+              <span>WEBAUTHN PASSKEY POLICY ACTIVE</span>
             </div>
             <p className="text-zinc-600 text-[11px] leading-relaxed">
               Enabling WebAuthn creates a bound cryptographic passkey using your device's Touch ID, Face ID, Windows Hello, or Security Key.
@@ -98,7 +98,7 @@ export const WebAuthnEnableModal: React.FC<WebAuthnEnableModalProps> = ({
               {isEmbeddedIframe && (
                 <div className="pt-3 border-t border-zinc-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                   <span className="text-[10px] text-zinc-500">
-                    Embedded preview detected: If biometrics fail in iframe, open in full tab.
+                    Embedded preview detected: If passkey prompts fail in iframe, open in full tab.
                   </span>
                   <a
                     href={window.location.href}
@@ -134,7 +134,7 @@ export const WebAuthnEnableModal: React.FC<WebAuthnEnableModalProps> = ({
           >
             {isRegistering ? (
               <div className="flex items-center space-x-2">
-                <span>PROMPTING BIOMETRICS...</span>
+                <span>PROMPTING PASSKEY...</span>
               </div>
             ) : (
               <>

@@ -62,7 +62,7 @@ export const EmailChangeVerificationView: React.FC<EmailChangeVerificationViewPr
         isSetup
       });
     } catch (err: any) {
-      setError(err.message || 'Biometric hardware verification failed.');
+      setError(err.message || 'WebAuthn passkey verification failed.');
       setStatus('error');
     }
   };
@@ -90,12 +90,12 @@ export const EmailChangeVerificationView: React.FC<EmailChangeVerificationViewPr
           {status === 'pending' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <p className="font-mono text-sm uppercase tracking-widest text-[#141414]/80">
-                {requiresWebAuthn ? 'Hardware Proof Required' : 'Final Step Required'}
+                {requiresWebAuthn ? 'WebAuthn Passkey Required' : 'Final Step Required'}
               </p>
               
               <div className="p-4 bg-[#E4E3E0]/30 border-2 border-[#141414] font-mono text-xs leading-relaxed text-left">
                 {requiresWebAuthn 
-                  ? 'AAMARVA security protocols require a cryptographic hardware assertion to finalize this email change. Please use your device passkey or security key.' 
+                  ? 'AAMARVA security protocols require a cryptographic passkey verification to finalize this email change. Please use your device passkey or security key.' 
                   : 'You are about to finalize the email change for your account. This action will update your primary contact email.'}
               </div>
 

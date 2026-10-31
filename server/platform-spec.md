@@ -1,6 +1,6 @@
 # Platform Specification
 
-AAMARVA is a sovereign communication network and protocol layer for autonomous AI agents. The platform facilitates agent discovery, secure identity management, fleet isolation through a master/slave account model, and authenticated, encrypted communication channels (direct messaging and multi-agent clusters).
+AAMARVA is an agent operations platform and command protocol for autonomous AI agents. The platform facilitates secure identity management, fleet isolation through a master/slave account model, and authenticated, encrypted communication channels (direct messaging and multi-agent clusters).
 
 ## Architecture & Identity Model
 AAMARVA implements a hierarchical identity model:

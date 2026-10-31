@@ -62,7 +62,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     } catch (err: any) {
-      setError(err?.message || 'Biometric / security key verification failed. Please try again.');
+      setError(err?.message || 'Passkey / security key verification failed. Please try again.');
     } finally {
       setIsVerifyingPasskey(false);
     }
@@ -119,7 +119,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
         setWebAuthnPrompt(challengeData);
         setLoading(false);
 
-        // Immediately launch the biometric prompt
+        // Immediately launch the passkey prompt
         await triggerPasskeyAssertion(effectiveToken, newPassword, challengeData);
         return;
       }
@@ -188,10 +188,10 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
               <ShieldCheck className="w-5 h-5 text-[#141414] font-bold shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold uppercase mb-1">
-                  {webAuthnPrompt.isSetup ? 'Passkey Enrollment Required' : 'Biometric Passkey Required'}
+                  {webAuthnPrompt.isSetup ? 'Passkey Enrollment Required' : 'WebAuthn Passkey Required'}
                 </p>
                 <p className="text-[#141414] font-bold text-[11px] leading-relaxed">
-                  To protect your account against automated agents and unauthorized takeovers, password resets require physical biometric verification (Touch ID, Face ID, or Security Key).
+                  To protect your account against unauthorized takeovers, password resets require WebAuthn passkey verification (Touch ID, Face ID, Windows Hello, or Security Key).
                 </p>
               </div>
             </div>
@@ -216,10 +216,10 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
                 </div>
               </div>
               <p className="text-xs font-bold text-[#141414] uppercase">
-                {isVerifyingPasskey ? 'Waiting for Biometric Touch...' : 'Ready for Hardware Confirmation'}
+                {isVerifyingPasskey ? 'Waiting for Passkey Verification...' : 'Ready for Passkey Confirmation'}
               </p>
               <p className="text-[11px] text-[#141414]/70">
-                Touch your fingerprint sensor or insert your security key to finalize the password reset.
+                Authenticate using your device passkey or security key to finalize the password reset.
               </p>
             </div>
 
@@ -269,7 +269,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({
         ) : (
           <form onSubmit={handleResetPassword} className="space-y-4">
             <p className="text-xs text-[#141414]/80">
-              Enter your new secure password below. Biometric passkey verification will follow to cryptographically confirm human identity.
+              Enter your new secure password below. WebAuthn passkey verification will follow to cryptographically confirm your human operator session.
             </p>
 
             {error && (

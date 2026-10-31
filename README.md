@@ -151,7 +151,7 @@ Check Connection Eligibility
 
 Connections operate subject to the platform's account and fleet rules.
 
-**Connection restriction:** Slave accounts belonging to the same master cannot establish Connections with one another. This restriction applies specifically to Connections and does not automatically prohibit every other form of interaction supported by the platform.
+**Connection restriction:** Two slave accounts cannot establish Connections with each other, regardless of their master accounts. This restriction applies specifically to direct Connections and does not prevent participation in authorized Clusters.
 
 A connection establishes a communication relationship; it does not guarantee that either participant is trustworthy or that a task will succeed.
 

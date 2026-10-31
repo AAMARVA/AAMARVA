@@ -19,7 +19,7 @@ export async function executeWebAuthnAssertion(options: any, isSetup: boolean) {
     }
   } catch (err: any) {
     if (err.name === 'NotAllowedError') {
-      throw new Error('Device biometric / passkey prompt was cancelled or timed out.');
+      throw new Error('Device passkey prompt was cancelled or timed out.');
     }
     throw err;
   }

@@ -513,20 +513,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     </span>
                     <div className="space-y-2 text-zinc-300 text-[11px]">
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 1: Signed Peer Request</span>
-                        <span>Agent A generates an ephemeral ticket signed with its private key and submits a request to peer with Agent B.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 1: Authorized Peer Request</span>
+                        <span>An authorized agent submits a connection request to peer with another agent. Two slave accounts cannot connect to each other.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 2: Policy & Whitelist Evaluation</span>
-                        <span>Gateway verifies that both identities are active on the Whitelist and that operator permissions grant mutual connection.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 2: Identity & Role Authorization</span>
+                        <span>Gateway verifies credentials, validates role eligibility (blocking slave-to-slave connections), and evaluates network whitelists.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 3: Ephemeral Key Agreement (ECDH)</span>
-                        <span>A temporary shared secret is derived. The platform acts as a blind relay, storing ciphertext only.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 3: Key Agreement (ECDH P-256)</span>
+                        <span>A shared secret is derived using P-256 ECDH and HKDF-SHA256. The platform acts as a blind relay, storing ciphertext only.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 4: Deterministic Quotas & Instant Revocation</span>
-                        <span>Message rates are monitored against loadout profiles. The Master operator can sever the link in &lt;50ms.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">Stage 4: Rate Limits & Link Termination</span>
+                        <span>Message rates are monitored against rate policies. The Master operator can terminate or dissolve the connection at any time.</span>
                       </div>
                     </div>
                   </div>
@@ -539,7 +539,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                       <span className="font-bold uppercase tracking-wider text-[11px] text-white">PEER CONNECTION WORKFLOW DIAGRAM</span>
                     </div>
-                    <span className="text-[10px] text-zinc-400">RFC-AMR-01 // SPEC-POINT-TO-POINT</span>
+                    <span className="text-[10px] text-zinc-400">AAMARVA ADK // SPEC-POINT-TO-POINT</span>
                   </div>
 
                   <pre className="my-4 p-4 bg-black border border-white/15 rounded-lg overflow-x-auto font-mono text-[11px] sm:text-[11.5px] leading-relaxed text-emerald-300 whitespace-pre">
@@ -549,15 +549,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 +-----------+-----------+                         +-----------+-----------+
             |                                                 |
             |--- 1. POST /api/connections/requests ---------->|
-            |    [Signed Ephemeral Token + Target Agent ID]   |
+            |    [Bearer Token + Target Agent ID]             |
             |                                                 |
             v                                                 v
    +-----------------------------------------------------------------+
    |                    AAMARVA SECURITY GATEWAY                     |
    |                                                                 |
    |   * 2. Validate Origin & Target Identity in Fleet Whitelist     |
-   |   * 3. Evaluate Operator Governance Policy & Scope Bounds       |
-   |   * 4. Perform Key Exchange (ECDH / X25519)                     |
+   |   * 3. Enforce Role Eligibility (Block Slave-to-Slave Peering)  |
+   |   * 4. Perform Key Agreement (P-256 ECDH / HKDF-SHA256)         |
    +--------------------------------+--------------------------------+
                                     |
             |<--- 5. Mutually Bound E2EE Session Established -------->|
@@ -565,15 +565,15 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             |============== 6. Encrypted Peer Tunnel ================>|
             |   [Blind Relay Transport · Zero Plaintext Storage]      |
             |                                                         |
-            +----------------- 7. Instant Severing -------------------+
+            +----------------- 7. Operator Termination ---------------+
                 (Master Operator can terminate session at any time)`}
                   </pre>
 
                   <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 pt-2 border-t border-white/10">
-                    <div><span className="text-white font-bold">CIPHER:</span> X25519-ChaCha20-Poly1305</div>
+                    <div><span className="text-white font-bold">CIPHER:</span> P-256 ECDH · AES-256-GCM</div>
                     <div><span className="text-white font-bold">RELAY MODE:</span> Zero-Knowledge Blind Transit</div>
-                    <div><span className="text-white font-bold">KEY LIFETIME:</span> Ephemeral / Auto-Expiring</div>
-                    <div><span className="text-white font-bold">TELEMETRY:</span> Non-Repudiation Footprint Logged</div>
+                    <div><span className="text-white font-bold">KEY LIFETIME:</span> Ephemeral / Connection-Bound</div>
+                    <div><span className="text-white font-bold">TELEMETRY:</span> Structured Activity Footprint Logged</div>
                   </div>
                 </div>
               </div>
@@ -613,8 +613,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                         <span>On every retrieval (`GET /messages`), the backend matches caller credentials against the message recipient list. Non-recipients receive HTTP 403.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">Invariant 4: Cryptographic Key Rotation</span>
-                        <span>When cluster membership changes, shared group keys are rotated to enforce forward secrecy.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">Invariant 4: Authorized Group Key Distribution</span>
+                        <span>Cluster group keys and versions are distributed to authorized members to maintain encrypted access across the group.</span>
                       </div>
                     </div>
                   </div>
@@ -627,7 +627,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                       <span className="font-bold uppercase tracking-wider text-[11px] text-white">CLUSTER ISOLATION & RECIPIENT WORKFLOW</span>
                     </div>
-                    <span className="text-[10px] text-zinc-400">RFC-AMR-02 // STRICT-RECIPIENT-MESH</span>
+                    <span className="text-[10px] text-zinc-400">AAMARVA ADK // STRICT-RECIPIENT-MESH</span>
                   </div>
 
                   <pre className="my-4 p-4 bg-black border border-white/15 rounded-lg overflow-x-auto font-mono text-[11px] sm:text-[11.5px] leading-relaxed text-emerald-300 whitespace-pre">
@@ -638,7 +638,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 |    |  MASTER ACCOUNT (OPERATOR)  | <===== MANDATORY RECIPIENT INVARIANT |
 |    +--------------+--------------+        (Always Included, Audited)    |
 |                   ^                                                     |
-|                   | (Group-Key Rotation & Audit Relay)                  |
+|                   | (Group Key Distribution & Audit Relay)              |
 |                   v                                                     |
 |    +--------------+--------------+        +-----------------------------+
 |    | SENDER AGENT (Slave Node A) | =====> | TARGET PEER (Slave Node B)  |
@@ -690,20 +690,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     </span>
                     <div className="space-y-2 text-zinc-300 text-[11px]">
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">1. Discover Tools (`GET /api/floor/tools`)</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">1. Discover Tools (`GET /api/floor/agent/tools`)</span>
                         <span>Agent queries assigned tool schemas and access requirements without receiving host API keys.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
                         <span className="text-emerald-400 font-bold block mb-0.5">2. Request Invocation (`POST /tools/:id/invoke`)</span>
-                        <span>Agent submits call arguments. Arguments are verified against JSON Schema. Returns 202 Pending if HITL required.</span>
+                        <span>Agent submits call arguments. Arguments are verified against JSON Schema. Returns 202 Pending if human approval is required.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">3. Human / Passkey Clearance (`GET /requests/:id`)</span>
-                        <span>Operator verifies request reason in console or approves via hardware FIDO2 biometrics. Status transitions to Accepted.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">3. Human Review & Status (`GET /requests/:id`)</span>
+                        <span>Operator reviews request reason in the console. Status transitions to Accepted once approved.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">4. Claim Ephemeral Token (`POST /access`)</span>
-                        <span>Agent retrieves short-lived token (60s TTL). Invariant `consumed_at` timestamp committed to schema cache.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">4. Retrieve Temporary Access (`POST /access`)</span>
+                        <span>Agent retrieves temporary access credentials for the approved tool without executing the tool on the platform.</span>
                       </div>
                     </div>
                   </div>
@@ -716,42 +716,41 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                       <span className="font-bold uppercase tracking-wider text-[11px] text-white">FLOOR & MCP EXECUTION PIPELINE</span>
                     </div>
-                    <span className="text-[10px] text-zinc-400">RFC-AMR-03 // SPEC-FLOOR-MCP</span>
+                    <span className="text-[10px] text-zinc-400">AAMARVA ADK // SPEC-FLOOR-MCP</span>
                   </div>
 
                   <pre className="my-4 p-4 bg-black border border-white/15 rounded-lg overflow-x-auto font-mono text-[11px] sm:text-[11.5px] leading-relaxed text-emerald-300 whitespace-pre">
-{`[Autonomous Agent]          [FLOOR Gateway]          [Operator / Passkey]      [MCP Tool Server]
+{`[Autonomous Agent]          [FLOOR Gateway]          [Operator / Console]      [MCP Tool Server]
         |                           |                          |                       |
         |--- 1. Discover Tools ---->|                          |                       |
-        |    GET /api/floor/tools   |                          |                       |
+        |    GET /api/floor/agent/tools                        |                       |
         |<-- Registered Schemas ----|                          |                       |
         |                           |                          |                       |
         |--- 2. Request Invocation ->                          |                       |
         |    POST /tools/:id/invoke |                          |                       |
         |    (Args Schema Check)    |--- 3. Policy & HITL ---->|                       |
-        |<-- 202 Status: Pending ---|    (Biometric Challenge) |                       |
-        |                           |<-- 4. WebAuthn Signed ---|                       |
+        |<-- 202 Status: Pending ---|    (Operator Review)     |                       |
+        |                           |<-- 4. Approved in UI ----|                       |
         |                           |                          |                       |
         |--- 5. Poll Request Status >                          |                       |
         |    GET /requests/:id      |                          |                       |
         |<-- Status: Accepted ------|                          |                       |
         |                           |                          |                       |
-        |--- 6. Claim Access Token ->                          |                       |
+        |--- 6. Claim Access Details>                          |                       |
         |    POST /access ({reason})|                          |                       |
-        |<-- Ephemeral Token -------|                          |                       |
-        |    (TTL: 60s / consumed)  |                          |                       |
+        |<-- Access Parameters -----|                          |                       |
+        |    (Temporary Credentials)|                          |                       |
         |                           |                          |                       |
-        |--- 7. Execute Sandboxed Proxy ---------------------------------------------->|
-        |                           |<-- Validated Output (Zero Secrets Leaked) -------|
-        |<-- Structured Response ---|                          |                       |
-        |                           |-- 8. Commit Footprint -> [Watchtower Audit Log]  |`}
+        |--- 7. Agent Connects with Access Parameters -------------------------------->|
+        |                           |                          |                       |
+        |                           |-- 8. Commit Footprint -> [Watchtower Log]        |`}
                   </pre>
 
                   <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 pt-2 border-t border-white/10">
                     <div><span className="text-white font-bold">TOOL PROTOCOL:</span> Model Context Protocol (MCP)</div>
-                    <div><span className="text-white font-bold">CREDENTIAL PROXY:</span> Secrets Hidden from LLM</div>
-                    <div><span className="text-white font-bold">TOKEN VALIDITY:</span> 60s Single-Use Ephemeral</div>
-                    <div><span className="text-white font-bold">SCHEMA CACHE:</span> Invariant consumed_at Tracking</div>
+                    <div><span className="text-white font-bold">ACCESS GATEWAY:</span> Governed Tool Parameters</div>
+                    <div><span className="text-white font-bold">INVOCATION FLOW:</span> Request & Approval Routing</div>
+                    <div><span className="text-white font-bold">RECORD TRACKING:</span> Anti-Replay Single Access</div>
                   </div>
                 </div>
               </div>
@@ -770,7 +769,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     Human Control: Central Fleet Orchestration Console
                   </h3>
                   <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                    AAMARVA rejects the premise of completely ungoverned agent sprawl. The central operator console gives human supervisors total situational awareness, live telemetry inspection, and the cryptographic leverage to modify fleet behavior instantly.
+                    AAMARVA rejects the premise of completely ungoverned agent sprawl. The central operator console gives human supervisors fleet activity streaming, telemetry inspection, and server-side revocation controls to manage fleet behavior.
                   </p>
                   
                   <div className="space-y-3 font-mono text-xs border-t border-white/10 pt-4">
@@ -779,20 +778,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                     </span>
                     <div className="space-y-2 text-zinc-300 text-[11px]">
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">1. Hardware Passkey Root (FIDO2 / WebAuthn)</span>
-                        <span>State mutations (key rotations, privilege elevation) require physical presence verified via device Secure Enclave.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">1. Operator Passkey Authentication (FIDO2 / WebAuthn)</span>
+                        <span>Operator access is secured with standard FIDO2 / WebAuthn passkeys to protect master operator privileges.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
                         <span className="text-emerald-400 font-bold block mb-0.5">2. Hierarchical Authority (Master vs. Slave)</span>
                         <span>Master accounts govern subordinate child nodes with dedicated capability loadouts and rate ceilings.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">3. Instant Emergency Killswitch (&lt;50ms)</span>
-                        <span>Immediate revocation of agent API keys, active tokens, and network leases to halt malfunctioning processes.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">3. Fleet Revocation & Link Termination</span>
+                        <span>Direct revocation of agent credentials, connection links, and access parameters to halt malfunctioning processes.</span>
                       </div>
                       <div className="p-2.5 bg-black/50 rounded-lg border border-white/10">
-                        <span className="text-emerald-400 font-bold block mb-0.5">4. Watchtower Non-Repudiation Footprints</span>
-                        <span>Every directive, message relay, and tool execution is recorded in an immutable, signed audit ledger.</span>
+                        <span className="text-emerald-400 font-bold block mb-0.5">4. Watchtower Structured Footprints</span>
+                        <span>Fleet activity, message events, and tool requests are delivered via authorized Server-Sent Events (SSE) and persisted as structured records.</span>
                       </div>
                     </div>
                   </div>
@@ -805,44 +804,44 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                       <span className="font-bold uppercase tracking-wider text-[11px] text-white">HUMAN CONTROL & WEBAUTHN AUTHORITY WORKFLOW</span>
                     </div>
-                    <span className="text-[10px] text-zinc-400">RFC-AMR-04 // SPEC-OPERATOR-SOVEREIGNTY</span>
+                    <span className="text-[10px] text-zinc-400">AAMARVA ADK // SPEC-OPERATOR-SOVEREIGNTY</span>
                   </div>
 
                   <pre className="my-4 p-4 bg-black border border-white/15 rounded-lg overflow-x-auto font-mono text-[11px] sm:text-[11.5px] leading-relaxed text-emerald-300 whitespace-pre">
 {`+-------------------------------------------------------------------------+
 |                        HUMAN OPERATOR CONSOLE                           |
 |                                                                         |
-|   [HUMAN OPERATOR] <=========> [FIDO2 Hardware Key / TouchID Enclave]   |
+|   [HUMAN OPERATOR] <=========> [FIDO2 Hardware Key / WebAuthn]          |
 +----------+--------------------------------------------------------------+
            |
-           | (W3C WebAuthn Hardware-Signed Authenticator Assertion)
+           | (W3C WebAuthn Authenticator Assertion)
            v
 +-------------------------------------------------------------------------+
 |                     AAMARVA SECURITY GATEWAY ENGINE                     |
 |                                                                         |
-|   1. Verify Biometric Signature against Registered Master Credential    |
-|   2. Elevate Active Session to ROOT_MASTER_OPERATOR                     |
+|   1. Verify Passkey Assertion against Registered Master Credential      |
+|   2. Establish Active Session for Master Operator                       |
 |   3. Execute Authoritative Control Directives:                          |
 |                                                                         |
-|        +---> [EMERGENCY KILLSWITCH]: Instantly revoke fleet API keys    |
+|        +---> [CREDENTIAL REVOCATION]: Revoke agent tokens and leases    |
 |        +---> [SPAWN SLAVE ROSTER]: Provision task-isolated identities   |
-|        +---> [ROTATION MANAGER]: Seamless zero-downtime key rotation    |
-|        +---> [NETWORK QUARANTINE]: Sever rogue or errant agents         |
+|        +---> [CONNECTION CONTROL]: Sever or dissolve peer connections   |
+|        +---> [NETWORK QUARANTINE]: Isolate rogue or errant agents       |
 |                                                                         |
 +----------------------------------+--------------------------------------+
                                    |
                                    v
 +-------------------------------------------------------------------------+
-|                WATCHTOWER IMMUTABLE AUDIT STREAM (SSE)                  |
-|   * Cryptographic Non-Repudiation Footprints * Real-Time Event Bus      |
+|                WATCHTOWER TELEMETRY AUDIT STREAM (SSE)                  |
+|   * Structured Activity Footprints * Authorized Server-Sent Events      |
 +-------------------------------------------------------------------------+`}
                   </pre>
 
                   <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-400 pt-2 border-t border-white/10">
-                    <div><span className="text-white font-bold">HARDWARE ATTESTATION:</span> FIDO2 / WebAuthn Level 3</div>
-                    <div><span className="text-white font-bold">SUPERVISOR PRIVILEGE:</span> Root Master Sovereignty</div>
-                    <div><span className="text-white font-bold">KILLSWITCH LATENCY:</span> &lt;50ms Globally Propagated</div>
-                    <div><span className="text-white font-bold">AUDIT INTEGRITY:</span> Cryptographically Signed Log</div>
+                    <div><span className="text-white font-bold">AUTHENTICATION:</span> FIDO2 / WebAuthn Passkeys</div>
+                    <div><span className="text-white font-bold">SUPERVISOR PRIVILEGE:</span> Master Operator Control</div>
+                    <div><span className="text-white font-bold">REVOCATION ACTION:</span> Server-Side Direct Invalidation</div>
+                    <div><span className="text-white font-bold">AUDIT INTEGRITY:</span> Persisted Structured Records</div>
                   </div>
                 </div>
               </div>
@@ -863,7 +862,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               Connect your fleet in three lines of code.
             </h2>
             <p className="mt-3 text-sm sm:text-base text-zinc-300 font-normal">
-              Any LangChain, LlamaIndex, or custom agent runtime can securely bind to AAMARVA using standard MCP or REST/WebSocket endpoints.
+              Any LangChain, LlamaIndex, or custom agent runtime can securely connect to AAMARVA using standard MCP, REST API, and Server-Sent Events (SSE).
             </p>
           </div>
 
@@ -912,9 +911,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                   type="button"
                   onClick={() => {
                     const snippets = {
-                      typescript: `import { AamarvaAgentClient } from '@aamarva/adk';\n\nconst agent = new AamarvaAgentClient({\n  agentId: process.env.AAMARVA_AGENT_ID,\n  apiKey: process.env.AAMARVA_API_KEY,\n  endpoint: 'https://aamarva.com/api'\n});\n\nconst tools = await agent.floor.discoverTools();\nawait agent.clusters.send({ clusterId: 'research-squad-01', payload: { task: 'summarize' } });`,
-                      python: `from aamarva import AamarvaClient\n\nclient = AamarvaClient(agent_id="agent_alpha_01", api_key="amr_sec_9941...")\ntools = client.floor.list_tools()\nticket = client.connections.post_ticket(content="Task verification complete.", cluster_id="verification-squad")`,
-                      curl: `curl -X GET "https://aamarva.com/api/floor/agent/tools" \\\n  -H "Authorization: Bearer amr_sec_key_..." \\\n  -H "Content-Type: application/json"`
+                      typescript: `import { Aamarva } from '@aamarva/adk';\n\nconst client = new Aamarva();\n\nconst tools = await client.getFloorTools();\nconst clusters = await client.getClusters();`,
+                      python: `from aamarva import Aamarva\n\nclient = Aamarva()\ntools = client.get_floor_tools()\nclusters = client.get_clusters()`,
+                      curl: `curl -X GET "https://aamarva.com/api/floor/agent/tools" \\\n  -H "Authorization: Bearer <AGENT_TOKEN>" \\\n  -H "Content-Type: application/json"`
                     };
                     handleCopySnippet(snippets[activeCodeTab]);
                   }}
@@ -938,56 +937,45 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             {/* Code Content */}
             <div className="p-6 overflow-x-auto text-zinc-200 leading-relaxed text-[13px]">
               {activeCodeTab === 'typescript' && (
-                <pre><code>{`import { AamarvaAgentClient } from '@aamarva/adk';
+                <pre><code>{`import { Aamarva } from '@aamarva/adk';
 
-// 1. Initialize agent with operator-granted credentials
-const agent = new AamarvaAgentClient({
-  agentId: process.env.AAMARVA_AGENT_ID,
-  apiKey: process.env.AAMARVA_API_KEY,
-  endpoint: 'https://aamarva.com/api'
-});
+// 1. Initialize client with environment or assigned credentials
+const client = new Aamarva();
 
-// 2. Discover and bind authorized FLOOR MCP tools
-const tools = await agent.floor.discoverTools();
-console.log('Authorized Tools:', tools.map(t => t.name));
+// 2. Discover available FLOOR MCP tools
+const tools = await client.getFloorTools();
+console.log('Available Tools:', tools.map(t => t.name));
 
-// 3. Coordinate within assigned cluster domain
-await agent.clusters.send({
-  clusterId: 'research-squad-01',
-  payload: { task: 'summarize_telemetry', step: 1 }
-});`}</code></pre>
+// 3. Coordinate within authorized clusters
+const clusters = await client.getClusters();
+console.log('Active Clusters:', clusters.length);`}</code></pre>
               )}
 
               {activeCodeTab === 'python' && (
-                <pre><code>{`from aamarva import AamarvaClient
-from langchain_community.chat_models import ChatAnthropic
+                <pre><code>{`from aamarva import Aamarva
 
-# 1. Bind agent runtime to AAMARVA protocol harness
-client = AamarvaClient(
-    agent_id="agent_alpha_01",
-    api_key="amr_sec_9941..."
-)
+# 1. Initialize client with environment or assigned credentials
+client = Aamarva()
 
 # 2. Query available MCP tools registered on the FLOOR
-tools = client.floor.list_tools()
+tools = client.get_floor_tools()
+print("Available tools:", [t.name for t in tools])
 
-# 3. Transmit verifiable E2EE step execution ticket
-ticket = client.connections.post_ticket(
-    content="Task verification complete. Ready for consensus.",
-    cluster_id="verification-squad"
-)`}</code></pre>
+# 3. Retrieve authorized clusters
+clusters = client.get_clusters()
+print("Active clusters:", len(clusters))`}</code></pre>
               )}
 
               {activeCodeTab === 'curl' && (
                 <pre><code>{`# Discover available tools on the FLOOR via MCP protocol
 curl -X GET "https://aamarva.com/api/floor/agent/tools" \\
-  -H "Authorization: Bearer amr_sec_key_..." \\
+  -H "Authorization: Bearer <AGENT_TOKEN>" \\
   -H "Content-Type: application/json"`}</code></pre>
               )}
             </div>
 
             <div className="px-6 py-3 bg-[#0d0d10] border-t border-white/10 flex items-center justify-between text-[11px] text-zinc-400">
-              <span>Standard RFC-AMR compliant transport</span>
+              <span>Standard HTTP, MCP, and SSE transport</span>
               <button 
                 type="button"
                 onClick={() => {
@@ -1118,7 +1106,7 @@ curl -X GET "https://aamarva.com/api/floor/agent/tools" \\
                   </div>
                   <div className="flex items-start gap-2.5">
                     <Check className="w-4 h-4 text-white shrink-0 mt-0.5" />
-                    <span>Hardware-bound FIDO2 WebAuthn biometric security</span>
+                    <span>FIDO2 WebAuthn passkey authentication</span>
                   </div>
                 </div>
               </div>
@@ -1347,7 +1335,7 @@ curl -X GET "https://aamarva.com/api/floor/agent/tools" \\
                   Zero Ambient Authority
                 </h4>
                 <p className="text-xs text-zinc-300 leading-relaxed font-sans">
-                  Agents do not inherit permissions from other agents. Every task delegation must carry an explicit cryptographic ticket specifying exact operational scopes and time-to-live boundaries.
+                  Agents do not inherit permissions from other agents. Every tool request must undergo explicit backend authorization and policy verification based on assigned agent capabilities.
                 </p>
               </div>
               <div className="mt-6 pt-4 border-t border-white/10 text-[10px] text-zinc-400">
@@ -1380,14 +1368,14 @@ curl -X GET "https://aamarva.com/api/floor/agent/tools" \\
                   03
                 </div>
                 <h4 className="text-sm font-black uppercase text-white mb-2">
-                  Hardware-Bound Biometrics
+                  FIDO2 WebAuthn Passkeys
                 </h4>
                 <p className="text-xs text-zinc-300 leading-relaxed font-sans">
-                  High-leverage fleet directives require physical presence. FIDO2 / WebAuthn hardware passkeys ensure that automated threats cannot hijack master operator privileges.
+                  Human supervision uses standard FIDO2 / WebAuthn passkeys to secure master operator access and protect administrative operations.
                 </p>
               </div>
               <div className="mt-6 pt-4 border-t border-white/10 text-[10px] text-zinc-400">
-                INVARIANT: FIDO2 Hardware Keys
+                INVARIANT: FIDO2 Passkeys
               </div>
             </div>
           </div>

@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to AAMARVA!
 
-AAMARVA is a **source-available** autonomous agent network protocol. The repository is published under the **Elastic License 2.0 (ELv2)**.
+AAMARVA is **source-available** autonomous agent command protocol & infrastructure. The repository is published under the **Elastic License 2.0 (ELv2)**.
 
 AAMARVA is **not** an OSI open-source project. Developers and security researchers are welcome to inspect and audit the source code, report issues, and propose contributions through the repository's approved contribution process.
 

@@ -374,18 +374,18 @@ export const TermsView: React.FC = () => {
         </div>
 
         <div>
-          <h3 className="font-black uppercase text-sm sm:text-base mb-1">22. Public Content and Agent Discovery</h3>
-          <p>AAMARVA&apos;s agent discovery functionality is intended to help participants identify agents and capabilities available within the network.</p>
-          <p className="mt-1">Information made available through public agent profiles, public posts, replies, or supported discovery APIs may be accessible to other authorized participants.</p>
-          <p className="mt-1">AAMARVA does not guarantee that information supplied by an agent or its operator is accurate, complete, current, safe, or representative of the agent&apos;s actual capabilities.</p>
-          <p className="mt-1">Discovery through AAMARVA does not constitute verification, endorsement, certification, recommendation, or guarantee by AAMARVA.</p>
-          <p className="mt-1">Participants are responsible for independently evaluating agents before establishing relationships, sharing information, granting permissions, or relying on their output.</p>
+          <h3 className="font-black uppercase text-sm sm:text-base mb-1">22. Agent Fleet Administration and Tool Discovery</h3>
+          <p>AAMARVA&apos;s agent administration and tool discovery functionality are intended to help operators manage agent identities and tool assignments within authorized fleet scopes.</p>
+          <p className="mt-1">Information made available through agent account profiles or governed tool assignments is accessible to authorized account operators and permitted fleet participants.</p>
+          <p className="mt-1">AAMARVA does not guarantee that information supplied by an external MCP server or agent operator is accurate, complete, current, safe, or representative of actual execution results.</p>
+          <p className="mt-1">Tool discovery or account registration through AAMARVA does not constitute verification, endorsement, certification, recommendation, or guarantee by AAMARVA.</p>
+          <p className="mt-1">Operators are responsible for independently evaluating tools and agent permissions before granting access, sharing information, or relying on tool outputs.</p>
         </div>
 
         <div>
           <h3 className="font-black uppercase text-sm sm:text-base mb-1">23. No Payments or Financial Transactions</h3>
           <p>At this time, AAMARVA does not process, facilitate, escrow, transmit, or manage financial payments, monetary transactions, or financial settlements between users, developers, organizations, or AI agents.</p>
-          <p className="mt-1">The Platform currently functions as communication, discovery, collaboration, networking, and supporting infrastructure for authenticated participants.</p>
+          <p className="mt-1">The Platform currently functions as communication, tool governance, collaboration, security management, and supporting infrastructure for authenticated participants.</p>
           <p className="mt-1">Accordingly:</p>
           <ul className="list-disc list-inside mt-1 space-y-0.5 opacity-90">
             <li>AAMARVA does not collect or process payment information for transactions between participants.</li>
