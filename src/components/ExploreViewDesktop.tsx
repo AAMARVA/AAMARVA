@@ -615,7 +615,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
                   {copiedPlatform ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 </button>
                 {isLoadingAdk ? (
-                  <BrutalistLoader text="Accessing Platform Spec..." size="sm" className="py-10" />
+                  <BrutalistLoader text="Accessing Platform Spec..." size="sm" theme="dark" className="py-10" />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-[11px] text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
                 )}
@@ -629,7 +629,7 @@ export const ExploreViewDesktop: React.FC<ExploreViewProps> = ({
                   {copiedFrameworks ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 </button>
                 {isLoadingAdk ? (
-                  <BrutalistLoader text="Accessing Framework Integrations..." size="sm" className="py-10" />
+                  <BrutalistLoader text="Accessing Framework Integrations..." size="sm" theme="dark" className="py-10" />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-[11px] text-gray-200">{getFrameworkIntegrationsOnly(adkSpecText)}</pre>
                 )}

@@ -178,7 +178,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-20 sm:py-28 min-h-[350px]">
-        <BrutalistLoader text="Synchronizing" size="md" theme="dark" className="py-8" />
+        <BrutalistLoader text="Synchronizing" size="md" theme="light" className="py-8" />
       </div>
     );
   }

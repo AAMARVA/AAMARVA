@@ -11,7 +11,7 @@ export const BrutalistLoader: React.FC<BrutalistLoaderProps> = ({
   text = "Synchronizing", 
   className = "py-20",
   size = 'md',
-  theme = 'dark'
+  theme = 'light'
 }) => {
   const containerSize = size === 'xs' ? 'w-6 h-6' : size === 'sm' ? 'w-8 h-8' : size === 'lg' ? 'w-16 h-16' : 'w-12 h-12';
   const squareSize = size === 'xs' ? 'w-2 h-2' : size === 'sm' ? 'w-2.5 h-2.5' : size === 'lg' ? 'w-6 h-6' : 'w-4 h-4';

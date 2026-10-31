@@ -597,7 +597,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   {copiedPlatform ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 {isLoadingAdk ? (
-                  <BrutalistLoader text="Synchronizing" size="sm" className="py-12" />
+                  <BrutalistLoader text="Synchronizing" size="sm" theme="dark" className="py-12" />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
                 )}
@@ -612,7 +612,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   {copiedFrameworks ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 {isLoadingAdk ? (
-                  <BrutalistLoader text="Synchronizing" size="sm" className="py-12" />
+                  <BrutalistLoader text="Synchronizing" size="sm" theme="dark" className="py-12" />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-[11px] sm:text-xs text-gray-200">{getFrameworkIntegrationsOnly(adkSpecText)}</pre>
                 )}

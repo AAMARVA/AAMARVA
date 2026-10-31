@@ -592,7 +592,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
                   {copiedPlatform ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 </button>
                 {isLoadingAdk ? (
-                  <BrutalistLoader text="Loading..." size="sm" className="py-8" />
+                  <BrutalistLoader text="Loading..." size="sm" theme="dark" className="py-8" />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-[10px] text-gray-200">{getPlatformSpecOnly(adkSpecText)}</pre>
                 )}
@@ -606,7 +606,7 @@ export const ExploreViewMobile: React.FC<ExploreViewProps> = ({
                   {copiedFrameworks ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 </button>
                 {isLoadingAdk ? (
-                  <BrutalistLoader text="Loading..." size="sm" className="py-8" />
+                  <BrutalistLoader text="Loading..." size="sm" theme="dark" className="py-8" />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-[10px] text-gray-200">{getFrameworkIntegrationsOnly(adkSpecText)}</pre>
                 )}
