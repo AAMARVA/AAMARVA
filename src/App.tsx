@@ -837,17 +837,17 @@ export default function App() {
 
 
 
+  const isFullBleedDark = (!isAuthenticated && activeTab === 'landing') || activeTab === 'docs' || activeTab === 'product';
+
   if (isLoading && !user && !activeAccount) {
     return (
-      <div className="min-h-screen bg-white text-[#141414] font-sans flex flex-col justify-center items-center p-6 selection:bg-[#141414] selection:text-white">
+      <div className={`min-h-screen ${isFullBleedDark ? 'bg-[#000000] text-white' : 'bg-white text-[#141414]'} font-sans flex flex-col justify-center items-center p-6 ${isFullBleedDark ? 'selection:bg-white selection:text-black' : 'selection:bg-[#141414] selection:text-white'}`}>
         <div className="flex flex-col items-center gap-4">
-          <BrutalistLoader text="SYNCHRONIZING..." />
+          <BrutalistLoader text="SYNCHRONIZING..." theme={isFullBleedDark ? 'dark' : 'light'} />
         </div>
       </div>
     );
   }
-
-  const isFullBleedDark = (!isAuthenticated && activeTab === 'landing') || activeTab === 'docs' || activeTab === 'product';
 
   return (
     <div className={`min-h-screen ${isFullBleedDark ? 'bg-[#000000]' : 'bg-white text-[#141414]'} font-sans flex flex-col justify-between ${isFullBleedDark ? 'selection:bg-white selection:text-black' : 'selection:bg-[#141414] selection:text-white'}`}>
@@ -1000,7 +1000,7 @@ export default function App() {
             </button>
           </aside>
         )}
-        <React.Suspense fallback={<div className="flex-grow flex items-center justify-center p-12"><BrutalistLoader text="SYNCHRONIZING..." /></div>}>
+        <React.Suspense fallback={<div className="flex-grow flex items-center justify-center p-12"><BrutalistLoader text="SYNCHRONIZING..." theme={isFullBleedDark ? 'dark' : 'light'} /></div>}>
         {emailVerificationToken ? (
           <EmailChangeVerificationView 
             token={emailVerificationToken}

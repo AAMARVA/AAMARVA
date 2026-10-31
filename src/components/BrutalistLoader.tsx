@@ -3,7 +3,7 @@ import React from 'react';
 interface BrutalistLoaderProps {
   text?: string;
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   theme?: 'dark' | 'light';
 }
 
@@ -11,15 +11,15 @@ export const BrutalistLoader: React.FC<BrutalistLoaderProps> = ({
   text = "Synchronizing", 
   className = "py-20",
   size = 'md',
-  theme = 'light'
+  theme = 'dark'
 }) => {
-  const containerSize = size === 'sm' ? 'w-8 h-8' : size === 'lg' ? 'w-16 h-16' : 'w-12 h-12';
-  const squareSize = size === 'sm' ? 'w-2.5 h-2.5' : size === 'lg' ? 'w-6 h-6' : 'w-4 h-4';
-  const travel = size === 'sm' ? 22 : size === 'lg' ? 40 : 32;
+  const containerSize = size === 'xs' ? 'w-6 h-6' : size === 'sm' ? 'w-8 h-8' : size === 'lg' ? 'w-16 h-16' : 'w-12 h-12';
+  const squareSize = size === 'xs' ? 'w-2 h-2' : size === 'sm' ? 'w-2.5 h-2.5' : size === 'lg' ? 'w-6 h-6' : 'w-4 h-4';
+  const travel = size === 'xs' ? 16 : size === 'sm' ? 22 : size === 'lg' ? 40 : 32;
 
-  const borderColor = theme === 'dark' ? 'border-white' : 'border-[#141414]';
-  const squareColor = theme === 'dark' ? 'bg-white' : 'bg-[#141414]';
-  const textColor = theme === 'dark' ? 'text-white' : 'text-[#141414]';
+  const borderColor = theme === 'light' ? 'border-[#141414]' : 'border-white';
+  const squareColor = theme === 'light' ? 'bg-[#141414]' : 'bg-white';
+  const textColor = theme === 'light' ? 'text-[#141414]' : 'text-white';
 
   return (
     <div className={`flex flex-col items-center justify-center ${className}`}>

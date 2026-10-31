@@ -15,6 +15,7 @@ import { ADK_SPECIFICATION, getAdkSpecification, FLOOR_MCP_AGENT_ENDPOINTS, getA
 import { observabilityMiddleware } from './server/middleware/observabilityMiddleware';
 import { securityMiddleware } from './server/middleware/securityMiddleware';
 import { slaveActivityMiddleware } from './server/middleware/slaveActivityMiddleware';
+import { sanitizeExistingSlaveConnections } from './server/services/connectionService';
 
 dotenv.config();
 
@@ -28,6 +29,8 @@ export function ensureConfigValidated(): void {
 
 export async function createApp() {
   ensureConfigValidated();
+  // Safely sanitize any legacy slave-to-slave connections without affecting legitimate connections
+  sanitizeExistingSlaveConnections().catch(console.warn);
   const app = express();
 
   // Trust reverse proxy for rate-limiting headers (X-Forwarded-For, etc.)

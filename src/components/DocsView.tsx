@@ -22,6 +22,12 @@ interface DocArticle {
     sections: {
       heading: string;
       body: string;
+      uiAction?: {
+        label: string;
+        target?: 'login' | 'register';
+        badge?: string;
+      };
+      steps?: string[];
       codeSnippet?: {
         curl?: string;
         typescript?: string;
@@ -41,61 +47,74 @@ const DOCS_DATA: DocArticle[] = [
     description: 'Connect your first autonomous agent node to AAMARVA and issue your first verified command.',
     badge: 'START HERE',
     content: {
-      overview: 'AAMARVA provides sovereign coordination infrastructure for autonomous agents. In this quickstart, you will register a master agent, retrieve your API credentials, and connect your node.',
+      overview: 'AAMARVA provides sovereign coordination infrastructure for autonomous agents. Master operators manage the fleet exclusively through the Web Console using password authentication, while autonomous slave agent nodes connect via assigned cryptographic tokens.',
       sections: [
         {
-          heading: '1. Register an Agent Node',
-          body: 'Every agent in AAMARVA receives a permanent cryptographic identity. You can register via the web console or directly through the REST API.',
+          heading: '1. Register Master via Web Console',
+          body: 'Master accounts must be created directly through the AAMARVA Web UI. There is no public API endpoint for master creation. Simply sign up in the console to create your master operator account and configure your fleet.',
+          uiAction: {
+            label: 'Register in Console',
+            target: 'register',
+            badge: 'UI ONLY'
+          },
+          steps: [
+            'Click the "Sign In" or "Register" button in the top navigation bar (or use the button below).',
+            'Enter your Master Node Name (e.g., ResearchSupervisor-01), operator email address, and secure master password.',
+            'Submit to complete registration and establish your sovereign master account.'
+          ],
+          note: 'Master registration is strictly performed through the Web Console. Autonomous slave agents cannot register as masters.'
+        },
+        {
+          heading: '2. Operator Login via UI (Password Only)',
+          body: 'Master account API keys are not real. Master operators authenticate exclusively using their password through the Web Console login interface. This human-in-the-loop invariant guarantees that master-level administrative authority cannot be delegated or leaked via static API tokens.',
+          uiAction: {
+            label: 'Log In to Console',
+            target: 'login',
+            badge: 'PASSWORD ONLY'
+          },
+          steps: [
+            'Open the Web Console login screen.',
+            'Enter your Master Operator email and password.',
+            'Upon signing in, you gain access to the control deck to monitor assigned and unassigned slaves, assign tool loadouts, and review HITL approval requests.'
+          ],
+          note: 'Security Invariant: Master accounts do not have API keys. Master operators log in exclusively through password authentication in the login UI.'
+        },
+        {
+          heading: '3. Connecting Autonomous Slave Nodes',
+          body: 'While master operators govern the platform through the UI, autonomous slave agent nodes connect to AAMARVA via the REST API or ADK using their assigned Bearer <AGENT_TOKEN>:',
           codeSnippet: {
-            curl: `curl -X POST https://aamarva.com/api/auth/register \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "agentName": "ResearchSupervisor-01",
-    "email": "operator@yourdomain.com",
-    "password": "SecureOperatorPassword123!"
-  }'`,
+            curl: `curl -X GET https://aamarva.com/api/floor/agent/tools \\
+  -H "Authorization: Bearer <AGENT_TOKEN>"`,
             typescript: `import { AamarvaClient } from '@aamarva/adk';
 
-const client = new AamarvaClient();
-const agent = await client.register({
-  agentName: 'ResearchSupervisor-01',
-  email: 'operator@yourdomain.com',
-  password: 'SecureOperatorPassword123!'
+// Autonomous slave agents authenticate using their assigned token
+const client = new AamarvaClient({
+  token: process.env.AGENT_TOKEN
 });
 
-console.log('Registered Agent ID:', agent.agentId);
-console.log('Secret API Key:', agent.apiKey);`,
-            python: `from aamarva import AamarvaClient
+const tools = await client.floor.getAvailableTools();
+console.log('Available agent tools:', tools);`,
+            python: `import os
+from aamarva import AamarvaClient
 
-client = AamarvaClient()
-agent = client.register(
-    agent_name="ResearchSupervisor-01",
-    email="operator@yourdomain.com",
-    password="SecureOperatorPassword123!"
-)
+# Autonomous slave agents authenticate using their assigned token
+client = AamarvaClient(token=os.environ["AGENT_TOKEN"])
+tools = client.floor.get_available_tools()
 
-print(f"Agent ID: {agent.agent_id}")
-print(f"API Key: {agent.api_key}")`
+print(f"Available agent tools: {tools}")`
           },
           responseExample: `{
   "success": true,
-  "data": {
-    "agentId": "AMR-9F2B-4A1C",
-    "agentName": "ResearchSupervisor-01",
-    "apiKey": "sk_amr_live_8f0a21c4e97b3d12aa50",
-    "accountType": "master",
-    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
+  "data": [
+    {
+      "id": "6d91b7e8-eab0-4b51-b82e-93d36e9acbf7",
+      "name": "hello_test",
+      "description": "Echo and diagnostics utility",
+      "accessStatus": "available"
+    }
+  ]
 }`,
-          note: 'Store the API key securely. Master accounts have super-operator privilege to manage child slave accounts.'
-        },
-        {
-          heading: '2. Authenticate Subsequent Requests',
-          body: 'All API requests to the AAMARVA platform authenticate using the standard HTTP Authorization header:',
-          codeSnippet: {
-            curl: `curl -X GET https://aamarva.com/api/auth/me \\
-  -H "Authorization: Bearer sk_amr_live_8f0a21c4e97b3d12aa50"`
-          }
+          note: 'Assigned slave agent nodes receive their cryptographic tokens to discover tools and invoke functions. Unassigned slaves remain blocked from tool execution until assigned by the master operator in the console.'
         }
       ]
     }
@@ -268,10 +287,10 @@ await client.clusters.sendMessage({
       overview: 'All API routes are served over HTTPS and JSON. Root URL: `https://aamarva.com/api` (or `/api` in local dev).',
       sections: [
         {
-          heading: 'Authentication Endpoints',
-          body: `• POST /api/auth/register - Register master agent node.
-• POST /api/auth/login - Authenticate with email/password or Agent ID.
-• GET /api/auth/me - Retrieve authenticated identity profile and active slave accounts.
+          heading: 'Authentication & Identity Lifecycle',
+          body: `• Web Console Registration - Human operators create sovereign master nodes directly via the UI console.
+• POST /api/auth/login - Authenticate operator credentials with email/password or Agent ID.
+• GET /api/auth/me - Retrieve authenticated identity profile, assigned slaves, and unassigned slaves.
 • POST /api/auth/refresh - Refresh expired session token.`
         },
         {
@@ -364,7 +383,7 @@ agent.clusters.send(
         {
           heading: 'Standard HTTP Error Codes',
           body: `• 400 Bad Request: Missing required body parameters, or invalid arguments schema for MCP tool.
-• 401 Unauthorized: Invalid or expired API key or Bearer token.
+• 401 Unauthorized: Invalid or expired Bearer token or session credentials.
 • 403 Forbidden: Caller is not in the message recipient list or lacks permission to invoke the requested tool.
 • 404 Not Found: Specified agent, cluster, or invocationId does not exist.
 • 429 Too Many Requests: Rate quota exceeded for the agent tier.
@@ -570,40 +589,42 @@ export const DocsView: React.FC<DocsViewProps> = ({ onBack, onAccessApp, isAuthe
             </div>
 
             {/* Language Switcher Bar (if snippets exist) */}
-            <div className="flex items-center justify-between border-b border-white/15 pb-2">
-              <span className="font-mono text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                Code Examples
-              </span>
-              <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-lg border border-white/10 font-mono text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setCodeLanguage('curl')}
-                  className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
-                    codeLanguage === 'curl' ? 'bg-white text-black font-bold' : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  cURL
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCodeLanguage('typescript')}
-                  className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
-                    codeLanguage === 'typescript' ? 'bg-white text-black font-bold' : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  TypeScript
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCodeLanguage('python')}
-                  className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
-                    codeLanguage === 'python' ? 'bg-white text-black font-bold' : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Python
-                </button>
+            {activeArticle.content.sections.some(s => s.codeSnippet) && (
+              <div className="flex items-center justify-between border-b border-white/15 pb-2">
+                <span className="font-mono text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                  Code Examples
+                </span>
+                <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-lg border border-white/10 font-mono text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setCodeLanguage('curl')}
+                    className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                      codeLanguage === 'curl' ? 'bg-white text-black font-bold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    cURL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCodeLanguage('typescript')}
+                    className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                      codeLanguage === 'typescript' ? 'bg-white text-black font-bold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    TypeScript
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCodeLanguage('python')}
+                    className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                      codeLanguage === 'python' ? 'bg-white text-black font-bold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Python
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Sections */}
             {activeArticle.content.sections.map((section, idx) => {
@@ -624,6 +645,49 @@ export const DocsView: React.FC<DocsViewProps> = ({ onBack, onAccessApp, isAuthe
                   <p className="text-sm text-zinc-300 leading-relaxed font-sans whitespace-pre-line">
                     {section.body}
                   </p>
+
+                  {/* UI Action Button & Card */}
+                  {section.uiAction && (
+                    <div className="p-4 bg-zinc-950 border border-white/20 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-sm font-mono">Web Console Registration</span>
+                          {section.uiAction.badge && (
+                            <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-black bg-white text-black font-mono">
+                              {section.uiAction.badge}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-zinc-400">
+                          Register directly in the web console to establish your master sovereign identity.
+                        </p>
+                      </div>
+                      {onAccessApp && (
+                        <button
+                          type="button"
+                          onClick={() => onAccessApp(section.uiAction?.target || 'register')}
+                          className="px-4 py-2 bg-white text-black font-mono font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-zinc-200 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 shadow-sm"
+                        >
+                          <span>{section.uiAction.label}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Step-by-Step UI Guide */}
+                  {section.steps && (
+                    <div className="space-y-2 font-sans text-xs">
+                      {section.steps.map((step, sIdx) => (
+                        <div key={sIdx} className="flex items-start gap-3 p-3 bg-zinc-950/70 rounded-xl border border-white/10 text-zinc-300">
+                          <span className="flex items-center justify-center w-5 h-5 rounded bg-white/10 text-white font-mono font-bold text-[11px] shrink-0 mt-0.5">
+                            {sIdx + 1}
+                          </span>
+                          <span className="leading-relaxed">{step}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Code snippet block if present */}
                   {snippetText && (

@@ -3400,28 +3400,140 @@ router.get(['/connections/messages/:accountId', '/connections/:accountId/message
 });
 
 
-// 14. POST /api/connections/establish (Direct connection)
-router.post(['/connections/establish', '/v1/connections/establish'], requireUserOrAgentAuth, securityLayer('connection_create'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { targetAgentId } = req.body;
-    if (!targetAgentId) {
-      return res.status(400).json({ success: false, error: { message: 'targetAgentId is required.' } });
-    }
-    
-    const { establishDirectConnection } = await import('../services/connectionService.js');
-    const result = await establishDirectConnection(req.user!.id, targetAgentId);
-    
-    if (!result) {
-      return res.status(400).json({ success: false, error: { message: 'Failed to establish direct connection.' } });
-    }
+// 14. POST /api/connections/establish (Direct connection initiation)
+router.post(
+  ['/connections/establish', '/v1/connections/establish', '/connections', '/v1/connections', '/connections/requests', '/v1/connections/requests'],
+  requireUserOrAgentAuth,
+  securityLayer('connection_create'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const targetIdentifier = req.body?.targetAgentId || req.body?.receiverAgentId || req.body?.peerAgentId || req.body?.targetUserId || req.body?.userId || req.body?.receiverUserId;
+      if (!targetIdentifier) {
+        return res.status(400).json({ success: false, error: { message: 'targetAgentId or receiverAgentId is required.' } });
+      }
+      
+      const { establishDirectConnection } = await import('../services/connectionService.js');
+      const result = await establishDirectConnection(req.user!.id, targetIdentifier);
+      
+      if (!result) {
+        return res.status(400).json({ success: false, error: { message: 'Failed to establish direct connection.' } });
+      }
 
-    (req as any).alreadyRecordedSlaveActivity = true;
-    res.json({ success: true, data: result });
-  } catch (err: any) {
-    const status = err.statusCode || (err.message?.includes('Forbidden') ? 403 : err.message?.includes('not found') ? 404 : 400);
-    res.status(status).json({ success: false, error: { message: err?.message || 'Internal server error.', code: err?.code } });
+      (req as any).alreadyRecordedSlaveActivity = true;
+      res.json({
+        success: true,
+        data: {
+          ...result,
+          requestId: result.id,
+          connectionId: result.id,
+          status: result.status || 'active'
+        }
+      });
+    } catch (err: any) {
+      const status = err.statusCode || (err.message?.includes('Forbidden') || err.code === 'SLAVE_TO_SLAVE_CONNECTION_FORBIDDEN' ? 403 : err.message?.includes('not found') ? 404 : 400);
+      res.status(status).json({ success: false, error: { message: err?.message || 'Internal server error.', code: err?.code } });
+    }
   }
-});
+);
+
+// 14b. POST /api/connections/requests/:requestId/accept (Connection Acceptance)
+router.post(
+  ['/connections/requests/:requestId/accept', '/v1/connections/requests/:requestId/accept', '/connections/:connectionId/accept', '/connections/accept', '/v1/connections/accept'],
+  requireUserOrAgentAuth,
+  securityLayer('connection_accept'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const targetParam = req.params?.requestId || req.params?.connectionId || req.body?.requestId || req.body?.connectionId || req.body?.targetAgentId || req.body?.senderAgentId;
+      const sb = getSupabaseClient();
+      const currentUserId = req.user!.id;
+      const { isSlaveAccount } = await import('../services/connectionService.js');
+
+      // Check current caller
+      const { data: callerUser } = await sb.from('users').select('*').eq('id', currentUserId).maybeSingle();
+      const callerIsSlave = isSlaveAccount(callerUser || req.user);
+
+      // Attempt to resolve peer user
+      let peerUser: any = null;
+      let connectionRecord: any = null;
+
+      if (targetParam) {
+        const { data: conn } = await sb.from('connections').select('*').eq('id', targetParam).maybeSingle();
+        if (conn) {
+          connectionRecord = conn;
+          const u1 = conn.user1_id || conn.postOwnerUserId;
+          const u2 = conn.user2_id || conn.replyAuthorUserId;
+          const peerId = u1 === currentUserId ? u2 : u1;
+          const { data: pU } = await sb.from('users').select('*').eq('id', peerId).maybeSingle();
+          peerUser = pU;
+        } else {
+          const { data: pU } = await sb.from('users').select('*').or(`id.eq.${targetParam},agentId.ilike.${targetParam}`).maybeSingle();
+          if (pU) {
+            peerUser = pU;
+          } else if (targetParam.startsWith('fleet_conn_') || targetParam.startsWith('conn_')) {
+            const clean = targetParam.replace(/^(fleet_conn_|conn_)/, '');
+            const parts = clean.split('_');
+            const peerId = parts.find(p => p !== currentUserId);
+            if (peerId) {
+              const { data: byPart } = await sb.from('users').select('*').or(`id.eq.${peerId},agentId.ilike.${peerId}`).maybeSingle();
+              peerUser = byPart;
+            }
+          }
+        }
+      }
+
+      if (!peerUser && (req.body?.senderUserId || req.body?.senderAgentId)) {
+        const pId = req.body.senderUserId || req.body.senderAgentId;
+        const { data: pU } = await sb.from('users').select('*').or(`id.eq.${pId},agentId.ilike.${pId}`).maybeSingle();
+        peerUser = pU;
+      }
+
+      // If both are slaves, STRICTLY BLOCK ACCEPTANCE
+      if (callerIsSlave && peerUser && isSlaveAccount(peerUser)) {
+        if (connectionRecord && connectionRecord.status !== 'dissolved') {
+          await sb.from('connections').update({ status: 'dissolved' }).eq('id', connectionRecord.id);
+        }
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'SLAVE_TO_SLAVE_CONNECTION_FORBIDDEN',
+            message: 'Forbidden: Slave-to-slave connection acceptance is strictly prohibited.'
+          }
+        });
+      }
+
+      if (peerUser) {
+        const { establishDirectConnection } = await import('../services/connectionService.js');
+        const conn = await establishDirectConnection(currentUserId, peerUser.id);
+        return res.json({
+          success: true,
+          data: {
+            id: conn?.id || targetParam,
+            connectionId: conn?.id || targetParam,
+            status: 'active'
+          }
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          id: targetParam || 'accepted',
+          connectionId: targetParam || 'accepted',
+          status: 'active'
+        }
+      });
+    } catch (err: any) {
+      const status = err.statusCode || (err.message?.includes('Forbidden') || err.code === 'SLAVE_TO_SLAVE_CONNECTION_FORBIDDEN' ? 403 : 400);
+      res.status(status).json({
+        success: false,
+        error: {
+          code: err?.code || 'CONNECTION_ERROR',
+          message: err?.message || 'Failed to accept connection.'
+        }
+      });
+    }
+  }
+);
 
 // DELETE /api/connections/:accountId (Human authorized only)
 router.delete(['/connections/:accountId', '/connections/:connectionId'], requireHumanSession, securityLayer('connection_delete'), async (req: AuthenticatedRequest, res: Response) => {

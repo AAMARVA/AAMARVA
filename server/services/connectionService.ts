@@ -197,7 +197,24 @@ export async function getConnectionRecord(connectionId: string): Promise<Connect
     .select('*')
     .eq('id', connectionId)
     .maybeSingle();
-  if (existing) return existing as ConnectionRecord | null;
+
+  if (existing) {
+    const u1Id = existing.user1_id || (existing as any).postOwnerUserId;
+    const u2Id = existing.user2_id || (existing as any).replyAuthorUserId;
+    if (u1Id && u2Id) {
+      const [u1Res, u2Res] = await Promise.all([
+        supabase.from('users').select('id, account_type, role, is_slave, is_master_primary, master_id').eq('id', u1Id).maybeSingle(),
+        supabase.from('users').select('id, account_type, role, is_slave, is_master_primary, master_id').eq('id', u2Id).maybeSingle(),
+      ]);
+      if (isSlaveAccount(u1Res.data) && isSlaveAccount(u2Res.data)) {
+        if (existing.status !== 'dissolved') {
+          await supabase.from('connections').update({ status: 'dissolved' }).eq('id', existing.id);
+        }
+        return null;
+      }
+    }
+    return existing as ConnectionRecord | null;
+  }
 
   if (connectionId.startsWith('fleet_conn_') || connectionId.startsWith('conn_')) {
     const clean = connectionId.replace(/^(fleet_conn_|conn_)/, '');
@@ -210,7 +227,23 @@ export async function getConnectionRecord(connectionId: string): Promise<Connect
         .select('*')
         .or(`and(user1_id.eq.${userA},user2_id.eq.${userB}),and(user1_id.eq.${userB},user2_id.eq.${userA})`)
         .maybeSingle();
-      if (conn) return conn as ConnectionRecord;
+      if (conn) {
+        const u1Id = conn.user1_id || (conn as any).postOwnerUserId;
+        const u2Id = conn.user2_id || (conn as any).replyAuthorUserId;
+        if (u1Id && u2Id) {
+          const [u1Res, u2Res] = await Promise.all([
+            supabase.from('users').select('id, account_type, role, is_slave, is_master_primary, master_id').eq('id', u1Id).maybeSingle(),
+            supabase.from('users').select('id, account_type, role, is_slave, is_master_primary, master_id').eq('id', u2Id).maybeSingle(),
+          ]);
+          if (isSlaveAccount(u1Res.data) && isSlaveAccount(u2Res.data)) {
+            if (conn.status !== 'dissolved') {
+              await supabase.from('connections').update({ status: 'dissolved' }).eq('id', conn.id);
+            }
+            return null;
+          }
+        }
+        return conn as ConnectionRecord;
+      }
 
       // WhatsApp-style: establish real persistent database record if both users exist
       const direct = await establishDirectConnection(userA, userB);
@@ -218,6 +251,48 @@ export async function getConnectionRecord(connectionId: string): Promise<Connect
     }
   }
   return null;
+}
+
+export async function sanitizeExistingSlaveConnections(): Promise<number> {
+  try {
+    const supabase = getSupabaseClient();
+    const { data: allConns, error } = await supabase
+      .from('connections')
+      .select('*')
+      .neq('status', 'dissolved');
+    if (error || !allConns || allConns.length === 0) return 0;
+
+    const userIds = new Set<string>();
+    allConns.forEach((c: any) => {
+      const u1 = c.user1_id || (c as any).postOwnerUserId;
+      const u2 = c.user2_id || (c as any).replyAuthorUserId;
+      if (u1) userIds.add(u1);
+      if (u2) userIds.add(u2);
+    });
+
+    if (userIds.size === 0) return 0;
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, agentId, account_type, role, is_slave, is_master_primary, master_id')
+      .in('id', Array.from(userIds));
+
+    if (!users) return 0;
+    const userMap = new Map<string, any>(users.map(u => [u.id, u]));
+
+    let dissolvedCount = 0;
+    for (const c of allConns) {
+      const u1 = userMap.get(c.user1_id || (c as any).postOwnerUserId);
+      const u2 = userMap.get(c.user2_id || (c as any).replyAuthorUserId);
+      if (u1 && u2 && isSlaveAccount(u1) && isSlaveAccount(u2)) {
+        await supabase.from('connections').update({ status: 'dissolved' }).eq('id', c.id);
+        dissolvedCount++;
+      }
+    }
+    return dissolvedCount;
+  } catch (err: any) {
+    console.warn('[sanitizeExistingSlaveConnections] Notice:', err?.message);
+    return 0;
+  }
 }
 
 export async function ensureConnectionRecord(

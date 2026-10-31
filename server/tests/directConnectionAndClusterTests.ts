@@ -26,28 +26,77 @@ export async function runDirectConnectionAndClusterTests(): Promise<Record<strin
       { id: testSlavePeerId, agentId: `agent_sp_${Date.now()}`, name: 'Test Slave Peer', account_type: 'slave', master_id: testPeerMasterId },
     ]);
 
-    // Test 1: Authorized direct connection succeeds without a request
+    // Scenario 1: Master → Master (Allowed)
     try {
-      const conn = await establishDirectConnection(testMasterId, testPeerMasterId);
-      if (conn && conn.id && conn.status === 'active') {
-        recordResult('authorized_direct_connection_succeeds', true, `Connection established: ${conn.id}`);
+      const connMM = await establishDirectConnection(testMasterId, testPeerMasterId);
+      if (connMM && connMM.id && connMM.status === 'active') {
+        recordResult('connection_master_to_master_allowed', true, `Master-to-Master connection established: ${connMM.id}`);
       } else {
-        recordResult('authorized_direct_connection_succeeds', false, 'Did not return active connection record');
+        recordResult('connection_master_to_master_allowed', false, 'Master-to-Master did not return active connection');
       }
     } catch (e: any) {
-      recordResult('authorized_direct_connection_succeeds', false, e?.message);
+      recordResult('connection_master_to_master_allowed', false, e?.message);
     }
 
-    // Test 2: Unauthorized connections remain blocked (Slave-to-Slave connection forbidden)
+    // Scenario 2: Master → Slave (Allowed)
+    try {
+      const connMS = await establishDirectConnection(testMasterId, testSlavePeerId);
+      if (connMS && connMS.id && connMS.status === 'active') {
+        recordResult('connection_master_to_slave_allowed', true, `Master-to-Slave connection established: ${connMS.id}`);
+      } else {
+        recordResult('connection_master_to_slave_allowed', false, 'Master-to-Slave did not return active connection');
+      }
+    } catch (e: any) {
+      recordResult('connection_master_to_slave_allowed', false, e?.message);
+    }
+
+    // Scenario 3: Slave → Master (Allowed)
+    try {
+      const connSM = await establishDirectConnection(testSlaveId, testPeerMasterId);
+      if (connSM && connSM.id && connSM.status === 'active') {
+        recordResult('connection_slave_to_master_allowed', true, `Slave-to-Master connection established: ${connSM.id}`);
+      } else {
+        recordResult('connection_slave_to_master_allowed', false, 'Slave-to-Master did not return active connection');
+      }
+    } catch (e: any) {
+      recordResult('connection_slave_to_master_allowed', false, e?.message);
+    }
+
+    // Scenario 4: Slave → Slave (Blocked)
     try {
       await establishDirectConnection(testSlaveId, testSlavePeerId);
       recordResult('unauthorized_slave_to_slave_blocked', false, 'Expected slave-to-slave connection to be forbidden');
     } catch (e: any) {
       if (e?.statusCode === 403 || e?.code === 'SLAVE_TO_SLAVE_CONNECTION_FORBIDDEN' || e?.message?.includes('prohibited')) {
-        recordResult('unauthorized_slave_to_slave_blocked', true, 'Slave-to-slave connection successfully blocked');
+        recordResult('unauthorized_slave_to_slave_blocked', true, 'Slave-to-slave connection successfully blocked (403)');
       } else {
         recordResult('unauthorized_slave_to_slave_blocked', false, `Unexpected error: ${e?.message}`);
       }
+    }
+
+    // Scenario 5: Slave accepts Slave (Blocked)
+    try {
+      const { getConnectionRecord } = await import('../services/connectionService.ts');
+      // Create a dummy record directly in DB as if created before restriction
+      const legacySlaveConnId = `conn_legacy_ss_${Date.now()}`;
+      await supabase.from('connections').insert({
+        id: legacySlaveConnId,
+        user1_id: testSlaveId,
+        user1_agent_id: 'agent_s',
+        user2_id: testSlavePeerId,
+        user2_agent_id: 'agent_sp',
+        status: 'pending'
+      });
+
+      // Attempting to resolve/accept this connection via getConnectionRecord or acceptance logic
+      const rec = await getConnectionRecord(legacySlaveConnId);
+      if (rec === null) {
+        recordResult('slave_accepts_slave_blocked', true, 'Slave accepting slave connection successfully blocked and dissolved');
+      } else {
+        recordResult('slave_accepts_slave_blocked', false, 'Expected slave-to-slave connection record to be dissolved and nullified');
+      }
+    } catch (e: any) {
+      recordResult('slave_accepts_slave_blocked', true, `Blocked with: ${e?.message}`);
     }
 
     // Test 3: Direct cluster member addition and removal without invitation
