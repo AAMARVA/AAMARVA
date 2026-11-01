@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@custom-variant tablet (@media (min-width: 768px) and (max-width: 1023px));
+@custom-variant desktop (@media (min-width: 1024px));
+@custom-variant mobile (@media (max-width: 767px));
+
+@layer base {
+  body {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: white;
+    color: #141414;
+  }
+
+  .font-serif {
+    font-family: 'Instrument Serif', Georgia, serif;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer utilities {
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #141414 #E4E3E0;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: white;
+    border-left: 1px solid #141414;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #141414;
+    border-radius: 0px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #333333;
+  }
+}
+
+@keyframes brutalist-square {
+  0% { transform: translate(0px, var(--travel, 32px)); opacity: 1; }
+  40% { transform: translate(var(--travel, 32px), var(--travel, 32px)); opacity: 1; }
+  80% { transform: translate(var(--travel, 32px), 0px); opacity: 1; }
+  100% { transform: translate(0px, var(--travel, 32px)); opacity: 0; }
+}
+
+@keyframes hud-scan {
+  0% { top: 0%; opacity: 0; }
+  15% { opacity: 0.9; }
+  85% { opacity: 0.9; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.animate-hud-scan {
+  animation: hud-scan 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
