@@ -35,8 +35,6 @@ interface WebhookAgentLogsProps {
   onOpenChat?: (chat: { id: string; agentName: string; avatar?: string; agentId?: string; peerE2eePublicKey?: string }) => void;
   connections?: any[];
   pendingRequests?: any[];
-  onOpenThread?: (postId: string, details?: any, mode?: 'post' | 'bid') => void;
-  onOpenPost?: (postId: string, details?: any) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenCluster?: (clusterId: string, details?: any) => void;
   onOpenRequestsTab?: () => void;
@@ -114,8 +112,6 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
   onOpenChat, 
   connections, 
   pendingRequests,
-  onOpenThread, 
-  onOpenPost,
   onOpenAgentProfile,
   onOpenCluster,
   onOpenRequestsTab
@@ -736,9 +732,10 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
 
   const renderClusterBadge = (rawClusterId?: string, details?: any) => {
     const detailsObj = typeof details === 'object' ? details : {};
-    const clusterId = rawClusterId || detailsObj?.clusterId || detailsObj?.targetId || 'cluster_alpha_secret';
+    const clusterId = rawClusterId || detailsObj?.clusterId || detailsObj?.targetId || '';
+    if (!clusterId) return null;
     const sym = getClusterSymbol(clusterId);
-    const clusterName = detailsObj?.clusterName || detailsObj?.name || (clusterId === 'cluster_alpha_secret' ? 'ALPHA SECRET ENCLAVE' : `CLUSTER ${clusterId.slice(0, 8)}`);
+    const clusterName = detailsObj?.clusterName || detailsObj?.name || `CLUSTER ${clusterId.slice(0, 8)}`;
 
     if (onOpenCluster) {
       return (
@@ -791,11 +788,7 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
     const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
     const actionKey = (log.action || log.type || '').toUpperCase();
     const isChatable = CHAT_ELIGIBLE_TYPES.has(actionKey);
-    const targetStr = log.target || log.targetId || log.details?.targetId || log.details?.postId || log.details?.connectionId;
-    const targetShort = targetStr ? (targetStr.length > 14 ? `${targetStr.slice(0, 12)}...` : targetStr) : null;
-    const isReplyTarget = actionKey.includes('BID') || (log.endpoint && log.endpoint.includes('/replies')) || (targetStr && (targetStr.startsWith('rep_') || targetStr.startsWith('REP_')));
-    const isPostTarget = !isReplyTarget && (actionKey.includes('POST') || (log.endpoint && log.endpoint.includes('/posts')) || (targetStr && (targetStr.startsWith('post_') || targetStr.startsWith('POST_'))));
-    const isThreadTarget = isPostTarget || isReplyTarget;
+    const targetStr = log.target || log.targetId || log.details?.targetId || log.details?.connectionId;
     const isClusterTarget = actionKey.includes('CLUSTER') || (targetStr && (targetStr.startsWith('cluster_') || targetStr.startsWith('cls_'))) || Boolean(log.details?.clusterId);
     const entities = resolveLogEntities(log);
     const { summary, detailsList } = formatLogDetails(log, isWebhook);
@@ -851,35 +844,13 @@ export const WebhookAgentLogs: React.FC<WebhookAgentLogsProps> = ({
         {/* Row 4: Direct Link Boxes */}
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
           {isClusterTarget && renderClusterBadge(targetStr || log.details?.clusterId, log.details)}
-          {isThreadTarget && targetStr && (onOpenThread || onOpenPost) && (
-            <button
-              type="button"
-              onClick={() => {
-                const targetId = log.details?.postId || log.details?.id || targetStr.replace('#', '');
-                if (isPostTarget) {
-                  if (onOpenPost) {
-                    onOpenPost(targetId, log.details);
-                  } else if (onOpenThread) {
-                    onOpenThread(targetId, log.details, 'post');
-                  }
-                } else {
-                  if (onOpenThread) {
-                    onOpenThread(targetId, log.details, 'bid');
-                  }
-                }
-              }}
-              className="font-black text-white/80 bg-[#141414] hover:bg-white hover:text-[#141414] border border-white/20 px-2.5 py-1 transition-all cursor-pointer text-[10px] tracking-wider uppercase shadow-[1px_1px_0px_0px_rgba(255,255,255,0.05)] active:translate-x-[1px] active:translate-y-[1px]"
-            >
-              Thread #{targetShort}
-            </button>
-          )}
-          {!isClusterTarget && !isThreadTarget && entities.isRequest && (
+          {!isClusterTarget && entities.isRequest && (
             <>
               {entities.agentId && renderAgentBadge(entities.agentId, entities.agentName, entities.agentAvatar, log.details)}
               {entities.requestId && renderRequestBadge(entities.requestId)}
             </>
           )}
-          {!isClusterTarget && !isThreadTarget && !entities.isRequest && (
+          {!isClusterTarget && !entities.isRequest && (
             renderAgentBadge(entities.agentId || targetStr || log.senderId, entities.agentName, entities.agentAvatar, log.details)
           )}
           {onOpenChat && isChatable && (

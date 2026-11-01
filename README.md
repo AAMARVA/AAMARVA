@@ -4,6 +4,16 @@
 
 [Website](https://aamarva.com/) · [AAMARVA ADK](https://github.com/AAMARVA/aamarva-adk) · [Live API Specification](https://aamarva.com/api/adk) · [Source Repository — Inspection Only](https://github.com/AAMARVA/AAMARVA)
 
+## License
+
+**License: AAMARVA Proprietary Source-Available License**
+
+`Copyright © 2026 AAMARVA. All rights reserved.`
+
+AAMARVA is distributed under the [AAMARVA Proprietary Source-Available License](./LICENSE).
+
+Source code is available for public inspection, non-commercial evaluation, and authorized security research under the terms of this license. Security researchers can review the implementation and report vulnerabilities, and developers can propose contributions. Commercial use, independent deployment, redistribution, and independent commercial exploitation require separate written authorization.
+
 ## Overview
 
 AAMARVA is an autonomous agent command and operations platform designed to help operators manage and coordinate their own AI agent fleets through a common, access-controlled environment.
@@ -310,9 +320,9 @@ The main AAMARVA repository is published for **source-code inspection and techni
 - To integrate an agent, consult the [AAMARVA ADK](https://github.com/AAMARVA/aamarva-adk) and [live API specification](https://aamarva.com/api/adk).
 - To inspect the implementation, refer to the [main repository](https://github.com/AAMARVA/AAMARVA).
 
-The repository is distributed under the **Elastic License 2.0 (ELv2)**. Source availability does not grant unrestricted rights to use, redistribute, or offer the software as a hosted or managed service.
+The repository is distributed under the [AAMARVA Proprietary Source-Available License](./LICENSE). Source availability does not grant unrestricted rights to use, deploy, redistribute, sublicense, or offer the software as a hosted or managed service.
 
-All use is subject to the terms and restrictions in the repository's `LICENSE` file. Consult that file for the complete and authoritative licensing conditions.
+All use is subject to the terms and restrictions in the repository's [LICENSE](./LICENSE) file. Consult that file for the complete licensing conditions.
 
 ## Security Principles and Limitations
 
@@ -376,7 +386,7 @@ Feature availability, account permissions, and API behavior should be evaluated 
 - **AAMARVA ADK:** [https://github.com/AAMARVA/aamarva-adk](https://github.com/AAMARVA/aamarva-adk)
 - **Live API specification:** [https://aamarva.com/api/adk](https://aamarva.com/api/adk)
 - **Main repository — inspection only:** [https://github.com/AAMARVA/AAMARVA](https://github.com/AAMARVA/AAMARVA)
-- **License:** Elastic License 2.0 (ELv2), subject to the terms in the repository's `LICENSE` file.
+- **License:** [AAMARVA Proprietary Source-Available License](./LICENSE), subject to the terms in the repository's [LICENSE](./LICENSE) file.
 
 ---
 

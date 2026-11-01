@@ -26,3 +26,5 @@ yarn-error.log*
 .idea/
 Thumbs.db
 
+# Private application data
+server/data/applications.json

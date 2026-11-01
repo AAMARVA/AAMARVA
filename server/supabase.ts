@@ -121,7 +121,6 @@ class MockPostgrestQueryBuilder implements PromiseLike<any> {
   }
 
   ilike(column: string, pattern: string) {
-    console.log('ilike called on', this.constructor.name, Object.keys(this));
     const clean = pattern.replace(/^%/, '').replace(/%$/, '').toLowerCase();
     this.filters.push(row => {
       const val = String(row[column] ?? '').toLowerCase();
@@ -397,70 +396,12 @@ if (!isStoreInitialized) {
       createdAt: new Date().toISOString()
     }
   ]);
-
-  globalMemoryStore.set('posts', []);
 }
 
 export function createMockSupabaseClient() {
   return {
     from: (table: string) => new MockPostgrestQueryBuilder(table, globalMemoryStore),
     rpc: async (fnName: string, args: any) => {
-      if (fnName === 'accept_contract') {
-        const { p_contract_id, p_user_id, p_agent_id } = args;
-        const contracts = globalMemoryStore.get('contracts') || [];
-        const contract = contracts.find((c: any) => c.id === p_contract_id);
-        if (!contract) {
-          return { data: null, error: { message: 'Contract not found.' } };
-        }
-        const isOwner = contract.ownerUserId === p_user_id || (contract.ownerAgentId && p_agent_id && contract.ownerAgentId.toLowerCase() === p_agent_id.toLowerCase());
-        const isAgent = contract.selectedAgentId && p_agent_id && contract.selectedAgentId.toLowerCase() === p_agent_id.toLowerCase();
-        if (!isOwner && !isAgent) {
-          return { data: null, error: { message: 'Forbidden: Only contract parties can accept contract terms.' } };
-        }
-        contract.ownerAccepted = contract.ownerAccepted || isOwner;
-        contract.agentAccepted = contract.agentAccepted || isAgent;
-        if (contract.ownerAccepted && contract.agentAccepted) {
-          contract.status = 'active';
-        }
-        return { data: { success: true, contract }, error: null };
-      }
-      if (fnName === 'award_ticket_and_create_contract') {
-        const { p_ticket_id, p_bid_id, p_user_id } = args;
-        const posts = globalMemoryStore.get('posts') || [];
-        const post = posts.find((p: any) => p.id === p_ticket_id);
-        if (!post) return { data: null, error: { message: 'Ticket not found.' } };
-        if (post.userId !== p_user_id) return { data: null, error: { message: 'Forbidden: Only the ticket owner can award applications.' } };
-        if (post.ticketStatus === 'awarded') return { data: null, error: { message: 'Ticket has already been awarded.' } };
-
-        const replies = globalMemoryStore.get('replies') || [];
-        const bid = replies.find((r: any) => r.id === p_bid_id && r.postId === p_ticket_id);
-        if (!bid) return { data: null, error: { message: 'Application/Bid not found on this ticket.' } };
-
-        post.ticketStatus = 'awarded';
-        post.awardedBidId = p_bid_id;
-        bid.status = 'awarded';
-
-        const contractId = 'cnt_' + Math.random().toString(36).substring(2, 9);
-        const contract = {
-          id: contractId,
-          ticketId: p_ticket_id,
-          bidId: p_bid_id,
-          ownerUserId: post.userId,
-          ownerAgentId: post.agentId,
-          selectedAgentId: bid.agentId,
-          terms: post.content,
-          bidContent: bid.content,
-          status: 'pending_acceptance',
-          ownerAccepted: false,
-          agentAccepted: false,
-          createdAt: new Date().toISOString()
-        };
-        const contracts = globalMemoryStore.get('contracts') || [];
-        contracts.push(contract);
-        globalMemoryStore.set('contracts', contracts);
-
-        return { data: { success: true, contractId, ticketId: p_ticket_id, bidId: p_bid_id, contract }, error: null };
-      }
       if (fnName === 'check_cluster_quota_atomic') {
         return {
           data: {

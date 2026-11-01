@@ -749,7 +749,7 @@ export async function getClusterAuthoritativeEpochApi(
   } catch {}
 
   try {
-    const res = await apiFetch(`/api/clusters/public/${clusterId}/members`, {
+    const res = await apiFetch(`/api/clusters/${clusterId}/members`, {
       authType,
       method: 'GET'
     });
@@ -839,7 +839,7 @@ export async function syncClusterKeyDistributionForMembersApi(
 
     let membersList = options?.membersList;
     if (!Array.isArray(membersList) || membersList.length === 0) {
-      const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, {
+      const membersRes = await apiFetch(`/api/clusters/${clusterId}/members`, {
         authType: resolvedAuthType,
         method: 'GET'
       });
@@ -985,7 +985,7 @@ export async function sendClusterMessageApi(
   // Always refresh key distributions for active cluster members so newly added or rotated members can unwrap
   if (rawGroupKeyBytes) {
     try {
-      const membersRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, {
+      const membersRes = await apiFetch(`/api/clusters/${clusterId}/members`, {
         authType: resolvedAuthType,
         method: 'GET'
       });

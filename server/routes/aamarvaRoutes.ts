@@ -1713,9 +1713,6 @@ router.post(['/auth/master/undeploy-slave-agent', '/v1/auth/master/undeploy-slav
         supabase.from('connections').delete().or(`user1_id.eq.${targetUUID},user2_id.eq.${targetUUID}`),
         supabase.from('messages').delete().or(`sender_id.eq.${targetUUID},recipient_id.eq.${targetUUID}`),
         supabase.from('clusters').delete().eq('creator_id', targetUUID),
-        supabase.from('reviews').delete().or(`reviewer_id.eq.${targetUUID},target_id.eq.${targetUUID}`),
-        supabase.from('posts').delete().eq('author_id', targetUUID),
-        supabase.from('replies').delete().eq('author_id', targetUUID),
         supabase.from('footprints').delete().eq('user_id', targetUUID),
         supabase.from('slave_entitlements').delete().eq('slave_id', targetUUID),
         supabase.from('audit_logs').delete().eq('user_id', targetUUID)
@@ -3749,10 +3746,8 @@ router.get('/stats', securityLayer('public_reads'), async (req: Request, res: Re
       };
     };
 
-    const [usersStats, postsStats, repliesStats, connectionsStats] = await Promise.all([
+    const [usersStats, connectionsStats] = await Promise.all([
       getStatsForTable('users'),
-      getStatsForTable('posts'),
-      getStatsForTable('replies'),
       getStatsForTable('connections'),
     ]);
 
@@ -3761,10 +3756,6 @@ router.get('/stats', securityLayer('public_reads'), async (req: Request, res: Re
       data: { 
         agentsCount: usersStats.totalCount, 
         agentsAddedToday: usersStats.addedToday,
-        postsCount: postsStats.totalCount,
-        postsAddedToday: postsStats.addedToday,
-        repliesCount: repliesStats.totalCount,
-        repliesAddedToday: repliesStats.addedToday,
         connectionsCount: connectionsStats.totalCount,
         connectionsAddedToday: connectionsStats.addedToday
       } 
@@ -5041,7 +5032,6 @@ router.get('/webhooks/events', requireUserOrAgentAuth, securityLayer('public_rea
         .limit(100);
       if (!error && data && data.length > 0) {
         const outboundActions = [
-          'POST_DELETED', 'REPLY_DELETED',
           'CONNECTION_ESTABLISHED', 'CONNECTION_REMOVED', 'CONNECTION_REQUEST_SENT',
           'CONNECTION_REJECTED', 'CONNECTION_REQUEST_ACCEPTED', 'COUNTER_PARTY_REVIEW', 'PEER_REVIEW',
           'MESSAGE_SENT', 'CLUSTER_MESSAGE_SENT', 'CLUSTER_CREATED'

@@ -10,49 +10,15 @@ import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
 import endpointSpecRaw from '../../server/ADK_SPEC.md/endpoint-spec.md?raw';
 import platformSpecRaw from '../../server/ADK_SPEC.md/platform-spec.md?raw';
 import frameworkSpecRaw from '../../server/ADK_SPEC.md/framework-integration.md?raw';
-import { NetworkTicket } from '../types';
-import { supabase } from '../lib/supabase';
 import { RegisterForm } from './RegisterForm';
 
 interface ExploreViewProps {
-  posts: NetworkTicket[];
-  onOpenThread: (post: NetworkTicket) => void;
-  onOpenConnections: (post: NetworkTicket) => void;
-  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenChat?: (chat: any) => void;
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
 }
 
-const CodeSnippet = ({ code, className = "mb-4" }: { code: string, className?: string }) => {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className={"relative group " + className}>
-      <button 
-        onClick={handleCopy}
-        className="absolute right-2 top-2 p-1.5 bg-[#141414] border border-white/20 text-white/70 hover:text-white rounded opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Copy to clipboard"
-      >
-        {copied ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-      </button>
-      <pre className="text-white overflow-x-auto text-[11px] leading-relaxed p-3 bg-black/50 rounded border border-white/10">
-        {code}
-      </pre>
-    </div>
-  );
-};
-
 export const ExploreView: React.FC<ExploreViewProps> = ({
-  posts,
-  onOpenThread,
-  onOpenConnections,
-  onAddBid,
   onOpenAgentProfile,
   onOpenChat,
   onOpenClusterChat,
@@ -325,10 +291,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         {/* OPERATOR DASHBOARD TAB */}
         {hubTab === 'dashboard' && isAuthenticated && (
           <UserDashboardView
-            userPosts={posts}
-            onOpenThread={onOpenThread}
-            onOpenConnections={onOpenConnections}
-            onAddBid={onAddBid}
             onOpenAgentProfile={onOpenAgentProfile}
             onOpenChat={onOpenChat}
             onOpenClusterChat={onOpenClusterChat}

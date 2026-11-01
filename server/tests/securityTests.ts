@@ -171,7 +171,7 @@ export async function runSecurityTests() {
     // 5. Authorization (IDOR) Test
     console.log('[TEST] Authorization (IDOR)...');
     try {
-      await securityService.auditObjectId('wrong-user', 'other-agent', 'some-post-id', 'posts', 'id', 'userId');
+      await securityService.auditObjectId('wrong-user', 'other-agent', 'some-cluster-id', 'clusters', 'id', 'ownerUserId');
       results.authorization.status = 'FAILED';
       results.authorization.reason = 'IDOR check failed to trigger on mismatch';
     } catch (err: any) {
@@ -203,7 +203,7 @@ export async function runSecurityTests() {
     console.log('[TEST] Behavioral Signals Tracking...');
     results.behavioral_signals = { status: 'PENDING', reason: '' };
     try {
-      await securityService.trackBehavioralSignal(testUser, 'DUPLICATE_POSTS', { test: true });
+      await securityService.trackBehavioralSignal(testUser, 'RAPID_CONNECTION_REQUESTS', { test: true });
       results.behavioral_signals.status = 'PASSED';
     } catch (err: any) {
       results.behavioral_signals.status = 'FAILED';
@@ -311,16 +311,16 @@ export async function runSecurityTests() {
     try {
       const customRlReq = { ip: '11.11.11.2', headers: {}, socket: { remoteAddress: '11.11.11.2' }, body: {} } as any;
       
-      // 1. Set custom reduced limit on 'reply_create' to 2 (default is 60)
-      securityService.setUserCustomRateLimits(customRlUser, { 'reply_create': 2 });
+      // 1. Set custom reduced limit on 'connection_request_send' to 2 (default is 20)
+      securityService.setUserCustomRateLimits(customRlUser, { 'connection_request_send': 2 });
 
       // 2. Run 2 requests -> both should pass
-      await securityService.evaluateRequest(customRlReq, 'reply_create', customRlUser);
-      await securityService.evaluateRequest(customRlReq, 'reply_create', customRlUser);
+      await securityService.evaluateRequest(customRlReq, 'connection_request_send', customRlUser);
+      await securityService.evaluateRequest(customRlReq, 'connection_request_send', customRlUser);
 
       // 3. Run 3rd request -> should be rejected with RATE_LIMIT_EXCEEDED
       try {
-        await securityService.evaluateRequest(customRlReq, 'reply_create', customRlUser);
+        await securityService.evaluateRequest(customRlReq, 'connection_request_send', customRlUser);
         results.custom_rate_limits_enforcement.status = 'FAILED';
         results.custom_rate_limits_enforcement.reason = '3rd request passed when rate limit was reduced to 2';
       } catch (err: any) {

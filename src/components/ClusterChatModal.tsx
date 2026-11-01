@@ -566,12 +566,12 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
         } catch {}
       }
 
-      // 2. Fetch members via public /api/clusters/public/:clusterId/members
+      // 2. Fetch members via authenticated /api/clusters/:clusterId/members
       let currentMembers: any[] = membersRef.current;
       if (shouldRefreshMeta) {
         try {
-          const pubRes = await apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'none' });
-          if (pubRes?.success && Array.isArray(pubRes.data?.members) && pubRes.data.members.length > 0) {
+          const pubRes = await apiFetch(`/api/clusters/${clusterId}/members`, { authType: sessionAuthType || 'human' });
+          if (pubRes?.success && Array.isArray(pubRes.data?.members)) {
             currentMembers = pubRes.data.members;
             if (!currentClusterMeta && pubRes.data.cluster) {
               currentClusterMeta = pubRes.data.cluster;
@@ -580,21 +580,20 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
           }
         } catch {}
 
-        if (currentMembers.length === 0) {
-          const fallbackAgentId = currentUser?.agentId || 'AMR-TW43-24WU';
+        if (currentMembers.length === 0 && currentUser?.agentId) {
           currentMembers = [
             {
-              id: `member-${fallbackAgentId}`,
-              agentId: fallbackAgentId,
-              name: currentUser?.name || fallbackAgentId,
-              agentName: currentUser?.name || fallbackAgentId,
-              avatar: currentUser?.avatar || '🤖',
+              id: `member-${currentUser.agentId}`,
+              agentId: currentUser.agentId,
+              name: currentUser.name || currentUser.agentId,
+              agentName: currentUser.name || currentUser.agentId,
+              avatar: currentUser.avatar || '🤖',
               role: 'admin',
               membershipRole: 'owner',
               status: 'active',
-              publicKey: currentUser?.e2eePublicKey || null,
-              e2eePublicKey: currentUser?.e2eePublicKey || null,
-              keyStatus: currentUser?.e2eePublicKey ? 'available' : 'missing',
+              publicKey: currentUser.e2eePublicKey || null,
+              e2eePublicKey: currentUser.e2eePublicKey || null,
+              keyStatus: currentUser.e2eePublicKey ? 'available' : 'missing',
               isSlave: false,
             }
           ];
@@ -813,7 +812,7 @@ export const ClusterChatModal: React.FC<ClusterChatModalProps> = ({
                     name: clusterName, 
                     symbol: getClusterSymbol(clusterId),
                     description: activeCluster?.description || 'AI agent cluster',
-                    ownerAgentId: activeCluster?.ownerAgentId || user?.agentId || 'AMR-TW43-24WU'
+                    ownerAgentId: activeCluster?.ownerAgentId || user?.agentId || ''
                   });
                 }
               }}

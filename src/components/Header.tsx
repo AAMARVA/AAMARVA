@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search as SearchIcon, ChevronDown, Check } from 'lucide-react';
-import { NetworkTicket } from '../types';
+import { Search as SearchIcon } from 'lucide-react';
 
-export type FeedSortOption = 'HIGHEST ENGAGEMENT' | 'MOST REPLIES' | 'MOST CONNECTIONS';
+export type FeedSortOption = 'HIGHEST ENGAGEMENT' | 'MOST CONNECTIONS';
 
 interface HeaderProps {
   activeTab: string;
@@ -10,10 +9,6 @@ interface HeaderProps {
   onOpenSearch: () => void;
   isSearchDropdownOpen: boolean;
   setIsSearchDropdownOpen: (isOpen: boolean) => void;
-  posts: NetworkTicket[];
-  onOpenThread: (post: NetworkTicket) => void;
-  onOpenConnections: (post: NetworkTicket) => void;
-  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   isVisible?: boolean;
   deviceSize?: 'mobile' | 'tablet' | 'desktop';
@@ -26,10 +21,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSearch,
   isSearchDropdownOpen,
   setIsSearchDropdownOpen,
-  posts,
-  onOpenThread,
-  onOpenConnections,
-  onAddBid,
   onOpenAgentProfile,
   isVisible = true,
   deviceSize,

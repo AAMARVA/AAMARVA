@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, MessageSquare, Repeat, Heart, ArrowLeft, Network, Calendar, User, ExternalLink, ShieldAlert, Shield, ChevronRight, MessageCircle, MessageSquare as BidIcon, Trash2, Globe, Users, Crown, CheckCircle2 } from 'lucide-react';
-import { NetworkTicket, AgentReply, AgentConnection } from '../types';
+import { X, MessageSquare, ArrowLeft, Calendar, Trash2, Users, ChevronRight } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
-import { BrutalistLoader } from './BrutalistLoader';
-import { PostCard } from './PostCard';
-import { ExpandableText } from './ExpandableText';
 import { VerifiedBadge } from './VerifiedBadge';
 import { CappedBadge } from './CappedBadge';
-import { apiFetch } from '../services/authApi';
+import { apiFetch, getCurrentSessionAuthType } from '../services/authApi';
 import { CapabilityInfoModal } from './CapabilityInfoModal';
 import { useAuth } from '../context/AuthContext';
 import { getClusterSymbol } from '../lib/clusterSymbols';
@@ -16,14 +12,10 @@ interface AgentProfileModalProps {
   agentName: string | null;
   agentId?: string;
   avatar?: string;
-  posts?: NetworkTicket[];
   onClose: () => void;
   onBack?: () => void;
-  onOpenThread?: (post: NetworkTicket) => void;
-  onOpenConnections?: (post: NetworkTicket) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
-  onAddBid?: (postId: string, text: string) => void;
   onOpenChat?: (chat: any) => void;
 }
 
@@ -31,17 +23,13 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   agentName,
   agentId,
   avatar,
-  posts = [],
   onClose,
   onBack,
-  onOpenThread,
-  onOpenConnections,
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenChat,
-  onAddBid,
 }) => {
-  const { user, activeAccount, isAuthenticated } = useAuth();
+  const { user, activeAccount } = useAuth();
   const isSlave = Boolean(
     (activeAccount && user && (activeAccount.id !== user.id || activeAccount.agentId !== user.agentId)) ||
     ((activeAccount || user)?.account_type === 'slave' ||
@@ -56,7 +44,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     (activeAccount || user)?.is_master_primary === true ||
     user?.account_type === 'master'
   );
-  const [activeTab, setActiveTab] = useState<'posts' | 'bids' | 'connections' | 'clusters'>('posts');
+  const [activeTab, setActiveTab] = useState<'connections' | 'clusters'>('connections');
   const [agentProfileData, setAgentProfileData] = useState<any>(null);
   const [isDeleted, setIsDeleted] = useState<boolean>(false);
   const [isSubAccount, setIsSubAccount] = useState<boolean>(false);
@@ -64,9 +52,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
   const [isSwitching, setIsSwitching] = useState<boolean>(false);
   const [capabilityModalAccount, setCapabilityModalAccount] = useState<{ id: string; name: string } | null>(null);
 
-  const loggedInAgentId = user?.agentId?.toLowerCase();
-
-  let inferredAgentId = agentId || agentProfileData?.agentId || posts.find(p => p.agentName?.toLowerCase() === agentName?.toLowerCase())?.agentId || (agentName && agentName.startsWith('AMR-') ? agentName : undefined);
+  let inferredAgentId = agentId || agentProfileData?.agentId || (agentName && agentName.startsWith('AMR-') ? agentName : undefined);
 
   const rawDisplayName = agentProfileData?.name || agentName || agentId || 'Agent';
   const displayName = rawDisplayName.replace(/\s+agent$/i, '');
@@ -102,10 +88,11 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     // Immediately clear stale data when agent changes
     setAgentProfileData(null);
     setIsDeleted(false);
-    setActiveTab('posts');
+    setActiveTab('connections');
 
     let isMounted = true;
     const targetId = agentId || inferredAgentId;
+    const authType = getCurrentSessionAuthType();
 
     const markDeleted = () => {
       if (!isMounted) return;
@@ -113,14 +100,14 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
     };
 
     if (targetId) {
-      apiFetch(`/api/agents/${encodeURIComponent(targetId)}`, { authType: 'none' })
+      apiFetch(`/api/agents/${encodeURIComponent(targetId)}`, { authType })
         .then((res) => {
           if (!isMounted) return;
           if (res?.data) {
             setAgentProfileData(res.data);
           } else if (agentName && agentName !== targetId) {
             // Fallback by search
-            apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
+            apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType })
               .then((qRes) => {
                 if (!isMounted) return;
                 const found = qRes?.data?.agents?.find((a: any) => 
@@ -128,7 +115,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   a.agentId?.toLowerCase() === agentName.toLowerCase()
                 );
                 if (found) {
-                  apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType: 'none' })
+                  apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType })
                     .then((profileRes) => {
                       if (isMounted) {
                         if (profileRes?.data) {
@@ -150,7 +137,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         })
         .catch(() => {
           if (agentName && agentName !== targetId) {
-            apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
+            apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType })
               .then((qRes) => {
                 if (!isMounted) return;
                 const found = qRes?.data?.agents?.find((a: any) => 
@@ -158,7 +145,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
                   a.agentId?.toLowerCase() === agentName.toLowerCase()
                 );
                 if (found) {
-                  apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType: 'none' })
+                  apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType })
                     .then((profileRes) => {
                       if (isMounted) {
                         if (profileRes?.data) {
@@ -180,7 +167,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
         });
     } else if (agentName) {
       // Fallback lookup by agent name
-      apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType: 'none' })
+      apiFetch(`/api/agents?q=${encodeURIComponent(agentName)}`, { authType })
         .then((res) => {
           if (!isMounted) return;
           const found = res?.data?.agents?.find((a: any) => 
@@ -188,7 +175,7 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             a.agentId?.toLowerCase() === agentName.toLowerCase()
           );
           if (found) {
-            apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType: 'none' })
+            apiFetch(`/api/agents/${encodeURIComponent(found.agentId)}`, { authType })
               .then((profileRes) => {
                 if (isMounted) {
                   if (profileRes?.data) {
@@ -256,44 +243,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
       </div>
     );
   }
-
-
-  // 1. Gather Posts authored by this agent
-  const agentPosts: NetworkTicket[] = (agentProfileData?.posts || []).map((p: any) => ({
-    id: p.id,
-    agentName: p.agentName || displayName,
-    agentId: p.agentId || inferredAgentId,
-    avatar: p.avatar || currentAvatar,
-    content: p.content,
-    timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-    createdAt: p.createdAt,
-    bidsCount: p.bidsCount || 0,
-    connectionsCount: p.connectionsCount || 0,
-    type: p.type || 'intake',
-  }));
-
-  // 2. Gather Replies authored by this agent
-  const agentReplies: any[] = (agentProfileData?.bids || []).map((r: any) => ({
-    id: r.id,
-    agentName: r.agentName || displayName,
-    agentId: r.agentId || inferredAgentId,
-    avatar: r.avatar || currentAvatar,
-    content: r.content,
-    timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-    createdAt: r.createdAt,
-    parentPost: r.parentPost ? {
-      id: r.parentPost.id,
-      agentName: r.parentPost.agentName || 'Agent',
-      agentId: r.parentPost.agentId || 'agent',
-      avatar: r.parentPost.avatar || undefined,
-      content: r.parentPost.content,
-      timestamp: r.parentPost.createdAt ? new Date(r.parentPost.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-      createdAt: r.parentPost.createdAt,
-      bidsCount: r.parentPost.bidsCount || 0,
-      connectionsCount: r.parentPost.connectionsCount || 0,
-      type: r.parentPost.type || 'intake',
-    } : null,
-  }));
   
   const agentConnections: any[] = (agentProfileData?.connections || []).map((c: any) => {
     const isOwner = (c.postOwnerAgentId || '').toUpperCase() === (inferredAgentId || '').toUpperCase();
@@ -553,14 +502,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
             {/* Stats */}
             <div className="flex items-center gap-3 sm:gap-4 md:gap-4 lg:gap-4 mt-4 sm:mt-5 md:mt-5 lg:mt-5 border-y border-[#141414]/10 py-3 sm:py-4 md:py-4 lg:py-4 shrink-0 overflow-x-auto no-scrollbar">
               <div className="flex items-center gap-1.5">
-                <span className="font-mono font-black text-sm sm:text-base md:text-base lg:text-base text-[#141414]">{agentPosts.length}</span>
-                <span className="font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] text-[#141414]/60 uppercase font-bold tracking-widest">Postings</span>
-              </div>
-              <div className="flex items-center gap-1.5 ml-1 sm:ml-2">
-                <span className="font-mono font-black text-sm sm:text-base md:text-base lg:text-base text-[#141414]">{agentReplies.length}</span>
-                <span className="font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] text-[#141414]/60 uppercase font-bold tracking-widest">Replies</span>
-              </div>
-              <div className="flex items-center gap-1.5 ml-1 sm:ml-2">
                 <span className="font-mono font-black text-sm sm:text-base md:text-base lg:text-base text-[#141414]">{connectionsCount}</span>
                 <span className="font-mono text-[9px] sm:text-[10px] md:text-[10px] lg:text-[10px] text-[#141414]/60 uppercase font-bold tracking-widest">Connects</span>
               </div>
@@ -572,18 +513,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
 
             {/* Tabs */}
             <div className="flex items-center border-b border-[#141414]/10 mt-1 overflow-x-auto no-scrollbar shrink-0">
-              <button
-                onClick={() => setActiveTab('posts')}
-                className={`px-4 sm:px-6 py-3 sm:py-4 font-mono text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all border-b-4 ${activeTab === 'posts' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]/70'} whitespace-nowrap cursor-pointer`}
-              >
-                Intake
-              </button>
-              <button
-                onClick={() => setActiveTab('bids')}
-                className={`px-4 sm:px-6 py-3 sm:py-4 font-mono text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all border-b-4 ${activeTab === 'bids' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]/70'} whitespace-nowrap cursor-pointer`}
-              >
-                Activity
-              </button>
               <button
                 onClick={() => setActiveTab('connections')}
                 className={`px-4 sm:px-6 py-3 sm:py-4 font-mono text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all border-b-4 ${activeTab === 'connections' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]/70'} whitespace-nowrap cursor-pointer`}
@@ -602,63 +531,6 @@ export const AgentProfileModal: React.FC<AgentProfileModalProps> = ({
           {/* Content Area */}
           <div className="flex-1 bg-[#F5F4F0] p-3 sm:p-6 lg:p-6 min-h-0">
             <div className="max-w-xl mx-auto">
-              {activeTab === 'posts' && (
-                <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
-                  {agentPosts.length === 0 ? (
-                    <div className="py-12 text-center text-[#141414]/30 font-mono text-xs uppercase tracking-widest border-2 border-dashed border-[#141414]/10 bg-white">
-                      Zero Intake Records Found
-                    </div>
-                  ) : (
-                    agentPosts.map(post => (
-                      <PostCard
-                        key={post.id}
-                        post={post}
-                        onOpenThread={() => onOpenThread?.(post)}
-                        onOpenConnections={() => onOpenConnections?.(post)}
-                        onOpenAgentProfile={onOpenAgentProfile}
-                        onAddBid={onAddBid}
-                      />
-                    ))
-                  )}
-                </div>
-              )}
-
-              {activeTab === 'bids' && (
-                <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
-                  {agentReplies.length === 0 ? (
-                    <div className="py-12 text-center text-[#141414]/30 font-mono text-xs uppercase tracking-widest border-2 border-dashed border-[#141414]/10 bg-white">
-                      Zero Activity Logs Found
-                    </div>
-                  ) : (
-                    agentReplies.map(reply => (
-                      <div key={reply.id} className="bg-white border-2 border-[#141414] p-4 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)] relative overflow-hidden">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-mono font-bold uppercase text-[#141414]/40">
-                              <BidIcon className="w-3 h-3" />
-                              <span>Replied To</span>
-                              <span className="text-[#141414] font-black underline cursor-pointer" onClick={() => reply.parentPost && onOpenThread?.(reply.parentPost)}>
-                                {reply.parentPost?.agentName || 'Post'}
-                              </span>
-                            </div>
-                            <ExpandableText text={reply.content} limit={160} />
-                            <div className="mt-3 flex items-center justify-between text-[9px] font-mono font-bold uppercase text-[#141414]/40 border-t border-black/5 pt-2">
-                              <span>{reply.timestamp}</span>
-                              <button 
-                                onClick={() => reply.parentPost && onOpenThread?.(reply.parentPost)}
-                                className="text-[#141414] hover:underline cursor-pointer"
-                              >
-                                View Context &gt;
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="absolute top-0 right-0 w-2 h-2 bg-[#141414] [clip-path:polygon(100%_0,100%_100%,0_0)]" />
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
 
               {activeTab === 'connections' && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">

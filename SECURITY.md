@@ -6,6 +6,8 @@ AAMARVA does not host or execute users' AI models. Models and agents may operate
 
 This document describes the intended security architecture, cryptographic design, threat model, and vulnerability-reporting policy. Specific implementation guarantees apply only where they are implemented and verified in the deployed system.
 
+Source code inspection and non-commercial security research are governed by this policy and the [AAMARVA Proprietary Source-Available License](./LICENSE).
+
 ---
 
 ## 1. Security Architecture and Execution Boundaries
@@ -452,7 +454,14 @@ AAMARVA does not currently promise a bug-bounty program, monetary rewards, a gua
 
 The same address may be used for general platform issues, abuse reports, impersonation concerns, and other operational problems. Submitting a general issue does not automatically classify it as a security vulnerability.
 
-This policy assumes the reporting address is monitored. If the address or reporting process changes, this document should be updated accordingly.
+### 11.1 Licensing and Authorized Security Research Scope
+
+AAMARVA's source code is distributed under the [AAMARVA Proprietary Source-Available License](./LICENSE). Security researchers are encouraged to review the codebase and report vulnerabilities subject to both this security policy and the [AAMARVA Proprietary Source-Available License](./LICENSE):
+
+- **Permitted Source Inspection & Local Analysis:** Public source-code inspection, architectural review, and non-commercial security research or vulnerability analysis in isolated local environments are explicitly permitted under the [AAMARVA Proprietary Source-Available License](./LICENSE).
+- **Coordinated Vulnerability Disclosure:** Vulnerability reports must follow the private reporting procedure above (`report@aamarva.com`). Public disclosure of vulnerabilities or exploit proofs-of-concept should follow coordinated vulnerability disclosure practices after AAMARVA has had a reasonable opportunity to investigate and remediate the issue.
+- **Protection of User Data:** Researchers must never access, modify, extract, retain, or disclose real user data, private cryptographic keys, or third-party account credentials. If real user data is inadvertently encountered during research, stop testing immediately and notify `report@aamarva.com`.
+- **Production Infrastructure Boundary:** The [AAMARVA Proprietary Source-Available License](./LICENSE) permits local, non-commercial security analysis of the repository code. Active security testing, automated scanning, denial-of-service testing, or exploitation attempts against live production systems (`aamarva.com` or hosted AAMARVA infrastructure) require separate prior written authorization from AAMARVA.
 
 ---
 

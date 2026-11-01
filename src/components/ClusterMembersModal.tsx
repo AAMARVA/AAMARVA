@@ -3,7 +3,7 @@ import { X, ArrowLeft, AlertCircle, Edit3, Check, Users, Plus, Trash2 } from 'lu
 import { AgentAvatar } from './AgentAvatar';
 import { VerifiedBadge } from './VerifiedBadge';
 import { BrutalistLoader } from './BrutalistLoader';
-import { apiFetch } from '../services/authApi';
+import { apiFetch, getCurrentSessionAuthType } from '../services/authApi';
 import { getClusterSymbol } from '../lib/clusterSymbols';
 import { useAuth } from '../context/AuthContext';
 
@@ -89,7 +89,7 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
 
   const fetchClusterMembers = useCallback(async (cId: string) => {
     try {
-      const res = await apiFetch(`/api/clusters/public/${cId}/members`, { authType: 'none' });
+      const res = await apiFetch(`/api/clusters/${cId}/members`, { authType: getCurrentSessionAuthType() });
       if (res?.success && res?.data) {
         if (res.data.cluster) {
           setClusterInfo((prev) => ({ ...prev, ...res.data.cluster }));
@@ -256,60 +256,28 @@ export const ClusterMembersModal: React.FC<ClusterMembersModalProps> = ({
     let isMounted = true;
     setLoading(true);
 
-    const clusterId = cluster.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id || 'cluster_alpha_secret';
-    const ownerAgentId = cluster.ownerAgentId || (cluster as any)?.owner_agent_id || 'AMR-TW43-24WU';
-    const ownerName = cluster.ownerName || cluster.ownerAgentName || (cluster as any)?.owner_name || (cluster as any)?.owner_agent_name || ownerAgentId || 'Agent';
-    const ownerAvatar = cluster.ownerAvatar || cluster.ownerAgentAvatar || (cluster as any)?.owner_avatar || (cluster as any)?.owner_agent_avatar || undefined;
+    const clusterId = cluster.id || (cluster as any)?.clusterId || (cluster as any)?.cluster_id;
+    if (!clusterId) {
+      setMembers([]);
+      setLoading(false);
+      return;
+    }
 
-    apiFetch(`/api/clusters/public/${clusterId}/members`, { authType: 'none' })
+    apiFetch(`/api/clusters/${clusterId}/members`, { authType: getCurrentSessionAuthType() })
       .then((res) => {
         if (!isMounted) return;
         if (res?.success && res?.data) {
           if (res.data.cluster) {
             setClusterInfo((prev) => ({ ...prev, ...res.data.cluster }));
           }
-          let fetchedMembers: ClusterMember[] = res.data.members || [];
-          
-          if (fetchedMembers.length === 0) {
-            fetchedMembers = [
-              {
-                id: `admin-${clusterId}`,
-                agentId: ownerAgentId,
-                agentName: ownerName,
-                avatar: ownerAvatar,
-                role: 'admin',
-                emailVerified: true,
-              },
-            ];
-          }
-          setMembers(fetchedMembers);
+          setMembers(Array.isArray(res.data.members) ? res.data.members : []);
         } else {
-          const fallbackMembers = [
-            {
-              id: `admin-${clusterId}`,
-              agentId: ownerAgentId,
-              agentName: ownerName,
-              avatar: ownerAvatar,
-              role: 'admin',
-              emailVerified: true,
-            },
-          ];
-          setMembers(fallbackMembers);
+          setMembers([]);
         }
       })
       .catch(() => {
         if (!isMounted) return;
-        const fallbackMembers = [
-          {
-            id: `admin-${clusterId}`,
-            agentId: ownerAgentId,
-            agentName: ownerName,
-            avatar: ownerAvatar,
-            role: 'admin',
-            emailVerified: true,
-          },
-        ];
-        setMembers(fallbackMembers);
+        setMembers([]);
       })
       .finally(() => {
         if (isMounted) setLoading(false);

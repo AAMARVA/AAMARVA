@@ -1,22 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Server, Wrench } from 'lucide-react';
-import { NetworkTicket } from '../types';
-import { PostCard } from './PostCard';
+import { Server, Wrench } from 'lucide-react';
 import { AgentAvatar } from './AgentAvatar';
 import { Highlight } from './Highlight';
-import { apiFetch } from '../services/authApi';
+import { apiFetch, getCurrentSessionAuthType } from '../services/authApi';
 import { BrutalistLoader } from './BrutalistLoader';
 import { VerifiedBadge } from './VerifiedBadge';
 import { useAuth } from '../context/AuthContext';
 
 interface SearchViewProps {
-  posts: NetworkTicket[];
   agents?: any[];
   query: string;
-  activeTab: 'agents' | 'clusters' | 'posts';
-  onOpenThread: (post: NetworkTicket) => void;
-  onOpenConnections?: (post: NetworkTicket) => void;
-  onAddBid: (postId: string, text: string) => void;
+  activeTab: 'agents' | 'clusters' | 'tools';
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
@@ -24,20 +18,15 @@ interface SearchViewProps {
 }
 
 export const SearchView: React.FC<SearchViewProps> = ({
-  posts: initialPosts,
   agents: initialAgents = [],
   query,
   activeTab,
-  onOpenThread,
-  onOpenConnections,
-  onAddBid,
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenClusterChat,
   onOpenMcpServer,
 }) => {
   const { activeAccount } = useAuth();
-  const [dbPosts, setDbPosts] = useState<NetworkTicket[]>([]);
   const [dbMcpServers, setDbMcpServers] = useState<any[]>([]);
   const [dbAgents, setDbAgents] = useState<any[]>([]);
   const [dbClusters, setDbClusters] = useState<any[]>([]);
@@ -56,11 +45,11 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
     setIsLoading(true);
     const timer = setTimeout(async () => {
+      const authType = getCurrentSessionAuthType();
       try {
-        if (activeTab === 'posts') {
-          // Search MCP Servers and Tools
+        if (activeTab === 'tools') {
           try {
-            const serversRes = await apiFetch('/api/floor/servers', { authType: 'human' }).catch(() => null);
+            const serversRes = await apiFetch('/api/floor/servers', { authType }).catch(() => null);
             if (reqIdRef.current !== currentReqId) return;
             if (serversRes && serversRes.success && Array.isArray(serversRes.data)) {
               const q = trimmed.toLowerCase();
@@ -79,14 +68,12 @@ export const SearchView: React.FC<SearchViewProps> = ({
             setDbMcpServers([]);
           }
         } else if (activeTab === 'agents') {
-          const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`, { authType: 'human' }).catch(() => null);
+          const agentsRes = await apiFetch(`/api/agents?q=${encodeURIComponent(trimmed)}&limit=30`, { authType }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
           if (agentsRes && agentsRes.success && agentsRes.data) {
             const list = Array.isArray(agentsRes.data) ? agentsRes.data : (agentsRes.data.agents || []);
-            // Filter to only show slave agents: master_id exists and is not equal to the user's ID (or own id)
-            const slaveAgents = list;
-            setDbAgents(slaveAgents.map((a: any) => ({
+            setDbAgents(list.map((a: any) => ({
               agentId: a.agentId,
               agentName: a.name || a.agentName,
               avatar: a.avatar || undefined,
@@ -97,10 +84,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
             setDbAgents([]);
           }
         } else if (activeTab === 'clusters') {
-          // Add fleet filter if user is a sub-account
-          const fleetId = activeAccount?.agentId || activeAccount?.id;
-          const fleetFilter = fleetId ? `&fleetId=${encodeURIComponent(fleetId)}` : '';
-          const clustersRes = await apiFetch(`/api/clusters/public/recent?q=${encodeURIComponent(trimmed)}${fleetFilter}`, { authType: 'human' }).catch(() => null);
+          const clustersRes = await apiFetch(`/api/clusters?q=${encodeURIComponent(trimmed)}`, { authType }).catch(() => null);
           if (reqIdRef.current !== currentReqId) return;
 
           if (clustersRes && clustersRes.success && Array.isArray(clustersRes.data)) {
@@ -124,19 +108,8 @@ export const SearchView: React.FC<SearchViewProps> = ({
     return () => clearTimeout(timer);
   }, [query, activeTab, activeAccount]);
 
-  // Determine display lists
   const isQueryActive = query.trim().length > 0;
   const lowerQuery = query.toLowerCase().trim();
-
-  const displayedPosts = isQueryActive && hasQueried ? dbPosts : initialPosts.filter((post) => {
-    if (lowerQuery === '') return true;
-    return (
-      post.content.toLowerCase().includes(lowerQuery) ||
-      post.agentName.toLowerCase().includes(lowerQuery) ||
-      (post.agentId && post.agentId.toLowerCase().includes(lowerQuery)) ||
-      (post.category && post.category.toLowerCase().includes(lowerQuery))
-    );
-  });
 
   const displayedAgents = isQueryActive && hasQueried ? dbAgents : (() => {
     const allAgentsMap = new Map<string, any>();
@@ -147,16 +120,6 @@ export const SearchView: React.FC<SearchViewProps> = ({
           agentName: a.name || a.agentName,
           avatar: a.avatar || undefined,
           emailVerified: a.emailVerified,
-        });
-      }
-    });
-    initialPosts.forEach(p => {
-      if (p.agentId && !allAgentsMap.has(p.agentId.toUpperCase())) {
-        allAgentsMap.set(p.agentId.toUpperCase(), {
-          agentId: p.agentId,
-          agentName: p.agentName,
-          avatar: p.avatar || undefined,
-          emailVerified: p.emailVerified,
         });
       }
     });
@@ -172,8 +135,8 @@ export const SearchView: React.FC<SearchViewProps> = ({
   const displayedClusters = isQueryActive && hasQueried ? dbClusters : [];
   const displayedMcp = isQueryActive && hasQueried ? dbMcpServers : [];
 
-  const totalCount = activeTab === 'posts' ? (displayedMcp.length || displayedPosts.length) : activeTab === 'agents' ? displayedAgents.length : displayedClusters.length;
-  const itemLabel = activeTab === 'posts' ? 'tools & mcp' : activeTab === 'agents' ? 'agent' : 'cluster';
+  const totalCount = activeTab === 'tools' ? displayedMcp.length : activeTab === 'agents' ? displayedAgents.length : displayedClusters.length;
+  const itemLabel = activeTab === 'tools' ? 'tools & mcp' : activeTab === 'agents' ? 'agent' : 'cluster';
 
   if (isLoading) {
     return (
@@ -187,12 +150,12 @@ export const SearchView: React.FC<SearchViewProps> = ({
     <div className="space-y-4 flex-1 flex flex-col">
       {/* Results Header */}
       <div className="flex items-center justify-between font-mono text-xs uppercase tracking-wider text-gray-500 px-3">
-        <span>Found {totalCount} {itemLabel} {activeTab === 'posts' ? 'results' : `result${totalCount === 1 ? '' : 's'}`}</span>
+        <span>Found {totalCount} {itemLabel} {activeTab === 'tools' ? 'results' : `result${totalCount === 1 ? '' : 's'}`}</span>
       </div>
 
       {/* Results List */}
       <div className="space-y-4 px-3 pb-8">
-        {activeTab === 'posts' ? (
+        {activeTab === 'tools' ? (
           displayedMcp.length > 0 ? (
             displayedMcp.map((srv) => (
               <div
@@ -230,18 +193,6 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   </span>
                 </div>
               </div>
-            ))
-          ) : displayedPosts.length > 0 ? (
-            displayedPosts.map((post) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                query={query}
-                onOpenThread={onOpenThread}
-                onOpenConnections={onOpenConnections}
-                onAddBid={onAddBid}
-                onOpenAgentProfile={onOpenAgentProfile}
-              />
             ))
           ) : (
             <div className="text-center py-12 bg-[#161616] border border-white/10 rounded-2xl p-6">

@@ -176,132 +176,84 @@ async function isClusterDissolved(supabase: any, clusterId: string): Promise<boo
   return !!(cluster && cluster.status === 'dissolved');
 }
 
-// 0. GET /clusters/public/recent (Public feed for Floor Activity & search)
-router.get('/clusters/public/recent', async (req, res) => {
+// 0. GET /clusters/:clusterId/members (Authenticated & fleet-isolated cluster members view)
+router.get('/clusters/:clusterId/members', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    await SecurityService.getInstance().evaluateRequest(req, 'public_cluster_recent');
+    await SecurityService.getInstance().evaluateRequest(req, 'cluster_members_list');
+    const clusterId = (req.params.clusterId as string || '').trim();
+    if (!clusterId) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Cluster not found.' } });
+    }
+
     const supabase = getSupabaseClient();
     const tables = await getClusterTables(supabase);
-    const q = req.query.q ? String(req.query.q).trim() : '';
+    const callerUserId = req.user!.id;
+    const callerAgentId = req.user?.agentId;
 
-    let callerMasterId: string | null = null;
-    const authReq = req as AuthenticatedRequest;
-    if (authReq.user?.id) {
-      const { data: u } = await supabase.from('users').select('id, master_id, is_master_primary').eq('id', authReq.user.id).maybeSingle();
-      callerMasterId = (u?.master_id && !u?.is_master_primary) ? u.master_id : authReq.user.id;
-    } else {
-      const sessionCookie = req.cookies?.[HUMAN_SESSION_COOKIE_NAME];
-      const authHeader = req.headers.authorization;
-      const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.split(' ')[1] : undefined;
-      const candidateSession = (sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim()) ? sessionCookie.trim() : bearerToken;
-      if (candidateSession) {
-        try {
-          const { verifyHumanSession } = await import('../authService.js');
-          const payload = await verifyHumanSession(candidateSession);
-          if (payload?.id) {
-            const { data: u } = await supabase.from('users').select('id, master_id, is_master_primary').eq('id', payload.id).maybeSingle();
-            callerMasterId = (u?.master_id && !u?.is_master_primary) ? u.master_id : payload.id;
-          }
-        } catch (e) {}
-      }
-    }
-
-    let queryBuilder = supabase
-      .from(tables.clusters)
-      .select('id, name, description, ownerAgentId, ownerUserId, createdAt')
-      .order('createdAt', { ascending: false })
-      .limit(50);
-
-    if (q) {
-      queryBuilder = queryBuilder.ilike('name', `%${q}%`);
-    }
-
-    const { data: clusters, error } = await queryBuilder;
-    if (error) throw error;
-
-    const userMap: Record<string, any> = {};
-    if (callerMasterId) {
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, name, agentId, avatar, master_id, is_master_primary');
-      (users || []).forEach((u: any) => {
-        if (u.agentId) userMap[u.agentId.toLowerCase()] = u;
-        if (u.id) userMap[u.id.toLowerCase()] = u;
-      });
-    }
-
-    const filtered = (clusters || []).filter((c: any) => {
-      if (!callerMasterId) return true;
-      const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
-      if (!ownerInfo) return false;
-      const ownerMasterId = (ownerInfo.master_id && !ownerInfo.is_master_primary)
-        ? ownerInfo.master_id
-        : ownerInfo.id;
-      return ownerMasterId === callerMasterId;
-    });
-
-    const mappedList = filtered.map((c: any) => ({
-      ...c,
-      symbol: getClusterSymbol(c.id)
-    }));
-
-    res.json({ success: true, data: mappedList });
-  } catch (err: any) {
-    res.json({
-      success: true,
-      data: []
-    });
-  }
-});
-
-// 0.1 GET /clusters/public/:clusterId/members (Public cluster members view)
-router.get('/clusters/public/:clusterId/members', async (req, res) => {
-  try {
-    await SecurityService.getInstance().evaluateRequest(req, 'public_cluster_members');
-    const clusterId = req.params.clusterId as string;
-    const supabase = getSupabaseClient();
-    const tables = await getClusterTables(supabase);
-
-    let cluster: any = null;
-    const { data: clById } = await supabase
+    const { data: cluster } = await supabase
       .from(tables.clusters)
       .select('*')
       .eq('id', clusterId)
       .maybeSingle();
 
-    if (clById) {
-      cluster = clById;
-    } else {
-      const { data: clByName } = await supabase
-        .from(tables.clusters)
-        .select('*')
-        .ilike('name', clusterId.trim())
+    if (!cluster || cluster.status === 'dissolved') {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Cluster not found.' } });
+    }
+
+    // Resolve caller's master fleet ID and cluster owner's master fleet ID
+    const { data: callerRecord } = await supabase
+      .from('users')
+      .select('id, agentId, master_id, is_master_primary')
+      .eq('id', callerUserId)
+      .maybeSingle();
+
+    const callerMasterId = (callerRecord?.master_id && !callerRecord?.is_master_primary)
+      ? callerRecord.master_id
+      : (req.user?.masterId || req.user?.master_id || callerUserId);
+
+    let ownerMasterId: string | null = null;
+    if (cluster.ownerUserId) {
+      const { data: ownerRec } = await supabase
+        .from('users')
+        .select('id, master_id, is_master_primary')
+        .eq('id', cluster.ownerUserId)
         .maybeSingle();
-      if (clByName) {
-        cluster = clByName;
+      if (ownerRec) {
+        ownerMasterId = (ownerRec.master_id && !ownerRec.is_master_primary) ? ownerRec.master_id : ownerRec.id;
+      } else {
+        ownerMasterId = cluster.ownerUserId;
+      }
+    } else if (cluster.ownerAgentId) {
+      const normOwnerAid = normalizeAgentId(String(cluster.ownerAgentId));
+      const { data: ownerRec } = await supabase
+        .from('users')
+        .select('id, master_id, is_master_primary')
+        .or(`agentId.eq.${cluster.ownerAgentId},agentId.ilike.${normOwnerAid}`)
+        .maybeSingle();
+      if (ownerRec) {
+        ownerMasterId = (ownerRec.master_id && !ownerRec.is_master_primary) ? ownerRec.master_id : ownerRec.id;
       }
     }
 
-    if (!cluster) {
-      cluster = {
-        id: clusterId,
-        name: clusterId.includes('alpha') ? 'Alpha Secret Cluster' : 'Cluster',
-        description: clusterId.includes('alpha') 
-          ? 'The primary cluster for Alpha-level autonomous agents. Encrypted. Autonomous. Unstoppable.'
-          : 'AI agent cluster',
-        ownerAgentId: 'AMR-TW43-24WU',
-        createdAt: new Date().toISOString()
-      };
+    const isSameFleetAsOwner = Boolean(callerMasterId && ownerMasterId && callerMasterId === ownerMasterId);
+    const isCallerActiveMember = await isClusterMember(supabase, cluster.id, callerUserId, callerAgentId);
+
+    if (!isSameFleetAsOwner && !isCallerActiveMember) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Forbidden: You are not authorized to access this cluster.' }
+      });
     }
 
-    // Get members from DB (including dissolved members so history is preserved)
+    // Fetch active members from DB
     const { data: dbMembers } = await supabase
       .from(tables.members)
       .select('id, clusterId, userId, agentId, role, status, createdAt')
       .eq('clusterId', cluster.id)
+      .neq('status', 'dissolved')
       .order('createdAt', { ascending: true });
 
-    // Collect all participant IDs for targeted user lookup
+    // Collect participant IDs for targeted user lookup
     const participantUserIds = new Set<string>();
     const participantAgentIds = new Set<string>();
     (dbMembers || []).forEach((m: any) => {
@@ -324,20 +276,18 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
     let usersById: any[] = [];
     let usersByAgentId: any[] = [];
     if (participantUserIds.size > 0) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('users')
         .select('*')
         .in('id', Array.from(participantUserIds));
       if (data) usersById = data;
-      if (error) console.error('Error fetching users by id:', error);
     }
     if (participantAgentIds.size > 0) {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('users')
         .select('*')
         .in('agentId', Array.from(participantAgentIds));
       if (data) usersByAgentId = data;
-      if (error) console.error('Error fetching users by agentId:', error);
     }
     const users = [...usersById, ...usersByAgentId];
 
@@ -356,7 +306,7 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       }
     });
 
-    // Populate E2EE public keys from user auth metadata for cluster members in parallel
+    // Populate E2EE public keys from user auth metadata for authorized cluster members
     await Promise.all(Array.from(participantUserIds).map(async (uId) => {
       try {
         const { data: authData } = await supabase.auth.admin.getUserById(uId);
@@ -379,14 +329,14 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
     const { CapabilityService } = await import('../services/capabilityService.js');
     const capService = CapabilityService.getInstance();
 
-    let membersList: any[] = await Promise.all((dbMembers || []).map(async (m: any) => {
+    const rawMembersList: any[] = await Promise.all((dbMembers || []).map(async (m: any) => {
       const mAgentId = m.agentId || m.agent_id;
       const mUserId = m.userId || m.user_id;
       const normMAgentId = mAgentId ? normalizeAgentId(String(mAgentId)).toLowerCase() : '';
       const u = (mAgentId ? userMap.get(String(mAgentId).toLowerCase()) : null) ||
                 (normMAgentId ? userMap.get(normMAgentId) : null) ||
                 (mUserId ? userMap.get(String(mUserId).toLowerCase()) : null);
-      
+
       const resolvedAgentId = u?.agentId || u?.agent_id || (mAgentId ? normalizeAgentId(String(mAgentId)) : mAgentId);
       const realName = (u?.name && String(u.name).trim()) || '';
       const isOwnerMember = Boolean(
@@ -405,9 +355,18 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
         (resolvedAgentId && String(resolvedAgentId).includes('+AMR-'))
       );
 
+      const memberMasterId = u
+        ? ((u.master_id && !u.is_master_primary) ? u.master_id : u.id)
+        : null;
+
+      // Enforce fleet privacy: never expose private slave members of another fleet unless caller is in that fleet or an active member of the same cluster
+      if (isSlave && memberMasterId && callerMasterId && memberMasterId !== callerMasterId && !isCallerActiveMember) {
+        return null;
+      }
+
       let hasCapabilityIncrement = false;
       let expiresAt: string | null = u?.plan_expires_at || u?.expires_at || null;
-      if (isSlave) {
+      if (isSlave && memberMasterId === callerMasterId) {
         try {
           const cap = (u?.id ? await capService.getAgentCapability(u.id) : null) ||
                       (resolvedAgentId ? await capService.getAgentCapability(resolvedAgentId) : null);
@@ -448,41 +407,38 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       };
     }));
 
-    // If no members in DB, ensure Admin is first member with his ID as requested
-    if (membersList.length === 0) {
-      const oAid = cluster.ownerAgentId;
-      const oUid = cluster.ownerUserId;
-      const ownerInfo = (oAid ? userMap.get(String(oAid).toLowerCase()) : null) || 
-                        (oUid ? userMap.get(String(oUid).toLowerCase()) : null);
-      const adminAgentId = cluster.ownerAgentId || 'AMR-TW43-24WU';
-      const adminName = (ownerInfo?.name && String(ownerInfo.name).trim()) || adminAgentId;
-      const adminPubKey = ownerInfo?.e2eePublicKey || null;
-      
-      membersList = [
-        {
-          id: `admin-${cluster.id}`,
-          agentId: adminAgentId,
-          agentName: adminName,
-          name: adminName,
-          avatar: ownerInfo?.avatar || '🤖',
-          role: 'admin',
-          membershipRole: 'admin',
-          status: 'active',
-          emailVerified: Boolean(ownerInfo?.emailVerified),
-          e2eePublicKey: adminPubKey,
-          publicKey: adminPubKey,
-          keyStatus: adminPubKey ? 'available' : 'missing',
-          isSlave: false,
-          createdAt: cluster.createdAt
-        }
-      ];
-    }
+    const membersList = rawMembersList.filter(Boolean);
 
     const oAid = cluster.ownerAgentId;
     const oUid = cluster.ownerUserId;
-    const ownerInfo = (oAid ? userMap.get(String(oAid).toLowerCase()) : null) || 
+    const ownerInfo = (oAid ? userMap.get(String(oAid).toLowerCase()) : null) ||
                       (oUid ? userMap.get(String(oUid).toLowerCase()) : null);
-    const publicCurrentEpoch = 1;
+
+    // If no member rows were found but the cluster has a verified owner, include the actual owner (never a hardcoded fallback)
+    if (membersList.length === 0 && (ownerInfo || oAid)) {
+      const adminAgentId = ownerInfo?.agentId || oAid;
+      const adminName = (ownerInfo?.name && String(ownerInfo.name).trim()) || adminAgentId;
+      const adminPubKey = ownerInfo?.e2eePublicKey || null;
+
+      membersList.push({
+        id: `admin-${cluster.id}`,
+        userId: ownerInfo?.id || oUid || null,
+        agentId: adminAgentId,
+        agentName: adminName,
+        name: adminName,
+        avatar: ownerInfo?.avatar || '🤖',
+        role: 'admin',
+        membershipRole: 'admin',
+        status: 'active',
+        emailVerified: Boolean(ownerInfo?.emailVerified),
+        e2eePublicKey: adminPubKey,
+        publicKey: adminPubKey,
+        keyStatus: adminPubKey ? 'available' : 'missing',
+        isSlave: false,
+        isMaster: true,
+        createdAt: cluster.createdAt
+      });
+    }
 
     const enrichedCluster = {
       ...cluster,
@@ -499,7 +455,7 @@ router.get('/clusters/public/:clusterId/members', async (req, res) => {
       }
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: { message: err?.message || 'Internal server error.' } });
   }
 });
 
@@ -735,7 +691,7 @@ router.post('/clusters/:clusterId/members', requireUserOrAgentAuth, async (req: 
 });
 
 
-// 2. GET /clusters (List all clusters the requester is a member of)
+// 2. GET /clusters (List all clusters belonging to the caller's fleet or where the requester is an active member)
 router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await SecurityService.getInstance().evaluateRequest(req, 'cluster_list');
@@ -743,68 +699,6 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
     const tables = await getClusterTables(supabase);
     const userId = req.user!.id;
     const q = req.query.q ? String(req.query.q).trim() : '';
-
-    // Get clusters where the user is an active member (by userId or agentId)
-    const userAgentId = req.user?.agentId;
-    const cleanUserAid = userAgentId ? userAgentId.replace(/^@+/, '') : null;
-    const memberOrConditions = [
-      userId ? `userId.eq.${userId}` : null,
-      userAgentId ? `agentId.eq.${userAgentId}` : null,
-      cleanUserAid ? `agentId.ilike.${cleanUserAid}` : null,
-    ].filter(Boolean).join(',');
-
-    const { data: memberships, error: memError } = await supabase
-      .from(tables.members)
-      .select('clusterId, status')
-      .or(memberOrConditions)
-      .neq('status', 'dissolved');
-
-    if (memError) {
-      throw new Error(`Failed to query cluster memberships: ${memError.message}`);
-    }
-
-    const { data: ownedClusters } = await supabase
-      .from(tables.clusters)
-      .select('id, status')
-      .or([
-        userId ? `ownerUserId.eq.${userId}` : null,
-        userAgentId ? `ownerAgentId.eq.${userAgentId}` : null,
-        cleanUserAid ? `ownerAgentId.ilike.${cleanUserAid}` : null
-      ].filter(Boolean).join(','))
-      .neq('status', 'dissolved');
-
-    const activeClusterIdSet = new Set<string>();
-    (memberships || []).forEach((m: any) => {
-      if (m.clusterId && m.status !== 'dissolved') {
-        activeClusterIdSet.add(m.clusterId);
-      }
-    });
-    (ownedClusters || []).forEach((c: any) => {
-      if (c.id && c.status !== 'dissolved') {
-        activeClusterIdSet.add(c.id);
-      }
-    });
-
-    const clusterIds = Array.from(activeClusterIdSet);
-    if (clusterIds.length === 0) {
-      return res.json({ success: true, data: [] });
-    }
-
-    let queryBuilder = supabase
-      .from(tables.clusters)
-      .select('*')
-      .in('id', clusterIds)
-      .neq('status', 'dissolved');
-
-    if (q) {
-      queryBuilder = queryBuilder.ilike('name', `%${q}%`);
-    }
-
-    const { data: clusters, error: clError } = await queryBuilder.order('createdAt', { ascending: false });
-
-    if (clError) {
-      throw new Error(`Failed to retrieve clusters: ${clError.message}`);
-    }
 
     const { data: users } = await supabase
       .from('users')
@@ -819,31 +713,113 @@ router.get('/clusters', requireUserOrAgentAuth, async (req: AuthenticatedRequest
     const callerUser = userMap[userId.toLowerCase()];
     const callerMasterId = (callerUser?.master_id && !callerUser?.is_master_primary)
       ? callerUser.master_id
-      : (req.user!.masterId || userId);
+      : (req.user!.masterId || req.user!.master_id || userId);
 
-    const mappedClusters = (clusters || []).filter((c: any) => {
-      if (c.status === 'dissolved') return false;
-      if (!activeClusterIdSet.has(c.id)) return false;
+    const isCallerMaster = !(req.user?.account_type === 'slave' || req.user?.is_slave || (callerUser?.master_id && !callerUser?.is_master_primary));
 
-      const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
-      if (!ownerInfo) return true;
-      const ownerMasterId = (ownerInfo.master_id && !ownerInfo.is_master_primary)
-        ? ownerInfo.master_id
-        : ownerInfo.id;
-      if (req.user?.account_type === 'slave' || req.user?.is_slave) {
-        return ownerMasterId === callerMasterId;
-      }
-      return true;
-    }).map((c: any) => {
-      const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
-      return {
-        ...c,
-        status: 'active',
-        ownerAgentName: ownerInfo?.name || c.ownerAgentId || 'Unknown Agent',
-        ownerAgentAvatar: ownerInfo?.avatar || '',
-        symbol: getClusterSymbol(c.id)
-      };
+    // Fleet user IDs and agent IDs (for master accounts, include their fleet; for slave accounts, scope to their own membership + fleet-owned clusters)
+    const fleetUsers = (users || []).filter((u: any) => {
+      const uMasterId = (u.master_id && !u.is_master_primary) ? u.master_id : u.id;
+      return uMasterId === callerMasterId;
     });
+    const fleetUserIds = new Set<string>(fleetUsers.map((u: any) => u.id).filter(Boolean));
+    const fleetAgentIdsUpper = new Set<string>(fleetUsers.map((u: any) => (u.agentId || '').toUpperCase()).filter(Boolean));
+
+    const userAgentId = req.user?.agentId;
+    const cleanUserAid = userAgentId ? userAgentId.replace(/^@+/, '').toUpperCase() : null;
+
+    const [{ data: allMemberships, error: memError }, { data: allActiveClusters, error: clError }] = await Promise.all([
+      supabase
+        .from(tables.members)
+        .select('clusterId, userId, agentId, status')
+        .neq('status', 'dissolved'),
+      supabase
+        .from(tables.clusters)
+        .select('*')
+        .neq('status', 'dissolved')
+        .order('createdAt', { ascending: false })
+    ]);
+
+    if (memError) {
+      throw new Error(`Failed to query cluster memberships: ${memError.message}`);
+    }
+    if (clError) {
+      throw new Error(`Failed to retrieve clusters: ${clError.message}`);
+    }
+
+    const activeMemberCountMap = new Map<string, number>();
+    const authorizedClusterIdSet = new Set<string>();
+
+    (allMemberships || []).forEach((m: any) => {
+      if (!m.clusterId || m.status === 'dissolved') return;
+      activeMemberCountMap.set(m.clusterId, (activeMemberCountMap.get(m.clusterId) || 0) + 1);
+
+      const mAidUpper = (m.agentId || '').replace(/^@+/, '').toUpperCase();
+      const isDirectCallerMember =
+        m.userId === userId ||
+        (cleanUserAid && mAidUpper === cleanUserAid);
+      const isFleetMember =
+        isCallerMaster &&
+        ((m.userId && fleetUserIds.has(m.userId)) || (mAidUpper && fleetAgentIdsUpper.has(mAidUpper)));
+
+      if (isDirectCallerMember || isFleetMember) {
+        authorizedClusterIdSet.add(m.clusterId);
+      }
+    });
+
+    (allActiveClusters || []).forEach((c: any) => {
+      if (!c.id || c.status === 'dissolved') return;
+      const oAidUpper = (c.ownerAgentId || '').replace(/^@+/, '').toUpperCase();
+      const isDirectCallerOwner =
+        c.ownerUserId === userId ||
+        (cleanUserAid && oAidUpper === cleanUserAid);
+      const isFleetOwner =
+        isCallerMaster &&
+        ((c.ownerUserId && fleetUserIds.has(c.ownerUserId)) || (oAidUpper && fleetAgentIdsUpper.has(oAidUpper)));
+
+      if (isDirectCallerOwner || isFleetOwner) {
+        authorizedClusterIdSet.add(c.id);
+      }
+    });
+
+    const qLower = q.toLowerCase();
+    const mappedClusters = (allActiveClusters || [])
+      .filter((c: any) => {
+        if (c.status === 'dissolved') return false;
+        if (!authorizedClusterIdSet.has(c.id)) return false;
+
+        const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
+        if (ownerInfo) {
+          const ownerMasterId = (ownerInfo.master_id && !ownerInfo.is_master_primary)
+            ? ownerInfo.master_id
+            : ownerInfo.id;
+          if (!isCallerMaster && ownerMasterId !== callerMasterId) {
+            return false;
+          }
+        }
+
+        if (qLower) {
+          const nameMatch = String(c.name || '').toLowerCase().includes(qLower);
+          const descMatch = String(c.description || '').toLowerCase().includes(qLower);
+          const idMatch = String(c.id || '').toLowerCase().includes(qLower);
+          if (!nameMatch && !descMatch && !idMatch) return false;
+        }
+
+        return true;
+      })
+      .map((c: any) => {
+        const ownerInfo = userMap[c.ownerAgentId?.toLowerCase()] || userMap[c.ownerUserId?.toLowerCase()];
+        const memberCount = activeMemberCountMap.get(c.id) || 1;
+        return {
+          ...c,
+          status: 'active',
+          memberCount,
+          activeMembersCount: memberCount,
+          ownerAgentName: ownerInfo?.name || c.ownerAgentId || 'Unknown Agent',
+          ownerAgentAvatar: ownerInfo?.avatar || '',
+          symbol: getClusterSymbol(c.id)
+        };
+      });
 
     res.json({ success: true, data: mappedClusters });
   } catch (err: any) {

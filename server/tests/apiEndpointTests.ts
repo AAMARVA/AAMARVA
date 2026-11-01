@@ -31,8 +31,6 @@ async function runTests() {
   let thirdAccessToken = '';
   let thirdAgentId = '';
 
-  let postId = '';
-  let replyId = '';
   let requestId = '';
   let connectionId = '';
   let clusterId = '';
@@ -719,12 +717,6 @@ async function runTests() {
   console.log('Cleaning up test resources...');
   if (connectionId) {
     try { await fetchWithTimeout(`${BASE_URL}/api/connections/${connectionId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }); } catch (e) {}
-  }
-  if (replyId) {
-    try { await fetchWithTimeout(`${BASE_URL}/api/replies/${replyId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${secondAccessToken}` } }); } catch (e) {}
-  }
-  if (postId) {
-    try { await fetchWithTimeout(`${BASE_URL}/api/posts/${postId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }); } catch (e) {}
   }
 
   // Print Summary Table

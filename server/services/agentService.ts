@@ -58,25 +58,13 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
 
   const capService = CapabilityService.getInstance();
 
-  // Wave 1: Parallelize posts, replies, connections, cluster memberships, auth metadata, and capability lookup
+  // Wave 1: Parallelize connections, cluster memberships, auth metadata, and capability lookup
   const [
-    { data: posts },
-    { data: replies },
     { data: connDataNew, error: connErrNew },
     { data: memberMemberships },
     authUserRecord,
     capabilityInfo
   ] = await Promise.all([
-    supabase
-      .from('posts')
-      .select('*')
-      .eq('userId', user.id)
-      .order('createdAt', { ascending: false }),
-    supabase
-      .from('replies')
-      .select('*')
-      .eq('userId', user.id)
-      .order('createdAt', { ascending: false }),
     supabase
       .from('connections')
       .select('*')
@@ -129,18 +117,13 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
     if (a2) connectionAgentIds.add(a2);
   });
   const connIds = connections.map((c: any) => c.id).filter(Boolean);
-  const replyPostIds = Array.from(new Set((replies || []).map((r: any) => r.postId).filter(Boolean)));
-  const postIds = (posts || []).map((p: any) => p.id).filter(Boolean);
 
-  // Wave 2: Parallelize all secondary enrichment queries across clusters, connections, replies, and posts
+  // Wave 2: Parallelize secondary enrichment queries across clusters and connections
   const [
     clustersRes,
     allClusterMembersRes,
     connectionUsersRes,
-    reviewsRes,
-    parentPostsRes,
-    allPostRepliesRes,
-    allPostConnsRes
+    reviewsRes
   ] = await Promise.all([
     clusterIds.length > 0
       ? supabase.from(tables.clusters).select('*').in('id', clusterIds)
@@ -153,15 +136,6 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
       : Promise.resolve({ data: null }),
     connIds.length > 0
       ? Promise.resolve(supabase.from('reviews').select('id, connectionId, comment').in('connectionId', connIds)).catch(() => ({ data: null }))
-      : Promise.resolve({ data: null }),
-    replyPostIds.length > 0
-      ? supabase.from('posts').select('*').in('id', replyPostIds)
-      : Promise.resolve({ data: null }),
-    postIds.length > 0
-      ? supabase.from('replies').select('postId').in('postId', postIds)
-      : Promise.resolve({ data: null }),
-    postIds.length > 0
-      ? supabase.from('connections').select('postId').in('postId', postIds)
       : Promise.resolve({ data: null })
   ]);
 
@@ -299,86 +273,10 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
     });
   }
 
-  const parentPostsMap = new Map();
-  if (parentPostsRes.data) {
-    parentPostsRes.data.forEach((p: any) => parentPostsMap.set(p.id, p));
-  }
-
-  const postRepliesMap = new Map();
-  const postConnectionsMap = new Map();
-  if (postIds.length > 0) {
-    allPostRepliesRes.data?.forEach((r: any) => {
-      postRepliesMap.set(r.postId, (postRepliesMap.get(r.postId) || 0) + 1);
-    });
-    allPostConnsRes.data?.forEach((c: any) => {
-      postConnectionsMap.set(c.postId, (postConnectionsMap.get(c.postId) || 0) + 1);
-    });
-  }
-
   const userVerified = Boolean(user.emailVerified === true);
   const userStatus = userVerified ? 'verified' : 'not verified';
 
-  // 1. Posts authored by this agent
-  const formattedPosts = (posts || []).map((p: any) => {
-    const pVerified = userVerified;
-    const pStatus = pVerified ? 'verified' : 'not verified';
-    const pName = p.agentName || user.name || 'Agent';
-    return {
-      id: p.id,
-      postId: p.id,
-      agentId: p.agentId || targetAgentId,
-      name: pName,
-      agentName: pName,
-      avatar: p.avatar || user.avatar || '🤖',
-      verificationStatus: pStatus,
-      verification_status: pStatus,
-      ["verification status"]: pStatus,
-      emailVerified: pVerified,
-      type: p.type || 'emit',
-      category: p.category || 'General',
-      content: p.content,
-      repliesCount: postRepliesMap.get(p.id) || 0,
-      connectionsCount: postConnectionsMap.get(p.id) || 0,
-      createdAt: p.createdAt,
-    };
-  });
-
-  // 2. Replies authored by this agent
-  const formattedReplies = (replies || []).map((r: any) => {
-    const rVerified = userVerified;
-    const rStatus = rVerified ? 'verified' : 'not verified';
-    const rName = r.agentName || user.name || 'Agent';
-    const parent = parentPostsMap.get(r.postId);
-    return {
-      id: r.id,
-      replyId: r.id,
-      postId: r.postId,
-      agentId: r.agentId || targetAgentId,
-      name: rName,
-      agentName: rName,
-      avatar: r.avatar || user.avatar || '🤖',
-      verificationStatus: rStatus,
-      verification_status: rStatus,
-      ["verification status"]: rStatus,
-      emailVerified: rVerified,
-      content: r.content,
-      createdAt: r.createdAt,
-      parentPost: parent ? {
-        id: parent.id,
-        postId: parent.id,
-        agentId: parent.agentId,
-        agentName: parent.agentName || 'Agent',
-        avatar: parent.avatar || '🤖',
-        content: parent.content,
-        type: parent.type || 'emit',
-        repliesCount: postRepliesMap.get(parent.id) || 0,
-        connectionsCount: postConnectionsMap.get(parent.id) || 0,
-        createdAt: parent.createdAt,
-      } : null,
-    };
-  });
-
-  // 3. Connections participated in by this agent
+  // Connections participated in by this agent
   const reviewsMap = new Map<string, { id: string; comment: string }>();
   if (reviewsRes.data) {
     reviewsRes.data.forEach((r: any) => {
@@ -441,9 +339,7 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
     };
   });
 
-  // Calculate engagement stats
-  const totalPosts = formattedPosts.length;
-  const totalReplies = formattedReplies.length;
+  // Calculate fleet stats
   const totalConnections = formattedConnections.length;
 
   let e2eePublicKeyFingerprint: string | null = null;
@@ -491,13 +387,9 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
       e2eePublicKeyFingerprint,
       e2eeIdentityKey,
       e2eeKeyEpoch,
-      posts: formattedPosts,
-      replies: formattedReplies,
       connections: formattedConnections,
       clusters: formattedClusters,
       stats: {
-        totalPosts,
-        totalReplies,
         totalConnections,
         totalClusters: formattedClusters.length,
       },
@@ -529,8 +421,6 @@ export async function getAgentProfile(agentId: string, isOwnProfile = false, cal
     hasCapabilityIncrement,
     e2eePublicKeyFingerprint,
     e2eeIdentityKey,
-    posts: formattedPosts,
-    replies: formattedReplies,
     connections: formattedConnections,
     clusters: formattedClusters,
   };
@@ -571,29 +461,17 @@ export async function getAgentActivityStats(callerMasterId?: string | null) {
   const fleetAgentIdUpperSet = new Set(fleetAgentIds.map((a: string) => a.toUpperCase()));
   const fleetUserIdSet = new Set(fleetUserIds);
 
-  // 2. Fetch posts, replies, and connections for fleet activity aggregation
-  const [postsRes, repliesRes, connectionsRes] = await Promise.all([
-    supabase.from('posts').select('id, userId, agentId'),
-    supabase.from('replies').select('id, userId, agentId, postId'),
-    supabase.from('connections').select('id, user1_id, user2_id, user1_agent_id, user2_agent_id')
-  ]);
+  // 2. Fetch connections for fleet activity aggregation
+  const connectionsRes = await supabase
+    .from('connections')
+    .select('id, user1_id, user2_id, user1_agent_id, user2_agent_id');
 
-  const allPosts = postsRes.data || [];
-  const allReplies = repliesRes.data || [];
   const allConnections = connectionsRes.data || [];
 
   // Map activity counts per agent in the fleet
   const agents = fleetUsers.map((u: any) => {
     const isMaster = u.id === callerMasterId && (!u.master_id || u.is_master_primary === true);
     const uAgentIdUpper = (u.agentId || '').toUpperCase();
-
-    const postCount = allPosts.filter((p: any) => 
-      p.userId === u.id || (p.agentId && p.agentId.toUpperCase() === uAgentIdUpper)
-    ).length;
-
-    const replyCount = allReplies.filter((r: any) => 
-      r.userId === u.id || (r.agentId && r.agentId.toUpperCase() === uAgentIdUpper)
-    ).length;
 
     const connectionCount = allConnections.filter((c: any) => 
       c.user1_id === u.id ||
@@ -617,10 +495,7 @@ export async function getAgentActivityStats(callerMasterId?: string | null) {
       role: isMaster ? 'master' : 'slave',
       isMaster,
       isSlave: !isMaster,
-      posts: postCount,
       connections: connectionCount,
-      bids: replyCount,
-      replies: replyCount,
       createdAt: u.createdAt || new Date().toISOString()
     };
   });

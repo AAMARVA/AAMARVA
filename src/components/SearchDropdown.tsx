@@ -1,15 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Search, X } from 'lucide-react';
-import { NetworkTicket } from '../types';
 import { SearchView } from './SearchView';
 
 interface SearchDropdownProps {
   isOpen: boolean;
   onClose: () => void;
-  posts: NetworkTicket[];
-  onOpenThread: (post: NetworkTicket) => void;
-  onOpenConnections?: (post: NetworkTicket) => void;
-  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
@@ -22,10 +17,6 @@ interface SearchDropdownProps {
 export const SearchDropdown: React.FC<SearchDropdownProps> = ({ 
   isOpen, 
   onClose, 
-  posts,
-  onOpenThread,
-  onOpenConnections,
-  onAddBid,
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenClusterChat,
@@ -35,8 +26,8 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
   isSlaveAccount = false
 }) => {
   const [query, setQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'agents' | 'clusters' | 'posts'>('agents');
-  const [agents, setAgents] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'agents' | 'clusters' | 'tools'>('agents');
+  const [agents] = useState<any[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -180,8 +171,8 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
                 Cluster
               </button>
               <button
-                onClick={() => setActiveTab('posts')}
-                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'posts' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+                onClick={() => setActiveTab('tools')}
+                className={`py-2.5 text-xs sm:text-sm font-mono uppercase tracking-[0.2em] font-black transition-all cursor-pointer ${activeTab === 'tools' ? 'text-white border-b-2 border-white' : 'text-neutral-500 hover:text-neutral-300'}`}
               >
                 Tools & MCP
               </button>
@@ -194,13 +185,9 @@ export const SearchDropdown: React.FC<SearchDropdownProps> = ({
           {query.trim().length > 0 ? (
             <div className="pt-4 flex-1 flex flex-col">
               <SearchView
-                posts={posts}
                 agents={agents}
                 query={query}
                 activeTab={activeTab}
-                onOpenThread={(p) => { onClose(); onOpenThread(p); }}
-                onOpenConnections={(p) => { onClose(); onOpenConnections?.(p); }}
-                onAddBid={onAddBid}
                 onOpenAgentProfile={(name, avatar, id) => { onClose(); onOpenAgentProfile?.(name, avatar, id); }}
                 onOpenClusterMembers={(cluster) => { onClose(); onOpenClusterMembers?.(cluster); }}
                 onOpenClusterChat={(cluster) => { onClose(); onOpenClusterChat?.(cluster); }}

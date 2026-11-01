@@ -1,63 +1,115 @@
-# Elastic License 2.0 (ELv2)
+AAMARVA Proprietary Source-Available License
 
 Copyright © 2026 AAMARVA. All rights reserved.
 
-AAMARVA is source-available software distributed under the Elastic License 2.0 (ELv2), subject to the terms and conditions below.
+LEGAL REVIEW NOTICE: This license text defines AAMARVA's intended proprietary source-available distribution model and requires review and final approval by qualified intellectual-property counsel prior to public commercial enforcement.
 
-**Official license:** https://www.elastic.co/licensing/elastic-license
+================================================================================
 
-## Acceptance
+PREAMBLE & PURPOSE
 
-By using the software, you agree to all of the terms and conditions below.
+This repository makes the source code of AAMARVA publicly visible for technical transparency, architectural review, non-commercial evaluation, independent security research, bug reporting, and controlled community contributions.
 
-## Copyright License
+Public visibility of this source code does NOT grant general open-source permissions or unrestricted rights to use, deploy, host, redistribute, sublicense, or commercialize the Software. All rights not expressly granted under this License are reserved by AAMARVA.
 
-The licensor grants you a non-exclusive, royalty-free, worldwide, non-sublicensable, non-transferable license to use, copy, distribute, make available, and prepare derivative works of the software, in each case subject to the limitations and conditions below.
+================================================================================
 
-## Patent License
+1. DEFINITIONS
 
-The licensor grants you a license, under any patent claims the licensor can license, or becomes able to license, to make, have made, use, sell, offer for sale, import and have imported the software, in each case subject to the limitations and conditions in this license.
+1.1 "Licensor" or "AAMARVA" means AAMARVA and its authorized legal entity or copyright holders.
 
-This license does not cover any patent claims that you cause to be infringed by modifications or additions to the software. If you or your company make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
+1.2 "Software" means the AAMARVA source code, object code, documentation, configuration files, cryptographic protocol implementations, scripts, and associated materials made available by AAMARVA in this repository, excluding Third-Party Components.
 
-## Limitations
+1.3 "Non-Commercial Evaluation" means limited local execution of the Software in a personal, academic, or isolated testing environment solely to inspect, evaluate, test, or reproduce defects in the Software, without generating revenue, supporting commercial business operations, or serving external users.
 
-You may not:
+1.4 "Security Research" means good-faith, non-commercial analysis, inspection, and local testing of the Software conducted to identify, verify, and responsibly report security vulnerabilities to AAMARVA in accordance with the repository's SECURITY.md policy.
 
-1. Provide the software to third parties as a hosted or managed service, where the service provides users with access to any substantial set of the features or functionality of the software.
-2. Move, change, disable, or circumvent any license key functionality in the software, or remove or obscure any functionality protected by license keys.
-3. Alter, remove, or obscure any licensing, copyright, or other notices of the licensor in the software. Any use of the licensor’s trademarks is also subject to applicable trademark law and product policies.
+1.5 "Contribution" means any source code, patch, documentation, issue report, pull request, or other material intentionally submitted to AAMARVA for inclusion in or improvement of the Software.
 
-## Notices
+1.6 "Third-Party Components" means external libraries, packages, frameworks, runtime dependencies, and tools included with, referenced by, or required by the Software that are owned by third parties and licensed under their own separate license terms.
 
-You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms.
+================================================================================
 
-If you modify the software, you must include prominent notices on or in the modified software stating that you modified it.
+2. PERMITTED ACTIVITIES
 
-## Automatic Termination
+Subject to your continuous compliance with the terms and restrictions of this License, AAMARVA grants you a limited, revocable, non-exclusive, non-transferable, non-sublicensable, royalty-free permission solely to perform the following activities:
 
-If you use the software in violation of these terms, such use is not licensed, and your licenses will automatically terminate. If the licensor provides you with a notice of your violation, and you cease all violations within 30 days of receiving that notice, your licenses will be retroactively reinstated. However, your licenses will terminate automatically and permanently if you violate these terms again after such a reinstatement.
+2.1 Viewing and Inspecting Source Code: You may view, read, and inspect the publicly available source code of the Software.
 
-## Disclaimer
+2.2 Architecture and Implementation Review: You may review and analyze the architecture, cryptographic design, implementation, and documentation of the Software.
 
-As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.
+2.3 Non-Commercial Security Research: You may conduct non-commercial Security Research and vulnerability analysis on the Software, provided such research complies with Section 2.7 and the repository's SECURITY.md guidelines, does not target production infrastructure without separate written authorization, and does not access, extract, or disclose real user data.
 
-## Definitions
+2.4 Bug and Vulnerability Reporting: You may report software bugs, defects, and security vulnerabilities to AAMARVA through the designated reporting channels.
 
-The licensor is the entity offering these terms, and the software is the software the licensor makes available under these terms, including any portion of it.
+2.5 Issue Submission and Proposed Improvements: You may submit bug reports, architectural feedback, issues, and proposed improvements to the repository.
 
-You refers to the individual or entity agreeing to these terms.
+2.6 Pull Requests and Contributions: You may fork the repository within the hosting platform and create local modifications solely as necessary to prepare and submit pull requests to AAMARVA under the repository's contribution terms (see CONTRIBUTING.md).
 
-Your company means any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.
+2.7 Limited Local Execution: You may compile, build, and execute the Software locally in an isolated, non-production environment solely for Non-Commercial Evaluation, automated testing, and authorized Security Research.
 
-Control means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise. Control can be direct or indirect.
+2.8 Bug Reproduction: You may execute and test the Software locally to reproduce bugs and verify fixes for legitimate testing and contribution purposes.
 
-Your licenses are all the licenses granted to you for the software under these terms.
+================================================================================
 
-Use means anything you do with the software requiring one of your licenses under this license.
+3. RESTRICTED ACTIVITIES
 
-Trademark means trademarks, service marks, and similar rights.
+Unless you have obtained separate, prior written authorization from AAMARVA, you may NOT:
 
----
+3.1 Commercial Use: Use the Software, in whole or in part, for any commercial purpose, revenue-generating activity, internal business production operations, or commercial consulting service.
 
-For the official Elastic License 2.0 terms, see: https://www.elastic.co/licensing/elastic-license
+3.2 Independent Commercial Deployment: Deploy, run, or operate the Software in any production environment or commercial infrastructure.
+
+3.3 Hosted or Managed Service: Offer, host, provide, or make available the Software (or any modified or derivative version thereof) as a hosted service, managed service, Software-as-a-Service (SaaS), platform, API service, or multi-tenant environment to any third party, whether for a fee or free of charge.
+
+3.4 Redistribution or Sublicensing: Redistribute, sell, lease, rent, lend, assign, or sublicense the Software or any modified versions of the Software to any third party, outside of submitting pull requests directly to AAMARVA's official repository.
+
+3.5 Publishing Modified Builds: Publish, distribute, or make publicly available any modified source distributions, compiled binaries, container images, or derivative builds of the Software.
+
+3.6 Competing Commercial Products: Use, copy, adapt, or incorporate the Software or its proprietary components to build, train, operate, or commercialize a competing commercial product or service.
+
+3.7 Removal of Notices: Remove, alter, obscure, or tamper with any copyright notices, license files, attribution headers, cryptographic security notices, or proprietary markings contained in the Software.
+
+3.8 Unauthorized Trademark or Brand Use: Use the "AAMARVA" name, logos, trade dress, domain names, or branding in any manner not expressly permitted by this License, or in any way that implies endorsement, affiliation, certification, or official status without separate written authorization from AAMARVA.
+
+3.9 Preservation of Non-Waivable Legal Rights: Nothing in this License is intended to restrict, prohibit, or limit any activity or right that cannot lawfully be restricted under applicable mandatory law (including applicable statutory exceptions for interoperability, fair use, or protected security research where non-waivable by contract).
+
+================================================================================
+
+4. OWNERSHIP AND INTELLECTUAL PROPERTY
+
+4.1 Retention of Ownership: AAMARVA retains all right, title, ownership, and intellectual-property interest in and to the Software, including all copyrights, trade secrets, trademarks, and other proprietary rights.
+
+4.2 No Implied Transfer or License: Making the Software publicly visible in a source repository does not transfer ownership of any intellectual property to you, nor does it grant any implied license under any patents, copyrights, trademarks, or trade secrets of AAMARVA except for the limited permissions expressly stated in Section 2.
+
+4.3 Ownership of Contributions: Submitting a Contribution (such as an issue or pull request) does not automatically transfer ownership of your original copyright merely by the act of submission, nor does submitting or having a Contribution accepted grant you any ownership interest in AAMARVA or any right to commercially exploit the Software. Accepted Contributions are governed by the repository's contribution terms and any applicable Contributor License Agreement (see CONTRIBUTING.md).
+
+4.4 No Claim Over Third-Party Property: AAMARVA claims ownership only over its original Software and proprietary materials and does not claim ownership over Third-Party Components.
+
+================================================================================
+
+5. THIRD-PARTY COMPONENTS
+
+5.1 Separate Licensing: The Software may reference, interoperate with, or be distributed alongside Third-Party Components (such as open-source packages declared in package manifests and lockfiles). All Third-Party Components remain subject to their respective upstream licenses and copyright notices.
+
+5.2 No Relicensing: Nothing in this License relicenses, overrides, or restricts the rights granted to you directly by the licensors of Third-Party Components under their respective open-source or third-party licenses.
+
+================================================================================
+
+6. TERMINATION
+
+6.1 Automatic Termination: Your permissions under Section 2 of this License will terminate automatically and immediately if you breach any term or restriction of this License. Upon termination, you must immediately cease all execution and use of the Software and delete any local copies in your possession or control.
+
+6.2 Survival: Sections 1, 3, 4, 5, 6, 7, and 8 shall survive any termination of permissions under this License.
+
+================================================================================
+
+7. DISCLAIMER OF WARRANTIES
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING WITHOUT LIMITATION ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, SECURITY, RELIABILITY, OR NON-INFRINGEMENT. AAMARVA DOES NOT WARRANT THAT THE SOFTWARE WILL BE UNINTERRUPTED, ERROR-FREE, OR FREE OF VULNERABILITIES.
+
+================================================================================
+
+8. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL AAMARVA OR ITS CONTRIBUTORS, LICENSORS, OR AFFILIATES BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, DATA, GOODWILL, OR BUSINESS INTERRUPTION, ARISING OUT OF OR RELATED TO THIS LICENSE OR THE USE OF OR INABILITY TO USE THE SOFTWARE, UNDER ANY THEORY OF LIABILITY (WHETHER IN CONTRACT, TORT, NEGLIGENCE, STRICT LIABILITY, OR OTHERWISE), EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.

@@ -1,21 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { X, Repeat, ArrowLeft, Trash2 } from 'lucide-react';
-import { NetworkTicket } from '../types';
 import { AgentAvatar } from './AgentAvatar';
 import { ExpandableText } from './ExpandableText';
 import { BrutalistLoader } from './BrutalistLoader';
 import { prefetchPeerKeys } from '../lib/e2eePrefetch';
-import { apiFetch } from '../services/authApi';
 
 interface ConnectionsModalProps {
-  post: NetworkTicket | null;
+  post: any | null;
   onClose: () => void;
   onBack?: () => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
 }
 
 export const ConnectionsModal: React.FC<ConnectionsModalProps> = ({ post, onClose, onBack, onOpenAgentProfile }) => {
-  const [activePost, setActivePost] = useState<NetworkTicket | null>(post);
+  const [activePost, setActivePost] = useState<any | null>(post);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isDeleted, setIsDeleted] = useState<boolean>(false);
 

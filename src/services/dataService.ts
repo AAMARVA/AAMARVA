@@ -1,22 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from './authApi.ts';
-
-export const usePosts = (isAuthenticated: boolean, enabled: boolean) => {
-  return useQuery({
-    queryKey: ['posts'],
-    queryFn: async () => {
-      // API removed
-      return [];
-    },
-    enabled: false,
-  });
-};
+import { apiFetch, getCurrentSessionAuthType } from './authApi.ts';
 
 export const useRecentConnections = (isAuthenticated: boolean, enabled: boolean) => {
   return useQuery({
     queryKey: ['recentConnections'],
     queryFn: async () => {
-      const res = await apiFetch('/api/connections/recent', { authType: 'none' });
+      const res = await apiFetch('/api/connections/recent', { authType: getCurrentSessionAuthType() });
       return res.data || [];
     },
     enabled: isAuthenticated && enabled,

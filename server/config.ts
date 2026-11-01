@@ -1,26 +1,44 @@
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-// In development / non-production mode, supply robust default mock environment variables if not provided
-if (process.env.NODE_ENV !== 'production') {
+const isTestEnv = process.env.NODE_ENV === 'test';
+const isProductionEnv = process.env.NODE_ENV === 'production';
+
+// Prevent predictable development secrets in ordinary runtime environments.
+// Allow deterministic isolated test secrets only when NODE_ENV === 'test'.
+// In non-production development without explicit env vars, generate ephemeral random per-process secrets.
+if (!isProductionEnv) {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-    process.env.JWT_SECRET = 'aamarva_development_jwt_secret_key_32_bytes_minimum';
+    process.env.JWT_SECRET = isTestEnv
+      ? 'aamarva_isolated_test_jwt_secret_key_32_bytes_minimum'
+      : crypto.randomBytes(32).toString('hex');
   }
   if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
-    process.env.JWT_REFRESH_SECRET = 'aamarva_development_jwt_refresh_secret_key_32_bytes_minimum';
+    process.env.JWT_REFRESH_SECRET = isTestEnv
+      ? 'aamarva_isolated_test_jwt_refresh_secret_key_32_bytes_minimum'
+      : crypto.randomBytes(32).toString('hex');
+  }
+  if (!process.env.API_KEY_HMAC_SECRET || process.env.API_KEY_HMAC_SECRET.length < 32) {
+    process.env.API_KEY_HMAC_SECRET = isTestEnv
+      ? 'aamarva_isolated_test_api_key_hmac_secret_32_bytes_min'
+      : crypto.randomBytes(32).toString('hex');
   }
 
   if (!process.env.SUPABASE_URL) {
     process.env.SUPABASE_URL = 'https://mock.supabase.co';
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    process.env.SUPABASE_SERVICE_ROLE_KEY = 'mock_service_role_key_for_development';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = isTestEnv
+      ? 'mock_service_role_key_for_isolated_tests'
+      : crypto.randomBytes(32).toString('hex');
   }
-  if (process.env.NODE_ENV !== 'test' && (!process.env.SECRETS_ENCRYPTION_KEY || process.env.SECRETS_ENCRYPTION_KEY.length < 32)) {
-    process.env.SECRETS_ENCRYPTION_KEY = 'aamarva_development_secrets_encryption_key_32_bytes';
+  if (!isTestEnv && (!process.env.SECRETS_ENCRYPTION_KEY || process.env.SECRETS_ENCRYPTION_KEY.length < 32)) {
+    process.env.SECRETS_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
   }
 }
+
 
 /**
  * Public / Non-Confidential Backend Configuration Defaults

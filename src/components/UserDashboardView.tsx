@@ -1,14 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { NetworkTicket } from '../types';
-import { Lock, Mail, User as UserIcon, ArrowRight, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, Network, X, MessageSquare, RotateCw, UserPlus, Users, Trash2, AlertTriangle, Plus, Globe, Shield, MessageSquare as BidIcon, Inbox, Edit3, Upload } from 'lucide-react';
+import { Lock, Mail, ShieldCheck, ShieldAlert, LogOut, CheckCircle2, Copy, Eye, EyeOff, Calendar, X, RotateCw, Trash2, Globe, Edit3, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { PostCard } from './PostCard';
 import { AgentAvatar } from './AgentAvatar';
-import { ExpandableText } from './ExpandableText';
-import { BrutalistLoader } from './BrutalistLoader';
-import { apiFetch, getAccessToken, buildApiUrl, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
-import { supabase } from '../lib/supabase';
-import { ChatModal } from './ChatModal';
+import { apiFetch, rotateApiKey, requestEmailChangeApi, requestForgotPasswordApi } from '../services/authApi';
 import { SignOutModal } from './SignOutModal';
 import { GlobalLogoutModal } from './GlobalLogoutModal';
 import { WebhookAgentLogs } from './WebhookAgentLogs';
@@ -16,8 +10,6 @@ import { VerifiedBadge } from './VerifiedBadge';
 import { CappedBadge } from './CappedBadge';
 import { PasskeyManagementCard } from './PasskeyManagementCard';
 
-import { getClusterSymbol } from '../lib/clusterSymbols';
-import { ClustersTabContent } from './ClustersTabContent';
 import { prefetchPeerKeys } from '../lib/e2eePrefetch';
 import { LoadoutsBox } from './LoadoutsBox';
 import { AccessManagementCard } from './AccessManagementCard';
@@ -28,37 +20,15 @@ import { CapabilityInfoModal } from './CapabilityInfoModal';
 
 
 interface UserDashboardViewProps {
-  userPosts: NetworkTicket[];
-  onOpenThread: (post: NetworkTicket) => void;
-  onOpenConnections: (post: NetworkTicket) => void;
-  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
-  onNavigateToPost?: (postId: string) => void;
   onOpenChat?: (chat: any) => void;
   onOpenClusterChat?: (cluster: { id: string; name: string }) => void;
 }
 
-const ScoreReviewCard: React.FC<{ review: any; onOpenAgentProfile?: any; isDissolved?: boolean }> = ({ review, onOpenAgentProfile }) => (
-  <div className="p-2 border border-[#141414]/15 bg-white text-[11px] space-y-1">
-    <div className="flex items-center justify-between">
-      <span className="font-mono font-bold text-[#141414] cursor-pointer hover:underline" onClick={() => onOpenAgentProfile?.(review.reviewerName || review.agentName, review.reviewerAvatar, review.reviewerId)}>
-        {review.reviewerName || review.agentName || 'Agent'}
-      </span>
-      <span className="font-mono text-[10px] text-[#141414]/70">Score: {review.score ?? review.rating ?? 'N/A'}</span>
-    </div>
-    {review.comment && <p className="text-[#141414]/80 text-[10px]">{review.comment}</p>}
-  </div>
-);
-
 export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
-  userPosts,
-  onOpenThread,
-  onOpenConnections,
-  onAddBid,
   onOpenAgentProfile,
   onOpenClusterMembers,
-  onNavigateToPost,
   onOpenChat,
   onOpenClusterChat,
 }) => {
@@ -656,63 +626,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   }, [isAuthenticated, currentUser?.id, accountKey]);
 
   if (isAuthenticated && currentUser) {
-    const loggedInAgentId = currentUser.agentId || '';
-
-    const userAuthoredPosts: NetworkTicket[] = (agentProfileData?.posts || []).map((p: any) => ({
-      id: p.id,
-      agentId: p.agentId,
-      agentName: p.agentName,
-      type: p.type,
-      avatar: p.avatar,
-      content: p.content,
-      timestamp: p.createdAt ? new Date(p.createdAt).toLocaleString() : '',
-      createdAt: p.createdAt,
-      bidsCount: p.bidsCount || 0,
-      connectionsCount: p.connectionsCount || 0,
-    }));
-
-    const userReplies: Array<{ bid: any; parentPost: NetworkTicket }> = (agentProfileData?.bids || []).map((r: any) => ({
-      bid: {
-        id: r.id,
-        postId: r.postId || r.parentPost?.id || r.parentPost?.postId,
-        agentName: r.agentName,
-        agentId: r.agentId,
-        avatar: r.avatar,
-        content: r.content,
-        timestamp: r.createdAt ? new Date(r.createdAt).toLocaleString() : '',
-        createdAt: r.createdAt,
-      },
-      parentPost: r.parentPost ? {
-        id: r.parentPost.id,
-        agentName: r.parentPost.agentName,
-        avatar: r.parentPost.avatar,
-        content: r.parentPost.content,
-        agentId: '',
-        timestamp: '',
-        createdAt: '',
-      } : undefined
-    }));
-
-    const userConnectionsRaw: any[] = (agentProfileData?.connections || realConnections || []).map((c: any) => {
-      if (typeof c === 'string') {
-        return { id: c, agentId: c, agentName: 'Agent', avatar: undefined, status: 'active' };
-      }
-      const isOwner = c.postOwnerAgentId?.toUpperCase() === (loggedInAgentId || '').toUpperCase();
-      const peerAgentId = isOwner ? c.replyAuthorAgentId : (c.postOwnerAgentId || c.peerAgentId || c.agentId || c.id);
-      const peerAgentName = isOwner ? (c.replyAuthorAgentName || c.peerName || 'Agent') : (c.postOwnerAgentName || c.peerName || 'Agent');
-      const peerAvatar = isOwner ? (c.replyAuthorAvatar || c.peerAvatar || undefined) : (c.postOwnerAvatar || c.peerAvatar || undefined);
-      return {
-        id: c.id || c.connectionId,
-        agentId: peerAgentId || 'agent',
-        agentName: peerAgentName || 'Agent',
-        avatar: peerAvatar || undefined,
-        status: c.status || 'active'
-      };
-    });
-
-    const activeConnections = userConnectionsRaw.filter(c => c.status !== 'dissolved');
-    const dissolvedConnections = userConnectionsRaw.filter(c => c.status === 'dissolved');
-    const userConnections = userConnectionsRaw;
 
     return (
       <div className="w-full max-w-3xl mx-auto space-y-6 animate-in fade-in duration-300 text-[#141414]">
@@ -824,117 +737,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         <WebhookAgentLogs
           onOpenChat={(chat) => onOpenChat?.(chat)}
           connections={realConnections}
-          onOpenThread={async (rawPostId, logDetails, mode) => {
-            const cleanId = String(rawPostId || '').replace('#', '').trim();
-            const norm = (id?: any) => String(id || '').replace(/^post[_-]/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-            const targetNorm = norm(cleanId);
-
-            let foundPost = userPosts?.find(p => {
-              const pNorm = norm(p.id || p.postId);
-              if (pNorm && (pNorm === targetNorm || String(p.id) === cleanId || String(p.postId) === cleanId)) return true;
-              return p.bids?.some((r: any) => {
-                const rNorm = norm(r.id || r.replyId);
-                return rNorm && (rNorm === targetNorm || String(r.id) === cleanId || String(r.replyId) === cleanId);
-              });
-            });
-
-            if (!foundPost && cleanId) {
-              try {
-                // Ticket endpoint removed
-                let res = { success: false, data: null };
-                
-                if ((!res || !res.success) && cleanId) {
-                  const replyRes = await apiFetch(`/api/bids/${cleanId}`, { authType: 'none' }).catch(() => null);
-                  if (replyRes && replyRes.success && (replyRes.data?.postId)) {
-                    // Post endpoint placeholder
-                    res = { success: false, data: null };
-                  }
-                }
-
-                if (res && res.success && res.data) {
-                  const p = res.data.ticket || res.data.post || res.data;
-                  const rawReplies = res.data.bids || res.data.bids || p.bids || p.bids || [];
-                  foundPost = {
-                    id: p.id || cleanId,
-                    postId: p.postId || p.id || cleanId,
-                    agentName: p.agentName || res.data.author?.displayName || p.author?.displayName || 'Agent Node',
-                    agentId: p.agentId || res.data.author?.agentId || p.author?.agentId || 'agent',
-                    avatar: p.avatar || res.data.author?.avatar || p.author?.avatar || undefined,
-                    content: p.content || 'Transmission payload retrieved from network node.',
-                    timestamp: p.createdAt ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-                    createdAt: p.createdAt,
-                    bidsCount: rawReplies.length,
-                    connectionsCount: 0,
-                    verified: Boolean(p.emailVerified === true || res.data.author?.emailVerified === true),
-                    emailVerified: Boolean(p.emailVerified === true || res.data.author?.emailVerified === true),
-                    verificationStatus: p.verificationStatus || ((p.emailVerified || res.data.author?.emailVerified) ? 'verified' : 'not verified'),
-                    status: 'active',
-                    type: p.type || 'intake',
-                    bids: Array.isArray(rawReplies) ? rawReplies.map((r: any) => ({
-                      id: r.id,
-                      agentName: r.name || r.agentName || r.author?.displayName || 'Agent',
-                      agentId: r.agentId || r.author?.agentId,
-                      avatar: r.avatar || r.author?.avatar || undefined,
-                      content: r.content,
-                      timestamp: r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-                      createdAt: r.createdAt,
-                      emailVerified: r.emailVerified === true,
-                      verificationStatus: r.verificationStatus || (r.emailVerified ? 'verified' : 'not verified')
-                    })) : [],
-                    connectionsList: []
-                  };
-                }
-              } catch (e) {
-                console.warn('Could not fetch post details:', e);
-              }
-            }
-
-            if (!foundPost) {
-              const detailsObj = typeof logDetails === 'object' ? logDetails : {};
-              const postContent = typeof logDetails === 'string'
-                ? logDetails
-                : (detailsObj.content || detailsObj.text || detailsObj.postContent || 'Thread activity referenced from cryptographic agent activity logs.');
-              const postAuthor = detailsObj.agentName || detailsObj.authorName || detailsObj.senderName || detailsObj.peerName || 'Agent Node';
-              const postAvatar = detailsObj.avatar || detailsObj.authorAvatar || detailsObj.senderAvatar || undefined;
-              const postAgentId = detailsObj.agentId || detailsObj.authorAgentId || detailsObj.senderAgentId || 'agent';
-
-              foundPost = {
-                id: cleanId || 'post',
-                postId: cleanId || 'post',
-                agentName: postAuthor,
-                agentId: postAgentId,
-                avatar: postAvatar,
-                content: postContent,
-                timestamp: 'Just now',
-                bidsCount: 0,
-                connectionsCount: 0,
-                verified: true,
-                emailVerified: true,
-                verificationStatus: 'verified',
-                status: 'active',
-                type: 'intake',
-                bids: [],
-                connectionsList: []
-              };
-            }
-
-            if (mode === 'post') {
-              if (onNavigateToPost) {
-                onNavigateToPost(foundPost.id || cleanId);
-              } else {
-                const el = document.getElementById(`post-${foundPost.id || cleanId}`);
-                if (el) {
-                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  el.classList.add('ring-4', 'ring-[#141414]', 'scale-[1.01]');
-                  setTimeout(() => el.classList.remove('ring-4', 'ring-[#141414]', 'scale-[1.01]'), 2000);
-                } else {
-                  onOpenThread(foundPost);
-                }
-              }
-            } else {
-              onOpenThread(foundPost);
-            }
-          }}
           onOpenAgentProfile={onOpenAgentProfile}
           onOpenCluster={(clusterId, details) => {
             onOpenClusterMembers?.({

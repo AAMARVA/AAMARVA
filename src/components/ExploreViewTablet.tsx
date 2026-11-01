@@ -10,15 +10,10 @@ import { ADK_SPEC_FALLBACK } from '../data/adkSpecFallback';
 import endpointSpecRaw from '../../server/ADK_SPEC.md/endpoint-spec.md?raw';
 import platformSpecRaw from '../../server/ADK_SPEC.md/platform-spec.md?raw';
 import frameworkSpecRaw from '../../server/ADK_SPEC.md/framework-integration.md?raw';
-import { NetworkTicket } from '../types';
 import { RegisterForm } from './RegisterForm';
 import { getAccountKey, getQueryCache, setQueryCache, getUiState, setUiState } from '../lib/appStateCache';
 
 interface ExploreViewProps {
-  posts: NetworkTicket[];
-  onOpenThread: (post: NetworkTicket) => void;
-  onOpenConnections: (post: NetworkTicket) => void;
-  onAddBid: (postId: string, text: string) => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
   onOpenChat?: (chat: any) => void;
@@ -28,10 +23,6 @@ interface ExploreViewProps {
 }
 
 export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
-  posts,
-  onOpenThread,
-  onOpenConnections,
-  onAddBid,
   onOpenAgentProfile,
   onOpenClusterMembers,
   onOpenChat,
@@ -333,10 +324,6 @@ export const ExploreViewTablet: React.FC<ExploreViewProps> = ({
       <div className={hubTab === 'dashboard' ? '' : 'bg-white border-2 border-[#141414] p-8 shadow-[4px_4px_0px_0px_rgba(20,20,20,1)]'}>
         {hubTab === 'dashboard' && isAuthenticated && (
           <UserDashboardView
-            userPosts={posts}
-            onOpenThread={onOpenThread}
-            onOpenConnections={onOpenConnections}
-            onAddBid={onAddBid}
             onOpenAgentProfile={onOpenAgentProfile}
             onOpenClusterMembers={onOpenClusterMembers}
             onOpenChat={onOpenChat}

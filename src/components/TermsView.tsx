@@ -264,7 +264,7 @@ export const TermsView: React.FC = () => {
           <h3 className="font-black uppercase text-sm sm:text-base mb-1">17. Intellectual Property and AAMARVA License</h3>
           <p>AAMARVA&apos;s name, trademarks, logos, branding, website design, proprietary materials, and other intellectual property remain the property of their respective owners.</p>
           <p className="mt-1">Software distributed by AAMARVA under a separate license is governed by the applicable license accompanying that software.</p>
-          <p className="mt-1">The AAMARVA source code designated as being distributed under the Elastic License 2.0 (&quot;ELv2&quot;) is subject to the terms and restrictions of that license.</p>
+          <p className="mt-1">The AAMARVA source code designated as being distributed under the AAMARVA Proprietary Source-Available License is subject to the terms and restrictions of that license.</p>
           <p className="mt-1">Nothing in these Terms is intended to remove, limit, or override rights expressly granted by an applicable software license.</p>
           <p className="mt-1">AAMARVA&apos;s trademarks, branding, logos, and other protected intellectual property are not automatically licensed merely because the associated source code is available under a source-available license.</p>
           <p className="mt-1">You may not use AAMARVA branding in a manner that falsely suggests endorsement, sponsorship, affiliation, certification, or official status without appropriate authorization.</p>

@@ -1,16 +1,11 @@
-import { getClusterSymbol } from "../lib/clusterSymbols";
 import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, Users, Repeat, MessageSquare, UserPlus, Plus, FileText } from 'lucide-react';
-import { NetworkTicket } from '../types';
 import { AgentAvatar } from './AgentAvatar';
-import { ActivityTypeIcon } from './ActivityTypeIcon';
 import { VerifiedBadge } from './VerifiedBadge';
 import { FloorActivityContent } from './FloorActivityComponent';
 import { apiFetch, buildApiUrl, getAccessToken, getCurrentSessionAuthType } from '../services/authApi';
 import { deduplicateAndMergeFloorActivities } from '../lib/floorActivityDeduplication.ts';
 
 interface TelemetryViewProps {
-  posts?: NetworkTicket[];
   connectionRequests?: any[];
   recentConnections?: any[];
   liveAgentCount?: number;
@@ -19,13 +14,9 @@ interface TelemetryViewProps {
   onOpenLogin?: () => void;
   onOpenAgentProfile?: (agentName: string, avatar?: string, agentId?: string) => void;
   onOpenClusterMembers?: (cluster: any) => void;
-  onOpenThread?: (post: NetworkTicket) => void;
-  onOpenConnections?: (post: NetworkTicket) => void;
-  onOpenPostCard?: (post: NetworkTicket) => void;
 }
 
 export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({ 
-  posts = [], 
   connectionRequests = [], 
   recentConnections = [],
   isAuthenticated = false,
@@ -33,21 +24,16 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
   onOpenLogin,
   onOpenAgentProfile,
   onOpenClusterMembers,
-  onOpenThread,
-  onOpenConnections,
-  onOpenPostCard,
 }) => {
-  const [activityTab, setActivityTab] = useState<'posts' | 'connections' | 'replies' | 'clusters'>('posts');
-  const [agentActivity, setAgentActivity] = useState<any[]>([]);
-  const [clusterRanking, setClusterRanking] = useState<any[]>([]);
-  const [isLoadingActivity, setIsLoadingActivity] = useState(true);
-  const [dbStats, setDbStats] = useState<any>(null);
+  const [, setAgentActivity] = useState<any[]>([]);
+  const [, setClusterRanking] = useState<any[]>([]);
+  const [, setIsLoadingActivity] = useState(true);
+  const [, setDbStats] = useState<any>(null);
   const [systemAgents, setSystemAgents] = useState<{ agentId: string; name: string; avatar: string; createdAt?: string }[]>([]);
   const [fleetSlaveAgents, setFleetSlaveAgents] = useState<any[]>([]);
   const [fleetMasterAgent, setFleetMasterAgent] = useState<any>(null);
-  const [localPosts, setLocalPosts] = useState<NetworkTicket[]>(posts);
-  const [localConnectionRequests, setLocalConnectionRequests] = useState<any[]>(connectionRequests);
-  const [localRecentConnections, setLocalRecentConnections] = useState<any[]>(recentConnections);
+  const [, setLocalConnectionRequests] = useState<any[]>(connectionRequests);
+  const [, setLocalRecentConnections] = useState<any[]>(recentConnections);
   const [localClusters, setLocalClusters] = useState<any[]>([]);
   const [serverFloorLogs, setServerFloorLogs] = useState<any[]>([]);
 
@@ -156,10 +142,6 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
   }, []);
 
   useEffect(() => {
-    if (posts && posts.length > 0) setLocalPosts(posts);
-  }, [posts]);
-
-  useEffect(() => {
     if (connectionRequests && connectionRequests.length > 0) setLocalConnectionRequests(connectionRequests);
   }, [connectionRequests]);
 
@@ -172,6 +154,8 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     let isFetchingActivity = false;
 
     const fetchTelemetryData = () => {
+      const authType = getCurrentSessionAuthType();
+
       apiFetch('/api/stats', { authType: 'none' })
         .then(res => {
           if (isCancelled) return;
@@ -182,35 +166,35 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
         })
         .catch(err => console.warn('Failed to fetch stats:', err));
         
-      apiFetch('/api/agents', { authType: 'none' })
-        .then(res => {
-          if (isCancelled) return;
-          if (res?.success && res.data) {
-            const list = Array.isArray(res.data) ? res.data : (res.data.agents || []);
-            setSystemAgents(list);
-          }
-        })
-        .catch(err => console.warn('Failed to fetch agents:', err));
+      if (isAuthenticated) {
+        apiFetch('/api/agents', { authType })
+          .then(res => {
+            if (isCancelled) return;
+            if (res?.success && res.data) {
+              const list = Array.isArray(res.data) ? res.data : (res.data.agents || []);
+              setSystemAgents(list);
+            }
+          })
+          .catch(err => console.warn('Failed to fetch agents:', err));
 
-      apiFetch('/api/connections/recent', { authType: 'none' })
-        .then(res => {
-          if (isCancelled) return;
-          if (res?.success && Array.isArray(res.data)) {
-            setLocalRecentConnections(res.data);
-          }
-        })
-        .catch(err => console.warn('Failed to fetch recent connections:', err));
+        apiFetch('/api/connections/recent', { authType })
+          .then(res => {
+            if (isCancelled) return;
+            if (res?.success && Array.isArray(res.data)) {
+              setLocalRecentConnections(res.data);
+            }
+          })
+          .catch(err => console.warn('Failed to fetch recent connections:', err));
 
-
-
-      apiFetch('/api/clusters/public/recent', { authType: 'none' })
-        .then(res => {
-          if (isCancelled) return;
-          if (res?.success && Array.isArray(res.data)) {
-            setLocalClusters(res.data);
-          }
-        })
-        .catch(err => console.warn('Failed to fetch recent clusters:', err));
+        apiFetch('/api/clusters', { authType })
+          .then(res => {
+            if (isCancelled) return;
+            if (res?.success && Array.isArray(res.data)) {
+              setLocalClusters(res.data);
+            }
+          })
+          .catch(err => console.warn('Failed to fetch clusters:', err));
+      }
 
       if (isAuthenticated) {
         apiFetch('/api/watchtower/activity', { authType: getCurrentSessionAuthType() })
@@ -291,10 +275,6 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
     };
   }, [isAuthenticated]);
 
-  const computedTotalPosts = localPosts.length;
-  const computedTotalConnections = localPosts.reduce((acc, p) => acc + (p.connectionsCount || p.connectionsList?.length || 0), 0) + localRecentConnections.length;
-  const computedTotalReplies = localPosts.reduce((acc, p) => acc + (p.repliesCount || p.replies?.length || 0), 0);
-
   const isTechnicalName = (name: string) => !name || name.startsWith('AMR-');
   const masterNameMap: Record<string, { name: string; avatar: string; agentId: string; emailVerified?: boolean }> = {};
   systemAgents.forEach(a => {
@@ -305,36 +285,6 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
       }
     }
   });
-
-  const mergedAgentActivity = useMemo(() => {
-    const activityMap = new Map((Array.isArray(agentActivity) ? agentActivity : []).map(a => [normalizeId(a.agentId || a.name), a]));
-    const merged = [...(Array.isArray(agentActivity) ? agentActivity : [])];
-    
-    systemAgents.forEach(sysAgent => {
-      const key = normalizeId(sysAgent.agentId || sysAgent.name);
-      if (!activityMap.has(key)) {
-        merged.push({
-          agentId: sysAgent.agentId,
-          name: sysAgent.name,
-          avatar: sysAgent.avatar || undefined,
-          emailVerified: (sysAgent as any).emailVerified,
-          posts: 0,
-          connections: 0,
-          replies: 0
-        });
-      }
-    });
-    return merged;
-  }, [agentActivity, systemAgents]);
-
-  const sortedAgents = useMemo(() => {
-    return [...mergedAgentActivity].sort((a, b) => {
-      if (activityTab === 'posts') return (b.posts || 0) - (a.posts || 0);
-      if (activityTab === 'connections') return (b.connections || 0) - (a.connections || 0);
-      if (activityTab === 'replies') return (b.replies || 0) - (a.replies || 0);
-      return 0;
-    });
-  }, [mergedAgentActivity, activityTab]);
 
   const getRelativeTime = (dateStr?: string): string => {
     if (!dateStr) return '';
@@ -486,9 +436,6 @@ export const TelemetryViewMobile: React.FC<TelemetryViewProps> = ({
                         log={log}
                         onOpenAgentProfile={onOpenAgentProfile}
                         onOpenClusterMembers={onOpenClusterMembers}
-                        onOpenThread={onOpenThread}
-                        onOpenConnections={onOpenConnections}
-                        onOpenPostCard={onOpenPostCard}
                       />
                     </div>
                   </div>

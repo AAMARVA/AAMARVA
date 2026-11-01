@@ -84,17 +84,6 @@ export async function runTelemetryActivityTests(): Promise<Record<string, { stat
       throw new Error(`Failed to insert test slave user: ${slaveInsErr.message}`);
     }
 
-    // Create a ticket post for User A
-    const postIdA = `post_tel_${ts}_1`;
-    await supabase.from('posts').insert({
-      id: postIdA,
-      userId: userA.id,
-      agentId: userA.agentId,
-      title: 'Telemetry Test Post',
-      content: 'Telemetry verification content',
-      createdAt: new Date().toISOString()
-    });
-
     // Create a cluster owned by User A
     const clusterIdA = `clu_tel_${ts}_1`;
     await supabase.from(tables.clusters).insert({
@@ -763,6 +752,51 @@ export async function runTelemetryActivityTests(): Promise<Record<string, { stat
       'TEST 18: Agent Profile Identity (Avatar, Name, Agent ID) resolved without UUID leakage',
       test18Passed,
       `Footprint connection resolved: ${isConnFpTargetResolved}, Capability webhook target resolved: ${isCapWhTargetResolved}, Connection webhook sender resolved: ${isConnWhSenderResolved}`
+    );
+
+    // =========================================================================
+    // TEST 19: Cluster Security & Strict Fleet Isolation
+    // =========================================================================
+    // 19a. Unauthenticated public cluster endpoints must not exist / must be rejected
+    const unauthPubRecent = await helperFetch('/api/clusters/public/recent');
+    const unauthPubMembers = await helperFetch(`/api/clusters/public/${clusterIdA}/members`);
+    const unauthClusters = await helperFetch('/api/clusters');
+    const unauthMembers = await helperFetch(`/api/clusters/${clusterIdA}/members`);
+
+    const publicEndpointsRemoved =
+      (unauthPubRecent.status === 404 || unauthPubRecent.status === 401) &&
+      (unauthPubMembers.status === 404 || unauthPubMembers.status === 401) &&
+      unauthClusters.status === 401 &&
+      unauthMembers.status === 401;
+
+    // 19b. Foreign Fleet B cannot access Fleet A's cluster members (403 Forbidden)
+    const foreignMembersRes = await helperFetch(`/api/clusters/${clusterIdA}/members`, {
+      headers: { 'Cookie': `aamarva_human_session=${sessionTokenB}` }
+    });
+    const foreignMembersBlocked = foreignMembersRes.status === 403;
+
+    // 19c. Nonexistent cluster returns 404 Not Found without fallback cluster data
+    const missingClusterRes = await helperFetch(`/api/clusters/nonexistent_cluster_${ts}/members`, {
+      headers: { 'Cookie': `aamarva_human_session=${sessionTokenA}` }
+    });
+    const missingCluster404 =
+      missingClusterRes.status === 404 &&
+      !JSON.stringify(missingClusterRes.json || {}).includes('Alpha Secret Cluster') &&
+      !JSON.stringify(missingClusterRes.json || {}).includes('AMR-TW43-24WU');
+
+    // 19d. Owner Fleet A can access its own cluster members
+    const ownerMembersRes = await helperFetch(`/api/clusters/${clusterIdA}/members`, {
+      headers: { 'Cookie': `aamarva_human_session=${sessionTokenA}` }
+    });
+    const ownerMembersOk =
+      ownerMembersRes.status === 200 &&
+      ownerMembersRes.json?.success === true &&
+      ownerMembersRes.json?.data?.cluster?.id === clusterIdA;
+
+    recordResult(
+      'TEST 19: Cluster Security & Strict Fleet Isolation enforced across endpoints',
+      publicEndpointsRemoved && foreignMembersBlocked && missingCluster404 && ownerMembersOk,
+      `Public endpoints removed/protected: ${publicEndpointsRemoved}, Foreign fleet blocked (403): ${foreignMembersBlocked}, Missing cluster 404 (no fallback): ${missingCluster404}, Owner fleet access (200): ${ownerMembersOk}`
     );
 
   } catch (err: any) {

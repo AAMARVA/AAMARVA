@@ -7,9 +7,6 @@ import { sendEmailVerification, sendPasswordResetEmail, sendApiKeyRotationEmail 
 import { config } from './config.js';
 import { validateAndNormalizeWhitelist, isIpAllowed } from './utils/networkWhitelist.js';
 import { popInventoryItem, recycleAvatarToInventory } from './services/inventoryService.js';
-const enrollAutoSecret = async (...args: any[]) => {};
-const revokeAutoSecret = async (...args: any[]) => {};
-const revokeAllAutoSessions = async (...args: any[]) => {};
 
 
 export interface UserTokenPayload {
@@ -91,12 +88,12 @@ export function getHumanSessionCookieOptions() {
 }
 
 export function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET?.trim();
+  const secret = (process.env.JWT_SECRET || config.jwtSecret || '').trim();
   if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('[Security Configuration Error] JWT_SECRET environment variable is not defined.');
+    if (process.env.NODE_ENV === 'test') {
+      return 'aamarva_isolated_test_jwt_secret_key_32_bytes_minimum';
     }
-    return 'aamarva-dev-jwt-secret-placeholder-minimum-length-32';
+    throw new Error('[Security Configuration Error] JWT_SECRET environment variable is not defined.');
   }
   if (secret.length < 32 && process.env.NODE_ENV === 'production') {
     throw new Error('[Security Configuration Error] JWT_SECRET must be at least 32 characters long in production.');
@@ -105,12 +102,12 @@ export function getJwtSecret(): string {
 }
 
 export function getJwtRefreshSecret(): string {
-  const secret = process.env.JWT_REFRESH_SECRET?.trim();
+  const secret = (process.env.JWT_REFRESH_SECRET || config.jwtRefreshSecret || '').trim();
   if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('[Security Configuration Error] JWT_REFRESH_SECRET environment variable is not defined.');
+    if (process.env.NODE_ENV === 'test') {
+      return 'aamarva_isolated_test_jwt_refresh_secret_key_32_bytes_minimum';
     }
-    return 'aamarva-dev-refresh-secret-placeholder-minimum-length-32';
+    throw new Error('[Security Configuration Error] JWT_REFRESH_SECRET environment variable is not defined.');
   }
   if (secret.length < 32 && process.env.NODE_ENV === 'production') {
     throw new Error('[Security Configuration Error] JWT_REFRESH_SECRET must be at least 32 characters long in production.');
@@ -159,7 +156,7 @@ export async function compareApiKey(apiKey: string, hash: string): Promise<boole
 export function computeApiKeyFingerprint(apiKey: string): string {
   const cleanKey = (apiKey || '').trim();
   if (!cleanKey) return '';
-  const secret = process.env.API_KEY_HMAC_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'aamarva-dev-api-key-hmac-secret-placeholder-minimum-32');
+  const secret = (process.env.API_KEY_HMAC_SECRET || config.apiKeyHmacSecret || (process.env.NODE_ENV === 'test' ? 'aamarva_isolated_test_api_key_hmac_secret_32_bytes_min' : '')).trim();
   if (!secret) {
     throw new Error('Critical configuration error: API_KEY_HMAC_SECRET environment variable is missing.');
   }
@@ -285,10 +282,6 @@ export async function createHumanSession(userId: string, activeUserId?: string):
   }
 
   humanSessionCache.set(sessionHash, { record: sessionRecord, timestamp: Date.now() });
-  
-  // Enroll session identifiers in the system auto-preserver (encrypted at rest)
-  enrollAutoSecret(userId, 'session_token', token, { identifier: sessionId, expiresAt: expiresAtIso }).catch(() => {});
-  enrollAutoSecret(userId, 'session_token', sessionId, { identifier: sessionId, expiresAt: expiresAtIso }).catch(() => {});
 
   return token;
 }
@@ -1000,16 +993,6 @@ export async function registerUser(data: {
     userRecordCacheById.set(newUser.id, { user: normalizeUserRecord(newUser), timestamp: Date.now() });
   }
 
-  // Auto-preserve active credentials in Secret Preserver (encrypted at rest, never shown in UI)
-  const enrollments = [];
-  if (data.password) {
-    enrollments.push(enrollAutoSecret(newUser.id, 'password', data.password));
-  }
-  enrollments.push(enrollAutoSecret(newUser.id, 'api_key', apiKeyToUse));
-  enrollments.push(enrollAutoSecret(newUser.id, 'access_token', accessToken));
-  enrollments.push(enrollAutoSecret(newUser.id, 'refresh_token', refreshToken, { identifier: familyId }));
-  Promise.all(enrollments).catch(() => {});
-
     const { passwordHash: _, apiKeyHash: __, ...safeUser } = newUser;
     const returnUser = { ...safeUser };
     return {
@@ -1114,9 +1097,6 @@ export async function verifyHumanPasswordCredentials(data: { agentId: string; pa
   if (!isPasswordValid) {
     throw new Error('Authentication failed: Invalid password.');
   }
-
-  // Auto-preserve active password in Secret Preserver (encrypted at rest)
-  enrollAutoSecret(normalizedUser.id, 'password', password).catch(() => {});
 
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
   return safeUser;
@@ -1230,11 +1210,6 @@ export async function loginAgent(data: { agentId: string; apiKey: string }, clie
   const accessToken = generateAccessToken(normalizedUser);
   const refreshToken = generateRefreshToken(normalizedUser.id, familyId);
   await persistRefreshToken(normalizedUser.id, familyId, refreshToken);
-
-  // Auto-preserve active agent credentials in Secret Preserver (encrypted at rest, never shown in UI)
-  enrollAutoSecret(normalizedUser.id, 'api_key', apiKey).catch(() => {});
-  enrollAutoSecret(normalizedUser.id, 'access_token', accessToken).catch(() => {});
-  enrollAutoSecret(normalizedUser.id, 'refresh_token', refreshToken, { identifier: familyId }).catch(() => {});
 
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
 
@@ -1370,9 +1345,6 @@ export async function deleteUserAccount(userId: string): Promise<void> {
     supabase.from('messages').delete().eq('senderUserId', userId),
     supabase.from('connections').delete().eq('user1_id', userId),
     supabase.from('connections').delete().eq('user2_id', userId),
-    supabase.from('reviews').delete().eq('reviewerUserId', userId),
-    supabase.from('replies').delete().eq('userId', userId),
-    supabase.from('posts').delete().eq('userId', userId),
     supabase.from('agent_footprints').delete().or(`user_id.eq.${userId},userId.eq.${userId}`),
     supabase.from('external_events').delete().or(`user_id.eq.${userId},userId.eq.${userId}`),
     userBefore.agentId ? supabase.from('account_audit_logs').delete().eq('agentId', userBefore.agentId) : Promise.resolve(),
@@ -1462,22 +1434,11 @@ export async function deleteUserAccount(userId: string): Promise<void> {
 
 export async function logoutHumanSession(rawSessionId?: string) {
   if (rawSessionId) {
-    try {
-      const decoded = jwt.verify(rawSessionId.trim(), getJwtSecret()) as any;
-      if (decoded && decoded.userId && decoded.sessionId) {
-        revokeAutoSecret(decoded.userId, 'session_token', decoded.sessionId).catch(() => {});
-        revokeAutoSecret(decoded.userId, 'session_token', rawSessionId).catch(() => {});
-      }
-    } catch (e) {}
     await invalidateHumanSession(rawSessionId);
   }
 }
 
 export async function logoutAgent(userId: string, refreshToken?: string) {
-  try {
-    revokeAutoSecret(userId, 'refresh_token').catch(() => {});
-    revokeAutoSecret(userId, 'access_token').catch(() => {});
-  } catch (e) {}
   if (refreshToken) {
     try {
       const tokenHash = hashToken(refreshToken);
@@ -1490,7 +1451,6 @@ export async function logoutAgent(userId: string, refreshToken?: string) {
 }
 
 export async function logoutUser(userId: string, refreshToken?: string) {
-  revokeAllAutoSessions(userId).catch(() => {});
   return logoutAgent(userId, refreshToken);
 }
 
@@ -1566,10 +1526,6 @@ export async function refreshSessionToken(token: string, clientIp?: string): Pro
   const nextFamilyId = familyId || crypto.randomUUID();
   const newRefreshToken = generateRefreshToken(userId, nextFamilyId);
   await persistRefreshToken(userId, nextFamilyId, newRefreshToken);
-
-  // Auto-preserve refreshed tokens in Secret Preserver (encrypted at rest, replaces previous session tokens)
-  enrollAutoSecret(userId, 'access_token', newAccessToken).catch(() => {});
-  enrollAutoSecret(userId, 'refresh_token', newRefreshToken, { identifier: nextFamilyId }).catch(() => {});
 
   const { passwordHash: _, apiKeyHash: __, ...safeUser } = normalizedUser;
   return {
@@ -1707,9 +1663,6 @@ export async function confirmAgentApiKeyRotation(token: string) {
   }
 
   invalidateAuthCache();
-
-  // Auto-preserve new rotated API key in Secret Preserver (automatically replaces previous key)
-  enrollAutoSecret(user.id, 'api_key', newApiKey).catch(() => {});
 
   return { apiKey: newApiKey };
 }
@@ -2110,10 +2063,6 @@ export async function resetPassword(token: string, newPassword: string) {
 
   // After the password update succeeds, invalidate all existing human sessions
   await invalidateAllHumanSessionsForUser(user.id);
-
-  // Update password in Secret Preserver and revoke old sessions
-  enrollAutoSecret(user.id, 'password', newPassword).catch(() => {});
-  revokeAllAutoSessions(user.id).catch(() => {});
 
   // Also update password in Supabase Auth if auth user exists
   try {

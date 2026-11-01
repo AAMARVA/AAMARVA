@@ -153,33 +153,20 @@ export async function runE2EETestMatrix() {
     // -------------------------------------------------------------
     // 3. ESTABLISH CONNECTION (Agent A <-> Agent B)
     // -------------------------------------------------------------
-    // Post by A
-    // const postRes = await fetch(`${BASE_URL}/api/posts`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${agentTokenA}`
-    //   },
-    //   body: JSON.stringify({ content: 'Public post to establish secure channel' })
-    // });
-    // const postJson = await safeJson(postRes);
-    // const postId = postJson.data?.id || postJson.data?.postId;
-    // 
-    // // Reply by B
-    // const replyRes = await fetch(`${BASE_URL}/api/posts/${postId}/replies`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${agentTokenB}`
-    //   },
-    //   body: JSON.stringify({ content: 'Public reply accepting connection request' })
-    // });
-    // const replyJson = await safeJson(replyRes);
-    // const replyId = replyJson.data?.id || replyJson.data?.replyId;
-    // // Assuming a connection exists
-    const connectionId = 'test_conn_id_123'; // Using dummy connection ID
-    console.log(`Established Connection ID: ${connectionId}\n`);
     const supabase = getSupabaseClient();
+    const connectionId = `conn_e2ee_ab_${timestamp}`;
+    await supabase.from('connections').insert({
+      id: connectionId,
+      user1_id: userIdA,
+      user1_agent_id: agentIdA,
+      user1_agent_name: nameA,
+      user2_id: userIdB,
+      user2_agent_id: agentIdB,
+      user2_agent_name: nameB,
+      status: 'active',
+      createdAt: new Date().toISOString()
+    });
+    console.log(`Established Connection ID: ${connectionId}\n`);
 
     // =============================================================
     // CATEGORY 1: VALID SCENARIOS
@@ -350,36 +337,18 @@ export async function runE2EETestMatrix() {
     const agentTokenD = loginAgentDJson.data?.tokens?.accessToken;
 
     // Establish connection between Agent A and Agent D
-    const postResD = await fetch(`${BASE_URL}/api/posts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenA}` },
-      body: JSON.stringify({ content: 'Post for Agent D connection test' })
+    const connectionIdD = `conn_e2ee_ad_${timestamp}`;
+    await supabase.from('connections').insert({
+      id: connectionIdD,
+      user1_id: userIdA,
+      user1_agent_id: agentIdA,
+      user1_agent_name: nameA,
+      user2_id: regResD.user.id,
+      user2_agent_id: agentIdD,
+      user2_agent_name: `Agent D NoKey ${timestamp}`,
+      status: 'active',
+      createdAt: new Date().toISOString()
     });
-    const postJsonD = await safeJson(postResD);
-    const postIdD = postJsonD.data?.id || postJsonD.data?.postId;
-
-    const replyResD = await fetch(`${BASE_URL}/api/posts/${postIdD}/replies`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenD}` },
-      body: JSON.stringify({ content: 'Reply from Agent D' })
-    });
-    const replyJsonD = await safeJson(replyResD);
-    const replyIdD = replyJsonD.data?.id || replyJsonD.data?.replyId;
-
-    const reqResD = await fetch(`${BASE_URL}/api/connections/requests`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenA}` },
-      body: JSON.stringify({ receiverAgentId: agentIdD })
-    });
-    const reqJsonD = await safeJson(reqResD);
-    const reqIdD = reqJsonD.data?.id || reqJsonD.data?.requestId;
-
-    const acceptResD = await fetch(`${BASE_URL}/api/connections/requests/${reqIdD}/accept`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentTokenD}` }
-    });
-    const acceptJsonD = await safeJson(acceptResD);
-    const connectionIdD = acceptJsonD.data?.id || acceptJsonD.data?.connectionId;
 
     // Agent D (has NO E2EE public key registered) attempts to send private message
     const countBefore = (await supabase.from('messages').select('id', { count: 'exact' }).eq('connectionId', connectionIdD)).count || 0;
