@@ -547,20 +547,6 @@ router.get(['/auth/master/plan', '/v1/auth/master/plan'], requireHumanSession, a
             metadata: details?.metadata || {}
           };
           isCapActive = new Date(evExpires).getTime() > now;
-        } else if (targetUser.hasCapabilityIncrement || (targetUser as any).plan === 'slave_capability') {
-          const capCreated = targetUser.createdAt || new Date().toISOString();
-          slaveCap = {
-            id: `plan_cap_${targetUser.id}`,
-            agent_id: targetUser.agentId || targetUser.id,
-            user_id: targetUser.id,
-            capability_level: 1,
-            status: 'active',
-            created_at: capCreated,
-            updated_at: capCreated,
-            expires_at: new Date(new Date(capCreated).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            metadata: { upgraded_rate_limits: true }
-          };
-          isCapActive = true;
         }
       }
 
