@@ -382,18 +382,12 @@ export class CapabilityService {
 
       if (
         isSlaveRecord &&
-        (
-          targetUserRecord.plan_expires_at ||
-          targetUserRecord.hasCapabilityIncrement === true ||
-          targetUserRecord.plan === 'slave_capability' ||
-          (targetUserRecord.plan_status && targetUserRecord.plan_status.toLowerCase() === 'active')
-        )
+        targetUserRecord.plan_expires_at &&
+        (targetUserRecord.plan_status && targetUserRecord.plan_status.toLowerCase() === 'active')
       ) {
         const now = Date.now();
-        const planCreated = targetUserRecord.plan_created_at || targetUserRecord.createdAt || new Date().toISOString();
-        const planExpires = targetUserRecord.plan_expires_at || new Date(new Date(planCreated).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const planExpires = targetUserRecord.plan_expires_at;
         const expiresAtMs = new Date(planExpires).getTime();
-
         if (expiresAtMs > now) {
           const entitlement: CapabilityEntitlement = {
             id: `usr_ent_${targetUserRecord.id}`,
@@ -402,7 +396,7 @@ export class CapabilityService {
             master_id: targetUserRecord.master_id,
             capability_level: 1,
             status: 'active',
-            created_at: planCreated,
+            created_at: targetUserRecord.plan_created_at || targetUserRecord.createdAt || new Date().toISOString(),
             updated_at: new Date().toISOString(),
             expires_at: planExpires,
             metadata: { upgraded_rate_limits: true }
